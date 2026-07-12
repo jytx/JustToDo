@@ -221,9 +221,9 @@ function onAttrMousedown(e: MouseEvent) {
 }
 </style>
 
-<!-- 优先级菜单宽度（非 scoped，因为弹层渲染到 body） -->
+<!-- 优先级菜单（非 scoped，弹层渲染到 body） -->
 <style>
 .add-task-priority-menu {
-  min-width: 120px;
+  min-width: 100px;
 }
 </style>

@@ -258,9 +258,10 @@ watch(childCount, (n) => {
 }
 
 .task-item__menu-btn {
+  margin: 0;
+  padding: 0;
   background: transparent;
   border: none;
-  padding: 2px 4px;
   cursor: pointer;
   border-radius: 4px;
   color: var(--jt-text-tertiary);
@@ -277,8 +278,25 @@ watch(childCount, (n) => {
 
 <!-- 任务项上下文菜单（非 scoped，弹层渲染到 body） -->
 <style>
+/* 去掉外层容器的 padding（菜单项本身保持不变） */
+.arco-dropdown:has(.task-item-ctx-menu) {
+  padding: 0;
+}
+
+.task-item-ctx-menu .arco-menu-inner {
+  padding: 0;
+}
+
+.task-item-ctx-menu .arco-menu-item {
+  margin-bottom: 0;
+}
+
+.task-item-ctx-menu .arco-menu-item .arco-icon {
+  margin-right: 0;
+}
+
 .task-item-ctx-menu {
-  min-width: 130px;
+  min-width: 100px;
 }
 
 .task-item-ctx-menu--danger {

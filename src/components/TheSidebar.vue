@@ -750,7 +750,7 @@ onMounted(async () => {
 <!-- 侧边栏上下文菜单（非 scoped，弹层渲染到 body） -->
 <style>
 .sidebar-ctx-menu {
-  min-width: 130px;
+  min-width: 100px;
 }
 
 .sidebar-ctx-menu--danger {

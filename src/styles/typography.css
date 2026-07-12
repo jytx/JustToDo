@@ -25,3 +25,29 @@ h1, h2, h3, h4, h5, h6 {
 .font-mono {
   font-family: var(--font-mono);
 }
+
+/* ── 全局下拉菜单（a-menu 在 dropdown 中）的统一紧凑样式 ── */
+
+/* 去掉 dropdown 容器的默认 padding */
+.arco-dropdown:has(.sidebar-ctx-menu),
+.arco-dropdown:has(.add-task-priority-menu) {
+  padding: 0;
+}
+
+/* 去掉 menu-inner 的 padding */
+.sidebar-ctx-menu .arco-menu-inner,
+.add-task-priority-menu .arco-menu-inner {
+  padding: 0;
+}
+
+/* 去掉 menu-item 的 margin-bottom */
+.sidebar-ctx-menu .arco-menu-item,
+.add-task-priority-menu .arco-menu-item {
+  margin-bottom: 0;
+}
+
+/* 去掉 menu-item 内图标的 margin-right */
+.sidebar-ctx-menu .arco-menu-item .arco-icon,
+.add-task-priority-menu .arco-menu-item .arco-icon {
+  margin-right: 0;
+}
