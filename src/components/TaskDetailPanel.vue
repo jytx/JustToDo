@@ -634,7 +634,7 @@ function formatPriorityLabel(data: any) {
 }
 
 .detail-panel__subtask-title {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .detail-panel__subtask-title--done {
@@ -663,8 +663,19 @@ function formatPriorityLabel(data: any) {
 .detail-panel__tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
+}
+
+.detail-panel__tags :deep(.arco-tag) {
+  font-size: 11px;
+  padding: 0 6px;
+  height: 20px;
+  line-height: 18px;
+}
+
+.detail-panel__tags :deep(.arco-tag .arco-icon) {
+  font-size: 10px;
 }
 
 .detail-panel__tags :deep(.arco-select-view) {

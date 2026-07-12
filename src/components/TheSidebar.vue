@@ -190,6 +190,7 @@ const smartViews = [
 onMounted(async () => {
   await listStore.loadLists();
   await tagStore.loadTags();
+  await taskStore.refreshCounts();
 });
 </script>
 
@@ -229,6 +230,7 @@ onMounted(async () => {
       >
         <component :is="v.icon" :size="16" class="sidebar__item-icon" />
         <span class="sidebar__item-title">{{ v.label }}</span>
+        <span v-if="taskStore.smartCounts[v.id]" class="sidebar__count">{{ taskStore.smartCounts[v.id] }}</span>
       </router-link>
 
       <!-- 清单 -->
@@ -310,7 +312,7 @@ onMounted(async () => {
             :style="{ backgroundColor: list.color }"
           />
           <span class="sidebar__item-title">{{ list.name }}</span>
-          <span v-if="listStore.counts[list.id]" class="sidebar__count">{{ listStore.counts[list.id] }}</span>
+          <span v-if="taskStore.listCounts[list.id]" class="sidebar__count">{{ taskStore.listCounts[list.id] }}</span>
           <!-- 操作菜单（收件箱不可改） -->
           <a-dropdown
             v-if="list.id !== 'inbox'"
@@ -587,6 +589,14 @@ onMounted(async () => {
   font-size: 11px;
   color: var(--jt-text-tertiary);
   flex-shrink: 0;
+  position: absolute;
+  right: 8px;
+  transition: right 0.15s;
+}
+
+/* hover 时菜单按钮出现，计数左移让位 */
+.sidebar__item:hover .sidebar__count {
+  right: 32px;
 }
 
 .sidebar__new-list {
@@ -636,6 +646,8 @@ onMounted(async () => {
 }
 
 .sidebar__item-menu-btn {
+  position: absolute;
+  right: 4px;
   background: transparent;
   border: none;
   padding: 2px 4px;
@@ -646,7 +658,7 @@ onMounted(async () => {
   align-items: center;
   opacity: 0;
   transition: opacity 0.15s;
-  flex-shrink: 0;
+  z-index: 5;
 }
 
 .sidebar__item:hover .sidebar__item-menu-btn {

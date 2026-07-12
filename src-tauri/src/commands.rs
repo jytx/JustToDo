@@ -132,6 +132,64 @@ pub async fn list_rename(
 
 // ─── 任务操作 ────────────────────────────────────────────
 
+/// 统计各清单的未完成根任务数量（供侧边栏显示）
+#[tauri::command]
+pub async fn task_count_by_list(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<(String, i64)>> {
+    let rows = sqlx::query(
+        "SELECT list_id, COUNT(*) as cnt FROM tasks WHERE parent_id IS NULL AND done = 0 GROUP BY list_id"
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("统计任务数量失败: {}", e))?;
+
+    Ok(rows.iter().map(|r| (r.get::<String, _>("list_id"), r.get::<i64, _>("cnt"))).collect())
+}
+
+/// 统计智能视图的未完成根任务数量
+#[tauri::command]
+pub async fn task_count_smart_view(
+    pool: State<'_, sqlx::SqlitePool>,
+    view: String,
+) -> CmdResult<i64> {
+    let today = chrono::Utc::now().date_naive();
+    let end_of_today = (today + chrono::Duration::days(1))
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+    let end_of_week = (today + chrono::Duration::days(7))
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+
+    let count: i64 = if view == "today" {
+        sqlx::query_scalar(
+            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0 AND due_end_at < $1"
+        )
+        .bind(&end_of_today)
+        .fetch_one(pool.inner())
+        .await
+    } else if view == "upcoming" {
+        sqlx::query_scalar(
+            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0 AND due_end_at >= $1 AND due_end_at < $2"
+        )
+        .bind(&end_of_today)
+        .bind(&end_of_week)
+        .fetch_one(pool.inner())
+        .await
+    } else {
+        sqlx::query_scalar(
+            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0"
+        )
+        .fetch_one(pool.inner())
+        .await
+    }
+    .map_err(|e| format!("统计智能视图任务失败: {}", e))?;
+
+    Ok(count)
+}
+
 #[tauri::command]
 pub async fn task_get_by_list(
     pool: State<'_, sqlx::SqlitePool>,

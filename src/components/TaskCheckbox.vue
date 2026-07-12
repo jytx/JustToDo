@@ -15,14 +15,14 @@ defineEmits<{
     :class="{ 'task-checkbox--done': done }"
     @click.stop="$emit('toggle')"
   >
-    <icon-check v-if="done" :size="14" style="color: #fff" />
+    <icon-check v-if="done" :size="11" style="color: #fff" />
   </button>
 </template>
 
 <style scoped>
 .task-checkbox {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   border: 2px solid var(--jt-text-tertiary);
   background: transparent;

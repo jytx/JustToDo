@@ -22,6 +22,25 @@ export const useTaskStore = defineStore("task", () => {
   /** 子任务缓存：parentId → Task[]，供树形列表按需懒加载子任务 */
   const subtaskCache = ref<Record<string, Task[]>>({});
 
+  /** 侧边栏任务数量（清单 + 智能视图） */
+  const listCounts = ref<Record<string, number>>({});
+  const smartCounts = ref<Record<string, number>>({});
+
+  /** 刷新侧边栏任务数量 */
+  async function refreshCounts() {
+    try {
+      listCounts.value = await db.getCountsByList();
+      const [today, upcoming, all] = await Promise.all([
+        db.getSmartViewCount("today"),
+        db.getSmartViewCount("upcoming"),
+        db.getSmartViewCount("all"),
+      ]);
+      smartCounts.value = { today, upcoming, all };
+    } catch {
+      // 静默失败
+    }
+  }
+
   const openTasks = computed(() =>
     currentTasks.value.filter((t) => !t.done),
   );
@@ -114,6 +133,7 @@ export const useTaskStore = defineStore("task", () => {
     } else {
       subtasks.value.push(task);
     }
+    refreshCounts();
     return task;
   }
 
@@ -158,6 +178,7 @@ export const useTaskStore = defineStore("task", () => {
     if (selectedTaskObj.value?.id === id) {
       selectedTaskObj.value = { ...selectedTaskObj.value, done, completedAt };
     }
+    refreshCounts();
   }
 
   async function updateTask(
@@ -186,6 +207,7 @@ export const useTaskStore = defineStore("task", () => {
       });
     }
     subtaskCache.value = newCache;
+    refreshCounts();
   }
 
   async function deleteTask(id: string) {
@@ -201,6 +223,7 @@ export const useTaskStore = defineStore("task", () => {
     if (selectedTaskId.value === id) {
       selectedTaskId.value = null;
     }
+    refreshCounts();
   }
 
   /** 点击任务：切换选中（已选中则关闭面板） */
@@ -285,6 +308,9 @@ export const useTaskStore = defineStore("task", () => {
     doneTasks,
     selectedTask,
     detailOpen,
+    listCounts,
+    smartCounts,
+    refreshCounts,
     loadTasks,
     loadSmartView,
     loadTagTasks,
