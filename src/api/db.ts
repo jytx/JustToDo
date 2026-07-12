@@ -19,6 +19,8 @@ interface TaskList {
   color: string;
   position: number;
   createdAt: string;
+  parentId: string | null;
+  isFolder: boolean;
 }
 
 interface CreateTaskInput {
@@ -51,17 +53,31 @@ export async function getLists(): Promise<List[]> {
     color: r.color,
     position: r.position,
     createdAt: r.createdAt,
+    parentId: r.parentId,
+    isFolder: r.isFolder,
   }));
 }
 
-export async function createList(name: string, color: string): Promise<List> {
-  const r = await invoke<TaskList>("list_create", { name, color });
+export async function createList(params: {
+  name: string;
+  color: string;
+  parentId?: string | null;
+  isFolder?: boolean;
+}): Promise<List> {
+  const r = await invoke<TaskList>("list_create", {
+    name: params.name,
+    color: params.color,
+    parentId: params.parentId ?? null,
+    isFolder: params.isFolder ?? false,
+  });
   return {
     id: r.id,
     name: r.name,
     color: r.color,
     position: r.position,
     createdAt: r.createdAt,
+    parentId: r.parentId,
+    isFolder: r.isFolder,
   };
 }
 
@@ -71,6 +87,10 @@ export async function deleteList(id: string): Promise<void> {
 
 export async function renameList(id: string, name: string, color: string): Promise<void> {
   await invoke<void>("list_rename", { id, name, color });
+}
+
+export async function moveList(id: string, parentId: string | null): Promise<void> {
+  await invoke<void>("list_move", { id, parentId });
 }
 
 // ─── 任务操作 ────────────────────────────────────────────

@@ -42,7 +42,7 @@ fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
 #[tauri::command]
 pub async fn list_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<TaskList>> {
     let rows = sqlx::query(
-        "SELECT id, name, color, position, created_at FROM lists ORDER BY position ASC, created_at ASC"
+        "SELECT id, name, color, position, created_at, parent_id, is_folder FROM lists ORDER BY position ASC, created_at ASC"
     )
     .fetch_all(pool.inner())
     .await
@@ -56,6 +56,8 @@ pub async fn list_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<Ta
             color: r.get("color"),
             position: r.get("position"),
             created_at: r.get("created_at"),
+            parent_id: r.get("parent_id"),
+            is_folder: r.get::<i32, _>("is_folder") != 0,
         })
         .collect())
 }
@@ -65,19 +67,24 @@ pub async fn list_create(
     pool: State<'_, sqlx::SqlitePool>,
     name: String,
     color: String,
+    parent_id: Option<String>,
+    is_folder: Option<bool>,
 ) -> CmdResult<TaskList> {
     let id = uuid();
     let ts = now();
     let position = chrono::Utc::now().timestamp_millis();
+    let is_folder_val = if is_folder.unwrap_or(false) { 1 } else { 0 };
 
     sqlx::query(
-        "INSERT INTO lists (id, name, color, position, created_at) VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO lists (id, name, color, position, created_at, parent_id, is_folder) VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(&id)
     .bind(&name)
     .bind(&color)
     .bind(position)
     .bind(&ts)
+    .bind(&parent_id)
+    .bind(is_folder_val)
     .execute(pool.inner())
     .await
     .map_err(|e| format!("创建清单失败: {}", e))?;
@@ -88,6 +95,8 @@ pub async fn list_create(
         color,
         position,
         created_at: ts,
+        parent_id,
+        is_folder: is_folder_val != 0,
     })
 }
 
@@ -96,14 +105,37 @@ pub async fn list_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdRe
     if id == "inbox" {
         return Err("收件箱不能删除".to_string());
     }
-    // 先把该清单下的所有任务移入收件箱（不删除任务）
-    sqlx::query("UPDATE tasks SET list_id = 'inbox', updated_at = $1 WHERE list_id = $2")
-        .bind(now())
+
+    // 查询被删项的 parent_id（用于提升子项）
+    let row = sqlx::query("SELECT parent_id, is_folder FROM lists WHERE id = $1")
         .bind(&id)
-        .execute(pool.inner())
+        .fetch_optional(pool.inner())
         .await
-        .map_err(|e| format!("迁移任务失败: {}", e))?;
-    // 再删除清单（任务和清单的 CASCADE 不再生效，因为任务已不在此清单）
+        .map_err(|e| format!("查询失败: {}", e))?;
+
+    if let Some(row) = row {
+        let parent_id: Option<String> = row.get("parent_id");
+        let is_folder: bool = row.get::<i32, _>("is_folder") != 0;
+
+        if is_folder {
+            // 删除目录：把子项的 parent_id 提升到被删目录的 parent_id
+            sqlx::query("UPDATE lists SET parent_id = $1 WHERE parent_id = $2")
+                .bind(&parent_id)
+                .bind(&id)
+                .execute(pool.inner())
+                .await
+                .map_err(|e| format!("迁移子项失败: {}", e))?;
+        } else {
+            // 删除清单：把任务迁移到收件箱
+            sqlx::query("UPDATE tasks SET list_id = 'inbox', updated_at = $1 WHERE list_id = $2")
+                .bind(now())
+                .bind(&id)
+                .execute(pool.inner())
+                .await
+                .map_err(|e| format!("迁移任务失败: {}", e))?;
+        }
+    }
+
     sqlx::query("DELETE FROM lists WHERE id = $1")
         .bind(&id)
         .execute(pool.inner())
@@ -127,6 +159,25 @@ pub async fn list_rename(
         .execute(pool.inner())
         .await
         .map_err(|e| format!("更新清单失败: {}", e))?;
+    Ok(())
+}
+
+/// 移动清单/目录到另一个父级（null = 根级）
+#[tauri::command]
+pub async fn list_move(
+    pool: State<'_, sqlx::SqlitePool>,
+    id: String,
+    parent_id: Option<String>,
+) -> CmdResult<()> {
+    if id == "inbox" {
+        return Err("收件箱不能移动".to_string());
+    }
+    sqlx::query("UPDATE lists SET parent_id = $1 WHERE id = $2")
+        .bind(&parent_id)
+        .bind(&id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("移动清单失败: {}", e))?;
     Ok(())
 }
 

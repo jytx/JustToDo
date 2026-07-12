@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 侧边栏 —— 四区块导航（智能视图 / 清单 / 标签 / 习惯）
-import { computed, onMounted, ref, nextTick } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   IconStar,
@@ -11,16 +11,17 @@ import {
   IconSettings,
   IconTrophy,
   IconDelete,
-  IconEdit,
   IconMore,
   IconMenuFold,
   IconMenuUnfold,
   IconRight,
   IconDown,
 } from "@arco-design/web-vue/es/icon";
+// IconEdit 移到 SidebarListNode 中使用
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
 import { useTaskStore } from "@/stores/task";
+import SidebarListNode from "./SidebarListNode.vue";
 import * as db from "@/api/db";
 
 const props = defineProps<{
@@ -66,29 +67,27 @@ const confirmDelete = ref<{
   taskCount: number;
 } | null>(null);
 
-async function startEditList(list: { id: string; name: string; color: string }) {
-  if (list.id === "inbox") return; // 收件箱不可改
+/** 编辑清单/目录弹窗 */
+const showEditDialog = ref(false);
+
+function startEditList(list: { id: string; name: string; color: string }) {
+  if (list.id === "inbox") return;
   editingList.value = { id: list.id, name: list.name, color: list.color };
   editListName.value = list.name;
   editListColor.value = list.color;
-  await nextTick();
-  const input = document.querySelector<HTMLInputElement>('.sidebar__edit-inline .sidebar__edit-input');
-  input?.focus();
+  showEditDialog.value = true;
 }
 
 async function saveListEdit() {
   if (!editingList.value) return;
   const name = editListName.value.trim();
   if (!name) {
-    editingList.value = null;
+    showEditDialog.value = false;
     return;
   }
   await db.renameList(editingList.value.id, name, editListColor.value);
   await listStore.loadLists();
-  editingList.value = null;
-}
-
-function cancelListEdit() {
+  showEditDialog.value = false;
   editingList.value = null;
 }
 
@@ -143,40 +142,44 @@ function cancelDelete() {
   confirmDelete.value = null;
 }
 
-/** 新建清单输入框 */
-const showNewListInput = ref(false);
+/** 新建清单弹窗 */
+const showCreateDialog = ref(false);
 const newListName = ref("");
-const newListInputRef = ref<HTMLInputElement | null>(null);
+const newListFolder = ref(""); // 目录路径，支持 "A/B" 多级
+const selectedColor = ref('#10B981');
 
 /** 8 种预定义颜色 */
 const LIST_COLORS = [
   '#EF4444', '#F59E0B', '#EAB308', '#10B981',
   '#3B82F6', '#8B5CF6', '#EC4899', '#6B7280',
 ];
-const selectedColor = ref('#10B981');
 
-async function startNewList() {
-  showNewListInput.value = true;
-  await nextTick();
-  newListInputRef.value?.focus();
+function startNewList() {
+  newListName.value = "";
+  newListFolder.value = "";
+  selectedColor.value = '#10B981';
+  showCreateDialog.value = true;
 }
 
 async function confirmNewList() {
   const name = newListName.value.trim();
   if (!name) {
-    showNewListInput.value = false;
+    showCreateDialog.value = false;
     return;
   }
-  await listStore.createList(name, selectedColor.value);
-  newListName.value = '';
-  selectedColor.value = '#10B981';
-  showNewListInput.value = false;
+
+  // 处理目录路径（支持 "A/B" 创建多级目录）
+  let parentId: string | null = null;
+  const folderPath = newListFolder.value.trim();
+  if (folderPath) {
+    parentId = await listStore.ensureFolderPath(folderPath, selectedColor.value);
+  }
+
+  await listStore.createList({ name, color: selectedColor.value, parentId });
+  showCreateDialog.value = false;
 }
 
-function cancelNewList() {
-  showNewListInput.value = false;
-  newListName.value = '';
-}
+/** 目录展开状态（目前由 SidebarListNode 内部管理，保留备用） */
 
 const activeListId = computed(() => route.params.id as string);
 const activeRouteName = computed(() => route.name as string);
@@ -245,103 +248,17 @@ onMounted(async () => {
         </a-button>
       </div>
 
-      <!-- 新建清单输入框 -->
-      <div v-if="showNewListInput" v-show="!sectionCollapsed.lists" class="sidebar__new-list">
-        <input
-          ref="newListInputRef"
-          v-model="newListName"
-          @keydown.enter="confirmNewList"
-          @keydown.escape="cancelNewList"
-          placeholder="清单名称..."
-          class="sidebar__new-list-input"
+      <!-- 树形清单渲染 -->
+      <div v-show="!sectionCollapsed.lists" class="sidebar__list-tree">
+        <SidebarListNode
+          v-for="node in listStore.listTree"
+          :key="node.id"
+          :node="node"
+          :depth="0"
+          @edit="(n: any) => startEditList(n)"
+          @delete="(n: any) => askDeleteList(n)"
         />
-        <div class="sidebar__new-list-colors">
-          <button
-            v-for="c in LIST_COLORS"
-            :key="c"
-            class="sidebar__new-list-color"
-            :class="{ 'sidebar__new-list-color--active': selectedColor === c }"
-            :style="{ backgroundColor: c }"
-            @click="selectedColor = c"
-          />
-        </div>
-        <div class="sidebar__new-list-actions">
-          <a-button size="mini" type="text" @click="cancelNewList">取消</a-button>
-          <a-button size="mini" type="primary" @click="confirmNewList">创建</a-button>
-        </div>
       </div>
-      <template v-for="list in listStore.sortedLists" :key="list.id">
-        <!-- 编辑模式：当前行直接变成编辑表单 -->
-        <div v-if="editingList?.id === list.id" v-show="!sectionCollapsed.lists" class="sidebar__edit-inline">
-          <span
-            class="sidebar__list-dot"
-            :style="{ backgroundColor: editListColor }"
-          />
-          <input
-            v-model="editListName"
-            @keydown.enter="saveListEdit"
-            @keydown.escape="cancelListEdit"
-            placeholder="清单名称"
-            class="sidebar__edit-input"
-          />
-          <div class="sidebar__edit-colors">
-            <button
-              v-for="c in LIST_COLORS"
-              :key="c"
-              class="sidebar__edit-color"
-              :class="{ 'sidebar__edit-color--active': editListColor === c }"
-              :style="{ backgroundColor: c }"
-              @click="editListColor = c"
-            />
-          </div>
-          <div class="sidebar__edit-actions">
-            <a-button size="mini" type="text" @click="cancelListEdit">取消</a-button>
-            <a-button size="mini" type="primary" @click="saveListEdit">保存</a-button>
-          </div>
-        </div>
-        <!-- 正常模式 -->
-        <router-link
-          v-else
-          v-show="!sectionCollapsed.lists"
-          :to="`/list/${list.id}`"
-          class="sidebar__item"
-          :class="{ 'sidebar__item--active': activeListId === list.id }"
-        >
-          <span
-            class="sidebar__list-dot"
-            :style="{ backgroundColor: list.color }"
-          />
-          <span class="sidebar__item-title">{{ list.name }}</span>
-          <span v-if="taskStore.listCounts[list.id]" class="sidebar__count">{{ taskStore.listCounts[list.id] }}</span>
-          <!-- 操作菜单（收件箱不可改） -->
-          <a-dropdown
-            v-if="list.id !== 'inbox'"
-            trigger="click"
-            position="br"
-            :popup-offset="4"
-          >
-            <button
-              class="sidebar__item-menu-btn"
-              @click.stop.prevent
-              :title="`编辑 ${list.name}`"
-            >
-              <icon-more :size="16" />
-            </button>
-            <template #content>
-              <a-menu class="sidebar-ctx-menu" @menu-item-click="(key: string) => key === 'edit' ? startEditList(list) : key === 'delete' ? askDeleteList(list) : undefined">
-                <a-menu-item key="edit">
-                  <icon-edit :size="15" />
-                  <span style="margin-left: 8px">编辑清单</span>
-                </a-menu-item>
-                <a-menu-item key="delete" class="sidebar-ctx-menu--danger">
-                  <icon-delete :size="15" />
-                  <span style="margin-left: 8px">删除清单</span>
-                </a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
-        </router-link>
-      </template>
 
       <!-- 标签 -->
       <div class="sidebar__subheader sidebar__subheader--toggle">
@@ -446,6 +363,79 @@ onMounted(async () => {
     <template #footer>
       <a-button @click="cancelDelete">取消</a-button>
       <a-button status="danger" type="primary" @click="confirmDeleteAction">删除</a-button>
+    </template>
+  </a-modal>
+
+  <!-- 新建清单弹窗 -->
+  <a-modal
+    v-model:visible="showCreateDialog"
+    :width="400"
+    title="新建清单"
+  >
+    <div class="create-list-dialog__field">
+      <label class="create-list-dialog__label">清单名称</label>
+      <a-input
+        v-model="newListName"
+        placeholder="清单名称"
+        @keydown.enter="confirmNewList"
+      />
+    </div>
+    <div class="create-list-dialog__field">
+      <label class="create-list-dialog__label">目录（可选，支持 A/B 多级）</label>
+      <a-input
+        v-model="newListFolder"
+        placeholder="如：工作/项目A"
+      />
+    </div>
+    <div class="create-list-dialog__colors">
+      <span class="create-list-dialog__label">颜色</span>
+      <div class="create-list-dialog__color-row">
+        <button
+          v-for="c in LIST_COLORS"
+          :key="c"
+          class="create-list-dialog__color"
+          :class="{ 'create-list-dialog__color--active': selectedColor === c }"
+          :style="{ backgroundColor: c }"
+          @click="selectedColor = c"
+        />
+      </div>
+    </div>
+    <template #footer>
+      <a-button type="text" @click="showCreateDialog = false">取消</a-button>
+      <a-button type="primary" @click="confirmNewList">创建</a-button>
+    </template>
+  </a-modal>
+
+  <!-- 编辑清单/目录弹窗 -->
+  <a-modal
+    v-model:visible="showEditDialog"
+    :width="400"
+    title="编辑"
+  >
+    <div class="create-list-dialog__field">
+      <label class="create-list-dialog__label">名称</label>
+      <a-input
+        v-model="editListName"
+        placeholder="名称"
+        @keydown.enter="saveListEdit"
+      />
+    </div>
+    <div class="create-list-dialog__colors">
+      <span class="create-list-dialog__label">颜色</span>
+      <div class="create-list-dialog__color-row">
+        <button
+          v-for="c in LIST_COLORS"
+          :key="c"
+          class="create-list-dialog__color"
+          :class="{ 'create-list-dialog__color--active': editListColor === c }"
+          :style="{ backgroundColor: c }"
+          @click="editListColor = c"
+        />
+      </div>
+    </div>
+    <template #footer>
+      <a-button type="text" @click="showEditDialog = false">取消</a-button>
+      <a-button type="primary" @click="saveListEdit">保存</a-button>
     </template>
   </a-modal>
 </template>
@@ -759,5 +749,47 @@ onMounted(async () => {
 
 .sidebar-ctx-menu--danger .arco-icon {
   color: var(--jt-error);
+}
+</style>
+
+<!-- 新建清单弹窗样式 -->
+<style scoped>
+.create-list-dialog__field {
+  margin-bottom: 16px;
+}
+
+.create-list-dialog__label {
+  display: block;
+  font-size: 12px;
+  color: var(--jt-text-secondary);
+  margin-bottom: 8px;
+}
+
+.create-list-dialog__colors {
+  margin-top: 4px;
+}
+
+.create-list-dialog__color-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.create-list-dialog__color {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.create-list-dialog__color--active {
+  border-color: color-mix(in srgb, var(--jt-text-primary) 60%, transparent);
+}
+
+.sidebar__list-tree {
+  display: flex;
+  flex-direction: column;
 }
 </style>

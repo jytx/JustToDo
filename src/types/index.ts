@@ -33,6 +33,10 @@ export interface List {
   color: string;
   position: number;
   createdAt: string;
+  /** 父目录 ID（null = 根级） */
+  parentId: string | null;
+  /** 是否为目录（文件夹） */
+  isFolder: boolean;
 }
 
 /** 任务 —— 支持子任务嵌套（parentId 自引用） */
@@ -81,6 +85,8 @@ export interface ListRow {
   color: string;
   position: number;
   created_at: string;
+  parent_id: string | null;
+  is_folder: number;
 }
 
 /** 将数据库行转换为前端 Task 接口 */
@@ -110,5 +116,7 @@ export function mapListRow(row: ListRow): List {
     color: row.color,
     position: row.position,
     createdAt: row.created_at,
+    parentId: row.parent_id,
+    isFolder: row.is_folder === 1,
   };
 }

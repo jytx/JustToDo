@@ -73,5 +73,15 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
     // 003 用 Rust 代码处理（ALTER TABLE 不支持 IF NOT EXISTS）
     run_migration_003(&pool).await?;
 
+    // 004: lists 表加 parent_id + is_folder
+    run_migration_004(&pool).await?;
+
     Ok(pool)
+}
+
+/// 迁移 004：lists 表加 parent_id（目录父级）+ is_folder（是否目录）
+async fn run_migration_004(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "lists", "parent_id", "TEXT").await?;
+    add_column_if_missing(pool, "lists", "is_folder", "INTEGER NOT NULL DEFAULT 0").await?;
+    Ok(())
 }

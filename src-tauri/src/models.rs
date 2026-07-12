@@ -27,6 +27,8 @@ pub struct TaskList {
     pub color: String,
     pub position: i64,
     pub created_at: String,
+    pub parent_id: Option<String>,
+    pub is_folder: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -46,6 +46,7 @@ pub fn run() {
             commands::list_create,
             commands::list_delete,
             commands::list_rename,
+            commands::list_move,
             commands::task_count_by_list,
             commands::task_count_smart_view,
             commands::task_get_by_list,
