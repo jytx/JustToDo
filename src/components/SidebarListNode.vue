@@ -73,7 +73,7 @@ function onMenuClick(key: string) {
     <router-link
       v-else
       :to="`/list/${node.id}`"
-      class="list-node__row sidebar__item"
+      class="list-node__row list-node__list-item"
       :style="{ paddingLeft: depth * 16 + 'px' }"
     >
       <span class="list-node__dot-placeholder" />
@@ -81,15 +81,15 @@ function onMenuClick(key: string) {
         class="list-node__dot"
         :style="{ backgroundColor: node.color }"
       />
-      <span class="sidebar__item-title">{{ node.name }}</span>
-      <span v-if="taskStore.listCounts[node.id]" class="sidebar__count">{{ taskStore.listCounts[node.id] }}</span>
+      <span class="list-node__title">{{ node.name }}</span>
+      <span v-if="taskStore.listCounts[node.id]" class="list-node__count">{{ taskStore.listCounts[node.id] }}</span>
       <a-dropdown
         v-if="node.id !== 'inbox'"
         trigger="click"
         position="br"
         :popup-offset="4"
       >
-        <button class="sidebar__item-menu-btn" @click.stop.prevent>
+        <button class="list-node__menu-btn" @click.stop.prevent>
           <icon-more :size="16" />
         </button>
         <template #content>
@@ -122,6 +122,7 @@ function onMenuClick(key: string) {
 </template>
 
 <style scoped>
+/* 通用行样式 */
 .list-node__row {
   display: flex;
   align-items: center;
@@ -135,10 +136,20 @@ function onMenuClick(key: string) {
   position: relative;
 }
 
+/* 清单行（router-link）去掉下划线 */
+.list-node__list-item {
+  text-decoration: none;
+}
+
+.list-node__list-item:hover {
+  background-color: var(--jt-surface-hover);
+}
+
 .list-node__folder:hover {
   background-color: var(--jt-surface-hover);
 }
 
+/* 展开箭头 */
 .list-node__expand {
   display: flex;
   align-items: center;
@@ -149,12 +160,15 @@ function onMenuClick(key: string) {
   cursor: pointer;
 }
 
+/* 文件夹图标 */
 .list-node__folder-icon {
   color: var(--jt-warning);
   flex-shrink: 0;
 }
 
-.list-node__name {
+/* 名称 */
+.list-node__name,
+.list-node__title {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -162,11 +176,13 @@ function onMenuClick(key: string) {
   white-space: nowrap;
 }
 
+/* 色点占位（清单行对齐用） */
 .list-node__dot-placeholder {
   width: 14px;
   flex-shrink: 0;
 }
 
+/* 色点 */
 .list-node__dot {
   width: 8px;
   height: 8px;
@@ -175,33 +191,24 @@ function onMenuClick(key: string) {
   display: inline-block;
 }
 
-.list-node__menu-btn {
-  position: absolute;
-  right: 4px;
-  background: transparent;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  border-radius: 4px;
+/* 任务计数 */
+.list-node__count {
+  font-size: 11px;
   color: var(--jt-text-tertiary);
-  display: flex;
-  align-items: center;
-  opacity: 0;
-  transition: opacity 0.15s;
-  z-index: 5;
+  flex-shrink: 0;
+  position: absolute;
+  right: 8px;
+  transition: right 0.15s;
 }
 
-.list-node__folder:hover .list-node__menu-btn,
-.sidebar__item:hover .sidebar__item-menu-btn {
-  opacity: 1;
+/* hover 时计数左移给菜单按钮让位 */
+.list-node__list-item:hover .list-node__count,
+.list-node__folder:hover .list-node__count {
+  right: 32px;
 }
 
-.list-node__menu-btn:hover {
-  background-color: var(--jt-surface-hover);
-  color: var(--jt-text-primary);
-}
-
-.sidebar__item-menu-btn {
+/* 更多按钮 */
+.list-node__menu-btn {
   position: absolute;
   right: 4px;
   margin: 0;
@@ -218,11 +225,11 @@ function onMenuClick(key: string) {
   z-index: 5;
 }
 
-.sidebar__item:hover .sidebar__item-menu-btn {
+.list-node__row:hover .list-node__menu-btn {
   opacity: 1;
 }
 
-.sidebar__item-menu-btn:hover {
+.list-node__menu-btn:hover {
   background-color: var(--jt-surface-hover);
   color: var(--jt-text-primary);
 }

@@ -18,9 +18,9 @@ interface TaskList {
   name: string;
   color: string;
   position: number;
-  createdAt: string;
-  parentId: string | null;
-  isFolder: boolean;
+  created_at: string;
+  parent_id: string | null;
+  is_folder: boolean;
 }
 
 interface CreateTaskInput {
@@ -52,9 +52,9 @@ export async function getLists(): Promise<List[]> {
     name: r.name,
     color: r.color,
     position: r.position,
-    createdAt: r.createdAt,
-    parentId: r.parentId,
-    isFolder: r.isFolder,
+    createdAt: r.created_at,
+    parentId: r.parent_id,
+    isFolder: r.is_folder,
   }));
 }
 
@@ -75,9 +75,9 @@ export async function createList(params: {
     name: r.name,
     color: r.color,
     position: r.position,
-    createdAt: r.createdAt,
-    parentId: r.parentId,
-    isFolder: r.isFolder,
+    createdAt: r.created_at,
+    parentId: r.parent_id,
+    isFolder: r.is_folder,
   };
 }
 
