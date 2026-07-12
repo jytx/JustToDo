@@ -1,0 +1,102 @@
+# JustToDo
+
+一个本地优先的跨平台待办 / 任务管理桌面应用。
+
+基于 **Tauri 2** + **Vue 3** + **Arco Design Vue** 构建，数据存储在本地 SQLite，无需联网。
+
+## ✨ 功能特性
+
+- 📋 **任务管理** — 创建、编辑、删除、完成任务，支持优先级（无/低/中/高）
+- 🗂️ **多级子任务** — 树形结构展开，支持多级嵌套
+- 📅 **日期范围** — 开始日期 + 结束日期，跨时间段任务管理
+- 📁 **清单** — 自定义清单分类，支持颜色标记
+- 🏷️ **标签** — 跨清单横向分类，支持搜索和选择已有标签
+- 🔍 **智能视图** — 今天 / 未来 7 天 / 全部，自动按截止日期聚合
+- 🎯 **习惯打卡** — 每日习惯追踪，连续天数统计
+- 📝 **富文本备注** — 基于 Tiptap，支持：
+  - 加粗 / 斜体 / 删除线 / 标题 / 引用 / 列表
+  - 代码块（语法高亮）/ 行内代码 / 分隔线
+  - 图片粘贴 / 拖拽上传 / 拖拽缩放 / 点击预览（多图切换 + 滚轮缩放）
+- 🌙 **深色模式** — 一键切换，Arco Design 主题适配
+- ⌨️ **快捷键** — `⌘K` 全局搜索、`⌘⇧A` 快速添加、`ESC` 关闭面板
+- 📐 **可拖拽布局** — 侧边栏收起、任务详情面板宽度可拖拽调整
+
+## 🛠️ 技术栈
+
+| 层级       | 技术                                           |
+| ---------- | ---------------------------------------------- |
+| 桌面外壳   | Tauri 2.x（Rust）                              |
+| 前端框架   | Vue 3.5（`<script setup lang="ts">`）          |
+| UI 组件库  | Arco Design Vue                                 |
+| 状态管理   | Pinia                                           |
+| 路由       | Vue Router（hash 模式）                         |
+| 富文本     | Tiptap 3.x + lowlight（代码高亮）              |
+| 构建工具   | Vite 6                                          |
+| 持久化     | SQLite（sqlx 直接操作）                        |
+| 语言       | TypeScript + Rust                               |
+
+## 📦 安装与运行
+
+### 环境要求
+
+- [Node.js](https://nodejs.org/) 18+
+- [Rust](https://www.rust-lang.org/)（stable）
+- [Tauri 2 前置依赖](https://v2.tauri.app/start/prerequisites/)
+
+### 快速开始
+
+```bash
+# 安装前端依赖
+npm install
+
+# 开发模式（启动桌面窗口 + 热更新）
+npm run tauri dev
+
+# 仅前端开发服务器
+npm run dev
+
+# 构建生产版本
+npm run tauri build
+```
+
+### 常用命令
+
+```bash
+# 类型检查
+npx vue-tsc --noEmit
+
+# Rust 编译检查
+cd src-tauri && cargo check
+```
+
+## 🏗️ 项目结构
+
+```
+JustToDo/
+├── src/                         # 前端源码
+│   ├── components/              # 可复用组件
+│   ├── views/                   # 路由级页面
+│   ├── stores/                  # Pinia 状态管理
+│   ├── composables/             # 组合式钩子
+│   ├── api/db.ts                # IPC 封装层
+│   ├── types/                   # TS 类型定义
+│   ├── utils/                   # 工具函数
+│   └── styles/                  # 主题与排版样式
+├── src-tauri/                   # Rust 后端
+│   ├── src/
+│   │   ├── commands.rs          # Tauri IPC 命令
+│   │   ├── models.rs            # 数据模型
+│   │   └── db/                  # SQLite 迁移与管理
+│   └── tauri.conf.json          # Tauri 配置
+└── package.json
+```
+
+## 🎨 设计
+
+- **视觉风格**：Refined Minimal — 暖白背景（#FAFAF7）+ 靛蓝强调（#4F46E5）
+- **字体**：Fraunces（标题）· Geist（正文）· JetBrains Mono（代码）
+- **布局**：三栏式 — 侧边栏（240px）· 任务列表 · 任务详情面板（360px+）
+
+## 📄 License
+
+MIT

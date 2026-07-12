@@ -1,0 +1,90 @@
+/*
+ * Arco Design Vue 主题定制 —— 遵循 UI 设计文档（Refined Minimal）
+ * 覆盖 Arco 默认 CSS 变量 + 自定义 token
+ */
+
+:root {
+  /* Arco 主色调覆盖 */
+  --primary-6: #4F46E5;       /* 靛蓝强调 */
+  --primary-5: #6366F1;
+  --primary-7: #4338CA;
+
+  /* 语义色 */
+  --success-6: #059669;
+  --warning-6: #F59E0B;
+  --danger-6: #DC2626;
+
+  /* 背景层级（Arco 默认是纯白系，我们用暖色系） */
+  --color-bg-1: #FAFAF7;      /* 暖白主背景 */
+  --color-bg-2: #FFFFFF;      /* 卡片/面板表面 */
+  --color-bg-3: #F3F2ED;      /* 侧边栏/输入框凹陷 */
+
+  /* 文字 */
+  --color-text-1: #1F1D1A;    /* 主文字 */
+  --color-text-2: #42423E;    /* 次级文字 */
+  --color-text-3: #6B675F;    /* 备注/元信息 */
+  --color-text-4: #A8A299;    /* 占位/禁用 */
+
+  /* 边框 */
+  --color-border-1: #EFEDE6;
+  --color-border-2: #E8E5DD;
+  --color-border-3: #DDD9D0;
+
+  /* 填充 */
+  --color-fill-1: #F5F4EF;    /* hover 态 */
+  --color-fill-2: #F3F2ED;    /* 凹陷表面 */
+  --color-fill-3: #EDEBE3;    /* 更深 hover */
+
+  /* === 自定义 token（非 Arco 标准，供组件引用） === */
+  --jt-accent-soft: #EEF0FC;       /* 强调色低饱和背景 */
+  --jt-accent: #4F46E5;            /* 主强调色 */
+  --jt-surface: #FFFFFF;           /* 卡片表面 */
+  --jt-surface-sunken: #F3F2ED;    /* 凹陷表面 */
+  --jt-surface-hover: #F5F4EF;     /* hover */
+  --jt-text-primary: #1F1D1A;
+  --jt-text-secondary: #6B675F;
+  --jt-text-tertiary: #A8A299;
+  --jt-border: #E8E5DD;
+  --jt-success: #059669;
+  --jt-error: #DC2626;
+  --jt-warning: #F59E0B;
+  --jt-primary: #4F46E5;
+}
+
+/* === 深色模式 === */
+body[arco-theme='dark'] {
+  --primary-6: #818CF8;
+  --primary-5: #A5B0FC;
+  --primary-7: #6366F1;
+
+  --color-bg-1: #1A1A17;
+  --color-bg-2: #242420;
+  --color-bg-3: #2A2A25;
+
+  --color-text-1: #EDEAE3;
+  --color-text-2: #C4C0B8;
+  --color-text-3: #9A958A;
+  --color-text-4: #6B675F;
+
+  --color-border-1: #333330;
+  --color-border-2: #3D3D38;
+  --color-border-3: #4A4A44;
+
+  --color-fill-1: #2A2A25;
+  --color-fill-2: #2A2A25;
+  --color-fill-3: #333330;
+
+  --jt-accent-soft: #2D2F4A;
+  --jt-accent: #818CF8;
+  --jt-surface: #242420;
+  --jt-surface-sunken: #2A2A25;
+  --jt-surface-hover: #2F2F2A;
+  --jt-text-primary: #EDEAE3;
+  --jt-text-secondary: #9A958A;
+  --jt-text-tertiary: #6B675F;
+  --jt-border: #333330;
+  --jt-success: #059669;
+  --jt-error: #DC2626;
+  --jt-warning: #F59E0B;
+  --jt-primary: #818CF8;
+}

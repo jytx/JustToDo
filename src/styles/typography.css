@@ -1,0 +1,27 @@
+/*
+ * 字体排版系统 — 遵循 UI 设计文档
+ * - 显示标题用 Fraunces（衬线，书卷气）
+ * - 正文/任务标题用 Geist（几何无衬线）
+ * - 等宽用 JetBrains Mono（快捷键提示）
+ */
+:root {
+  --font-display: "Fraunces Variable", Georgia, "Times New Roman", serif;
+  --font-body: "Geist Variable", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-bg-1);
+  color: var(--color-text-1);
+}
+
+/* 显示标题：页面级标题（今天 / 未来 7 天 / 清单名） */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+}
+
+/* 快捷键提示等宽 */
+.font-mono {
+  font-family: var(--font-mono);
+}
