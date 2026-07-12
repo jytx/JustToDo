@@ -22,7 +22,6 @@ const props = withDefaults(
 
 defineEmits<{
   select: [];
-  delete: [];
 }>();
 
 const taskStore = useTaskStore();
@@ -113,17 +112,20 @@ watch(childCount, (n) => {
 
       <div class="task-item__actions">
         <PriorityDot :priority="task.priority" />
-        <a-dropdown trigger="click" @select="$emit('delete')">
-          <a-button
-            type="text"
-            size="mini"
-            shape="circle"
+        <a-dropdown trigger="click" position="br" :popup-offset="4">
+          <button
+            class="task-item__menu-btn"
             @click.stop
           >
             <icon-more :size="16" />
-          </a-button>
+          </button>
           <template #content>
-            <a-dropdown-option>删除任务</a-dropdown-option>
+            <a-menu class="task-item-ctx-menu" @menu-item-click="() => taskStore.deleteTask(task.id)">
+              <a-menu-item key="delete" class="task-item-ctx-menu--danger">
+                <icon-delete :size="15" />
+                <span style="margin-left: 8px">删除任务</span>
+              </a-menu-item>
+            </a-menu>
           </template>
         </a-dropdown>
       </div>
@@ -137,7 +139,6 @@ watch(childCount, (n) => {
         :task="sub"
         :depth="depth + 1"
         @select="taskStore.selectTask(sub.id)"
-        @delete="taskStore.deleteTask(sub.id)"
       />
     </div>
   </div>
@@ -254,5 +255,37 @@ watch(childCount, (n) => {
 
 .task-item:hover .task-item__actions {
   opacity: 1;
+}
+
+.task-item__menu-btn {
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  color: var(--jt-text-tertiary);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.task-item__menu-btn:hover {
+  background-color: var(--jt-surface-hover);
+  color: var(--jt-text-primary);
+}
+</style>
+
+<!-- 任务项上下文菜单（非 scoped，弹层渲染到 body） -->
+<style>
+.task-item-ctx-menu {
+  min-width: 130px;
+}
+
+.task-item-ctx-menu--danger {
+  color: var(--jt-error) !important;
+}
+
+.task-item-ctx-menu--danger .arco-icon {
+  color: var(--jt-error);
 }
 </style>
