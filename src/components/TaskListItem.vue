@@ -64,9 +64,14 @@ function onDragOver(e: DragEvent) {
   if (!canDrag.value) return;
   e.preventDefault();
   e.dataTransfer!.dropEffect = "move";
+  dragOver.value = computeDropPosition(e);
+}
+
+/** 计算拖拽放置位置：上半区 60% 为 before，下半区 40% 为 after */
+function computeDropPosition(e: DragEvent): "before" | "after" {
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const y = e.clientY - rect.top;
-  dragOver.value = y < rect.height * 0.5 ? "before" : "after";
+  return y < rect.height * 0.6 ? "before" : "after";
 }
 
 function onDragLeave(e: DragEvent) {
@@ -84,9 +89,7 @@ function onDrop(e: DragEvent) {
     return;
   }
 
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  const y = e.clientY - rect.top;
-  const position: "before" | "after" = y < rect.height * 0.5 ? "before" : "after";
+  const position = computeDropPosition(e);
 
   emit("reorder", draggedId, props.task.id, position);
   dragOver.value = null;
