@@ -45,24 +45,23 @@ watch(open, async (isOpen) => {
   }
 });
 
-/** a-range-picker 的 v-model 桥接 */
-const dueRangeModel = computed({
-  get: (): [string, string] | undefined => {
+/** a-date-picker 的 v-model 桥接 —— 单日期同时写入 start/end（快速添加场景） */
+const dueDateModel = computed({
+  get: (): string | undefined => {
     if (!dueStartAt.value && !dueEndAt.value) return undefined;
-    return [dueStartAt.value ?? dueEndAt.value!, dueEndAt.value ?? dueStartAt.value!];
+    return (dueStartAt.value ?? dueEndAt.value!).split("T")[0];
   },
-  set: (v: [string, string] | undefined) => {
+  set: (v: string | undefined) => {
     if (!v) {
       dueStartAt.value = null;
       dueEndAt.value = null;
     } else {
-      dueStartAt.value = v[0] ? new Date(v[0]).toISOString() : null;
-      dueEndAt.value = v[1] ? new Date(v[1]).toISOString() : null;
+      // 单日期：start = end = 当天
+      dueStartAt.value = new Date(v).toISOString();
+      dueEndAt.value = new Date(v).toISOString();
     }
   },
 });
-
-const hasDate = computed(() => !!(dueStartAt.value || dueEndAt.value));
 
 const priorityLabel = computed(() => {
   if (priority.value === 0) return "优先级";
@@ -83,13 +82,6 @@ const selectedListName = computed(
 const selectedListColor = computed(
   () => listStore.getById(selectedListId.value)?.color ?? null,
 );
-
-const dateLabel = computed(() => {
-  if (!hasDate.value) return "日期";
-  const fmt = (s: string | null) =>
-    s ? new Date(s).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) : "";
-  return `${fmt(dueStartAt.value)} – ${fmt(dueEndAt.value)}`;
-});
 
 async function submit(keepOpen: boolean) {
   const trimmed = title.value.trim();
@@ -145,99 +137,93 @@ function onKeyDown(e: KeyboardEvent) {
     wrap-class="quick-add-wrap"
   >
     <div class="quick-add">
-      <!-- 主输入行 -->
+      <!-- 主输入行：单一焦点，无前缀图标 -->
       <div class="quick-add__input-row">
         <input
           ref="inputRef"
           v-model="title"
           @keydown="onKeyDown"
           class="quick-add__input"
-          placeholder="添加任务..."
+          placeholder="添加任务，按 Enter 保存"
         />
       </div>
 
-      <!-- 属性行：紧凑 chip 形式 -->
+      <!-- 分隔线 -->
+      <div class="quick-add__divider" />
+
+      <!-- 属性行：三个属性 inline 排在一行 -->
       <div class="quick-add__attrs">
-        <!-- 优先级 chip -->
-        <a-select
-          v-model="priority"
-          size="mini"
-          class="quick-add__chip"
-        >
-          <template #label>
-            <span class="quick-add__chip-inner" :style="{ color: priorityColor }">
-              <icon-fire :size="14" />
-              <span>{{ priorityLabel }}</span>
-            </span>
-          </template>
-          <a-option v-for="(label, p) in PRIORITY_LABELS" :key="p" :value="Number(p)">
-            <span class="quick-add__select-row">
-              <PriorityDot :priority="(Number(p) as Priority)" :size="10" />
-              <span>{{ label }}</span>
-            </span>
-          </a-option>
-        </a-select>
-
-        <!-- 清单 chip -->
-        <a-select
-          v-model="selectedListId"
-          size="mini"
-          class="quick-add__chip"
-        >
-          <template #label>
-            <span class="quick-add__chip-inner">
-              <span
-                v-if="selectedListColor"
-                class="quick-add__list-dot"
-                :style="{ backgroundColor: selectedListColor }"
-              />
-              <icon-folder v-else :size="14" />
-              <span>{{ selectedListName }}</span>
-            </span>
-          </template>
-          <a-option v-for="list in listStore.sortedLists" :key="list.id" :value="list.id">
-            <span class="quick-add__select-row">
-              <span
-                class="quick-add__list-dot"
-                :style="{ backgroundColor: list.color }"
-              />
-              <span>{{ list.name }}</span>
-            </span>
-          </a-option>
-        </a-select>
-
-        <!-- 日期 chip -->
-        <a-trigger
-          trigger="click"
-          position="bl"
-          :popup-translate="[0, 6]"
-        >
+        <!-- 优先级 —— 用 a-trigger 包 button 自定义触发器外观，popup 是 a-select 的纵向选项 -->
+        <a-trigger trigger="click" position="bl" :popup-translate="[0, 4]">
           <button
             type="button"
-            class="quick-add__chip-trigger"
-            :class="{ 'quick-add__chip-trigger--active': hasDate }"
+            class="quick-add__trigger"
+            :class="{ 'quick-add__trigger--active': priority > 0 }"
+            :style="priority > 0 ? { color: priorityColor } : {}"
           >
-            <span class="quick-add__chip-inner">
-              <icon-calendar :size="14" />
-              <span>{{ dateLabel }}</span>
-            </span>
+            <icon-fire :size="14" />
+            <span>{{ priorityLabel }}</span>
           </button>
           <template #content>
-            <div class="quick-add__date-popup">
-              <a-range-picker
-                v-model="dueRangeModel"
-                size="small"
-                style="width: 240px"
-                format="YYYY-MM-DD"
-                :allow-clear="true"
-              />
+            <div class="quick-add__popup">
+              <button
+                v-for="(label, p) in PRIORITY_LABELS"
+                :key="p"
+                type="button"
+                class="quick-add__popup-item"
+                :class="{ 'quick-add__popup-item--active': Number(p) === priority }"
+                @click="priority = Number(p) as Priority"
+              >
+                <PriorityDot :priority="(Number(p) as Priority)" :size="10" />
+                <span>{{ label }}</span>
+              </button>
             </div>
           </template>
         </a-trigger>
 
-        <span class="quick-add__spacer" />
+        <!-- 清单 —— 同样 a-trigger + 自定义 popup -->
+        <a-trigger trigger="click" position="bl" :popup-translate="[0, 4]">
+          <button type="button" class="quick-add__trigger">
+            <span
+              class="quick-add__list-dot"
+              :style="{ backgroundColor: selectedListColor ?? 'var(--jt-text-tertiary)' }"
+            />
+            <span>{{ selectedListName }}</span>
+          </button>
+          <template #content>
+            <div class="quick-add__popup quick-add__popup--list">
+              <button
+                v-for="list in listStore.sortedLists"
+                :key="list.id"
+                type="button"
+                class="quick-add__popup-item"
+                :class="{ 'quick-add__popup-item--active': list.id === selectedListId }"
+                @click="selectedListId = list.id"
+              >
+                <span
+                  class="quick-add__list-dot"
+                  :style="{ backgroundColor: list.color }"
+                />
+                <span>{{ list.name }}</span>
+              </button>
+            </div>
+          </template>
+        </a-trigger>
 
-        <span class="quick-add__hint font-mono">⏎</span>
+        <!-- 日期 —— 单个 a-date-picker，紧凑、跟优先级/清单 trigger 同等大小 -->
+        <a-date-picker
+          v-model="dueDateModel"
+          size="mini"
+          class="quick-add__date"
+          format="YYYY-MM-DD"
+          :allow-clear="true"
+        >
+          <template #prefix>
+            <icon-calendar :size="14" />
+          </template>
+        </a-date-picker>
+
+        <span class="quick-add__spacer" />
       </div>
 
       <Transition name="fade">
@@ -252,13 +238,13 @@ function onKeyDown(e: KeyboardEvent) {
 <style scoped>
 .quick-add {
   overflow: hidden;
-  margin-top: 80px;
 }
 
+/* 主输入行 —— 紧凑、单一焦点 */
 .quick-add__input-row {
   display: flex;
   align-items: center;
-  padding: 14px 18px;
+  padding: 10px 16px 16px;
 }
 
 .quick-add__input {
@@ -266,7 +252,7 @@ function onKeyDown(e: KeyboardEvent) {
   border: none;
   outline: none;
   background: transparent;
-  font-size: 16px;
+  font-size: 15px;
   font-family: var(--font-body);
   color: var(--jt-text-primary);
   line-height: 1.4;
@@ -274,71 +260,59 @@ function onKeyDown(e: KeyboardEvent) {
 
 .quick-add__input::placeholder {
   color: var(--jt-text-tertiary);
-  font-weight: 400;
 }
 
+/* 分割线 —— 让输入区和属性区分开 */
+.quick-add__divider {
+  height: 1px;
+  background: var(--jt-border);
+  margin: 0 16px;
+}
+
+/* 属性行 —— 三个属性 inline 排开（不再独占一行） */
 .quick-add__attrs {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 0 14px 12px;
+  padding: 0 16px 10px;
 }
 
 .quick-add__spacer {
   flex: 1;
 }
 
-/* chip trigger —— 圆角胶囊、有边界、hover 反馈 */
-.quick-add__chip-trigger {
-  display: inline-flex;
-  align-items: center;
-  height: 26px;
-  padding: 0 10px;
-  border: 1px solid var(--jt-border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--jt-text-secondary);
-  font-size: 12px;
-  font-family: var(--font-body);
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.quick-add__chip-trigger:hover {
-  background-color: var(--jt-surface-sunken);
-}
-
-.quick-add__chip-trigger--active {
-  border-color: var(--jt-primary);
-  color: var(--jt-text-primary);
-}
-
-.quick-add__chip-inner {
+/* 通用 trigger 按钮 —— 跟顶部输入框一样简洁（无边框，hover 才显示） */
+.quick-add__trigger {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-}
-
-/* select 触发器也做成 chip 风格（圆角胶囊 + 细边） */
-:deep(.quick-add__chip .arco-select-view) {
-  border: 1px solid var(--jt-border);
-  border-radius: 999px;
-  background: transparent;
-  padding: 0 22px 0 10px;
   height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--jt-text-secondary);
+  font-family: var(--font-body);
   font-size: 12px;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-:deep(.quick-add__chip .arco-select-view:hover) {
+.quick-add__trigger:hover,
+.quick-add__trigger[aria-expanded="true"] {
   background-color: var(--jt-surface-sunken);
+  color: var(--jt-text-primary);
 }
 
+.quick-add__trigger--active {
+  color: var(--jt-text-primary);
+}
+
+/* 列表色点 */
 .quick-add__list-dot {
   width: 8px;
   height: 8px;
@@ -347,15 +321,57 @@ function onKeyDown(e: KeyboardEvent) {
   display: inline-block;
 }
 
-.quick-add__hint {
-  font-size: 11px;
-  color: var(--jt-text-tertiary);
-  padding: 0 4px;
+/* 日期 picker —— 单日期，跟优先级/清单 trigger 同等大小 */
+.quick-add__date.arco-picker {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0 10px;
+  height: 26px;
+  font-size: 12px;
+  color: var(--jt-text-secondary);
+  border-radius: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  width: 130px !important;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
+.quick-add__date.arco-picker:hover,
+.quick-add__date.arco-picker:focus-within,
+.quick-add__date.arco-picker.arco-picker-focused {
+  background-color: var(--jt-surface-sunken);
+  color: var(--jt-text-primary);
+  border: none;
+  box-shadow: none;
+}
+
+.quick-add__date :deep(.arco-picker-input) {
+  font-size: 12px !important;
+  height: 22px !important;
+}
+
+.quick-add__date :deep(.arco-picker-input)::placeholder {
+  color: var(--jt-text-tertiary);
+}
+
+/* 隐藏右侧日历 icon（我们用 prefix 已经有了） */
+.quick-add__date :deep(.arco-picker-suffix) {
+  display: none;
+}
+
+.quick-add__date :deep(.arco-picker-prefix) {
+  margin-right: 4px;
+  color: inherit;
+  display: inline-flex;
+}
+
+/* 反馈条 */
 .quick-add__feedback {
-  padding: 8px 18px;
-  font-size: 13px;
+  padding: 6px 16px;
+  font-size: 12px;
   color: var(--jt-success);
   background-color: rgba(5, 150, 105, 0.08);
   border-top: 1px solid var(--jt-border);
@@ -373,38 +389,80 @@ function onKeyDown(e: KeyboardEvent) {
 
 <style>
 .quick-add-wrap .arco-modal {
-  top: 80px;
+  top: 60px;
   vertical-align: top;
 }
 .quick-add-modal .arco-modal-body {
   padding: 0;
 }
 
-.quick-add-modal ~ .arco-select-dropdown,
-.quick-add-modal ~ .arco-trigger-popup {
-  border-radius: 10px;
+/* 日期 popup 内嵌 */
+.quick-add__date-popup {
+  padding: 8px;
+  background: var(--jt-surface);
+  border-radius: 8px;
   box-shadow:
     0 6px 20px rgba(0, 0, 0, 0.08),
     0 2px 6px rgba(0, 0, 0, 0.05);
 }
 
-.quick-add-modal ~ .arco-select-dropdown .arco-select-popup-inner,
-.quick-add-modal ~ .arco-trigger-popup .arco-trigger-popup-content {
-  padding: 4px !important;
+.quick-add__trigger--icon {
+  padding: 0 8px;
+  min-width: 28px;
+  justify-content: center;
 }
 
-.quick-add__select-row {
-  display: inline-flex;
+.quick-add__trigger--icon :deep(svg) {
+  color: inherit;
+}
+
+/* 自定义 popup 容器（优先级/清单 trigger 弹出内容） */
+.quick-add__popup {
+  min-width: 120px;
+  background: var(--jt-surface);
+  border-radius: 8px;
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.08),
+    0 2px 6px rgba(0, 0, 0, 0.05);
+  padding: 4px;
+}
+
+.quick-add__popup--list {
+  min-width: 160px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* popup 内的选项按钮 —— 纵向单列 */
+.quick-add__popup-item {
+  display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--jt-text-primary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
 }
 
-.quick-add__date-popup {
-  padding: 8px;
+.quick-add__popup-item:hover {
+  background-color: var(--jt-surface-sunken);
 }
 
-body[arco-theme="dark"] .quick-add-modal ~ .arco-select-dropdown,
-body[arco-theme="dark"] .quick-add-modal ~ .arco-trigger-popup {
+.quick-add__popup-item--active {
+  background-color: var(--jt-accent-soft);
+  color: var(--jt-primary);
+}
+
+/* 深色模式 */
+body[arco-theme="dark"] .quick-add__popup {
   box-shadow:
     0 6px 20px rgba(0, 0, 0, 0.4),
     0 2px 6px rgba(0, 0, 0, 0.3);
