@@ -4,7 +4,7 @@ import { computed, watch, onMounted } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { useTagStore } from "@/stores/tag";
 import { formatPageDate } from "@/utils/date";
-import { SORT_FIELDS, SORT_FIELD_LABELS, type Priority, type SortField } from "@/types";
+import type { Priority } from "@/types";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
 
@@ -41,41 +41,15 @@ onMounted(async () => {
   await tagStore.loadTags();
   await taskStore.loadTagTasks(props.id);
 });
-
-function setSort(field: SortField) {
-  taskStore.setSort(field);
-}
 </script>
 
 <template>
   <div class="tag-view">
     <header class="tag-view__header">
-      <div class="tag-view__header-text">
-        <h1 class="tag-view__title">{{ pageTitle }}</h1>
-        <p class="tag-view__subtitle">
-          {{ formatPageDate() }} · {{ openCount }} 个待办
-        </p>
-      </div>
-      <a-dropdown trigger="click" position="br">
-        <a-button
-          type="text"
-          size="small"
-          :title="`排序: ${SORT_FIELD_LABELS[taskStore.currentSort.field]}`"
-        >
-          <template #icon><icon-sort :size="16" /></template>
-        </a-button>
-        <template #content>
-          <a-menu @menu-item-click="(key: string) => setSort(key as SortField)">
-            <a-menu-item v-for="f in SORT_FIELDS" :key="f.value">
-              <icon-check
-                v-if="f.value === taskStore.currentSort.field"
-                :size="14"
-              />
-              <span :class="{ 'sort-menu__pad': f.value !== taskStore.currentSort.field }">{{ f.label }}</span>
-            </a-menu-item>
-          </a-menu>
-        </template>
-      </a-dropdown>
+      <h1 class="tag-view__title">{{ pageTitle }}</h1>
+      <p class="tag-view__subtitle">
+        {{ formatPageDate() }} · {{ openCount }} 个待办
+      </p>
     </header>
 
     <!-- 顶部添加栏 -->
@@ -139,15 +113,6 @@ function setSort(field: SortField) {
 
 .tag-view__header {
   padding: 24px 24px 12px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.tag-view__header-text {
-  flex: 1;
-  min-width: 0;
 }
 
 .tag-view__title {
@@ -213,9 +178,5 @@ function setSort(field: SortField) {
   font-size: 13px;
   color: var(--jt-text-tertiary);
   margin: 0;
-}
-
-.sort-menu__pad {
-  margin-left: 22px;
 }
 </style>

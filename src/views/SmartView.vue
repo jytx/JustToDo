@@ -6,7 +6,6 @@ import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import { formatPageDate } from "@/utils/date";
 import type { SmartViewId } from "@/api/db";
-import { SORT_FIELDS, SORT_FIELD_LABELS, type SortField } from "@/types";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
 
@@ -72,34 +71,11 @@ onMounted(async () => {
   <div class="smart-view">
     <!-- 列表头 -->
     <header class="smart-view__header">
-      <div class="smart-view__header-text">
-        <h1 class="smart-view__title">{{ pageTitle }}</h1>
-        <p class="smart-view__subtitle">
-          {{ formatPageDate() }}
-          <template v-if="openCount"> · {{ openCount }} 个待办</template>
-        </p>
-      </div>
-      <!-- 仅 "全部" 视图支持排序（其他视图固定按日期/优先级） -->
-      <a-dropdown v-if="view === 'all'" trigger="click" position="br">
-        <a-button
-          type="text"
-          size="small"
-          :title="`排序: ${SORT_FIELD_LABELS[taskStore.currentSort.field]}`"
-        >
-          <template #icon><icon-sort :size="16" /></template>
-        </a-button>
-        <template #content>
-          <a-menu @menu-item-click="(key: string) => taskStore.setSort(key as SortField)">
-            <a-menu-item v-for="f in SORT_FIELDS" :key="f.value">
-              <icon-check
-                v-if="f.value === taskStore.currentSort.field"
-                :size="14"
-              />
-              <span :class="{ 'sort-menu__pad': f.value !== taskStore.currentSort.field }">{{ f.label }}</span>
-            </a-menu-item>
-          </a-menu>
-        </template>
-      </a-dropdown>
+      <h1 class="smart-view__title">{{ pageTitle }}</h1>
+      <p class="smart-view__subtitle">
+        {{ formatPageDate() }}
+        <template v-if="openCount"> · {{ openCount }} 个待办</template>
+      </p>
     </header>
 
     <!-- 顶部添加栏 -->
@@ -174,15 +150,6 @@ onMounted(async () => {
 
 .smart-view__header {
   padding: 24px 24px 12px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.smart-view__header-text {
-  flex: 1;
-  min-width: 0;
 }
 
 .smart-view__title {
@@ -278,9 +245,5 @@ onMounted(async () => {
 .smart-view__add-bar {
   flex-shrink: 0;
   padding: 0 8px 8px;
-}
-
-.sort-menu__pad {
-  margin-left: 22px;
 }
 </style>

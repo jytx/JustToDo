@@ -5,7 +5,6 @@ import { computed, watch, onMounted } from "vue";
 import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import { formatPageDate } from "@/utils/date";
-import { SORT_FIELDS, SORT_FIELD_LABELS, type SortField } from "@/types";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
 
@@ -31,43 +30,16 @@ onMounted(async () => {
   await listStore.loadLists();
   await taskStore.loadTasks(props.id);
 });
-
-/** 设置排序字段 */
-function setSort(field: SortField) {
-  taskStore.setSort(field);
-}
 </script>
 
 <template>
   <div class="list-view">
     <!-- 列表头 -->
     <header class="list-view__header">
-      <div class="list-view__header-text">
-        <h1 class="list-view__title">{{ pageTitle }}</h1>
-        <p class="list-view__subtitle">
-          {{ formatPageDate() }} · {{ openCount }} 个待办
-        </p>
-      </div>
-      <a-dropdown trigger="click" position="br">
-        <a-button
-          type="text"
-          size="small"
-          :title="`排序: ${SORT_FIELD_LABELS[taskStore.currentSort.field]}`"
-        >
-          <template #icon><icon-sort :size="16" /></template>
-        </a-button>
-        <template #content>
-          <a-menu @menu-item-click="(key: string) => setSort(key as SortField)">
-            <a-menu-item v-for="f in SORT_FIELDS" :key="f.value">
-              <icon-check
-                v-if="f.value === taskStore.currentSort.field"
-                :size="14"
-              />
-              <span :class="{ 'sort-menu__pad': f.value !== taskStore.currentSort.field }">{{ f.label }}</span>
-            </a-menu-item>
-          </a-menu>
-        </template>
-      </a-dropdown>
+      <h1 class="list-view__title">{{ pageTitle }}</h1>
+      <p class="list-view__subtitle">
+        {{ formatPageDate() }} · {{ openCount }} 个待办
+      </p>
     </header>
 
     <!-- 顶部添加栏 -->
@@ -140,15 +112,6 @@ function setSort(field: SortField) {
 
 .list-view__header {
   padding: 24px 24px 12px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.list-view__header-text {
-  flex: 1;
-  min-width: 0;
 }
 
 .list-view__title {
@@ -214,9 +177,5 @@ function setSort(field: SortField) {
 .list-view__add-bar {
   flex-shrink: 0;
   padding: 0 8px 8px;
-}
-
-.sort-menu__pad {
-  margin-left: 22px; /* 让非选中项与 icon-check 位置对齐 */
 }
 </style>

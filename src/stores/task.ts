@@ -81,12 +81,14 @@ export const useTaskStore = defineStore("task", () => {
     subtaskCache.value = { ...subtaskCache.value, ...newCache };
   }
 
-  async function loadTasks(listId: string) {
+  async function loadTasks(listId: string, keepSelection = false) {
     loading.value = true;
     currentListId.value = listId;
     currentTagId.value = null;
     currentSmartView.value = null;
-    selectedTaskId.value = null; selectedTaskObj.value = null; // 切换清单时关闭详情面板
+    if (!keepSelection) {
+      selectedTaskId.value = null; selectedTaskObj.value = null; // 切换清单时关闭详情面板
+    }
     try {
       currentTasks.value = await db.getTasksByList(
         listId,
@@ -100,12 +102,14 @@ export const useTaskStore = defineStore("task", () => {
   }
 
   /** 加载指定标签下的任务（根任务） */
-  async function loadTagTasks(tagId: string) {
+  async function loadTagTasks(tagId: string, keepSelection = false) {
     loading.value = true;
     currentListId.value = "";
     currentTagId.value = tagId;
     currentSmartView.value = null;
-    selectedTaskId.value = null; selectedTaskObj.value = null; // 切换标签时关闭详情面板
+    if (!keepSelection) {
+      selectedTaskId.value = null; selectedTaskObj.value = null; // 切换标签时关闭详情面板
+    }
     try {
       currentTasks.value = await db.getTasksByTag(
         tagId,
@@ -118,12 +122,14 @@ export const useTaskStore = defineStore("task", () => {
     }
   }
 
-  async function loadSmartView(view: SmartViewId) {
+  async function loadSmartView(view: SmartViewId, keepSelection = false) {
     loading.value = true;
     currentSmartView.value = view;
     currentListId.value = "";
     currentTagId.value = null;
-    selectedTaskId.value = null; selectedTaskObj.value = null; // 切换智能视图时关闭详情面板
+    if (!keepSelection) {
+      selectedTaskId.value = null; selectedTaskObj.value = null; // 切换智能视图时关闭详情面板
+    }
     try {
       currentTasks.value = await db.getSmartViewTasks(
         view,
@@ -137,11 +143,13 @@ export const useTaskStore = defineStore("task", () => {
   }
 
   /** 重新加载当前视图（保持视图类型不变） */
-  async function reload() {
+  async function reload(keepSelection = false) {
     if (currentSmartView.value) {
-      await loadSmartView(currentSmartView.value);
+      await loadSmartView(currentSmartView.value, keepSelection);
     } else if (currentListId.value) {
-      await loadTasks(currentListId.value);
+      await loadTasks(currentListId.value, keepSelection);
+    } else if (currentTagId.value) {
+      await loadTagTasks(currentTagId.value, keepSelection);
     }
   }
 
@@ -322,7 +330,7 @@ export const useTaskStore = defineStore("task", () => {
     return currentTasks.value.filter((t) => t.parentId === parentId);
   }
 
-  /** 切换当前视图的排序字段，并重新加载任务 */
+  /** 切换当前视图的排序字段，并重新加载任务（保持详情面板打开） */
   async function setSort(field: SortField) {
     if (currentSort.value.field === field) return;
     currentSort.value = { field, dir: "asc" };
@@ -336,7 +344,8 @@ export const useTaskStore = defineStore("task", () => {
     } catch (e) {
       console.error("[TaskStore] 持久化排序偏好失败:", e);
     }
-    await reload();
+    // keepSelection=true：排序时不关闭详情面板
+    await reload(true);
   }
 
   /** 拖拽排序：将 draggedId 移到 targetId 的前面或后面 */

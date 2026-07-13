@@ -4,6 +4,8 @@
 import { ref, computed } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { useTaskStore } from "@/stores/task";
+import { useRoute } from "vue-router";
+import { SORT_FIELDS, SORT_FIELD_LABELS, type SortField } from "@/types";
 import TheSidebar from "@/components/TheSidebar.vue";
 import TaskDetailPanel from "@/components/TaskDetailPanel.vue";
 import SearchPalette from "@/components/SearchPalette.vue";
@@ -16,10 +18,20 @@ const { isDark, toggleTheme } = useTheme();
 const searchStore = useSearchStore();
 const listStore = useListStore();
 const taskStore = useTaskStore();
+const route = useRoute();
 
 const quickAddOpen = ref(false);
 const sidebarCollapsed = ref(false);
 const panelWidth = ref(360);
+
+/** 是否显示排序按钮（清单/标签/全部视图） */
+const showSortButton = computed(() => {
+  return (
+    route.name === "list" ||
+    route.name === "tag" ||
+    route.name === "all"
+  );
+});
 
 /** 详情面板打开时，主区域右侧留出面板宽度的空间 */
 const mainStyle = computed(() => {
@@ -74,6 +86,34 @@ useShortcuts({
             <icon-moon-fill v-else :size="18" />
           </template>
         </a-button>
+        <!-- 排序按钮（仅清单/标签/全部视图显示） -->
+        <a-dropdown
+          v-if="showSortButton"
+          trigger="click"
+          position="br"
+        >
+          <a-button
+            type="text"
+            size="small"
+            :title="`排序: ${SORT_FIELD_LABELS[taskStore.currentSort.field]}`"
+          >
+            <template #icon><icon-sort :size="18" /></template>
+          </a-button>
+          <template #content>
+            <a-menu
+              class="sort-menu"
+              @menu-item-click="(key: string) => taskStore.setSort(key as SortField)"
+            >
+              <a-menu-item v-for="f in SORT_FIELDS" :key="f.value">
+                <icon-check
+                  v-if="f.value === taskStore.currentSort.field"
+                  :size="14"
+                />
+                <span>{{ f.label }}</span>
+              </a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
       </div>
 
       <router-view />
@@ -89,6 +129,28 @@ useShortcuts({
     <QuickAddDialog v-model="quickAddOpen" />
   </div>
 </template>
+
+<!-- 排序下拉菜单（非 scoped，因为 popup 渲染到 body） -->
+<style>
+.sort-menu {
+  padding: 4px 0 !important; /* 去掉 Arco 默认的 12px 外 padding */
+  min-width: 140px !important;
+}
+
+/* 让菜单项的 icon-check 位置固定（用 grid 两列），所有项文字位置一致 */
+.sort-menu .arco-menu-item {
+  display: grid !important;
+  grid-template-columns: 18px 1fr !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+
+.sort-menu .arco-menu-item > .arco-icon {
+  margin-right: 0 !important; /* 去掉 Arco 默认的 8px 右边距，避免和 grid gap 重复 */
+}
+</style>
 
 <style scoped>
 .app-layout {
