@@ -547,7 +547,7 @@ function formatPriorityLabel(data: any) {
 
 .detail-panel__title-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   margin-bottom: 4px;
 }
