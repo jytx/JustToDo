@@ -38,14 +38,10 @@ function onDragStart(e: DragEvent) {
   e.dataTransfer!.setData("text/plain", props.task.id);
   e.dataTransfer!.effectAllowed = "move";
 
-  // 自定义幽灵图：拖拽手柄图标 + 任务标题
+  // 自定义幽灵图：任务标题
   const ghost = document.createElement("div");
-  ghost.innerHTML = `⋮⋮ <span>${props.task.title}</span>`;
-  ghost.style.cssText = `position:absolute;top:-1000px;left:-1000px;display:flex;align-items:center;gap:6px;padding:5px 12px;background:var(--jt-primary,#4F46E5);color:#fff;font-size:13px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.2);max-width:240px;`;
-  const span = ghost.querySelector("span");
-  if (span) {
-    span.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
-  }
+  ghost.textContent = props.task.title;
+  ghost.style.cssText = `position:absolute;top:-1000px;left:-1000px;padding:5px 12px;background:var(--jt-primary,#4F46E5);color:#fff;font-size:13px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.2);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;`;
   document.body.appendChild(ghost);
   e.dataTransfer!.setDragImage(ghost, 15, 12);
   setTimeout(() => document.body.removeChild(ghost), 0);
