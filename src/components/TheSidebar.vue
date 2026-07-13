@@ -304,6 +304,7 @@ onMounted(async () => {
       >
         <icon-tag :size="16" class="sidebar__item-icon" />
         <span class="sidebar__item-title">{{ tag.name }}</span>
+        <span v-if="taskStore.tagCounts[tag.id]" class="sidebar__count">{{ taskStore.tagCounts[tag.id] }}</span>
         <a-dropdown
           trigger="click"
           position="br"

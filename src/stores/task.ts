@@ -22,19 +22,23 @@ export const useTaskStore = defineStore("task", () => {
   /** 子任务缓存：parentId → Task[]，供树形列表按需懒加载子任务 */
   const subtaskCache = ref<Record<string, Task[]>>({});
 
-  /** 侧边栏任务数量（清单 + 智能视图） */
+  /** 侧边栏任务数量（清单 + 标签 + 智能视图） */
   const listCounts = ref<Record<string, number>>({});
+  const tagCounts = ref<Record<string, number>>({});
   const smartCounts = ref<Record<string, number>>({});
 
   /** 刷新侧边栏任务数量 */
   async function refreshCounts() {
     try {
-      listCounts.value = await db.getCountsByList();
-      const [today, upcoming, all] = await Promise.all([
+      const [listC, tagC, today, upcoming, all] = await Promise.all([
+        db.getCountsByList(),
+        db.getCountsByTag(),
         db.getSmartViewCount("today"),
         db.getSmartViewCount("upcoming"),
         db.getSmartViewCount("all"),
       ]);
+      listCounts.value = listC;
+      tagCounts.value = tagC;
       smartCounts.value = { today, upcoming, all };
     } catch {
       // 静默失败
@@ -349,6 +353,7 @@ export const useTaskStore = defineStore("task", () => {
     selectedTask,
     detailOpen,
     listCounts,
+    tagCounts,
     smartCounts,
     refreshCounts,
     loadTasks,

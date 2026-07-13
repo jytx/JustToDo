@@ -149,6 +149,16 @@ export async function getCountsByList(): Promise<Record<string, number>> {
   return map;
 }
 
+/** 统计各标签的未完成根任务数量 */
+export async function getCountsByTag(): Promise<Record<string, number>> {
+  const rows = await invoke<[string, number][]>("task_count_by_tag");
+  const map: Record<string, number> = {};
+  for (const [id, cnt] of rows) {
+    map[id] = cnt;
+  }
+  return map;
+}
+
 /** 统计智能视图的未完成根任务数量 */
 export async function getSmartViewCount(view: SmartViewId): Promise<number> {
   return await invoke<number>("task_count_smart_view", { view });

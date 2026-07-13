@@ -227,6 +227,23 @@ pub async fn task_count_by_list(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<
     Ok(rows.iter().map(|r| (r.get::<String, _>("list_id"), r.get::<i64, _>("cnt"))).collect())
 }
 
+/// 统计各标签的未完成根任务数量（供侧边栏显示）
+#[tauri::command]
+pub async fn task_count_by_tag(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<(String, i64)>> {
+    let rows = sqlx::query(
+        "SELECT tt.tag_id, COUNT(*) as cnt
+         FROM task_tags tt
+         JOIN tasks t ON t.id = tt.task_id
+         WHERE t.parent_id IS NULL AND t.done = 0
+         GROUP BY tt.tag_id"
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("统计标签任务数量失败: {}", e))?;
+
+    Ok(rows.iter().map(|r| (r.get::<String, _>("tag_id"), r.get::<i64, _>("cnt"))).collect())
+}
+
 /// 统计智能视图的未完成根任务数量
 #[tauri::command]
 pub async fn task_count_smart_view(
