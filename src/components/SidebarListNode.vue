@@ -2,7 +2,7 @@
 // 侧边栏清单树形节点 —— 递归渲染目录和清单
 // 支持拖拽排序和拖拽到其他目录
 import { ref, computed } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import type { ListTreeNode } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import {
@@ -21,6 +21,12 @@ const props = defineProps<{
 
 const taskStore = useTaskStore();
 const router = useRouter();
+const route = useRoute();
+
+/** 当前清单项是否处于路由激活态（仅清单，非目录） */
+const isActive = computed(
+  () => !props.node.isFolder && route.name === "list" && route.params.id === props.node.id,
+);
 
 const expanded = ref(true);
 
@@ -207,6 +213,7 @@ function onDrop(e: DragEvent) {
       v-else
       class="list-node__row list-node__list-item"
       :class="{
+        'list-node--active': isActive,
         'list-node--drag-before': dragOver === 'before',
         'list-node--drag-after': dragOver === 'after',
       }"
@@ -291,6 +298,16 @@ function onDrop(e: DragEvent) {
 
 .list-node__folder:hover {
   background-color: var(--jt-surface-hover);
+}
+
+/* 选中状态（路由激活） */
+.list-node--active {
+  background-color: var(--jt-accent-soft) !important;
+  color: var(--jt-primary);
+}
+
+.list-node--active:hover {
+  background-color: color-mix(in srgb, var(--jt-primary) 15%, var(--jt-accent-soft)) !important;
 }
 
 /* 拖拽中：隐藏原始行（用透明占位，不显示难看的幽灵截图） */
