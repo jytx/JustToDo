@@ -26,6 +26,19 @@ const dueStartAt = ref<string | null>(null);
 const dueEndAt = ref<string | null>(null);
 const inputRef = ref<HTMLInputElement | null>(null);
 const feedback = ref<string | null>(null);
+/** 优先级 / 清单 popup 开关 —— 点击选项后立即关闭 */
+const priorityPopupVisible = ref(false);
+const listPopupVisible = ref(false);
+
+function selectPriority(p: Priority) {
+  priority.value = p;
+  priorityPopupVisible.value = false;
+}
+
+function selectList(id: string) {
+  selectedListId.value = id;
+  listPopupVisible.value = false;
+}
 
 const open = computed({
   get: () => props.modelValue,
@@ -45,20 +58,19 @@ watch(open, async (isOpen) => {
   }
 });
 
-/** a-date-picker 的 v-model 桥接 —— 单日期同时写入 start/end（快速添加场景） */
-const dueDateModel = computed({
-  get: (): string | undefined => {
+/** a-range-picker 的 v-model 桥接 —— 开始/结束日期范围 */
+const dueRangeModel = computed({
+  get: (): [string, string] | undefined => {
     if (!dueStartAt.value && !dueEndAt.value) return undefined;
-    return (dueStartAt.value ?? dueEndAt.value!).split("T")[0];
+    return [dueStartAt.value ?? dueEndAt.value!, dueEndAt.value ?? dueStartAt.value!];
   },
-  set: (v: string | undefined) => {
+  set: (v: [string, string] | undefined) => {
     if (!v) {
       dueStartAt.value = null;
       dueEndAt.value = null;
     } else {
-      // 单日期：start = end = 当天
-      dueStartAt.value = new Date(v).toISOString();
-      dueEndAt.value = new Date(v).toISOString();
+      dueStartAt.value = v[0] ? new Date(v[0]).toISOString() : null;
+      dueEndAt.value = v[1] ? new Date(v[1]).toISOString() : null;
     }
   },
 });
@@ -154,7 +166,12 @@ function onKeyDown(e: KeyboardEvent) {
       <!-- 属性行：三个属性 inline 排在一行 -->
       <div class="quick-add__attrs">
         <!-- 优先级 —— 用 a-trigger 包 button 自定义触发器外观，popup 是 a-select 的纵向选项 -->
-        <a-trigger trigger="click" position="bl" :popup-translate="[0, 4]">
+        <a-trigger
+          v-model:popup-visible="priorityPopupVisible"
+          trigger="click"
+          position="bl"
+          :popup-translate="[0, 4]"
+        >
           <button
             type="button"
             class="quick-add__trigger"
@@ -172,7 +189,7 @@ function onKeyDown(e: KeyboardEvent) {
                 type="button"
                 class="quick-add__popup-item"
                 :class="{ 'quick-add__popup-item--active': Number(p) === priority }"
-                @click="priority = Number(p) as Priority"
+                @click="selectPriority(Number(p) as Priority)"
               >
                 <PriorityDot :priority="(Number(p) as Priority)" :size="10" />
                 <span>{{ label }}</span>
@@ -182,7 +199,12 @@ function onKeyDown(e: KeyboardEvent) {
         </a-trigger>
 
         <!-- 清单 —— 同样 a-trigger + 自定义 popup -->
-        <a-trigger trigger="click" position="bl" :popup-translate="[0, 4]">
+        <a-trigger
+          v-model:popup-visible="listPopupVisible"
+          trigger="click"
+          position="bl"
+          :popup-translate="[0, 4]"
+        >
           <button type="button" class="quick-add__trigger">
             <span
               class="quick-add__list-dot"
@@ -198,7 +220,7 @@ function onKeyDown(e: KeyboardEvent) {
                 type="button"
                 class="quick-add__popup-item"
                 :class="{ 'quick-add__popup-item--active': list.id === selectedListId }"
-                @click="selectedListId = list.id"
+                @click="selectList(list.id)"
               >
                 <span
                   class="quick-add__list-dot"
@@ -210,18 +232,14 @@ function onKeyDown(e: KeyboardEvent) {
           </template>
         </a-trigger>
 
-        <!-- 日期 —— 单个 a-date-picker，紧凑、跟优先级/清单 trigger 同等大小 -->
-        <a-date-picker
-          v-model="dueDateModel"
+        <!-- 日期范围 —— a-range-picker，完整 yyyy-MM-dd 格式 -->
+        <a-range-picker
+          v-model="dueRangeModel"
           size="mini"
-          class="quick-add__date"
+          class="quick-add__range"
           format="YYYY-MM-DD"
           :allow-clear="true"
-        >
-          <template #prefix>
-            <icon-calendar :size="14" />
-          </template>
-        </a-date-picker>
+        />
 
         <span class="quick-add__spacer" />
       </div>
@@ -321,51 +339,70 @@ function onKeyDown(e: KeyboardEvent) {
   display: inline-block;
 }
 
-/* 日期 picker —— 单日期，跟优先级/清单 trigger 同等大小 */
-.quick-add__date.arco-picker {
-  display: inline-flex;
-  align-items: center;
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  padding: 0 10px;
-  height: 26px;
-  font-size: 12px;
-  color: var(--jt-text-secondary);
-  border-radius: 6px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  width: 130px !important;
-  transition: background-color 0.15s ease, color 0.15s ease;
+/* 日期范围 picker —— 强制压缩宽度，跟优先级/清单同行
+   Arco 的 .arco-picker-range 默认 min-width 很大，需要 !important 覆盖 */
+.quick-add__range.arco-picker,
+.quick-add-modal .arco-picker-range {
+  display: inline-flex !important;
+  align-items: center !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 10px !important;
+  height: 26px !important;
+  font-size: 12px !important;
+  color: var(--jt-text-secondary) !important;
+  border-radius: 6px !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  width: 270px !important;
+  min-width: 270px !important;
+  max-width: 270px !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
 }
 
-.quick-add__date.arco-picker:hover,
-.quick-add__date.arco-picker:focus-within,
-.quick-add__date.arco-picker.arco-picker-focused {
-  background-color: var(--jt-surface-sunken);
-  color: var(--jt-text-primary);
-  border: none;
-  box-shadow: none;
+.quick-add__range.arco-picker:hover,
+.quick-add__range.arco-picker:focus-within,
+.quick-add__range.arco-picker.arco-picker-focused,
+.quick-add-modal .arco-picker-range:hover,
+.quick-add-modal .arco-picker-range.arco-picker-focused {
+  background-color: var(--jt-surface-sunken) !important;
+  color: var(--jt-text-primary) !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
-.quick-add__date :deep(.arco-picker-input) {
+/* 两个 input 各占一半，flex 共享空间 */
+.quick-add__range :deep(.arco-input-wrapper) {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.quick-add__range :deep(.arco-range-picker-input),
+.quick-add__range :deep(.arco-input) {
   font-size: 12px !important;
   height: 22px !important;
+  text-align: center !important;
+  width: 100% !important;
+  padding: 0 !important;
 }
 
-.quick-add__date :deep(.arco-picker-input)::placeholder {
-  color: var(--jt-text-tertiary);
+.quick-add__range :deep(.arco-range-picker-input)::placeholder {
+  color: var(--jt-text-tertiary) !important;
 }
 
-/* 隐藏右侧日历 icon（我们用 prefix 已经有了） */
-.quick-add__date :deep(.arco-picker-suffix) {
-  display: none;
+/* 隐藏右侧日历 icon（节省空间） */
+.quick-add__range :deep(.arco-picker-suffix) {
+  display: none !important;
 }
 
-.quick-add__date :deep(.arco-picker-prefix) {
-  margin-right: 4px;
-  color: inherit;
-  display: inline-flex;
+/* 分隔符 ~ 紧凑 */
+.quick-add__range :deep(.arco-range-picker-separator) {
+  padding: 0 2px !important;
+  color: var(--jt-text-tertiary) !important;
 }
 
 /* 反馈条 */
@@ -466,5 +503,45 @@ body[arco-theme="dark"] .quick-add__popup {
   box-shadow:
     0 6px 20px rgba(0, 0, 0, 0.4),
     0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* 强制压缩 range-picker 宽度 —— scoped 样式无法覆盖 Arco 内部样式，
+   这里用 modal 容器作为锚点 + !important 兜底 */
+.quick-add-modal .arco-picker-range.quick-add__range,
+.quick-add-modal .arco-picker-range {
+  width: 270px !important;
+  min-width: 270px !important;
+  max-width: 270px !important;
+  padding: 0 10px !important;
+  height: 26px !important;
+  border: none !important;
+  background: transparent !important;
+  font-size: 12px !important;
+}
+
+.quick-add-modal .arco-picker-range .arco-input-wrapper {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.quick-add-modal .arco-picker-range .arco-range-picker-input,
+.quick-add-modal .arco-picker-range .arco-input {
+  font-size: 12px !important;
+  height: 22px !important;
+  text-align: center !important;
+  width: 100% !important;
+  padding: 0 !important;
+}
+
+.quick-add-modal .arco-picker-range .arco-picker-suffix {
+  display: none !important;
+}
+
+.quick-add-modal .arco-picker-range .arco-range-picker-separator {
+  padding: 0 2px !important;
+  color: var(--jt-text-tertiary) !important;
 }
 </style>
