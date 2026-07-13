@@ -180,6 +180,7 @@ function onDrop(e: DragEvent) {
       <icon-folder
         :size="16"
         class="list-node__folder-icon"
+        :style="{ color: node.color }"
       />
       <span class="list-node__name">{{ node.name }}</span>
       <a-dropdown trigger="click" position="br" :popup-offset="4">
@@ -345,7 +346,7 @@ function onDrop(e: DragEvent) {
   cursor: pointer;
 }
 
-/* 文件夹图标 */
+/* 文件夹图标（默认橙色，inline style 会覆盖为 node.color） */
 .list-node__folder-icon {
   color: var(--jt-warning);
   flex-shrink: 0;
