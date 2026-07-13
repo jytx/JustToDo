@@ -39,6 +39,12 @@ const mainStyle = computed(() => {
   return { paddingRight: panelWidth.value + "px" };
 });
 
+/** 详情面板打开时，topbar 整体向右推一个面板宽度（不重叠） */
+const topbarStyle = computed(() => {
+  if (!taskStore.detailOpen) return {};
+  return { right: `${panelWidth.value + 24}px` };
+});
+
 // 全局快捷键
 useShortcuts({
   onSearch: () => {
@@ -60,7 +66,7 @@ useShortcuts({
 
     <!-- 主区域（中） -->
     <main class="app-layout__main" :style="mainStyle">
-      <div class="app-layout__topbar">
+      <div class="app-layout__topbar" :style="topbarStyle">
         <a-button
           type="text"
           size="small"
@@ -141,17 +147,21 @@ useShortcuts({
   min-width: 140px;
 }
 
-/* 去掉 Arco 默认内层 padding（4px 8px） */
-.sort-menu .arco-menu-inner {
-  padding: 0;
+/* 去掉 Arco 默认内层 padding（4px 8px）和 menu-item padding（4px 12px） */
+.sort-menu,
+.sort-menu .arco-menu-inner,
+.sort-menu .arco-menu-item {
+  padding: 0 !important;
 }
 
 /* 让菜单项的 icon-check 位置固定（用 grid 两列），所有项文字位置一致 */
 .sort-menu .arco-menu-item {
-  display: grid;
-  grid-template-columns: 18px 1fr;
-  align-items: center;
-  gap: 6px;
+  display: grid !important;
+  grid-template-columns: 18px 1fr !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding-left: 8px !important;
+  padding-right: 8px !important;
 }
 
 /* 占位元素（未选中时的空白 icon 位），保证所有项宽度一致 */
@@ -180,15 +190,16 @@ useShortcuts({
 }
 
 .app-layout__topbar {
-  position: fixed;
+  position: absolute;
   /* 和侧边栏的"智能视图/清单/标签/习惯"subheader 同一行，靠右 */
   top: 40px;
   right: 24px;
   height: 24px;
-  z-index: 1100; /* 高于详情面板 (1000) */
+  z-index: 10;
   display: flex;
   align-items: center;
   gap: 2px;
+  transition: right 0.2s ease;
 }
 
 .app-layout__topbar > * {
