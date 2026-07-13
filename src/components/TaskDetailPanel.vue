@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 任务详情面板 —— 右栏常驻面板，可拖拽调整宽度
 // 含：标题编辑、优先级、截止日期、清单切换、备注、子任务、标签
-import { ref, watch, computed, onMounted, onUnmounted, h } from "vue";
+import { ref, watch, computed, h } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
@@ -99,26 +99,8 @@ function startResize(e: MouseEvent) {
   document.body.style.userSelect = "none";
 }
 
-// ESC 键关闭面板
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === "Escape" && task.value) {
-    // 输入框聚焦时先让输入框失焦，不关闭面板
-    const active = document.activeElement;
-    if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || (active as HTMLElement).isContentEditable)) {
-      (active as HTMLElement).blur();
-      return;
-    }
-    taskStore.selectTask(null);
-  }
-}
-
-onMounted(() => {
-  window.addEventListener("keydown", onKeydown);
-});
-
-onUnmounted(() => {
-  window.removeEventListener("keydown", onKeydown);
-});
+// ESC 关闭面板的逻辑已统一到 AppLayout.vue 的 onNavigationKeydown，
+// 这里不再独立监听（避免双重处理，且保留"输入框聚焦时 ESC 先 blur"的逻辑）
 
 watch(
   () => task.value?.id,

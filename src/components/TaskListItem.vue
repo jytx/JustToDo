@@ -98,6 +98,20 @@ function onDrop(e: DragEvent) {
 /** 是否被选中（详情面板打开时） */
 const isSelected = computed(() => taskStore.selectedTaskId === props.task.id);
 
+/** 是否被键盘导航聚焦（仅视觉高亮，不打开详情面板） */
+const isFocused = computed(() => taskStore.focusedTaskId === props.task.id);
+
+/** 任务项根元素 ref（用于 scrollIntoView） */
+const itemRef = ref<HTMLElement>();
+
+// 焦点变化时滚动到可视区域
+watch(isFocused, (focused) => {
+  if (focused) {
+    // 用 nearest 模式：仅当不可见时才滚动，避免抢滚动条
+    itemRef.value?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+});
+
 const dueInfo = computed(() => formatDueDate(props.task.dueStartAt, props.task.dueEndAt));
 
 // ─── 子任务展开 / 懒加载 ───────────────────────────────
@@ -136,10 +150,12 @@ watch(childCount, (n) => {
   <div class="task-tree-node">
     <!-- 当前任务行 -->
     <div
+      ref="itemRef"
       class="task-item"
       :class="{
         'task-item--done': task.done,
         'task-item--selected': isSelected,
+        'task-item--focused': isFocused,
         'task-item--dragging': isDragging,
         'task-item--drag-before': dragOver === 'before',
         'task-item--drag-after': dragOver === 'after',
@@ -255,6 +271,12 @@ watch(childCount, (n) => {
 
 .task-item--selected:hover {
   background-color: color-mix(in srgb, var(--jt-primary) 15%, var(--jt-accent-soft));
+}
+
+/* 键盘导航焦点状态（虚线边框，区别于选中的背景色） */
+.task-item--focused {
+  outline: 2px solid var(--jt-primary);
+  outline-offset: -2px;
 }
 
 /* 拖拽排序视觉反馈 */

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 三栏布局骨架：侧边栏 + 任务列表区 + 任务详情面板
-// 集成全局搜索、快速添加、快捷键
-import { ref, computed } from "vue";
+// 集成全局搜索、快速添加、快捷键、键盘导航
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { useTaskStore } from "@/stores/task";
 import { useRoute } from "vue-router";
@@ -49,6 +49,93 @@ const topbarStyle = computed(() => {
 async function onSortChange(field: SortField) {
   await taskStore.setSort(field);
 }
+
+// ─── 删除确认对话框 ──────────────────────────────────────
+const deleteConfirmId = ref<string | null>(null);
+const deleteConfirmTitle = computed(() => {
+  if (!deleteConfirmId.value) return "";
+  const t = taskStore.openTasks.find((task) => task.id === deleteConfirmId.value);
+  return t?.title ?? "";
+});
+
+function requestDelete(taskId: string) {
+  deleteConfirmId.value = taskId;
+}
+
+async function confirmDelete() {
+  if (!deleteConfirmId.value) return;
+  const deletedId = deleteConfirmId.value;
+  // 先把焦点移到下一个任务（如果存在），避免删除后焦点丢失
+  taskStore.moveFocus("down");
+  await taskStore.deleteTask(deletedId);
+  deleteConfirmId.value = null;
+}
+
+function cancelDelete() {
+  deleteConfirmId.value = null;
+}
+
+// ─── 键盘导航 ────────────────────────────────────────────
+function onNavigationKeydown(e: KeyboardEvent) {
+  // 0. 上下文守卫：搜索/快速添加/删除确认对话框打开时不处理
+  if (searchStore.open || quickAddOpen.value || deleteConfirmId.value) return;
+
+  // 1. 输入框/文本域/contentEditable 聚焦时不处理（让位给输入）
+  const active = document.activeElement;
+  if (
+    active &&
+    (active.tagName === "INPUT" ||
+      active.tagName === "TEXTAREA" ||
+      (active as HTMLElement).isContentEditable)
+  ) {
+    // 特例：输入框聚焦时按 ESC，先 blur 而不是关闭详情面板
+    if (e.key === "Escape") {
+      (active as HTMLElement).blur();
+      e.preventDefault();
+    }
+    return;
+  }
+
+  // 2. ESC：关闭详情面板
+  if (e.key === "Escape") {
+    if (taskStore.detailOpen) {
+      e.preventDefault();
+      taskStore.selectTask(null);
+    }
+    return;
+  }
+
+  // 3. 方向键导航（不需要焦点任务也能触发，首次按 ↓/↓ 会聚焦第一个/最后一个）
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    taskStore.moveFocus("down");
+    return;
+  }
+  if (e.key === "ArrowUp") {
+    e.preventDefault();
+    taskStore.moveFocus("up");
+    return;
+  }
+
+  // 4. 仅在有焦点任务时处理后续操作
+  const focusedId = taskStore.focusedTaskId;
+  if (!focusedId) return;
+
+  if (e.key === "Enter") {
+    e.preventDefault();
+    taskStore.selectTask(focusedId);
+  } else if (e.key === " ") {
+    e.preventDefault();
+    const task = taskStore.openTasks.find((t) => t.id === focusedId);
+    if (task) taskStore.toggleTask(focusedId, !task.done);
+  } else if (e.key === "Backspace" || e.key === "Delete") {
+    e.preventDefault();
+    requestDelete(focusedId);
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", onNavigationKeydown));
+onUnmounted(() => window.removeEventListener("keydown", onNavigationKeydown));
 
 // 全局快捷键
 useShortcuts({
@@ -146,6 +233,21 @@ useShortcuts({
 
     <!-- 快速添加对话框 -->
     <QuickAddDialog v-model="quickAddOpen" />
+
+    <!-- 删除任务确认对话框（键盘 Backspace 触发） -->
+    <a-modal
+      :visible="!!deleteConfirmId"
+      :width="400"
+      @cancel="cancelDelete"
+      @ok="confirmDelete"
+    >
+      <template #title>确认删除</template>
+      <p>确定要删除任务「<strong>{{ deleteConfirmTitle }}</strong>」吗？</p>
+      <template #footer>
+        <a-button @click="cancelDelete">取消</a-button>
+        <a-button status="danger" type="primary" @click="confirmDelete">删除</a-button>
+      </template>
+    </a-modal>
   </div>
 </template>
 

@@ -29,6 +29,9 @@ export const useTaskStore = defineStore("task", () => {
   /** 子任务缓存：parentId → Task[]，供树形列表按需懒加载子任务 */
   const subtaskCache = ref<Record<string, Task[]>>({});
 
+  /** 键盘导航焦点任务 ID（与 selectedTaskId 解耦，仅视觉高亮，不打开详情面板） */
+  const focusedTaskId = ref<string | null>(null);
+
   /** 侧边栏任务数量（清单 + 标签 + 智能视图） */
   const listCounts = ref<Record<string, number>>({});
   const tagCounts = ref<Record<string, number>>({});
@@ -86,6 +89,7 @@ export const useTaskStore = defineStore("task", () => {
     currentListId.value = listId;
     currentTagId.value = null;
     currentSmartView.value = null;
+    focusedTaskId.value = null; // 切换视图时清空键盘焦点
     if (!keepSelection) {
       selectedTaskId.value = null; selectedTaskObj.value = null; // 切换清单时关闭详情面板
     }
@@ -114,6 +118,7 @@ export const useTaskStore = defineStore("task", () => {
     currentListId.value = "";
     currentTagId.value = tagId;
     currentSmartView.value = null;
+    focusedTaskId.value = null; // 切换视图时清空键盘焦点
     if (!keepSelection) {
       selectedTaskId.value = null; selectedTaskObj.value = null; // 切换标签时关闭详情面板
     }
@@ -141,6 +146,7 @@ export const useTaskStore = defineStore("task", () => {
     currentSmartView.value = view;
     currentListId.value = "";
     currentTagId.value = null;
+    focusedTaskId.value = null; // 切换视图时清空键盘焦点
     if (!keepSelection) {
       selectedTaskId.value = null; selectedTaskObj.value = null; // 切换智能视图时关闭详情面板
     }
@@ -296,6 +302,31 @@ export const useTaskStore = defineStore("task", () => {
     await loadSubtasks(id);
   }
 
+  /** 键盘导航：移动焦点到上/下一个未完成根任务 */
+  function moveFocus(direction: "up" | "down") {
+    const tasks = openTasks.value;
+    if (tasks.length === 0) return;
+    // 没有焦点时，down 从第一个开始，up 从最后一个开始
+    if (!focusedTaskId.value) {
+      focusedTaskId.value = direction === "down" ? tasks[0].id : tasks[tasks.length - 1].id;
+      return;
+    }
+    const idx = tasks.findIndex((t) => t.id === focusedTaskId.value);
+    if (idx === -1) {
+      // 当前焦点不在列表里（可能被删除），从头开始
+      focusedTaskId.value = tasks[0].id;
+      return;
+    }
+    const newIdx =
+      direction === "down" ? Math.min(idx + 1, tasks.length - 1) : Math.max(idx - 1, 0);
+    focusedTaskId.value = tasks[newIdx].id;
+  }
+
+  /** 清空键盘焦点 */
+  function clearFocus() {
+    focusedTaskId.value = null;
+  }
+
   /** 加载某任务的子任务 */
   async function loadSubtasks(parentId: string) {
     try {
@@ -408,6 +439,7 @@ export const useTaskStore = defineStore("task", () => {
     currentSmartView,
     currentTasks,
     currentSort,
+    focusedTaskId,
     subtasks,
     subtaskCache,
     loading,
@@ -425,6 +457,8 @@ export const useTaskStore = defineStore("task", () => {
     loadTagTasks,
     reload,
     setSort,
+    moveFocus,
+    clearFocus,
     createTask,
     createSubtask,
     toggleTask,
