@@ -32,6 +32,9 @@ export const useTaskStore = defineStore("task", () => {
   /** 键盘导航焦点任务 ID（与 selectedTaskId 解耦，仅视觉高亮，不打开详情面板） */
   const focusedTaskId = ref<string | null>(null);
 
+  /** 待删除任务的 ID（用于确认对话框） */
+  const pendingDeleteId = ref<string | null>(null);
+
   /** 侧边栏任务数量（清单 + 标签 + 智能视图） */
   const listCounts = ref<Record<string, number>>({});
   const tagCounts = ref<Record<string, number>>({});
@@ -281,6 +284,26 @@ export const useTaskStore = defineStore("task", () => {
     refreshCounts();
   }
 
+  /** 请求删除任务（弹出确认对话框） */
+  function requestDelete(id: string) {
+    pendingDeleteId.value = id;
+  }
+
+  /** 取消删除（关闭确认对话框） */
+  function cancelDelete() {
+    pendingDeleteId.value = null;
+  }
+
+  /** 确认删除（实际执行） */
+  async function confirmDelete() {
+    if (!pendingDeleteId.value) return;
+    const id = pendingDeleteId.value;
+    pendingDeleteId.value = null;
+    // 焦点移到下一个任务（避免删除后焦点丢失）
+    moveFocus("down");
+    await deleteTask(id);
+  }
+
   /** 点击任务：切换选中（已选中则关闭面板） */
   async function selectTask(id: string | null) {
     if (id === null || selectedTaskId.value === id) {
@@ -441,6 +464,7 @@ export const useTaskStore = defineStore("task", () => {
     currentTasks,
     currentSort,
     focusedTaskId,
+    pendingDeleteId,
     subtasks,
     subtaskCache,
     loading,
@@ -465,6 +489,9 @@ export const useTaskStore = defineStore("task", () => {
     toggleTask,
     updateTask,
     deleteTask,
+    requestDelete,
+    cancelDelete,
+    confirmDelete,
     reorderTasks,
     selectTask,
     loadSubtasks,

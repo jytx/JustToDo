@@ -220,7 +220,7 @@ watch(childCount, (n) => {
             <icon-more :size="16" />
           </button>
           <template #content>
-            <a-menu class="task-item-ctx-menu" @menu-item-click="() => taskStore.deleteTask(task.id)">
+            <a-menu class="task-item-ctx-menu" @menu-item-click="() => taskStore.requestDelete(task.id)">
               <a-menu-item key="delete" class="task-item-ctx-menu--danger">
                 <icon-delete :size="15" />
                 <span style="margin-left: 8px">删除任务</span>

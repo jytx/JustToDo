@@ -50,40 +50,25 @@ async function onSortChange(field: SortField) {
   await taskStore.setSort(field);
 }
 
-// ─── 删除确认对话框 ──────────────────────────────────────
-const deleteConfirmId = ref<string | null>(null);
-const deleteModalVisible = ref(false);
+/** 删除确认对话框标题 */
 const deleteConfirmTitle = computed(() => {
-  if (!deleteConfirmId.value) return "";
-  // 在所有当前任务（含已完成）里查找，避免已完成任务标题找不到
-  const t = taskStore.currentTasks.find((task) => task.id === deleteConfirmId.value);
+  if (!taskStore.pendingDeleteId) return "";
+  const t = taskStore.currentTasks.find((task) => task.id === taskStore.pendingDeleteId);
   return t?.title ?? "";
 });
 
-function requestDelete(taskId: string) {
-  deleteConfirmId.value = taskId;
-  deleteModalVisible.value = true;
-}
-
-async function confirmDelete() {
-  if (!deleteConfirmId.value) return;
-  const deletedId = deleteConfirmId.value;
-  deleteModalVisible.value = false;
-  // 先把焦点移到下一个任务（如果存在），避免删除后焦点丢失
-  taskStore.moveFocus("down");
-  await taskStore.deleteTask(deletedId);
-  deleteConfirmId.value = null;
-}
-
-function cancelDelete() {
-  deleteModalVisible.value = false;
-  deleteConfirmId.value = null;
-}
+/** 删除确认对话框显示状态（双向绑定到 store.pendingDeleteId） */
+const deleteModalVisible = computed({
+  get: () => !!taskStore.pendingDeleteId,
+  set: (v: boolean) => {
+    if (!v) taskStore.cancelDelete();
+  },
+});
 
 // ─── 键盘导航 ────────────────────────────────────────────
 function onNavigationKeydown(e: KeyboardEvent) {
   // 0. 上下文守卫：搜索/快速添加/删除确认对话框打开时不处理
-  if (searchStore.open || quickAddOpen.value || deleteModalVisible.value) return;
+  if (searchStore.open || quickAddOpen.value || taskStore.pendingDeleteId) return;
 
   // 1. 输入框/文本域/contentEditable 聚焦时不处理（让位给输入）
   const active = document.activeElement;
@@ -135,7 +120,7 @@ function onNavigationKeydown(e: KeyboardEvent) {
     if (task) taskStore.toggleTask(focusedId, !task.done);
   } else if (e.key === "Backspace" || e.key === "Delete") {
     e.preventDefault();
-    requestDelete(focusedId);
+    taskStore.requestDelete(focusedId);
   }
 }
 
@@ -239,18 +224,18 @@ useShortcuts({
     <!-- 快速添加对话框 -->
     <QuickAddDialog v-model="quickAddOpen" />
 
-    <!-- 删除任务确认对话框（键盘 Backspace 触发） -->
+    <!-- 删除任务确认对话框（键盘 Backspace 或任务项菜单触发） -->
     <a-modal
       v-model:visible="deleteModalVisible"
       :width="400"
       :mask-closable="false"
-      @ok="confirmDelete"
+      @ok="taskStore.confirmDelete()"
     >
       <template #title>确认删除</template>
       <p>确定要删除任务「<strong>{{ deleteConfirmTitle }}</strong>」吗？</p>
       <template #footer>
-        <a-button @click="cancelDelete">取消</a-button>
-        <a-button status="danger" type="primary" @click="confirmDelete">删除</a-button>
+        <a-button @click="taskStore.cancelDelete()">取消</a-button>
+        <a-button status="danger" type="primary" @click="taskStore.confirmDelete()">删除</a-button>
       </template>
     </a-modal>
   </div>
