@@ -147,11 +147,12 @@ useShortcuts({
   min-width: 140px;
 }
 
-/* 去掉 Arco 默认内层 padding（4px 8px）和 menu-item padding（4px 12px） */
+/* 去掉 Arco 默认内层 padding（4px 8px）和 menu-item padding/margin */
 .sort-menu,
 .sort-menu .arco-menu-inner,
 .sort-menu .arco-menu-item {
   padding: 0 !important;
+  margin: 0 !important;
 }
 
 /* 让菜单项的 icon-check 位置固定（用 grid 两列），所有项文字位置一致 */
