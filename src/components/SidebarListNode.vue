@@ -298,7 +298,10 @@ function onDrop(e: DragEvent) {
   opacity: 0.3;
 }
 
-/* drag-before：顶部插入线 */
+/* drag-before：顶部插入线 + 淡背景（表示排序） */
+.list-node--drag-before {
+  background-color: color-mix(in srgb, var(--jt-primary) 5%, transparent) !important;
+}
 .list-node--drag-before::before {
   content: "";
   position: absolute;
@@ -311,7 +314,10 @@ function onDrop(e: DragEvent) {
   z-index: 10;
 }
 
-/* drag-after：底部插入线 */
+/* drag-after：底部插入线 + 淡背景（表示排序） */
+.list-node--drag-after {
+  background-color: color-mix(in srgb, var(--jt-primary) 5%, transparent) !important;
+}
 .list-node--drag-after::after {
   content: "";
   position: absolute;
@@ -324,9 +330,10 @@ function onDrop(e: DragEvent) {
   z-index: 10;
 }
 
-/* drag-inside：放入目录高亮 */
+/* drag-inside：放入目录 — 整行高亮（区别于排序的淡背景） */
 .list-node--drag-inside {
-  background-color: var(--jt-accent-soft) !important;
+  background-color: color-mix(in srgb, var(--jt-primary) 12%, transparent) !important;
+  box-shadow: inset 0 0 0 1.5px var(--jt-primary);
   border-radius: 8px;
 }
 
