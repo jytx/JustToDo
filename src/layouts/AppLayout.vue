@@ -54,7 +54,8 @@ async function onSortChange(field: SortField) {
 const deleteConfirmId = ref<string | null>(null);
 const deleteConfirmTitle = computed(() => {
   if (!deleteConfirmId.value) return "";
-  const t = taskStore.openTasks.find((task) => task.id === deleteConfirmId.value);
+  // 在所有当前任务（含已完成）里查找，避免已完成任务标题找不到
+  const t = taskStore.currentTasks.find((task) => task.id === deleteConfirmId.value);
   return t?.title ?? "";
 });
 
