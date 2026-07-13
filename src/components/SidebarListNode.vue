@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 侧边栏清单树形节点 —— 递归渲染目录和清单
 // 支持拖拽排序和拖拽到其他目录
-import { ref } from "vue";
+import { ref, computed } from "vue";
+import { useRouter } from "vue-router";
 import type { ListTreeNode } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import {
@@ -19,6 +20,7 @@ const props = defineProps<{
 }>();
 
 const taskStore = useTaskStore();
+const router = useRouter();
 
 const expanded = ref(true);
 
@@ -34,6 +36,13 @@ function onMenuClick(key: string) {
   else if (key === "delete") emit("delete", props.node);
 }
 
+/** 点击清单行 → 路由跳转 */
+function goToList() {
+  if (!props.node.isFolder) {
+    router.push(`/list/${props.node.id}`);
+  }
+}
+
 // ─── 拖拽逻辑 ──────────────────────────────────────────
 
 /** 当前 drag-over 状态：null / 'before' / 'after' / 'inside' */
@@ -41,10 +50,10 @@ const dragOver = ref<"before" | "after" | "inside" | null>(null);
 const isDragging = ref(false);
 
 /** 是否可拖动（inbox 不可拖） */
-const draggable = props.node.id !== "inbox";
+const canDrag = computed(() => props.node.id !== "inbox");
 
 function onDragStart(e: DragEvent) {
-  if (!draggable) {
+  if (!canDrag.value) {
     e.preventDefault();
     return;
   }
@@ -59,10 +68,6 @@ function onDragEnd() {
 }
 
 function onDragOver(e: DragEvent) {
-  // 不允许拖到自己上
-  const draggedId = e.dataTransfer?.types.includes("text/plain");
-  if (!draggedId) return;
-
   e.preventDefault();
   e.dataTransfer!.dropEffect = "move";
 
@@ -118,7 +123,7 @@ function onDrop(e: DragEvent) {
         'list-node--drag-inside': dragOver === 'inside',
       }"
       :style="{ paddingLeft: depth * 16 + 'px' }"
-      :draggable="draggable"
+      :draggable="canDrag ? 'true' : 'false'"
       @dragstart="onDragStart"
       @dragend="onDragEnd"
       @dragover="onDragOver"
@@ -153,22 +158,22 @@ function onDrop(e: DragEvent) {
       </a-dropdown>
     </div>
 
-    <!-- 清单（非目录） -->
-    <router-link
+    <!-- 清单（非目录）—— 用 div 包裹以支持 draggable -->
+    <div
       v-else
-      :to="`/list/${node.id}`"
       class="list-node__row list-node__list-item"
       :class="{
         'list-node--drag-before': dragOver === 'before',
         'list-node--drag-after': dragOver === 'after',
       }"
       :style="{ paddingLeft: depth * 16 + 'px' }"
-      :draggable="draggable"
+      :draggable="canDrag ? 'true' : 'false'"
       @dragstart="onDragStart"
       @dragend="onDragEnd"
       @dragover="onDragOver"
       @dragleave="onDragLeave"
       @drop="onDrop"
+      @click="goToList"
     >
       <span class="list-node__dot-placeholder" />
       <span
@@ -199,7 +204,7 @@ function onDrop(e: DragEvent) {
           </a-menu>
         </template>
       </a-dropdown>
-    </router-link>
+    </div>
 
     <!-- 递归渲染子节点 -->
     <div v-if="node.isFolder && expanded && node.children.length" class="list-node__children">
