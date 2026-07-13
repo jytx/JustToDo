@@ -146,6 +146,7 @@ onMounted(async () => {
 }
 
 .list-view__empty {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;

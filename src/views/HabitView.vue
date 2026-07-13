@@ -246,9 +246,11 @@ async function toggle(habitId: string) {
 }
 
 .habit-view__empty {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   padding: 80px 20px;
   text-align: center;
 }
