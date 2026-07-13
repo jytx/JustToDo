@@ -719,6 +719,24 @@ pub async fn tag_set_sort_pref(
     Ok(())
 }
 
+/// 查询清单的排序偏好（用于前端切换清单时同步 currentSort）
+#[tauri::command]
+pub async fn list_get_sort_pref(
+    pool: State<'_, sqlx::SqlitePool>,
+    list_id: String,
+) -> CmdResult<(String, String)> {
+    resolve_sort_pref(pool.inner(), "list", &list_id, None, None).await
+}
+
+/// 查询标签的排序偏好
+#[tauri::command]
+pub async fn tag_get_sort_pref(
+    pool: State<'_, sqlx::SqlitePool>,
+    tag_id: String,
+) -> CmdResult<(String, String)> {
+    resolve_sort_pref(pool.inner(), "tag", &tag_id, None, None).await
+}
+
 #[tauri::command]
 pub async fn tag_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdResult<()> {
     sqlx::query("DELETE FROM tags WHERE id = $1")

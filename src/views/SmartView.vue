@@ -104,6 +104,7 @@ onMounted(async () => {
         @toggle="taskStore.toggleTask(task.id, !task.done)"
         @select="taskStore.selectTask(task.id)"
         @delete="taskStore.deleteTask(task.id)"
+        @reorder="(draggedId: string, targetId: string, pos: 'before' | 'after') => taskStore.reorderTasks(draggedId, targetId, pos)"
       />
     </div>
 

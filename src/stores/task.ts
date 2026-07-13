@@ -90,6 +90,13 @@ export const useTaskStore = defineStore("task", () => {
       selectedTaskId.value = null; selectedTaskObj.value = null; // 切换清单时关闭详情面板
     }
     try {
+      // 先从 DB 同步该清单的排序偏好（避免 currentSort 与后端不一致）
+      try {
+        const [f, d] = await db.getListSortPref(listId);
+        currentSort.value = { field: f as SortField, dir: d as SortDir };
+      } catch {
+        // 查询失败用默认值
+      }
       currentTasks.value = await db.getTasksByList(
         listId,
         currentSort.value.field,
@@ -111,6 +118,13 @@ export const useTaskStore = defineStore("task", () => {
       selectedTaskId.value = null; selectedTaskObj.value = null; // 切换标签时关闭详情面板
     }
     try {
+      // 先从 DB 同步该标签的排序偏好
+      try {
+        const [f, d] = await db.getTagSortPref(tagId);
+        currentSort.value = { field: f as SortField, dir: d as SortDir };
+      } catch {
+        // 查询失败用默认值
+      }
       currentTasks.value = await db.getTasksByTag(
         tagId,
         currentSort.value.field,

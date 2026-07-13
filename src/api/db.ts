@@ -156,6 +156,13 @@ export async function setListSortPref(
   await invoke("list_set_sort_pref", { listId, sortField, sortDir });
 }
 
+/** 查询清单的排序偏好 */
+export async function getListSortPref(
+  listId: string,
+): Promise<[string, string]> {
+  return invoke<[string, string]>("list_get_sort_pref", { listId });
+}
+
 /** 设置标签的排序偏好 */
 export async function setTagSortPref(
   tagId: string,
@@ -163,6 +170,13 @@ export async function setTagSortPref(
   sortDir: string,
 ): Promise<void> {
   await invoke("tag_set_sort_pref", { tagId, sortField, sortDir });
+}
+
+/** 查询标签的排序偏好 */
+export async function getTagSortPref(
+  tagId: string,
+): Promise<[string, string]> {
+  return invoke<[string, string]>("tag_get_sort_pref", { tagId });
 }
 
 /** 统计各清单的未完成根任务数量 */
