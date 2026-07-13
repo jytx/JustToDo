@@ -120,11 +120,19 @@ useShortcuts({
 
 .app-layout__topbar {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  /* 浮在原生标题栏区域，预留 macOS 右侧 80px 给红黄绿按钮 */
+  top: 0;
+  right: 80px;
+  height: 28px;
   z-index: 10;
   display: flex;
   align-items: center;
   gap: 4px;
+  /* 整条都是可拖动区域（仅按钮是 no-drag） */
+  -webkit-app-region: drag;
+}
+
+.app-layout__topbar > * {
+  -webkit-app-region: no-drag;
 }
 </style>

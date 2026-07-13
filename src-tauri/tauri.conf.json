@@ -21,7 +21,9 @@
         "center": true,
         "resizable": true,
         "dragDropEnabled": false,
-        "hiddenTitle": true
+        "decorations": true,
+        "transparent": true,
+        "titleBarStyle": "Overlay"
       }
     ],
     "security": {

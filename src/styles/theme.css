@@ -3,6 +3,20 @@
  * 覆盖 Arco 默认 CSS 变量 + 自定义 token
  */
 
+/* 让 webview 内容延伸到原生标题栏下面（标题栏区域也属于 webview） */
+html,
+body {
+  background: transparent !important;
+  margin: 0;
+  padding: 0;
+}
+
+/* 根容器补回实际背景色（避免穿透到桌面） */
+#app {
+  background-color: var(--color-bg-1);
+  min-height: 100vh;
+}
+
 :root {
   /* Arco 主色调覆盖 */
   --primary-6: #4F46E5;       /* 靛蓝强调 */
