@@ -161,6 +161,31 @@ function startNewList() {
   showCreateDialog.value = true;
 }
 
+/** 处理清单拖拽移动 */
+async function onListMove(draggedId: string, target: any, position: "before" | "after" | "inside") {
+  try {
+    if (position === "inside") {
+      // 放入目录：target 是目录节点
+      await listStore.moveNode(draggedId, target.id, 999);
+    } else {
+      // before/after：和 target 同级
+      const targetParentId = target.parentId;
+      // 找到 target 在同级中的索引
+      const siblings = listStore.sortedLists.filter((l) => l.parentId === targetParentId);
+      const targetIndex = siblings.findIndex((l) => l.id === target.id);
+      const insertIndex = position === "before" ? targetIndex : targetIndex + 1;
+      // 如果拖动的节点也在同一父级且在目标前面，索引需要 -1（因为移除后位置变化）
+      const draggedInSameParent = siblings.some((l) => l.id === draggedId);
+      const adjustedIndex = draggedInSameParent && siblings.findIndex((l) => l.id === draggedId) < targetIndex
+        ? insertIndex - 1
+        : insertIndex;
+      await listStore.moveNode(draggedId, targetParentId, adjustedIndex);
+    }
+  } catch (e) {
+    console.error("[Sidebar] 移动清单失败:", e);
+  }
+}
+
 async function confirmNewList() {
   const name = newListName.value.trim();
   if (!name) {
@@ -257,6 +282,7 @@ onMounted(async () => {
           :depth="0"
           @edit="(n: any) => startEditList(n)"
           @delete="(n: any) => askDeleteList(n)"
+          @move="onListMove"
         />
       </div>
 

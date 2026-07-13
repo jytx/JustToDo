@@ -162,22 +162,53 @@ pub async fn list_rename(
     Ok(())
 }
 
-/// 移动清单/目录到另一个父级（null = 根级）
+/// 移动清单/目录到另一个父级（null = 根级），可同时更新 position
 #[tauri::command]
 pub async fn list_move(
     pool: State<'_, sqlx::SqlitePool>,
     id: String,
     parent_id: Option<String>,
+    position: Option<i64>,
 ) -> CmdResult<()> {
     if id == "inbox" {
         return Err("收件箱不能移动".to_string());
     }
-    sqlx::query("UPDATE lists SET parent_id = $1 WHERE id = $2")
-        .bind(&parent_id)
-        .bind(&id)
-        .execute(pool.inner())
-        .await
-        .map_err(|e| format!("移动清单失败: {}", e))?;
+    match position {
+        Some(pos) => {
+            sqlx::query("UPDATE lists SET parent_id = $1, position = $2 WHERE id = $3")
+                .bind(&parent_id)
+                .bind(pos)
+                .bind(&id)
+                .execute(pool.inner())
+                .await
+                .map_err(|e| format!("移动清单失败: {}", e))?;
+        }
+        None => {
+            sqlx::query("UPDATE lists SET parent_id = $1 WHERE id = $2")
+                .bind(&parent_id)
+                .bind(&id)
+                .execute(pool.inner())
+                .await
+                .map_err(|e| format!("移动清单失败: {}", e))?;
+        }
+    }
+    Ok(())
+}
+
+/// 批量更新清单位置（拖拽排序后）
+#[tauri::command]
+pub async fn list_reorder(
+    pool: State<'_, sqlx::SqlitePool>,
+    items: Vec<(String, i64)>,
+) -> CmdResult<()> {
+    for (id, position) in &items {
+        sqlx::query("UPDATE lists SET position = $1 WHERE id = $2")
+            .bind(position)
+            .bind(id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新位置失败: {}", e))?;
+    }
     Ok(())
 }
 

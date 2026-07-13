@@ -89,8 +89,12 @@ export async function renameList(id: string, name: string, color: string): Promi
   await invoke<void>("list_rename", { id, name, color });
 }
 
-export async function moveList(id: string, parentId: string | null): Promise<void> {
-  await invoke<void>("list_move", { id, parentId });
+export async function moveList(id: string, parentId: string | null, position?: number): Promise<void> {
+  await invoke<void>("list_move", { id, parentId, position: position ?? null });
+}
+
+export async function reorderLists(items: [string, number][]): Promise<void> {
+  await invoke<void>("list_reorder", { items });
 }
 
 // ─── 任务操作 ────────────────────────────────────────────

@@ -90,6 +90,46 @@ export const useListStore = defineStore("list", () => {
     return parentId;
   }
 
+  /**
+   * 移动节点到新父级和位置
+   * @param id 被移动的节点 ID
+   * @param targetParentId 目标父级 ID（null = 根级）
+   * @param targetIndex 在目标父级子列表中的插入位置（0 = 最前）
+   */
+  async function moveNode(id: string, targetParentId: string | null, targetIndex: number) {
+    // 获取目标父级的子列表（移动前）
+    const siblings = sortedLists.value.filter(
+      (l) => l.parentId === targetParentId && l.id !== id,
+    );
+
+    // 计算新 position：取前后兄弟的中间值
+    let newPosition: number;
+    if (siblings.length === 0) {
+      // 目标为空，给一个大值
+      newPosition = Date.now();
+    } else if (targetIndex <= 0) {
+      // 插到最前面：比第一个小
+      newPosition = siblings[0].position - 1000;
+    } else if (targetIndex >= siblings.length) {
+      // 插到最后面：比最后一个大
+      newPosition = siblings[siblings.length - 1].position + 1000;
+    } else {
+      // 插到中间：取前后平均
+      newPosition = Math.floor(
+        (siblings[targetIndex - 1].position + siblings[targetIndex].position) / 2,
+      );
+    }
+
+    await db.moveList(id, targetParentId, newPosition);
+
+    // 更新本地数据
+    const node = lists.value.find((l) => l.id === id);
+    if (node) {
+      node.parentId = targetParentId;
+      node.position = newPosition;
+    }
+  }
+
   return {
     lists,
     sortedLists,
@@ -101,5 +141,6 @@ export const useListStore = defineStore("list", () => {
     getById,
     getChildren,
     ensureFolderPath,
+    moveNode,
   };
 });

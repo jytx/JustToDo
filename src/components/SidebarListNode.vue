@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 侧边栏清单树形节点 —— 递归渲染目录和清单
+// 支持拖拽排序和拖拽到其他目录
 import { ref } from "vue";
 import type { ListTreeNode } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
@@ -21,25 +22,108 @@ const taskStore = useTaskStore();
 
 const expanded = ref(true);
 
-/** 删除确认 */
 const emit = defineEmits<{
   edit: [node: ListTreeNode];
   delete: [node: ListTreeNode];
+  /** 拖拽放置：被拖拽的节点 ID，目标父级 ID，目标位置（before/after/inside） */
+  move: [draggedId: string, targetNode: ListTreeNode, position: "before" | "after" | "inside"];
 }>();
 
 function onMenuClick(key: string) {
   if (key === "edit") emit("edit", props.node);
   else if (key === "delete") emit("delete", props.node);
 }
+
+// ─── 拖拽逻辑 ──────────────────────────────────────────
+
+/** 当前 drag-over 状态：null / 'before' / 'after' / 'inside' */
+const dragOver = ref<"before" | "after" | "inside" | null>(null);
+const isDragging = ref(false);
+
+/** 是否可拖动（inbox 不可拖） */
+const draggable = props.node.id !== "inbox";
+
+function onDragStart(e: DragEvent) {
+  if (!draggable) {
+    e.preventDefault();
+    return;
+  }
+  e.dataTransfer!.setData("text/plain", props.node.id);
+  e.dataTransfer!.effectAllowed = "move";
+  isDragging.value = true;
+}
+
+function onDragEnd() {
+  isDragging.value = false;
+  dragOver.value = null;
+}
+
+function onDragOver(e: DragEvent) {
+  // 不允许拖到自己上
+  const draggedId = e.dataTransfer?.types.includes("text/plain");
+  if (!draggedId) return;
+
+  e.preventDefault();
+  e.dataTransfer!.dropEffect = "move";
+
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const y = e.clientY - rect.top;
+  const h = rect.height;
+
+  if (props.node.isFolder) {
+    // 目录：上 1/3 = before，中间 1/3 = inside，下 1/3 = after
+    if (y < h * 0.33) dragOver.value = "before";
+    else if (y > h * 0.66) dragOver.value = "after";
+    else dragOver.value = "inside";
+  } else {
+    // 清单：上半 = before，下半 = after
+    if (y < h * 0.5) dragOver.value = "before";
+    else dragOver.value = "after";
+  }
+}
+
+function onDragLeave() {
+  dragOver.value = null;
+}
+
+function onDrop(e: DragEvent) {
+  e.preventDefault();
+  e.stopPropagation();
+  const draggedId = e.dataTransfer!.getData("text/plain");
+  if (!draggedId || draggedId === props.node.id || !dragOver.value) {
+    dragOver.value = null;
+    return;
+  }
+
+  emit("move", draggedId, props.node, dragOver.value);
+
+  // 如果是放入目录且目录收起，展开它
+  if (dragOver.value === "inside" && props.node.isFolder) {
+    expanded.value = true;
+  }
+
+  dragOver.value = null;
+}
 </script>
 
 <template>
-  <div class="list-node">
+  <div class="list-node" :class="{ 'list-node--dragging': isDragging }">
     <!-- 目录 -->
     <div
       v-if="node.isFolder"
       class="list-node__row list-node__folder"
+      :class="{
+        'list-node--drag-before': dragOver === 'before',
+        'list-node--drag-after': dragOver === 'after',
+        'list-node--drag-inside': dragOver === 'inside',
+      }"
       :style="{ paddingLeft: depth * 16 + 'px' }"
+      :draggable="draggable"
+      @dragstart="onDragStart"
+      @dragend="onDragEnd"
+      @dragover="onDragOver"
+      @dragleave="onDragLeave"
+      @drop="onDrop"
     >
       <span class="list-node__expand" @click="expanded = !expanded">
         <icon-down v-if="expanded" :size="12" />
@@ -74,7 +158,17 @@ function onMenuClick(key: string) {
       v-else
       :to="`/list/${node.id}`"
       class="list-node__row list-node__list-item"
+      :class="{
+        'list-node--drag-before': dragOver === 'before',
+        'list-node--drag-after': dragOver === 'after',
+      }"
       :style="{ paddingLeft: depth * 16 + 'px' }"
+      :draggable="draggable"
+      @dragstart="onDragStart"
+      @dragend="onDragEnd"
+      @dragover="onDragOver"
+      @dragleave="onDragLeave"
+      @drop="onDrop"
     >
       <span class="list-node__dot-placeholder" />
       <span
@@ -116,6 +210,7 @@ function onMenuClick(key: string) {
         :depth="depth + 1"
         @edit="(n: ListTreeNode) => $emit('edit', n)"
         @delete="(n: ListTreeNode) => $emit('delete', n)"
+        @move="(id: string, target: ListTreeNode, pos: 'before' | 'after' | 'inside') => $emit('move', id, target, pos)"
       />
     </div>
   </div>
@@ -147,6 +242,25 @@ function onMenuClick(key: string) {
 
 .list-node__folder:hover {
   background-color: var(--jt-surface-hover);
+}
+
+/* 拖拽中：半透明 */
+.list-node--dragging {
+  opacity: 0.4;
+}
+
+/* drag-over 视觉反馈 */
+.list-node--drag-before {
+  box-shadow: inset 0 2px 0 0 var(--jt-primary);
+}
+
+.list-node--drag-after {
+  box-shadow: inset 0 -2px 0 0 var(--jt-primary);
+}
+
+.list-node--drag-inside {
+  background-color: var(--jt-accent-soft) !important;
+  box-shadow: inset 0 0 0 2px var(--jt-primary);
 }
 
 /* 展开箭头 */
