@@ -109,6 +109,11 @@ useShortcuts({
                   v-if="f.value === taskStore.currentSort.field"
                   :size="14"
                 />
+                <span
+                  v-else
+                  class="sort-menu__placeholder"
+                  aria-hidden="true"
+                />
                 <span>{{ f.label }}</span>
               </a-menu-item>
             </a-menu>
@@ -133,22 +138,27 @@ useShortcuts({
 <!-- 排序下拉菜单（非 scoped，因为 popup 渲染到 body） -->
 <style>
 .sort-menu {
-  padding: 4px 0 !important; /* 去掉 Arco 默认的 12px 外 padding */
-  min-width: 140px !important;
+  min-width: 140px;
+}
+
+/* 去掉 Arco 默认内层 padding（4px 8px） */
+.sort-menu .arco-menu-inner {
+  padding: 0;
 }
 
 /* 让菜单项的 icon-check 位置固定（用 grid 两列），所有项文字位置一致 */
 .sort-menu .arco-menu-item {
-  display: grid !important;
-  grid-template-columns: 18px 1fr !important;
-  align-items: center !important;
-  gap: 6px !important;
-  padding-left: 12px !important;
-  padding-right: 12px !important;
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  gap: 6px;
 }
 
-.sort-menu .arco-menu-item > .arco-icon {
-  margin-right: 0 !important; /* 去掉 Arco 默认的 8px 右边距，避免和 grid gap 重复 */
+/* 占位元素（未选中时的空白 icon 位），保证所有项宽度一致 */
+.sort-menu .sort-menu__placeholder {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
 }
 </style>
 
@@ -170,12 +180,12 @@ useShortcuts({
 }
 
 .app-layout__topbar {
-  position: absolute;
+  position: fixed;
   /* 和侧边栏的"智能视图/清单/标签/习惯"subheader 同一行，靠右 */
   top: 40px;
   right: 24px;
   height: 24px;
-  z-index: 10;
+  z-index: 1100; /* 高于详情面板 (1000) */
   display: flex;
   align-items: center;
   gap: 2px;
