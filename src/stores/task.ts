@@ -233,7 +233,13 @@ export const useTaskStore = defineStore("task", () => {
     subtaskCache.value = newCache;
     // 同步 selectedTaskObj
     if (selectedTaskObj.value?.id === id) {
-      selectedTaskObj.value = { ...selectedTaskObj.value, done, completedAt };
+      // 任务被完成时关闭详情面板（保持未完成可继续编辑）
+      if (done) {
+        selectedTaskId.value = null;
+        selectedTaskObj.value = null;
+      } else {
+        selectedTaskObj.value = { ...selectedTaskObj.value, done, completedAt };
+      }
     }
     refreshCounts();
   }
