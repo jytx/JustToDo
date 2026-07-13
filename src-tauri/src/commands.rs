@@ -453,6 +453,24 @@ pub async fn task_toggle(
     Ok(())
 }
 
+/// 批量更新任务排序（拖拽排序后）
+#[tauri::command]
+pub async fn task_reorder(
+    pool: State<'_, sqlx::SqlitePool>,
+    items: Vec<(String, i64)>,
+) -> CmdResult<()> {
+    for (id, sort_order) in &items {
+        sqlx::query("UPDATE tasks SET sort_order = $1, updated_at = $2 WHERE id = $3")
+            .bind(sort_order)
+            .bind(now())
+            .bind(id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新排序失败: {}", e))?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn task_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdResult<()> {
     sqlx::query("DELETE FROM tasks WHERE id = $1")

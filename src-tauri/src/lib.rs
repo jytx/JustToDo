@@ -55,6 +55,7 @@ pub fn run() {
             commands::task_create,
             commands::task_update,
             commands::task_toggle,
+            commands::task_reorder,
             commands::task_delete,
             commands::task_get_by_id,
             commands::task_get_subtasks,

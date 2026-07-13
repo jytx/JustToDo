@@ -206,6 +206,11 @@ export async function deleteTask(id: string): Promise<void> {
   await invoke<void>("task_delete", { id });
 }
 
+/** 批量更新任务排序 */
+export async function reorderTasks(items: [string, number][]): Promise<void> {
+  await invoke<void>("task_reorder", { items });
+}
+
 // ─── 标签操作 ────────────────────────────────────────────
 
 export async function getTags(): Promise<Tag[]> {

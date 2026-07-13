@@ -20,9 +20,71 @@ const props = withDefaults(
   { depth: 0, showListDot: false },
 );
 
-defineEmits<{
+const emit = defineEmits<{
   select: [];
+  reorder: [draggedId: string, targetId: string, position: "before" | "after"];
 }>();
+
+// ─── 拖拽排序（仅根任务 depth=0 且未完成时启用） ──────────────
+const canDrag = computed(() => props.depth === 0 && !props.task.done);
+const dragOver = ref<"before" | "after" | null>(null);
+const isDragging = ref(false);
+
+function onDragStart(e: DragEvent) {
+  if (!canDrag.value) {
+    e.preventDefault();
+    return;
+  }
+  e.dataTransfer!.setData("text/plain", props.task.id);
+  e.dataTransfer!.effectAllowed = "move";
+
+  // 自定义幽灵图
+  const ghost = document.createElement("div");
+  ghost.textContent = props.task.title;
+  ghost.style.cssText = `position:absolute;top:-1000px;left:-1000px;padding:4px 12px;background:var(--jt-primary,#4F46E5);color:#fff;font-size:13px;border-radius:6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;`;
+  document.body.appendChild(ghost);
+  e.dataTransfer!.setDragImage(ghost, 10, 10);
+  setTimeout(() => document.body.removeChild(ghost), 0);
+
+  isDragging.value = true;
+}
+
+function onDragEnd() {
+  isDragging.value = false;
+  dragOver.value = null;
+}
+
+function onDragOver(e: DragEvent) {
+  if (!canDrag.value) return;
+  e.preventDefault();
+  e.dataTransfer!.dropEffect = "move";
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const y = e.clientY - rect.top;
+  dragOver.value = y < rect.height * 0.5 ? "before" : "after";
+}
+
+function onDragLeave(e: DragEvent) {
+  const related = e.relatedTarget as HTMLElement | null;
+  if (related && (e.currentTarget as HTMLElement).contains(related)) return;
+  dragOver.value = null;
+}
+
+function onDrop(e: DragEvent) {
+  e.preventDefault();
+  e.stopPropagation();
+  const draggedId = e.dataTransfer!.getData("text/plain");
+  if (!draggedId || draggedId === props.task.id || !canDrag.value) {
+    dragOver.value = null;
+    return;
+  }
+
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const y = e.clientY - rect.top;
+  const position: "before" | "after" = y < rect.height * 0.5 ? "before" : "after";
+
+  emit("reorder", draggedId, props.task.id, position);
+  dragOver.value = null;
+}
 
 const taskStore = useTaskStore();
 
@@ -65,9 +127,20 @@ watch(childCount, (n) => {
     <!-- 当前任务行 -->
     <div
       class="task-item"
-      :class="{ 'task-item--done': task.done }"
+      :class="{
+        'task-item--done': task.done,
+        'task-item--dragging': isDragging,
+        'task-item--drag-before': dragOver === 'before',
+        'task-item--drag-after': dragOver === 'after',
+      }"
       :style="{ paddingLeft: depth * 20 + 'px' }"
+      :draggable="canDrag ? 'true' : 'false'"
       @click="$emit('select')"
+      @dragstart="onDragStart"
+      @dragend="onDragEnd"
+      @dragover="onDragOver"
+      @dragleave="onDragLeave"
+      @drop="onDrop"
     >
       <!-- 展开箭头（无子任务时不显示） -->
       <span
@@ -162,6 +235,21 @@ watch(childCount, (n) => {
 
 .task-item:hover {
   background-color: var(--jt-surface-hover);
+}
+
+/* 拖拽排序视觉反馈 */
+.task-item--dragging {
+  opacity: 0.3;
+}
+
+.task-item--drag-before {
+  background-color: color-mix(in srgb, var(--jt-primary) 5%, transparent) !important;
+  box-shadow: inset 0 2px 0 0 var(--jt-primary);
+}
+
+.task-item--drag-after {
+  background-color: color-mix(in srgb, var(--jt-primary) 5%, transparent) !important;
+  box-shadow: inset 0 -2px 0 0 var(--jt-primary);
 }
 
 .task-item__expand {

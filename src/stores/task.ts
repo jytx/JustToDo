@@ -296,6 +296,46 @@ export const useTaskStore = defineStore("task", () => {
     return currentTasks.value.filter((t) => t.parentId === parentId);
   }
 
+  /** 拖拽排序：将 draggedId 移到 targetId 的前面或后面 */
+  async function reorderTasks(draggedId: string, targetId: string, position: "before" | "after") {
+    // 只操作未完成的根任务
+    const open = openTasks.value;
+    const dragged = open.find((t) => t.id === draggedId);
+    const target = open.find((t) => t.id === targetId);
+    if (!dragged || !target) return;
+
+    // 在 currentTasks 中移动 dragged 到新位置
+    const allTasks = [...currentTasks.value];
+    const draggedIdx = allTasks.findIndex((t) => t.id === draggedId);
+    const targetIdx = allTasks.findIndex((t) => t.id === targetId);
+    if (draggedIdx === -1 || targetIdx === -1) return;
+
+    // 移除被拖拽的任务
+    const [moved] = allTasks.splice(draggedIdx, 1);
+    // 重新找目标索引（移除后可能变了）
+    const newTargetIdx = allTasks.findIndex((t) => t.id === targetId);
+    const insertIdx = position === "before" ? newTargetIdx : newTargetIdx + 1;
+    allTasks.splice(insertIdx, 0, moved);
+
+    // 计算新的 sort_order（按 openTasks 在新顺序中的位置赋值，间隔 1000）
+    const newOpenOrder = allTasks.filter((t) => !t.done);
+    const updates: [string, number][] = newOpenOrder.map((t, i) => [t.id, i * 1000]);
+
+    // 本地更新 sortOrder
+    for (const [id, sortOrder] of updates) {
+      const task = allTasks.find((t) => t.id === id);
+      if (task) task.sortOrder = sortOrder;
+    }
+    currentTasks.value = allTasks;
+
+    // 持久化
+    try {
+      await db.reorderTasks(updates);
+    } catch (e) {
+      console.error("[TaskStore] 排序失败:", e);
+    }
+  }
+
   return {
     currentListId,
     currentSmartView,
@@ -320,6 +360,7 @@ export const useTaskStore = defineStore("task", () => {
     toggleTask,
     updateTask,
     deleteTask,
+    reorderTasks,
     selectTask,
     loadSubtasks,
     loadSubtasksToCache,
