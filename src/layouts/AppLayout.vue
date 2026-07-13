@@ -45,12 +45,9 @@ const topbarStyle = computed(() => {
   return { right: `${panelWidth.value + 24}px` };
 });
 
-/** 排序下拉显示状态（点选后自动关闭） */
-const sortDropdownOpen = ref(false);
-
-function onSortChange(field: SortField) {
-  taskStore.setSort(field);
-  sortDropdownOpen.value = false;
+/** 排序变更（Arco dropdown 默认 hideOnSelect=true，选中后自动关闭） */
+async function onSortChange(field: SortField) {
+  await taskStore.setSort(field);
 }
 
 // 全局快捷键
@@ -103,9 +100,9 @@ useShortcuts({
         <!-- 排序按钮（仅清单/标签/全部视图显示） -->
         <a-dropdown
           v-if="showSortButton"
-          v-model:visible="sortDropdownOpen"
           trigger="click"
           position="br"
+          @select="(key: any) => onSortChange(String(key) as SortField)"
         >
           <a-button
             type="text"
@@ -115,10 +112,7 @@ useShortcuts({
             <template #icon><icon-sort :size="18" /></template>
           </a-button>
           <template #content>
-            <a-menu
-              class="sort-menu"
-              @menu-item-click="(key: string) => onSortChange(key as SortField)"
-            >
+            <a-menu class="sort-menu">
               <a-menu-item v-for="f in SORT_FIELDS" :key="f.value">
                 <icon-check
                   v-if="f.value === taskStore.currentSort.field"
