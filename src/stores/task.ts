@@ -276,6 +276,7 @@ export const useTaskStore = defineStore("task", () => {
     delete subtaskCache.value[id];
     if (selectedTaskId.value === id) {
       selectedTaskId.value = null;
+      selectedTaskObj.value = null; // 同步清空选中对象，关闭详情面板
     }
     refreshCounts();
   }
