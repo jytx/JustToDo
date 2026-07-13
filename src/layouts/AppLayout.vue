@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 三栏布局骨架：侧边栏 + 任务列表区 + 任务详情面板
 // 集成全局搜索、快速添加、快捷键
-import { ref, computed, nextTick } from "vue";
+import { ref, computed } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { useTaskStore } from "@/stores/task";
 import { useRoute } from "vue-router";
@@ -45,15 +45,8 @@ const topbarStyle = computed(() => {
   return { right: `${panelWidth.value + 24}px` };
 });
 
-/** 排序下拉显示状态（点选后自动关闭） */
-const sortDropdownOpen = ref(false);
-
-/** 排序变更（点选后通过 v-model:visible 自动关闭 popup） */
+/** 排序变更（a-doption + Arco dropdown 默认 hideOnSelect=true 自动关闭） */
 async function onSortChange(field: SortField) {
-  // 立即关闭下拉（在异步操作前）
-  sortDropdownOpen.value = false;
-  // 等下一个 tick 确保 close 事件先处理
-  await nextTick();
   await taskStore.setSort(field);
 }
 
@@ -107,9 +100,10 @@ useShortcuts({
         <!-- 排序按钮（仅清单/标签/全部视图显示） -->
         <a-dropdown
           v-if="showSortButton"
-          v-model:visible="sortDropdownOpen"
           trigger="click"
           position="br"
+          unmount-on-close
+          @select="(key: any) => onSortChange(String(key) as SortField)"
         >
           <a-button
             type="text"
@@ -119,23 +113,24 @@ useShortcuts({
             <template #icon><icon-sort :size="18" /></template>
           </a-button>
           <template #content>
-            <a-menu
-              class="sort-menu"
-              @menu-item-click="(key: string | number) => onSortChange(String(key) as SortField)"
+            <a-doption
+              v-for="f in SORT_FIELDS"
+              :key="f.value"
+              :value="f.value"
+              class="sort-menu__item"
+              :class="{ 'sort-menu__item--active': f.value === taskStore.currentSort.field }"
             >
-              <a-menu-item v-for="f in SORT_FIELDS" :key="f.value">
-                <icon-check
-                  v-if="f.value === taskStore.currentSort.field"
-                  :size="14"
-                />
-                <span
-                  v-else
-                  class="sort-menu__placeholder"
-                  aria-hidden="true"
-                />
-                <span>{{ f.label }}</span>
-              </a-menu-item>
-            </a-menu>
+              <icon-check
+                v-if="f.value === taskStore.currentSort.field"
+                :size="14"
+              />
+              <span
+                v-else
+                class="sort-menu__placeholder"
+                aria-hidden="true"
+              />
+              <span>{{ f.label }}</span>
+            </a-doption>
           </template>
         </a-dropdown>
       </div>
@@ -156,30 +151,38 @@ useShortcuts({
 
 <!-- 排序下拉菜单（非 scoped，因为 popup 渲染到 body） -->
 <style>
-.sort-menu {
-  min-width: 140px;
-}
-
-/* 去掉 Arco 默认内层 padding（4px 8px）和 menu-item padding/margin */
-.sort-menu,
-.sort-menu .arco-menu-inner,
-.sort-menu .arco-menu-item {
+/* 排序 dropdown popup 容器：去掉内层 padding */
+.arco-dropdown-popup .arco-dropdown-group {
   padding: 0 !important;
   margin: 0 !important;
 }
 
-/* 让菜单项的 icon-check 位置固定（用 grid 两列），所有项文字位置一致 */
-.sort-menu .arco-menu-item {
+/* doption 项（li）去掉默认 padding/margin */
+.sort-menu__item {
+  padding: 0 !important;
+  margin: 0 !important;
+  min-width: 140px !important;
+  min-height: 32px !important;
+}
+
+/* 选中项的底色 */
+.sort-menu__item--active {
+  background-color: var(--jt-accent-soft) !important;
+  color: var(--jt-primary) !important;
+}
+
+/* doption 内部内容容器：grid 两列对齐 */
+.sort-menu__item .arco-dropdown-option-content {
   display: grid !important;
   grid-template-columns: 18px 1fr !important;
   align-items: center !important;
   gap: 6px !important;
-  padding-left: 8px !important;
-  padding-right: 8px !important;
+  padding: 0 8px !important;
+  width: 100% !important;
 }
 
-/* 占位元素（未选中时的空白 icon 位），保证所有项宽度一致 */
-.sort-menu .sort-menu__placeholder {
+/* 占位元素 */
+.sort-menu__placeholder {
   display: inline-block;
   width: 14px;
   height: 14px;
