@@ -302,15 +302,6 @@ function formatPriorityLabel(data: any) {
           {{ parent.title }}
         </a-button>
       </div>
-      <div style="flex: 1"></div>
-      <a-button
-        type="text"
-        size="small"
-        shape="circle"
-        @click="taskStore.selectTask(null)"
-      >
-        <icon-close :size="18" />
-      </a-button>
     </div>
 
     <div class="detail-panel__body">

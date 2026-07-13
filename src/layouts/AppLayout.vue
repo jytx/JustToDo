@@ -52,17 +52,6 @@ useShortcuts({
         <a-button
           type="text"
           size="small"
-          @click="sidebarCollapsed = !sidebarCollapsed"
-          :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
-        >
-          <template #icon>
-            <icon-menu-fold v-if="!sidebarCollapsed" :size="18" />
-            <icon-menu-unfold v-else :size="18" />
-          </template>
-        </a-button>
-        <a-button
-          type="text"
-          size="small"
           @click="searchStore.show()"
         >
           <template #icon><icon-search :size="18" /></template>
@@ -120,16 +109,15 @@ useShortcuts({
 
 .app-layout__topbar {
   position: absolute;
-  /* 浮在原生标题栏区域，预留 macOS 右侧 80px 给红黄绿按钮 */
+  /* 居中浮在原生标题栏区域，预留 macOS 右侧 80px 给红黄绿按钮 */
   top: 0;
-  right: 80px;
+  left: 50%;
+  transform: translateX(-50%);
   height: 28px;
   z-index: 10;
   display: flex;
   align-items: center;
-  gap: 4px;
-  /* 整条都是可拖动区域（仅按钮是 no-drag） */
-  -webkit-app-region: drag;
+  gap: 2px;
 }
 
 .app-layout__topbar > * {
