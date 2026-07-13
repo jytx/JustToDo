@@ -36,17 +36,26 @@ pub fn run() {
             })
             .expect("数据库初始化失败");
 
-            // 应用启动时懒生成重复任务实例（异步后台执行，不阻塞启动）
+            // 后台定时检查重复任务实例（启动时立即检查一次，之后每小时检查）
+            // 适配 macOS 长时间不关应用的使用习惯，跨午夜也能生成新实例
             {
                 let pool_clone = pool.clone();
                 tauri::async_runtime::spawn(async move {
-                    match commands::task_generate_recurring_inner(&pool_clone).await {
-                        Ok(n) => {
-                            if n > 0 {
-                                println!("[JustToDo] 生成了 {} 个重复任务实例", n);
+                    let mut first = true;
+                    loop {
+                        match commands::task_generate_recurring_inner(&pool_clone).await {
+                            Ok(n) => {
+                                if n > 0 {
+                                    println!("[JustToDo] 生成了 {} 个重复任务实例", n);
+                                }
                             }
+                            Err(e) => println!("[JustToDo] 生成重复任务失败: {}", e),
                         }
-                        Err(e) => println!("[JustToDo] 生成重复任务失败: {}", e),
+                        // 启动时立即执行（上面已跑），之后每 1 小时检查一次
+                        if first {
+                            first = false;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
                     }
                 });
             }
