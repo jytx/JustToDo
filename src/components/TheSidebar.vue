@@ -492,8 +492,15 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding: 8px 8px 4px;
+  /* 顶部预留 32px（28 原生 Overlay + 4 间距），避免折叠按钮跟原生窗口按钮重叠 */
+  padding: 32px 8px 4px;
   gap: 4px;
+  /* header 整条作为可拖动区域，按钮本身 no-drag */
+  -webkit-app-region: drag;
+}
+
+.sidebar__header > * {
+  -webkit-app-region: no-drag;
 }
 
 .sidebar__collapse-btn {
