@@ -11,9 +11,14 @@ import {
 } from "@arco-design/web-vue/es/icon";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import * as db from "@/api/db";
 
 const theme = useTheme();
 const attachmentPath = ref("");
+
+/** 重复任务检查间隔（分钟） */
+const recurrenceInterval = ref(60);
+const savingInterval = ref(false);
 
 const sections = [
   { id: "general", icon: IconSettings, label: "通用" },
@@ -60,6 +65,13 @@ onMounted(async () => {
   } catch {
     attachmentPath.value = "无法获取路径";
   }
+  // 加载重复任务检查间隔
+  try {
+    const val = await db.getSetting("recurrence_check_interval");
+    if (val) recurrenceInterval.value = Number(val) || 60;
+  } catch {
+    // 用默认值
+  }
 });
 
 async function changeAttachmentPath() {
@@ -71,6 +83,21 @@ async function changeAttachmentPath() {
     }
   } catch (e) {
     console.error("更改附件路径失败:", e);
+  }
+}
+
+/** 保存重复任务检查间隔 */
+async function saveRecurrenceInterval() {
+  savingInterval.value = true;
+  try {
+    await db.setSetting(
+      "recurrence_check_interval",
+      String(recurrenceInterval.value),
+    );
+  } catch (e) {
+    console.error("保存检查间隔失败:", e);
+  } finally {
+    savingInterval.value = false;
   }
 }
 </script>
@@ -126,6 +153,26 @@ async function changeAttachmentPath() {
           <div class="settings-section__item">
             <span>新任务自动设为今天</span>
             <a-switch :model-value="true" />
+          </div>
+          <div class="settings-section__item">
+            <div>
+              <span>重复任务检查间隔</span>
+              <p class="settings-section__path-hint">
+                后台定期检查并生成重复任务实例（应用需保持运行）
+              </p>
+            </div>
+            <div class="settings-section__interval">
+              <a-input-number
+                v-model="recurrenceInterval"
+                size="small"
+                :min="1"
+                :max="1440"
+                :step="1"
+                style="width: 100px"
+                @change="saveRecurrenceInterval"
+              />
+              <span class="settings-section__interval-unit">分钟</span>
+            </div>
           </div>
         </div>
 
@@ -351,6 +398,17 @@ async function changeAttachmentPath() {
   color: var(--jt-text-tertiary);
   margin: 4px 0 0;
   word-break: break-all;
+}
+
+.settings-section__interval {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-section__interval-unit {
+  font-size: 13px;
+  color: var(--jt-text-secondary);
 }
 
 .settings-section__desc--danger {

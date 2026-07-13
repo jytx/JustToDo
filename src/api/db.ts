@@ -244,6 +244,18 @@ export async function getTaskById(id: string): Promise<Task | null> {
   return r ? mapTask(r) : null;
 }
 
+// ─── 应用设置 ────────────────────────────────────────────
+
+/** 查询应用设置 */
+export async function getSetting(key: string): Promise<string | null> {
+  return invoke<string | null>("get_setting", { key });
+}
+
+/** 保存应用设置 */
+export async function setSetting(key: string, value: string): Promise<void> {
+  await invoke<void>("set_setting", { key, value });
+}
+
 export async function createTask(params: CreateTaskInput): Promise<Task> {
   const input = {
     title: params.title,

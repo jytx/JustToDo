@@ -82,6 +82,9 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
     // 006: 任务重复规则字段
     run_migration_006(&pool).await?;
 
+    // 007: 应用设置 KV 表
+    run_migration_007(&pool).await?;
+
     Ok(pool)
 }
 
@@ -123,5 +126,29 @@ async fn run_migration_006(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "tasks", "recurrence_interval", "INTEGER NOT NULL DEFAULT 1").await?;
     add_column_if_missing(pool, "tasks", "recurrence_end_at", "TEXT").await?;
     add_column_if_missing(pool, "tasks", "recurrence_count", "INTEGER").await?;
+    Ok(())
+}
+
+/// 迁移 007：应用设置 KV 表
+/// 存储 recurrence_check_interval（重复任务检查间隔，单位：分钟，默认 60）
+async fn run_migration_007(pool: &SqlitePool) -> Result<(), String> {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS app_settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("创建 app_settings 表失败: {}", e))?;
+
+    // 写入默认值（幂等：仅当不存在时插入）
+    sqlx::query(
+        "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('recurrence_check_interval', '60')",
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("写入默认设置失败: {}", e))?;
+
     Ok(())
 }

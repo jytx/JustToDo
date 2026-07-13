@@ -1357,3 +1357,52 @@ pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<us
 pub async fn task_generate_recurring(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<usize> {
     task_generate_recurring_inner(pool.inner()).await
 }
+
+// ─── 应用设置 ────────────────────────────────────────────
+
+/// 查询设置（纯函数版本，供内部调用）
+pub async fn get_setting_inner(
+    pool: &sqlx::SqlitePool,
+    key: String,
+) -> Result<Option<String>, String> {
+    let row = sqlx::query("SELECT value FROM app_settings WHERE key = $1")
+        .bind(&key)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("查询设置失败: {}", e))?;
+    Ok(row.map(|r| r.get::<String, _>("value")))
+}
+
+#[tauri::command]
+pub async fn get_setting(
+    pool: State<'_, sqlx::SqlitePool>,
+    key: String,
+) -> CmdResult<Option<String>> {
+    get_setting_inner(pool.inner(), key).await
+}
+
+#[tauri::command]
+pub async fn set_setting(
+    pool: State<'_, sqlx::SqlitePool>,
+    interval: tauri::State<'_, std::sync::Arc<std::sync::atomic::AtomicU64>>,
+    key: String,
+    value: String,
+) -> CmdResult<()> {
+    sqlx::query(
+        "INSERT INTO app_settings (key, value) VALUES ($1, $2)
+         ON CONFLICT(key) DO UPDATE SET value = $2",
+    )
+    .bind(&key)
+    .bind(&value)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| format!("保存设置失败: {}", e))?;
+
+    // 如果是检查间隔设置，同步更新内存中的 AtomicU64（分钟 → 秒）
+    if key == "recurrence_check_interval" {
+        if let Ok(mins) = value.parse::<u64>() {
+            interval.store(mins * 60, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    Ok(())
+}

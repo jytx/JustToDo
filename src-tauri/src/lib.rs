@@ -5,6 +5,8 @@ mod commands;
 mod db;
 mod models;
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tauri::Manager;
 
 /// IPC 连通性测试命令
@@ -36,12 +38,27 @@ pub fn run() {
             })
             .expect("数据库初始化失败");
 
-            // 后台定时检查重复任务实例（启动时立即检查一次，之后每小时检查）
-            // 适配 macOS 长时间不关应用的使用习惯，跨午夜也能生成新实例
+            // 后台定时检查重复任务实例
+            // 间隔由 app_settings.recurrence_check_interval 控制（分钟），可在设置页修改
+            // Arc<AtomicU64> 在前后台共享，set_setting 修改时同步更新
+            let check_interval_secs = {
+                // 从数据库读初始值（单位：分钟 → 秒），失败默认 3600（1 小时）
+                let mins = tauri::async_runtime::block_on(async {
+                    commands::get_setting_inner(&pool, "recurrence_check_interval".to_string())
+                        .await
+                        .ok()
+                        .flatten()
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .unwrap_or(60)
+                });
+                Arc::new(AtomicU64::new(mins * 60))
+            };
+            app.manage(check_interval_secs.clone());
+
             {
                 let pool_clone = pool.clone();
+                let interval_clone = check_interval_secs.clone();
                 tauri::async_runtime::spawn(async move {
-                    let mut first = true;
                     loop {
                         match commands::task_generate_recurring_inner(&pool_clone).await {
                             Ok(n) => {
@@ -51,11 +68,9 @@ pub fn run() {
                             }
                             Err(e) => println!("[JustToDo] 生成重复任务失败: {}", e),
                         }
-                        // 启动时立即执行（上面已跑），之后每 1 小时检查一次
-                        if first {
-                            first = false;
-                        }
-                        tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+                        // 读当前间隔（秒）
+                        let secs = interval_clone.load(Ordering::Relaxed);
+                        tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
                     }
                 });
             }
@@ -93,6 +108,8 @@ pub fn run() {
             commands::task_get_by_id,
             commands::task_get_subtasks,
             commands::task_generate_recurring,
+            commands::get_setting,
+            commands::set_setting,
             commands::tag_get_all,
             commands::tag_create,
             commands::tag_set_sort_pref,
