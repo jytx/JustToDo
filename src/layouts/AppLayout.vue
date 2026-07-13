@@ -109,11 +109,10 @@ useShortcuts({
 
 .app-layout__topbar {
   position: absolute;
-  /* 居中浮在原生标题栏区域，预留 macOS 右侧 80px 给红黄绿按钮 */
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  height: 28px;
+  /* 和侧边栏的"智能视图/清单/标签/习惯"subheader 同一行，靠右 */
+  top: 40px;
+  right: 24px;
+  height: 24px;
   z-index: 10;
   display: flex;
   align-items: center;
