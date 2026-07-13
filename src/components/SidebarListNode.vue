@@ -87,23 +87,41 @@ function onDragOver(e: DragEvent) {
   }
 }
 
-function onDragLeave() {
+function onDragLeave(e: DragEvent) {
+  // 只有真正离开这个元素（不是进入子元素）才清除
+  const related = e.relatedTarget as HTMLElement | null;
+  if (related && (e.currentTarget as HTMLElement).contains(related)) return;
   dragOver.value = null;
 }
 
 function onDrop(e: DragEvent) {
   e.preventDefault();
   e.stopPropagation();
+
   const draggedId = e.dataTransfer!.getData("text/plain");
-  if (!draggedId || draggedId === props.node.id || !dragOver.value) {
+  if (!draggedId || draggedId === props.node.id) {
     dragOver.value = null;
     return;
   }
 
-  emit("move", draggedId, props.node, dragOver.value);
+  // 重新计算放置位置（不依赖 dragOver，因为它可能已被 dragLeave 清除）
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const y = e.clientY - rect.top;
+  const h = rect.height;
+
+  let position: "before" | "after" | "inside";
+  if (props.node.isFolder) {
+    if (y < h * 0.33) position = "before";
+    else if (y > h * 0.66) position = "after";
+    else position = "inside";
+  } else {
+    position = y < h * 0.5 ? "before" : "after";
+  }
+
+  emit("move", draggedId, props.node, position);
 
   // 如果是放入目录且目录收起，展开它
-  if (dragOver.value === "inside" && props.node.isFolder) {
+  if (position === "inside" && props.node.isFolder) {
     expanded.value = true;
   }
 
