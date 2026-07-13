@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 三栏布局骨架：侧边栏 + 任务列表区 + 任务详情面板
 // 集成全局搜索、快速添加、快捷键
-import { ref, computed } from "vue";
+import { ref, computed, nextTick } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { useTaskStore } from "@/stores/task";
 import { useRoute } from "vue-router";
@@ -45,8 +45,15 @@ const topbarStyle = computed(() => {
   return { right: `${panelWidth.value + 24}px` };
 });
 
-/** 排序变更（Arco dropdown 默认 hideOnSelect=true，选中后自动关闭） */
+/** 排序下拉显示状态（点选后自动关闭） */
+const sortDropdownOpen = ref(false);
+
+/** 排序变更（点选后通过 v-model:visible 自动关闭 popup） */
 async function onSortChange(field: SortField) {
+  // 立即关闭下拉（在异步操作前）
+  sortDropdownOpen.value = false;
+  // 等下一个 tick 确保 close 事件先处理
+  await nextTick();
   await taskStore.setSort(field);
 }
 
@@ -100,9 +107,9 @@ useShortcuts({
         <!-- 排序按钮（仅清单/标签/全部视图显示） -->
         <a-dropdown
           v-if="showSortButton"
+          v-model:visible="sortDropdownOpen"
           trigger="click"
           position="br"
-          @select="(key: any) => onSortChange(String(key) as SortField)"
         >
           <a-button
             type="text"
@@ -112,7 +119,10 @@ useShortcuts({
             <template #icon><icon-sort :size="18" /></template>
           </a-button>
           <template #content>
-            <a-menu class="sort-menu">
+            <a-menu
+              class="sort-menu"
+              @menu-item-click="(key: string | number) => onSortChange(String(key) as SortField)"
+            >
               <a-menu-item v-for="f in SORT_FIELDS" :key="f.value">
                 <icon-check
                   v-if="f.value === taskStore.currentSort.field"
