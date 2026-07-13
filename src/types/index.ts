@@ -26,6 +26,26 @@ export const PRIORITY_LABELS: Record<Priority, string> = {
   3: "高",
 };
 
+/** 排序字段 */
+export type SortField = "manual" | "priority" | "due" | "title";
+export type SortDir = "asc" | "desc";
+
+/** 排序字段 → 中文标签（用于下拉菜单） */
+export const SORT_FIELD_LABELS: Record<SortField, string> = {
+  manual: "手动（拖拽）",
+  priority: "优先级",
+  due: "截止日期",
+  title: "标题",
+};
+
+/** 排序字段选项数组（供 v-for 使用） */
+export const SORT_FIELDS: Array<{ value: SortField; label: string }> = [
+  { value: "manual", label: SORT_FIELD_LABELS.manual },
+  { value: "priority", label: SORT_FIELD_LABELS.priority },
+  { value: "due", label: SORT_FIELD_LABELS.due },
+  { value: "title", label: SORT_FIELD_LABELS.title },
+];
+
 /** 清单 —— 任务的基础容器 */
 export interface List {
   id: string;

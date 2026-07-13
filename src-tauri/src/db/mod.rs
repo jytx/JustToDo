@@ -76,6 +76,9 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
     // 004: lists 表加 parent_id + is_folder
     run_migration_004(&pool).await?;
 
+    // 005: 排序偏好字段
+    run_migration_005(&pool).await?;
+
     Ok(pool)
 }
 
@@ -83,5 +86,26 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
 async fn run_migration_004(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "lists", "parent_id", "TEXT").await?;
     add_column_if_missing(pool, "lists", "is_folder", "INTEGER NOT NULL DEFAULT 0").await?;
+    Ok(())
+}
+
+/// 迁移 005：排序偏好 —— lists 加 sort_field/sort_dir；新建 tag_sort_prefs 表
+async fn run_migration_005(pool: &SqlitePool) -> Result<(), String> {
+    // lists 表加列
+    add_column_if_missing(pool, "lists", "sort_field", "TEXT").await?;
+    add_column_if_missing(pool, "lists", "sort_dir", "TEXT").await?;
+
+    // 标签排序偏好表
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS tag_sort_prefs (
+            tag_id     TEXT PRIMARY KEY REFERENCES tags(id) ON DELETE CASCADE,
+            sort_field TEXT NOT NULL,
+            sort_dir   TEXT NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("创建 tag_sort_prefs 表失败: {}", e))?;
+
     Ok(())
 }

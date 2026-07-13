@@ -134,9 +134,35 @@ function mapTask(r: RustTask): Task {
   };
 }
 
-export async function getTasksByList(listId: string): Promise<Task[]> {
-  const rows = await invoke<RustTask[]>("task_get_by_list", { listId });
+export async function getTasksByList(
+  listId: string,
+  sortField?: string,
+  sortDir?: string,
+): Promise<Task[]> {
+  const rows = await invoke<RustTask[]>("task_get_by_list", {
+    listId,
+    sortField,
+    sortDir,
+  });
   return rows.map(mapTask);
+}
+
+/** 设置清单的排序偏好（持久化到 SQLite） */
+export async function setListSortPref(
+  listId: string,
+  sortField: string,
+  sortDir: string,
+): Promise<void> {
+  await invoke("list_set_sort_pref", { listId, sortField, sortDir });
+}
+
+/** 设置标签的排序偏好 */
+export async function setTagSortPref(
+  tagId: string,
+  sortField: string,
+  sortDir: string,
+): Promise<void> {
+  await invoke("tag_set_sort_pref", { tagId, sortField, sortDir });
 }
 
 /** 统计各清单的未完成根任务数量 */
@@ -164,8 +190,16 @@ export async function getSmartViewCount(view: SmartViewId): Promise<number> {
   return await invoke<number>("task_count_smart_view", { view });
 }
 
-export async function getSmartViewTasks(view: SmartViewId): Promise<Task[]> {
-  const rows = await invoke<RustTask[]>("task_get_smart_view", { view });
+export async function getSmartViewTasks(
+  view: SmartViewId,
+  sortField?: string,
+  sortDir?: string,
+): Promise<Task[]> {
+  const rows = await invoke<RustTask[]>("task_get_smart_view", {
+    view,
+    sortField,
+    sortDir,
+  });
   return rows.map(mapTask);
 }
 
@@ -345,8 +379,16 @@ export async function removeTaskTag(taskId: string, tagId: string): Promise<void
   await invoke<void>("task_remove_tag", { taskId, tagId });
 }
 
-export async function getTasksByTag(tagId: string): Promise<Task[]> {
-  const rows = await invoke<RustTask[]>("task_get_by_tag", { tagId });
+export async function getTasksByTag(
+  tagId: string,
+  sortField?: string,
+  sortDir?: string,
+): Promise<Task[]> {
+  const rows = await invoke<RustTask[]>("task_get_by_tag", {
+    tagId,
+    sortField,
+    sortDir,
+  });
   return rows.map(mapTask);
 }
 

@@ -3,16 +3,23 @@
 
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import type { Task, Priority } from "@/types";
+import type { Task, Priority, SortField, SortDir } from "@/types";
 import * as db from "@/api/db";
 import type { SmartViewId } from "@/api/db";
 
 export const useTaskStore = defineStore("task", () => {
   const currentListId = ref<string>("inbox");
+  const currentTagId = ref<string | null>(null);
   const currentSmartView = ref<SmartViewId | null>(null);
 
   const currentTasks = ref<Task[]>([]);
   const loading = ref(false);
+
+  /** 当前视图的排序偏好 */
+  const currentSort = ref<{ field: SortField; dir: SortDir }>({
+    field: "manual",
+    dir: "asc",
+  });
 
   const selectedTaskId = ref<string | null>(null);
   /** 当前选中任务对象（独立 ref，不再依赖 subtasks/currentTasks） */
@@ -77,10 +84,15 @@ export const useTaskStore = defineStore("task", () => {
   async function loadTasks(listId: string) {
     loading.value = true;
     currentListId.value = listId;
+    currentTagId.value = null;
     currentSmartView.value = null;
     selectedTaskId.value = null; selectedTaskObj.value = null; // 切换清单时关闭详情面板
     try {
-      currentTasks.value = await db.getTasksByList(listId);
+      currentTasks.value = await db.getTasksByList(
+        listId,
+        currentSort.value.field,
+        currentSort.value.dir,
+      );
       await preloadSubtaskCounts();
     } finally {
       loading.value = false;
@@ -91,10 +103,15 @@ export const useTaskStore = defineStore("task", () => {
   async function loadTagTasks(tagId: string) {
     loading.value = true;
     currentListId.value = "";
+    currentTagId.value = tagId;
     currentSmartView.value = null;
     selectedTaskId.value = null; selectedTaskObj.value = null; // 切换标签时关闭详情面板
     try {
-      currentTasks.value = await db.getTasksByTag(tagId);
+      currentTasks.value = await db.getTasksByTag(
+        tagId,
+        currentSort.value.field,
+        currentSort.value.dir,
+      );
       await preloadSubtaskCounts();
     } finally {
       loading.value = false;
@@ -105,9 +122,14 @@ export const useTaskStore = defineStore("task", () => {
     loading.value = true;
     currentSmartView.value = view;
     currentListId.value = "";
+    currentTagId.value = null;
     selectedTaskId.value = null; selectedTaskObj.value = null; // 切换智能视图时关闭详情面板
     try {
-      currentTasks.value = await db.getSmartViewTasks(view);
+      currentTasks.value = await db.getSmartViewTasks(
+        view,
+        currentSort.value.field,
+        currentSort.value.dir,
+      );
       await preloadSubtaskCounts();
     } finally {
       loading.value = false;
@@ -300,6 +322,23 @@ export const useTaskStore = defineStore("task", () => {
     return currentTasks.value.filter((t) => t.parentId === parentId);
   }
 
+  /** 切换当前视图的排序字段，并重新加载任务 */
+  async function setSort(field: SortField) {
+    if (currentSort.value.field === field) return;
+    currentSort.value = { field, dir: "asc" };
+    // 持久化（清单/标签视图）
+    try {
+      if (currentListId.value) {
+        await db.setListSortPref(currentListId.value, field, "asc");
+      } else if (currentTagId.value) {
+        await db.setTagSortPref(currentTagId.value, field, "asc");
+      }
+    } catch (e) {
+      console.error("[TaskStore] 持久化排序偏好失败:", e);
+    }
+    await reload();
+  }
+
   /** 拖拽排序：将 draggedId 移到 targetId 的前面或后面 */
   async function reorderTasks(draggedId: string, targetId: string, position: "before" | "after") {
     // 只操作未完成的根任务
@@ -342,8 +381,10 @@ export const useTaskStore = defineStore("task", () => {
 
   return {
     currentListId,
+    currentTagId,
     currentSmartView,
     currentTasks,
+    currentSort,
     subtasks,
     subtaskCache,
     loading,
@@ -360,6 +401,7 @@ export const useTaskStore = defineStore("task", () => {
     loadSmartView,
     loadTagTasks,
     reload,
+    setSort,
     createTask,
     createSubtask,
     toggleTask,

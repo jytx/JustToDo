@@ -18,6 +18,21 @@ fn now() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
+/// 根据 sort_field + sort_dir 生成 ORDER BY 子句（不含前缀 "ORDER BY "）
+/// 总是先按 done 排（未完成在前），再按用户指定字段
+fn order_by_clause(sort_field: &str, sort_dir: &str) -> String {
+    let dir = if sort_dir.eq_ignore_ascii_case("desc") { "DESC" } else { "ASC" };
+    match sort_field {
+        "priority" => format!("priority {}, sort_order ASC", if dir == "ASC" { "DESC" } else { "ASC" }), // 默认 desc
+        "due" => format!(
+            "(CASE WHEN due_end_at IS NULL THEN 1 ELSE 0 END), due_end_at {}, sort_order ASC",
+            dir
+        ),
+        "title" => format!("title COLLATE NOCASE {}, sort_order ASC", dir),
+        _ => "sort_order ASC, created_at ASC".to_string(), // manual 默认
+    }
+}
+
 /// 从行数据提取 Task（done 是 0/1 整数）
 fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
     Task {
@@ -293,22 +308,79 @@ pub async fn task_count_smart_view(
 pub async fn task_get_by_list(
     pool: State<'_, sqlx::SqlitePool>,
     list_id: String,
+    sort_field: Option<String>,
+    sort_dir: Option<String>,
 ) -> CmdResult<Vec<Task>> {
-    let rows = sqlx::query(
-        "SELECT * FROM tasks WHERE list_id = $1 AND parent_id IS NULL ORDER BY done ASC, sort_order ASC, created_at ASC",
+    // 解析排序字段（参数 > 数据库持久化 > 默认 manual）
+    let (sf, sd) = resolve_sort_pref(
+        pool.inner(),
+        "list",
+        &list_id,
+        sort_field.as_deref(),
+        sort_dir.as_deref(),
     )
-    .bind(list_id)
-    .fetch_all(pool.inner())
-    .await
-    .map_err(|e| format!("查询任务失败: {}", e))?;
+    .await?;
+
+    let sql = format!(
+        "SELECT * FROM tasks WHERE list_id = $1 AND parent_id IS NULL ORDER BY done ASC, {}",
+        order_by_clause(&sf, &sd)
+    );
+
+    let rows = sqlx::query(&sql)
+        .bind(&list_id)
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| format!("查询任务失败: {}", e))?;
 
     Ok(rows.iter().map(row_to_task).collect())
+}
+
+/// 解析排序偏好：参数 > 数据库持久化 > 默认 manual/asc
+async fn resolve_sort_pref(
+    pool: &sqlx::SqlitePool,
+    pref_type: &str,
+    pref_id: &str,
+    param_field: Option<&str>,
+    param_dir: Option<&str>,
+) -> CmdResult<(String, String)> {
+    if let (Some(f), Some(d)) = (param_field, param_dir) {
+        return Ok((f.to_string(), d.to_string()));
+    }
+    let row_opt = match pref_type {
+        "list" => {
+            sqlx::query("SELECT sort_field, sort_dir FROM lists WHERE id = $1")
+                .bind(pref_id)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+        }
+        "tag" => {
+            sqlx::query("SELECT sort_field, sort_dir FROM tag_sort_prefs WHERE tag_id = $1")
+                .bind(pref_id)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+        }
+        _ => None,
+    };
+    if let Some(row) = row_opt {
+        let f: Option<String> = row.try_get("sort_field").ok();
+        let d: Option<String> = row.try_get("sort_dir").ok();
+        if let (Some(f), Some(d)) = (f, d) {
+            return Ok((f, d));
+        }
+    }
+    Ok(("manual".to_string(), "asc".to_string()))
 }
 
 #[tauri::command]
 pub async fn task_get_smart_view(
     pool: State<'_, sqlx::SqlitePool>,
     view: String,
+    sort_field: Option<String>,
+    sort_dir: Option<String>,
 ) -> CmdResult<Vec<Task>> {
     let today = chrono::Utc::now().date_naive();
     let end_of_today = (today + chrono::Duration::days(1))
@@ -322,29 +394,38 @@ pub async fn task_get_smart_view(
         .format("%Y-%m-%d %H:%M:%S")
         .to_string();
 
+    // today / upcoming 固定按日期+优先级；all 支持可选排序
     let sql = if view == "today" {
-        "SELECT * FROM tasks WHERE parent_id IS NULL AND done = 0 AND due_end_at < $1 ORDER BY due_end_at ASC, priority DESC, sort_order ASC"
+        "SELECT * FROM tasks WHERE parent_id IS NULL AND done = 0 AND due_end_at < $1 ORDER BY due_end_at ASC, priority DESC, sort_order ASC".to_string()
     } else if view == "upcoming" {
-        "SELECT * FROM tasks WHERE parent_id IS NULL AND done = 0 AND due_end_at >= $1 AND due_end_at < $2 ORDER BY due_end_at ASC, priority DESC, sort_order ASC"
+        "SELECT * FROM tasks WHERE parent_id IS NULL AND done = 0 AND due_end_at >= $1 AND due_end_at < $2 ORDER BY due_end_at ASC, priority DESC, sort_order ASC".to_string()
     } else {
-        "SELECT * FROM tasks WHERE parent_id IS NULL ORDER BY done ASC, due_end_at ASC, sort_order ASC"
+        // all 视图支持 sort
+        let (sf, sd) = match (sort_field.as_deref(), sort_dir.as_deref()) {
+            (Some(f), Some(d)) => (f.to_string(), d.to_string()),
+            _ => ("manual".to_string(), "asc".to_string()),
+        };
+        format!(
+            "SELECT * FROM tasks WHERE parent_id IS NULL ORDER BY done ASC, {}",
+            order_by_clause(&sf, &sd)
+        )
     };
 
     let rows = if view == "upcoming" {
-        sqlx::query(sql)
+        sqlx::query(&sql)
             .bind(&end_of_today)
             .bind(&end_of_week)
             .fetch_all(pool.inner())
             .await
             .map_err(|e| format!("查询未来任务失败: {}", e))?
     } else if view == "today" {
-        sqlx::query(sql)
+        sqlx::query(&sql)
             .bind(&end_of_today)
             .fetch_all(pool.inner())
             .await
             .map_err(|e| format!("查询今日任务失败: {}", e))?
     } else {
-        sqlx::query(sql)
+        sqlx::query(&sql)
             .fetch_all(pool.inner())
             .await
             .map_err(|e| format!("查询全部任务失败: {}", e))?
@@ -567,19 +648,75 @@ pub async fn tag_create(pool: State<'_, sqlx::SqlitePool>, name: String) -> CmdR
 pub async fn task_get_by_tag(
     pool: State<'_, sqlx::SqlitePool>,
     tag_id: String,
+    sort_field: Option<String>,
+    sort_dir: Option<String>,
 ) -> CmdResult<Vec<Task>> {
-    let rows = sqlx::query(
+    let (sf, sd) = resolve_sort_pref(
+        pool.inner(),
+        "tag",
+        &tag_id,
+        sort_field.as_deref(),
+        sort_dir.as_deref(),
+    )
+    .await?;
+
+    let sql = format!(
         "SELECT * FROM tasks
          WHERE parent_id IS NULL
            AND id IN (SELECT task_id FROM task_tags WHERE tag_id = $1)
-         ORDER BY done ASC, sort_order ASC, created_at ASC"
-    )
-    .bind(tag_id)
-    .fetch_all(pool.inner())
-    .await
-    .map_err(|e| format!("查询标签任务失败: {}", e))?;
+         ORDER BY done ASC, {}",
+        order_by_clause(&sf, &sd)
+    );
+
+    let rows = sqlx::query(&sql)
+        .bind(&tag_id)
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| format!("查询标签任务失败: {}", e))?;
 
     Ok(rows.iter().map(row_to_task).collect())
+}
+
+/// 设置清单的排序偏好
+#[tauri::command]
+pub async fn list_set_sort_pref(
+    pool: State<'_, sqlx::SqlitePool>,
+    list_id: String,
+    sort_field: String,
+    sort_dir: String,
+) -> CmdResult<()> {
+    sqlx::query(
+        "UPDATE lists SET sort_field = $1, sort_dir = $2 WHERE id = $3",
+    )
+    .bind(&sort_field)
+    .bind(&sort_dir)
+    .bind(&list_id)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| format!("设置清单排序失败: {}", e))?;
+    Ok(())
+}
+
+/// 设置标签的排序偏好
+#[tauri::command]
+pub async fn tag_set_sort_pref(
+    pool: State<'_, sqlx::SqlitePool>,
+    tag_id: String,
+    sort_field: String,
+    sort_dir: String,
+) -> CmdResult<()> {
+    sqlx::query(
+        "INSERT INTO tag_sort_prefs (tag_id, sort_field, sort_dir)
+         VALUES ($1, $2, $3)
+         ON CONFLICT(tag_id) DO UPDATE SET sort_field = $2, sort_dir = $3",
+    )
+    .bind(&tag_id)
+    .bind(&sort_field)
+    .bind(&sort_dir)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| format!("设置标签排序失败: {}", e))?;
+    Ok(())
 }
 
 #[tauri::command]

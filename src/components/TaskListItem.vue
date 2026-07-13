@@ -25,8 +25,14 @@ const emit = defineEmits<{
   reorder: [draggedId: string, targetId: string, position: "before" | "after"];
 }>();
 
-// ─── 拖拽排序（仅根任务 depth=0 且未完成时启用） ──────────────
-const canDrag = computed(() => props.depth === 0 && !props.task.done);
+// ─── 拖拽排序（仅根任务 depth=0 且未完成 且 当前为手动排序模式时启用） ──────────────
+const taskStore = useTaskStore();
+const canDrag = computed(
+  () =>
+    props.depth === 0 &&
+    !props.task.done &&
+    taskStore.currentSort.field === "manual",
+);
 const dragOver = ref<"before" | "after" | null>(null);
 const isDragging = ref(false);
 
@@ -85,8 +91,6 @@ function onDrop(e: DragEvent) {
   emit("reorder", draggedId, props.task.id, position);
   dragOver.value = null;
 }
-
-const taskStore = useTaskStore();
 
 /** 是否被选中（详情面板打开时） */
 const isSelected = computed(() => taskStore.selectedTaskId === props.task.id);
