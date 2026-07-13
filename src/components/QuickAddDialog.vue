@@ -291,7 +291,7 @@ function onKeyDown(e: KeyboardEvent) {
 .quick-add__attrs {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   padding: 0 16px 10px;
 }
@@ -355,9 +355,9 @@ function onKeyDown(e: KeyboardEvent) {
   border-radius: 6px !important;
   white-space: nowrap !important;
   flex-shrink: 0 !important;
-  width: 270px !important;
-  min-width: 270px !important;
-  max-width: 270px !important;
+  width: 200px !important;
+  min-width: 200px !important;
+  max-width: 200px !important;
   transition: background-color 0.15s ease, color 0.15s ease !important;
 }
 
