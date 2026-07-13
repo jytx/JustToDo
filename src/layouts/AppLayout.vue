@@ -52,6 +52,7 @@ async function onSortChange(field: SortField) {
 
 // ─── 删除确认对话框 ──────────────────────────────────────
 const deleteConfirmId = ref<string | null>(null);
+const deleteModalVisible = ref(false);
 const deleteConfirmTitle = computed(() => {
   if (!deleteConfirmId.value) return "";
   // 在所有当前任务（含已完成）里查找，避免已完成任务标题找不到
@@ -61,11 +62,13 @@ const deleteConfirmTitle = computed(() => {
 
 function requestDelete(taskId: string) {
   deleteConfirmId.value = taskId;
+  deleteModalVisible.value = true;
 }
 
 async function confirmDelete() {
   if (!deleteConfirmId.value) return;
   const deletedId = deleteConfirmId.value;
+  deleteModalVisible.value = false;
   // 先把焦点移到下一个任务（如果存在），避免删除后焦点丢失
   taskStore.moveFocus("down");
   await taskStore.deleteTask(deletedId);
@@ -73,13 +76,14 @@ async function confirmDelete() {
 }
 
 function cancelDelete() {
+  deleteModalVisible.value = false;
   deleteConfirmId.value = null;
 }
 
 // ─── 键盘导航 ────────────────────────────────────────────
 function onNavigationKeydown(e: KeyboardEvent) {
   // 0. 上下文守卫：搜索/快速添加/删除确认对话框打开时不处理
-  if (searchStore.open || quickAddOpen.value || deleteConfirmId.value) return;
+  if (searchStore.open || quickAddOpen.value || deleteModalVisible.value) return;
 
   // 1. 输入框/文本域/contentEditable 聚焦时不处理（让位给输入）
   const active = document.activeElement;
@@ -237,9 +241,9 @@ useShortcuts({
 
     <!-- 删除任务确认对话框（键盘 Backspace 触发） -->
     <a-modal
-      :visible="!!deleteConfirmId"
+      v-model:visible="deleteModalVisible"
       :width="400"
-      @cancel="cancelDelete"
+      :mask-closable="false"
       @ok="confirmDelete"
     >
       <template #title>确认删除</template>
