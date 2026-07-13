@@ -93,8 +93,8 @@ onMounted(async () => {
       ⚠️ 数据库错误：{{ dbError }}
     </div>
 
-    <!-- 未完成任务 -->
-    <div class="smart-view__tasks">
+    <!-- 未完成任务（有任务时才渲染，避免空状态被挤出视图） -->
+    <div v-if="taskStore.currentTasks.length > 0" class="smart-view__tasks">
       <TaskListItem
         v-for="task in taskStore.openTasks"
         :key="task.id"
