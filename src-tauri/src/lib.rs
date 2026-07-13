@@ -38,6 +38,12 @@ pub fn run() {
 
             app.manage(pool);
 
+            // 清空窗口标题，避免 macOS Overlay 模式下显示 "JustToDo" 文字
+            // （titleBarStyle: Overlay 下，标题文字依然会浮在左上角）
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_title("");
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
