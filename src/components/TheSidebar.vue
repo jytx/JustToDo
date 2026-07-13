@@ -225,7 +225,6 @@ onMounted(async () => {
 <template>
   <aside class="sidebar" :class="{ 'sidebar--collapsed': collapsed }">
     <div class="sidebar__header">
-      <span v-if="!collapsed" class="sidebar__brand">JustToDo</span>
       <a-button
         class="sidebar__collapse-btn"
         type="text"
@@ -492,8 +491,8 @@ onMounted(async () => {
 .sidebar__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 16px 12px 8px;
+  justify-content: flex-end;
+  padding: 8px 8px 4px;
   gap: 4px;
 }
 
