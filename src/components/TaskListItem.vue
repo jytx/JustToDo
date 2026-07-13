@@ -38,12 +38,16 @@ function onDragStart(e: DragEvent) {
   e.dataTransfer!.setData("text/plain", props.task.id);
   e.dataTransfer!.effectAllowed = "move";
 
-  // 自定义幽灵图
+  // 自定义幽灵图：拖拽手柄图标 + 任务标题
   const ghost = document.createElement("div");
-  ghost.textContent = props.task.title;
-  ghost.style.cssText = `position:absolute;top:-1000px;left:-1000px;padding:4px 12px;background:var(--jt-primary,#4F46E5);color:#fff;font-size:13px;border-radius:6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;`;
+  ghost.innerHTML = `⋮⋮ <span>${props.task.title}</span>`;
+  ghost.style.cssText = `position:absolute;top:-1000px;left:-1000px;display:flex;align-items:center;gap:6px;padding:5px 12px;background:var(--jt-primary,#4F46E5);color:#fff;font-size:13px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.2);max-width:240px;`;
+  const span = ghost.querySelector("span");
+  if (span) {
+    span.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+  }
   document.body.appendChild(ghost);
-  e.dataTransfer!.setDragImage(ghost, 10, 10);
+  e.dataTransfer!.setDragImage(ghost, 15, 12);
   setTimeout(() => document.body.removeChild(ghost), 0);
 
   isDragging.value = true;
@@ -242,14 +246,36 @@ watch(childCount, (n) => {
   opacity: 0.3;
 }
 
+/* drag-before：顶部插入线 + 淡背景 */
 .task-item--drag-before {
   background-color: color-mix(in srgb, var(--jt-primary) 5%, transparent) !important;
-  box-shadow: inset 0 2px 0 0 var(--jt-primary);
+}
+.task-item--drag-before::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  background: var(--jt-primary);
+  border-radius: 1px;
+  z-index: 10;
 }
 
+/* drag-after：底部插入线 + 淡背景 */
 .task-item--drag-after {
   background-color: color-mix(in srgb, var(--jt-primary) 5%, transparent) !important;
-  box-shadow: inset 0 -2px 0 0 var(--jt-primary);
+}
+.task-item--drag-after::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  background: var(--jt-primary);
+  border-radius: 1px;
+  z-index: 10;
 }
 
 .task-item__expand {
