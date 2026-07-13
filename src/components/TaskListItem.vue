@@ -88,6 +88,9 @@ function onDrop(e: DragEvent) {
 
 const taskStore = useTaskStore();
 
+/** 是否被选中（详情面板打开时） */
+const isSelected = computed(() => taskStore.selectedTaskId === props.task.id);
+
 const dueInfo = computed(() => formatDueDate(props.task.dueStartAt, props.task.dueEndAt));
 
 // ─── 子任务展开 / 懒加载 ───────────────────────────────
@@ -129,6 +132,7 @@ watch(childCount, (n) => {
       class="task-item"
       :class="{
         'task-item--done': task.done,
+        'task-item--selected': isSelected,
         'task-item--dragging': isDragging,
         'task-item--drag-before': dragOver === 'before',
         'task-item--drag-after': dragOver === 'after',
@@ -235,6 +239,15 @@ watch(childCount, (n) => {
 
 .task-item:hover {
   background-color: var(--jt-surface-hover);
+}
+
+/* 选中状态 */
+.task-item--selected {
+  background-color: var(--jt-accent-soft);
+}
+
+.task-item--selected:hover {
+  background-color: color-mix(in srgb, var(--jt-primary) 15%, var(--jt-accent-soft));
 }
 
 /* 拖拽排序视觉反馈 */
