@@ -79,6 +79,9 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
     // 005: 排序偏好字段
     run_migration_005(&pool).await?;
 
+    // 006: 任务重复规则字段
+    run_migration_006(&pool).await?;
+
     Ok(pool)
 }
 
@@ -107,5 +110,18 @@ async fn run_migration_005(pool: &SqlitePool) -> Result<(), String> {
     .await
     .map_err(|e| format!("创建 tag_sort_prefs 表失败: {}", e))?;
 
+    Ok(())
+}
+
+/// 迁移 006：任务重复规则字段
+/// - recurrence_freq: 频率（daily/weekly/monthly/yearly），null = 不重复
+/// - recurrence_interval: 间隔（每 N 天/周/月/年）
+/// - recurrence_end_at: 结束日期（null = 永不结束）
+/// - recurrence_count: 剩余次数（null = 不限）
+async fn run_migration_006(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "tasks", "recurrence_freq", "TEXT").await?;
+    add_column_if_missing(pool, "tasks", "recurrence_interval", "INTEGER NOT NULL DEFAULT 1").await?;
+    add_column_if_missing(pool, "tasks", "recurrence_end_at", "TEXT").await?;
+    add_column_if_missing(pool, "tasks", "recurrence_count", "INTEGER").await?;
     Ok(())
 }

@@ -192,7 +192,10 @@ watch(childCount, (n) => {
 
       <div class="task-item__body">
         <span class="task-item__title">{{ task.title }}</span>
-        <div v-if="childCount || dueInfo" class="task-item__meta">
+        <div v-if="task.recurrenceFreq || childCount || dueInfo" class="task-item__meta">
+          <span v-if="task.recurrenceFreq" class="task-item__recurrence" title="重复任务">
+            <icon-refresh :size="12" />
+          </span>
           <span v-if="hasSubtasksLoaded && childCount" class="task-item__subtasks">
             └ {{ childDoneCount }}/{{ childCount }} 个子任务
           </span>
@@ -381,6 +384,13 @@ watch(childCount, (n) => {
 .task-item__subtasks {
   display: flex;
   align-items: center;
+}
+
+.task-item__recurrence {
+  display: inline-flex;
+  align-items: center;
+  color: var(--jt-primary);
+  opacity: 0.7;
 }
 
 .task-item__due {

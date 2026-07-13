@@ -8,8 +8,10 @@ import { useTagStore } from "@/stores/tag";
 import {
   PRIORITY_LABELS,
   PRIORITY_COLORS,
+  RECURRENCE_FREQS,
   type Priority,
   type Task,
+  type RecurrenceFreq,
 } from "@/types";
 import TaskCheckbox from "./TaskCheckbox.vue";
 import PriorityDot from "./PriorityDot.vue";
@@ -175,6 +177,15 @@ function onSubtaskClick(sub: Task) {
 async function setDueRange(start: string | null, end: string | null) {
   if (!task.value) return;
   await taskStore.updateTask(task.value.id, { dueStartAt: start, dueEndAt: end });
+}
+
+/** 设置重复规则（freq + interval） */
+async function setRecurrence(freq: RecurrenceFreq | null, interval: number) {
+  if (!task.value) return;
+  await taskStore.updateTask(task.value.id, {
+    recurrenceFreq: freq,
+    recurrenceInterval: interval,
+  });
 }
 
 async function createSubtask() {
@@ -372,6 +383,43 @@ function formatPriorityLabel(data: any) {
             size="small"
             style="width: 130px"
             :allow-clear="true"
+          />
+        </div>
+
+        <!-- 重复规则 -->
+        <div class="detail-panel__attr">
+          <icon-refresh :size="16" />
+          <span class="detail-panel__attr-label">重复</span>
+          <a-select
+            :model-value="task.recurrenceFreq ?? ''"
+            size="small"
+            style="width: 130px"
+            allow-clear
+            placeholder="不重复"
+            @change="(v: any) => setRecurrence(v || null, task?.recurrenceInterval || 1)"
+          >
+            <a-option value="">不重复</a-option>
+            <a-option
+              v-for="f in RECURRENCE_FREQS"
+              :key="f.value"
+              :value="f.value"
+            >
+              {{ f.label }}
+            </a-option>
+          </a-select>
+        </div>
+
+        <!-- 间隔（仅当设置了频率时显示） -->
+        <div v-if="task.recurrenceFreq" class="detail-panel__attr">
+          <icon-schedule :size="16" />
+          <span class="detail-panel__attr-label">间隔</span>
+          <a-input-number
+            :model-value="task.recurrenceInterval || 1"
+            size="small"
+            :min="1"
+            :max="365"
+            style="width: 130px"
+            @change="(v: number | undefined) => setRecurrence(task?.recurrenceFreq ?? null, v ?? 1)"
           />
         </div>
       </div>

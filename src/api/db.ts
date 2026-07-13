@@ -3,7 +3,7 @@
 // 这样绕过了 plugin-sql 前端 API 的 IPC 问题，走标准 invoke 通道
 
 import { invoke } from "@tauri-apps/api/core";
-import type { List, Task, Priority } from "@/types";
+import type { List, Task, Priority, RecurrenceFreq } from "@/types";
 
 // ─── 类型（与 Rust models.rs 对应）──────────────────────
 
@@ -30,6 +30,10 @@ interface CreateTaskInput {
   priority?: Priority;
   dueStartAt?: string | null;
   dueEndAt?: string | null;
+  recurrenceFreq?: RecurrenceFreq | null;
+  recurrenceInterval?: number;
+  recurrenceEndAt?: string | null;
+  recurrenceCount?: number | null;
 }
 
 interface UpdateTaskInput {
@@ -39,6 +43,10 @@ interface UpdateTaskInput {
   dueStartAt?: string | null;
   dueEndAt?: string | null;
   listId?: string;
+  recurrenceFreq?: RecurrenceFreq | null;
+  recurrenceInterval?: number;
+  recurrenceEndAt?: string | null;
+  recurrenceCount?: number | null;
 }
 
 export type SmartViewId = "today" | "upcoming" | "all";
@@ -114,6 +122,10 @@ interface RustTask {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+  recurrence_freq: string | null;
+  recurrence_interval: number;
+  recurrence_end_at: string | null;
+  recurrence_count: number | null;
 }
 
 function mapTask(r: RustTask): Task {
@@ -131,6 +143,10 @@ function mapTask(r: RustTask): Task {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     completedAt: r.completed_at,
+    recurrenceFreq: r.recurrence_freq as Task["recurrenceFreq"],
+    recurrenceInterval: r.recurrence_interval,
+    recurrenceEndAt: r.recurrence_end_at,
+    recurrenceCount: r.recurrence_count,
   };
 }
 
@@ -236,6 +252,10 @@ export async function createTask(params: CreateTaskInput): Promise<Task> {
     priority: params.priority ?? 0,
     due_start_at: params.dueStartAt ?? null,
     due_end_at: params.dueEndAt ?? null,
+    recurrence_freq: params.recurrenceFreq ?? null,
+    recurrence_interval: params.recurrenceInterval ?? 1,
+    recurrence_end_at: params.recurrenceEndAt ?? null,
+    recurrence_count: params.recurrenceCount ?? null,
   };
   const r = await invoke<RustTask>("task_create", { input });
   return mapTask(r);
@@ -245,13 +265,17 @@ export async function updateTask(
   id: string,
   fields: UpdateTaskInput,
 ): Promise<void> {
-  const input = {
+  const input: Record<string, unknown> = {
     title: fields.title,
     note: fields.note,
     priority: fields.priority,
     due_start_at: fields.dueStartAt,
     due_end_at: fields.dueEndAt,
     list_id: fields.listId,
+    recurrence_freq: fields.recurrenceFreq,
+    recurrence_interval: fields.recurrenceInterval,
+    recurrence_end_at: fields.recurrenceEndAt,
+    recurrence_count: fields.recurrenceCount,
   };
   await invoke<void>("task_update", { id, input });
 }

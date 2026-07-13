@@ -76,7 +76,34 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  /** 重复频率（null = 不重复） */
+  recurrenceFreq: RecurrenceFreq | null;
+  /** 重复间隔（每 N 天/周/月/年） */
+  recurrenceInterval: number;
+  /** 重复结束日期（null = 永不结束） */
+  recurrenceEndAt: string | null;
+  /** 剩余重复次数（null = 不限） */
+  recurrenceCount: number | null;
 }
+
+/** 任务重复频率 */
+export type RecurrenceFreq = "daily" | "weekly" | "monthly" | "yearly";
+
+/** 频率 → 中文标签 */
+export const RECURRENCE_FREQ_LABELS: Record<RecurrenceFreq, string> = {
+  daily: "每天",
+  weekly: "每周",
+  monthly: "每月",
+  yearly: "每年",
+};
+
+/** 频率选项数组（供 v-for 使用） */
+export const RECURRENCE_FREQS: Array<{ value: RecurrenceFreq; label: string }> = [
+  { value: "daily", label: RECURRENCE_FREQ_LABELS.daily },
+  { value: "weekly", label: RECURRENCE_FREQ_LABELS.weekly },
+  { value: "monthly", label: RECURRENCE_FREQ_LABELS.monthly },
+  { value: "yearly", label: RECURRENCE_FREQ_LABELS.yearly },
+];
 
 /**
  * 数据库返回的原始行（snake_case + 整数 done/priority）。
@@ -96,6 +123,10 @@ export interface TaskRow {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+  recurrence_freq: string | null;
+  recurrence_interval: number;
+  recurrence_end_at: string | null;
+  recurrence_count: number | null;
 }
 
 /** 清单数据库原始行 */
@@ -125,6 +156,10 @@ export function mapTaskRow(row: TaskRow): Task {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
+    recurrenceFreq: row.recurrence_freq as RecurrenceFreq | null,
+    recurrenceInterval: row.recurrence_interval,
+    recurrenceEndAt: row.recurrence_end_at,
+    recurrenceCount: row.recurrence_count,
   };
 }
 

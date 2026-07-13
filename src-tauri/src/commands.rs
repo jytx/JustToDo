@@ -3,6 +3,7 @@
 
 use sqlx::Row;
 use tauri::State;
+use chrono::{Datelike, Timelike};
 
 use crate::models::*;
 
@@ -49,6 +50,10 @@ fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
         completed_at: row.get("completed_at"),
+        recurrence_freq: row.get("recurrence_freq"),
+        recurrence_interval: row.get("recurrence_interval"),
+        recurrence_end_at: row.get("recurrence_end_at"),
+        recurrence_count: row.get("recurrence_count"),
     }
 }
 
@@ -446,10 +451,14 @@ pub async fn task_create(
     let parent_id = input.parent_id.clone();
     let due_start_at = input.due_start_at.clone();
     let due_end_at = input.due_end_at.clone();
+    let recurrence_freq = input.recurrence_freq.clone();
+    let recurrence_interval = input.recurrence_interval.unwrap_or(1);
+    let recurrence_end_at = input.recurrence_end_at.clone();
+    let recurrence_count = input.recurrence_count;
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at)
-         VALUES ($1, $2, '', $3, $4, $5, $6, $7, 0, $8, $9, $10, NULL)",
+        "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, recurrence_freq, recurrence_interval, recurrence_end_at, recurrence_count)
+         VALUES ($1, $2, '', $3, $4, $5, $6, $7, 0, $8, $9, $10, NULL, $11, $12, $13, $14)",
     )
     .bind(&id)
     .bind(&input.title)
@@ -461,6 +470,10 @@ pub async fn task_create(
     .bind(sort_order)
     .bind(&ts)
     .bind(&ts)
+    .bind(&recurrence_freq)
+    .bind(recurrence_interval)
+    .bind(&recurrence_end_at)
+    .bind(recurrence_count)
     .execute(pool.inner())
     .await
     .map_err(|e| format!("创建任务失败: {}", e))?;
@@ -479,6 +492,10 @@ pub async fn task_create(
         created_at: ts.clone(),
         updated_at: ts,
         completed_at: None,
+        recurrence_freq,
+        recurrence_interval,
+        recurrence_end_at,
+        recurrence_count,
     })
 }
 
@@ -523,6 +540,31 @@ pub async fn task_update(
     if let Some(list_id) = &input.list_id {
         sqlx::query("UPDATE tasks SET list_id = $1, updated_at = $2 WHERE id = $3")
             .bind(list_id).bind(&ts).bind(&id)
+            .execute(pool.inner()).await
+            .map_err(|e| format!("更新任务失败: {}", e))?;
+    }
+    // 重复规则字段（Option<Option<T>> 表示可能清除字段）
+    if let Some(freq) = &input.recurrence_freq {
+        sqlx::query("UPDATE tasks SET recurrence_freq = $1, updated_at = $2 WHERE id = $3")
+            .bind(freq).bind(&ts).bind(&id)
+            .execute(pool.inner()).await
+            .map_err(|e| format!("更新任务失败: {}", e))?;
+    }
+    if let Some(interval) = input.recurrence_interval {
+        sqlx::query("UPDATE tasks SET recurrence_interval = $1, updated_at = $2 WHERE id = $3")
+            .bind(interval).bind(&ts).bind(&id)
+            .execute(pool.inner()).await
+            .map_err(|e| format!("更新任务失败: {}", e))?;
+    }
+    if let Some(end_at) = &input.recurrence_end_at {
+        sqlx::query("UPDATE tasks SET recurrence_end_at = $1, updated_at = $2 WHERE id = $3")
+            .bind(end_at).bind(&ts).bind(&id)
+            .execute(pool.inner()).await
+            .map_err(|e| format!("更新任务失败: {}", e))?;
+    }
+    if let Some(count) = &input.recurrence_count {
+        sqlx::query("UPDATE tasks SET recurrence_count = $1, updated_at = $2 WHERE id = $3")
+            .bind(count).bind(&ts).bind(&id)
             .execute(pool.inner()).await
             .map_err(|e| format!("更新任务失败: {}", e))?;
     }
@@ -1132,4 +1174,186 @@ pub async fn task_remove_tag(
     .execute(pool.inner()).await
     .map_err(|e| format!("移除任务标签失败: {}", e))?;
     Ok(())
+}
+
+// ─── 任务重复规则 ────────────────────────────────────────
+
+/// 根据频率和间隔，从当前日期计算下一个 due_end_at（保持 ISO 8601 格式）
+/// current 为当前实例的 due_end_at ISO 字符串
+fn next_recurrence_date(current_iso: &str, freq: &str, interval: i32) -> Option<String> {
+    // 解析为 NaiveDateTime（支持 RFC3339）
+    let dt = chrono::DateTime::parse_from_rfc3339(current_iso)
+        .ok()?
+        .with_timezone(&chrono::Utc)
+        .naive_utc();
+    let interval = interval.max(1) as u32; // 间隔最小为 1
+    let next: Option<chrono::NaiveDateTime> = match freq {
+        "daily" | "weekly" => {
+            let days = if freq == "daily" { interval } else { interval * 7 };
+            Some(dt + chrono::Duration::days(days as i64))
+        }
+        "monthly" => {
+            let mut year = dt.year();
+            let mut month = dt.month() + interval;
+            while month > 12 {
+                month -= 12;
+                year += 1;
+            }
+            let day = dt.day().min(days_in_month(year, month));
+            chrono::NaiveDate::from_ymd_opt(year, month, day)
+                .and_then(|d| d.and_hms_opt(dt.hour(), dt.minute(), dt.second()))
+        }
+        "yearly" => {
+            let year = dt.year() + interval as i32;
+            chrono::NaiveDate::from_ymd_opt(year, dt.month(), dt.day())
+                .and_then(|d| d.and_hms_opt(dt.hour(), dt.minute(), dt.second()))
+        }
+        _ => return None,
+    };
+    let next = next?;
+    Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(next, chrono::Utc).to_rfc3339())
+}
+
+/// 计算某年某月的天数
+fn days_in_month(year: i32, month: u32) -> u32 {
+    // 下个月的第 1 天减去本月的第 1 天
+    let this_month_first = match chrono::NaiveDate::from_ymd_opt(year, month, 1) {
+        Some(d) => d,
+        None => return 28,
+    };
+    let next_month_first = if month == 12 {
+        chrono::NaiveDate::from_ymd_opt(year + 1, 1, 1)
+    } else {
+        chrono::NaiveDate::from_ymd_opt(year, month + 1, 1)
+    };
+    match next_month_first {
+        Some(d) => (d - this_month_first).num_days() as u32,
+        None => 28,
+    }
+}
+
+/// 懒生成重复任务实例（应用启动时调用）
+/// 对每个设置了 recurrence_freq 的模板任务，扫描并生成应该已出现但缺失的实例
+pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<usize, String> {
+    let today_end = (chrono::Utc::now().date_naive() + chrono::Duration::days(1))
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+
+    // 查询所有模板任务（recurrence_freq IS NOT NULL）
+    let templates = sqlx::query(
+        "SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("查询重复模板失败: {}", e))?;
+
+    let mut generated = 0usize;
+
+    for template_row in &templates {
+        let template: Task = row_to_task(template_row);
+        let freq = match &template.recurrence_freq {
+            Some(f) => f.as_str(),
+            None => continue,
+        };
+        let interval = template.recurrence_interval.max(1);
+
+        // 基准日期：查询该模板已有实例的最新 due_end_at，没有则用模板自己的 due_end_at
+        let last_instance = sqlx::query(
+            "SELECT due_end_at FROM tasks WHERE parent_id = $1 AND due_end_at IS NOT NULL ORDER BY due_end_at DESC LIMIT 1",
+        )
+        .bind(&template.id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("查询实例失败: {}", e))?;
+
+        let current_iso_opt = match (last_instance, &template.due_end_at) {
+            (Some(row), _) => row.try_get::<String, _>("due_end_at").ok(),
+            (None, Some(d)) => Some(d.clone()),
+            (None, None) => continue, // 模板没有截止日期，无法生成
+        };
+
+        let Some(mut current_iso) = current_iso_opt else { continue };
+
+        // 循环生成，直到超过今天或达到结束条件
+        loop {
+            // 检查剩余次数
+            if let Some(count) = template.recurrence_count {
+                if count <= 0 {
+                    break;
+                }
+            }
+            // 检查结束日期
+            if let Some(end_at) = &template.recurrence_end_at {
+                if current_iso.as_str() > end_at.as_str() {
+                    break;
+                }
+            }
+
+            // 计算下一个日期
+            let next_iso = match next_recurrence_date(&current_iso, freq, interval) {
+                Some(d) => d,
+                None => break,
+            };
+
+            // 解析下一个日期的 NaiveDateTime 用于比较
+            let next_naive = match chrono::DateTime::parse_from_rfc3339(&next_iso) {
+                Ok(d) => d.with_timezone(&chrono::Utc).naive_utc().format("%Y-%m-%d %H:%M:%S").to_string(),
+                Err(_) => break,
+            };
+
+            // 如果下一个日期 > 今天，停止生成
+            if next_naive.as_str() >= today_end.as_str() {
+                break;
+            }
+
+            // 检查该日期是否已有实例（避免重复生成）
+            let exists = sqlx::query(
+                "SELECT id FROM tasks WHERE parent_id = $1 AND due_end_at = $2 LIMIT 1",
+            )
+            .bind(&template.id)
+            .bind(&next_iso)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| format!("检查实例存在失败: {}", e))?;
+
+            if exists.is_none() {
+                // 生成新实例
+                let new_id = uuid();
+                let ts = now();
+                let new_sort_order = chrono::Utc::now().timestamp_millis();
+                sqlx::query(
+                    "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, recurrence_freq, recurrence_interval, recurrence_end_at, recurrence_count)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $11, NULL, NULL, 1, NULL, NULL)",
+                )
+                .bind(&new_id)
+                .bind(&template.title)
+                .bind(&template.note)
+                .bind(&template.list_id)
+                .bind(&template.id) // parent_id 指向模板
+                .bind(template.priority)
+                .bind(&template.due_start_at) // 保留模板的开始日期（可优化为相对计算）
+                .bind(&next_iso)
+                .bind(new_sort_order)
+                .bind(&ts)
+                .bind(&ts)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("生成实例失败: {}", e))?;
+                generated += 1;
+            }
+
+            // 减少剩余次数（模板自身的 count 不变，用生成的实例数量判断）
+            // 注意：这里不复用模板的 count 字段做减法，而是用生成数量判断
+            current_iso = next_iso;
+        }
+    }
+
+    Ok(generated)
+}
+
+#[tauri::command]
+pub async fn task_generate_recurring(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<usize> {
+    task_generate_recurring_inner(pool.inner()).await
 }

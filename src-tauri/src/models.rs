@@ -18,6 +18,10 @@ pub struct Task {
     pub created_at: String,
     pub updated_at: String,
     pub completed_at: Option<String>,
+    pub recurrence_freq: Option<String>,
+    pub recurrence_interval: i32,
+    pub recurrence_end_at: Option<String>,
+    pub recurrence_count: Option<i32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -47,6 +51,10 @@ pub struct CreateTaskInput {
     pub priority: Option<i32>,
     pub due_start_at: Option<String>,
     pub due_end_at: Option<String>,
+    pub recurrence_freq: Option<String>,
+    pub recurrence_interval: Option<i32>,
+    pub recurrence_end_at: Option<String>,
+    pub recurrence_count: Option<i32>,
 }
 
 /// 更新任务的参数（所有字段可选）
@@ -58,4 +66,8 @@ pub struct UpdateTaskInput {
     pub due_start_at: Option<String>,
     pub due_end_at: Option<String>,
     pub list_id: Option<String>,
+    pub recurrence_freq: Option<Option<String>>,
+    pub recurrence_interval: Option<i32>,
+    pub recurrence_end_at: Option<Option<String>>,
+    pub recurrence_count: Option<Option<i32>>,
 }
