@@ -59,6 +59,31 @@ function onDragStart(e: DragEvent) {
   }
   e.dataTransfer!.setData("text/plain", props.node.id);
   e.dataTransfer!.effectAllowed = "move";
+
+  // 自定义拖拽幽灵图：创建一个简洁的小卡片
+  const ghost = document.createElement("div");
+  ghost.textContent = props.node.name;
+  ghost.style.cssText = `
+    position: absolute;
+    top: -1000px;
+    left: -1000px;
+    padding: 4px 12px;
+    background: var(--jt-primary, #4F46E5);
+    color: #fff;
+    font-size: 13px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  `;
+  document.body.appendChild(ghost);
+  e.dataTransfer!.setDragImage(ghost, 10, 10);
+
+  // 拖拽结束后移除幽灵元素
+  setTimeout(() => document.body.removeChild(ghost), 0);
+
   isDragging.value = true;
 }
 
@@ -267,23 +292,46 @@ function onDrop(e: DragEvent) {
   background-color: var(--jt-surface-hover);
 }
 
-/* 拖拽中：半透明 */
+/* 拖拽中：隐藏原始行（用透明占位，不显示难看的幽灵截图） */
 .list-node--dragging {
-  opacity: 0.4;
+  opacity: 0.3;
 }
 
-/* drag-over 视觉反馈 */
-.list-node--drag-before {
-  box-shadow: inset 0 2px 0 0 var(--jt-primary);
+/* drag-before：顶部插入线 */
+.list-node--drag-before::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--jt-primary);
+  border-radius: 1px;
+  z-index: 10;
 }
 
-.list-node--drag-after {
-  box-shadow: inset 0 -2px 0 0 var(--jt-primary);
+/* drag-after：底部插入线 */
+.list-node--drag-after::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--jt-primary);
+  border-radius: 1px;
+  z-index: 10;
 }
 
+/* drag-inside：放入目录高亮 */
 .list-node--drag-inside {
   background-color: var(--jt-accent-soft) !important;
-  box-shadow: inset 0 0 0 2px var(--jt-primary);
+  border-radius: 8px;
+}
+
+/* 拖拽时所有行的 hover 效果禁用，避免干扰 */
+.list-node__row:active {
+  cursor: grabbing;
 }
 
 /* 展开箭头 */
