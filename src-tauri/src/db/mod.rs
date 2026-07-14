@@ -85,6 +85,9 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
     // 007: 应用设置 KV 表
     run_migration_007(&pool).await?;
 
+    // 008: 任务提醒字段（remind_offset_minutes + notified_at）
+    run_migration_008(&pool).await?;
+
     Ok(pool)
 }
 
@@ -150,5 +153,15 @@ async fn run_migration_007(pool: &SqlitePool) -> Result<(), String> {
     .await
     .map_err(|e| format!("写入默认设置失败: {}", e))?;
 
+    Ok(())
+}
+
+/// 迁移 008：任务提醒字段
+/// - remind_offset_minutes: 提前多少分钟提醒（null = 不提醒；0 = 准点；N = 提前 N 分钟）
+/// - notified_at: 首次触发通知的时间戳（null = 还没通知过；写入后置 ISO 字符串，
+///   用于防止重复通知 + 启动时识别"已过窗口但未通知"的任务）
+async fn run_migration_008(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "tasks", "remind_offset_minutes", "INTEGER").await?;
+    add_column_if_missing(pool, "tasks", "notified_at", "TEXT").await?;
     Ok(())
 }

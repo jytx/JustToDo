@@ -20,6 +20,7 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // 获取 app data 目录，在其中创建数据库
             let app_data_dir = app
@@ -58,7 +59,28 @@ pub fn run() {
             {
                 let pool_clone = pool.clone();
                 let interval_clone = check_interval_secs.clone();
+                let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
+                    // 启动时立刻跑一次提醒扫描（补发过去 24h 内的过期提醒）
+                    use tauri_plugin_notification::NotificationExt;
+                    match commands::task_check_reminders_inner(&pool_clone, |reminder| {
+                        let res = app_handle
+                            .notification()
+                            .builder()
+                            .title(&reminder.title)
+                            .body(&reminder.body)
+                            .show();
+                        if let Err(e) = res {
+                            eprintln!("[JustToDo] 启动补发通知失败：{}", e);
+                        }
+                    })
+                    .await
+                    {
+                        Ok(n) if n > 0 => println!("[JustToDo] 启动补发了 {} 条提醒", n),
+                        Ok(_) => {}
+                        Err(e) => println!("[JustToDo] 启动扫描提醒失败: {}", e),
+                    }
+
                     loop {
                         match commands::task_generate_recurring_inner(&pool_clone).await {
                             Ok(n) => {
@@ -67,6 +89,24 @@ pub fn run() {
                                 }
                             }
                             Err(e) => println!("[JustToDo] 生成重复任务失败: {}", e),
+                        }
+                        // 同一轮内复用 app_handle 做提醒扫描
+                        match commands::task_check_reminders_inner(&pool_clone, |reminder| {
+                            let res = app_handle
+                                .notification()
+                                .builder()
+                                .title(&reminder.title)
+                                .body(&reminder.body)
+                                .show();
+                            if let Err(e) = res {
+                                eprintln!("[JustToDo] 通知失败：{}", e);
+                            }
+                        })
+                        .await
+                        {
+                            Ok(n) if n > 0 => println!("[JustToDo] 触发了 {} 条提醒", n),
+                            Ok(_) => {}
+                            Err(e) => println!("[JustToDo] 扫描提醒失败: {}", e),
                         }
                         // 读当前间隔（秒）
                         let secs = interval_clone.load(Ordering::Relaxed);
@@ -108,6 +148,7 @@ pub fn run() {
             commands::task_get_by_id,
             commands::task_get_subtasks,
             commands::task_generate_recurring,
+            commands::task_check_reminders,
             commands::get_setting,
             commands::set_setting,
             commands::tag_get_all,

@@ -54,6 +54,8 @@ fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
         recurrence_interval: row.get("recurrence_interval"),
         recurrence_end_at: row.get("recurrence_end_at"),
         recurrence_count: row.get("recurrence_count"),
+        remind_offset_minutes: row.try_get("remind_offset_minutes").ok().flatten(),
+        notified_at: row.try_get("notified_at").ok().flatten(),
     }
 }
 
@@ -455,10 +457,11 @@ pub async fn task_create(
     let recurrence_interval = input.recurrence_interval.unwrap_or(1);
     let recurrence_end_at = input.recurrence_end_at.clone();
     let recurrence_count = input.recurrence_count;
+    let remind_offset_minutes = input.remind_offset_minutes;
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, recurrence_freq, recurrence_interval, recurrence_end_at, recurrence_count)
-         VALUES ($1, $2, '', $3, $4, $5, $6, $7, 0, $8, $9, $10, NULL, $11, $12, $13, $14)",
+        "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, recurrence_freq, recurrence_interval, recurrence_end_at, recurrence_count, remind_offset_minutes)
+         VALUES ($1, $2, '', $3, $4, $5, $6, $7, 0, $8, $9, $10, NULL, $11, $12, $13, $14, $15)",
     )
     .bind(&id)
     .bind(&input.title)
@@ -474,6 +477,7 @@ pub async fn task_create(
     .bind(recurrence_interval)
     .bind(&recurrence_end_at)
     .bind(recurrence_count)
+    .bind(&remind_offset_minutes)
     .execute(pool.inner())
     .await
     .map_err(|e| format!("创建任务失败: {}", e))?;
@@ -496,6 +500,8 @@ pub async fn task_create(
         recurrence_interval,
         recurrence_end_at,
         recurrence_count,
+        remind_offset_minutes,
+        notified_at: None,
     })
 }
 
@@ -567,6 +573,14 @@ pub async fn task_update(
             .bind(count).bind(&ts).bind(&id)
             .execute(pool.inner()).await
             .map_err(|e| format!("更新任务失败: {}", e))?;
+    }
+    // 提醒规则（Option<Option<i32>> 允许显式清空）
+    if let Some(remind) = &input.remind_offset_minutes {
+        // 任何对提醒规则的修改都重置 notified_at，避免改完规则却不再通知
+        sqlx::query("UPDATE tasks SET remind_offset_minutes = $1, notified_at = NULL, updated_at = $2 WHERE id = $3")
+            .bind(remind).bind(&ts).bind(&id)
+            .execute(pool.inner()).await
+            .map_err(|e| format!("更新提醒失败: {}", e))?;
     }
 
     Ok(())
@@ -1356,6 +1370,138 @@ pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<us
 #[tauri::command]
 pub async fn task_generate_recurring(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<usize> {
     task_generate_recurring_inner(pool.inner()).await
+}
+
+// ─── 提醒（通知） ────────────────────────────────────────────
+
+/// 单条待通知任务（结构化返回，方便 lib.rs 用 title/body 调 notification）
+#[derive(Debug, Clone)]
+pub struct PendingReminder {
+    pub title: String,
+    pub body: String,
+}
+
+/// 解析 due_end_at（RFC 3339）失败时返回 None；否则返回 UTC DateTime
+fn parse_iso_utc(iso: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::parse_from_rfc3339(iso)
+        .ok()
+        .map(|d| d.with_timezone(&chrono::Utc))
+}
+
+/// 扫库找"该通知但还没通知过"的任务
+/// - 标准扫描：trigger_at = due_end_at - remind_offset_minutes*60s；trigger_at <= now
+/// - 启动补发：due_end_at 在过去 24h 内 且 notified_at IS NULL
+/// 返回 (pending_reminders, count_to_mark)
+pub async fn task_check_reminders_inner(
+    pool: &sqlx::SqlitePool,
+    on_emit: impl Fn(&PendingReminder),
+) -> Result<usize, String> {
+    let now = chrono::Utc::now();
+    let now_iso = now.to_rfc3339();
+    let cutoff_iso = (now - chrono::Duration::hours(24)).to_rfc3339();
+
+    // 一次性把"待通知"任务拉出来
+    // 条件：
+    //   - remind_offset_minutes IS NOT NULL
+    //   - due_end_at IS NOT NULL
+    //   - done = 0
+    //   - notified_at IS NULL
+    //   - 要么 (due_end_at - offset) <= now  ← 准点/提前已到
+    //   - 要么 due_end_at >= cutoff 且 due_end_at <= now  ← 应用启动补发窗口
+    let rows = sqlx::query(
+        "SELECT id, title, due_end_at, remind_offset_minutes FROM tasks
+         WHERE remind_offset_minutes IS NOT NULL
+           AND due_end_at IS NOT NULL
+           AND done = 0
+           AND notified_at IS NULL
+           AND (
+             datetime(due_end_at, '-' || remind_offset_minutes || ' minutes') <= $1
+             OR (due_end_at >= $2 AND due_end_at <= $1)
+           )",
+    )
+    .bind(&now_iso)
+    .bind(&cutoff_iso)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("查询待通知任务失败: {}", e))?;
+
+    let mut count = 0usize;
+    for row in &rows {
+        let task_id: String = row.get("id");
+        let title: String = row.get("title");
+        let due_end_at: String = row.get("due_end_at");
+        let offset: i32 = row.get("remind_offset_minutes");
+
+        // 生成通知文案
+        let body = build_reminder_body(&due_end_at, offset);
+        on_emit(&PendingReminder {
+            title: title.clone(),
+            body,
+        });
+
+        // 标记为已通知（即使通知发送失败，也不再重复）
+        sqlx::query("UPDATE tasks SET notified_at = $1, updated_at = $1 WHERE id = $2")
+            .bind(&now_iso)
+            .bind(&task_id)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("标记 notified_at 失败: {}", e))?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// 根据截止时间 + 偏移量生成中文通知正文
+fn build_reminder_body(due_end_at: &str, offset_minutes: i32) -> String {
+    let due_dt = parse_iso_utc(due_end_at);
+    let time_str = due_dt
+        .map(|d| d.format("%H:%M").to_string())
+        .unwrap_or_else(|| "".to_string());
+    let date_str = due_dt
+        .map(|d| format!("{}月{}日", d.format("%m").to_string(), d.format("%d").to_string()))
+        .unwrap_or_else(|| "".to_string());
+
+    if offset_minutes <= 0 {
+        if time_str.is_empty() {
+            "到点了".to_string()
+        } else {
+            format!("到点了（{}）", time_str)
+        }
+    } else if offset_minutes < 60 {
+        if time_str.is_empty() {
+            format!("还剩 {} 分钟", offset_minutes)
+        } else {
+            format!("还剩 {} 分钟（{} {}）", offset_minutes, date_str, time_str)
+        }
+    } else {
+        let hours = offset_minutes / 60;
+        if time_str.is_empty() {
+            format!("还剩 {} 小时", hours)
+        } else {
+            format!("还剩 {} 小时（{} {}）", hours, date_str, time_str)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn task_check_reminders(
+    app: tauri::AppHandle,
+    pool: State<'_, sqlx::SqlitePool>,
+) -> CmdResult<usize> {
+    use tauri_plugin_notification::NotificationExt;
+    let count = task_check_reminders_inner(pool.inner(), |reminder| {
+        let res = app
+            .notification()
+            .builder()
+            .title(&reminder.title)
+            .body(&reminder.body)
+            .show();
+        if let Err(e) = res {
+            eprintln!("[JustToDo] 通知失败：{}", e);
+        }
+    })
+    .await?;
+    Ok(count)
 }
 
 // ─── 应用设置 ────────────────────────────────────────────

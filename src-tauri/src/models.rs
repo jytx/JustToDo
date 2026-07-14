@@ -22,6 +22,10 @@ pub struct Task {
     pub recurrence_interval: i32,
     pub recurrence_end_at: Option<String>,
     pub recurrence_count: Option<i32>,
+    /// 提前多少分钟提醒（null = 不提醒；0 = 准点；N = 提前 N 分钟）
+    pub remind_offset_minutes: Option<i32>,
+    /// 通知触发时间戳（null = 还没通知过）
+    pub notified_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -55,6 +59,7 @@ pub struct CreateTaskInput {
     pub recurrence_interval: Option<i32>,
     pub recurrence_end_at: Option<String>,
     pub recurrence_count: Option<i32>,
+    pub remind_offset_minutes: Option<i32>,
 }
 
 /// 更新任务的参数（所有字段可选）
@@ -70,4 +75,6 @@ pub struct UpdateTaskInput {
     pub recurrence_interval: Option<i32>,
     pub recurrence_end_at: Option<Option<String>>,
     pub recurrence_count: Option<Option<i32>>,
+    /// Option<Option<i32>> 允许显式清空提醒（传 null）
+    pub remind_offset_minutes: Option<Option<i32>>,
 }

@@ -278,12 +278,13 @@ function onKeyDown(e: KeyboardEvent) {
           </template>
         </a-trigger>
 
-        <!-- 日期范围 —— a-range-picker，完整 yyyy-MM-dd 格式 -->
+        <!-- 日期范围 —— a-range-picker，完整 yyyy-MM-dd HH:mm 格式 -->
         <a-range-picker
           v-model="dueRangeModel"
           size="mini"
           class="quick-add__range"
-          format="YYYY-MM-DD"
+          format="YYYY-MM-DD HH:mm"
+          show-time
           :allow-clear="true"
         />
 
@@ -555,9 +556,9 @@ body[arco-theme="dark"] .quick-add__popup {
    这里用 modal 容器作为锚点 + !important 兜底 */
 .quick-add-modal .arco-picker-range.quick-add__range,
 .quick-add-modal .arco-picker-range {
-  width: 270px !important;
-  min-width: 270px !important;
-  max-width: 270px !important;
+  width: 320px !important;
+  min-width: 320px !important;
+  max-width: 320px !important;
   padding: 0 10px !important;
   height: 26px !important;
   border: none !important;

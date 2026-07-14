@@ -153,7 +153,8 @@ function onAttrMousedown(e: MouseEvent) {
         v-model="dueRangeModel"
         size="mini"
         style="width: 250px"
-        format="YYYY-MM-DD"
+        format="YYYY-MM-DD HH:mm"
+        show-time
         :allow-clear="true"
         @popup-visible-change="(v: boolean) => { if (v) { focused = true; } else { refocusInput(); } }"
       />

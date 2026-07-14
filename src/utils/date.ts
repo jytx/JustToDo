@@ -11,6 +11,20 @@ function isToday(date: Date): boolean {
   );
 }
 
+/** ISO 字符串是否带有"非零"时分秒（精度 > 天） */
+function hasTimePart(iso: string): boolean {
+  // ISO 8601 形如 2026-07-14T14:30:00.000Z（或带时区偏移）
+  // 含 T...HH:MM 且 HH:MM 不是 "00:00" 视为有时间
+  const m = iso.match(/T(\d{2}):(\d{2})/);
+  if (!m) return false;
+  return !(m[1] === "00" && m[2] === "00");
+}
+
+/** 提取 HH:mm 部分（用于"今天 14:00"格式） */
+function timeOf(date: Date): string {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
 /** 判断日期是否是昨天 */
 function isYesterday(date: Date): boolean {
   const yesterday = new Date();
@@ -83,7 +97,7 @@ export function formatDueDate(
   const end = new Date(endIso!);
   if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
 
-  // 同一天 → 按单日显示
+  // 同一天 → 按单日显示（带上时间）
   const sameDay =
     start.getDate() === end.getDate() &&
     start.getMonth() === end.getMonth() &&
@@ -93,34 +107,53 @@ export function formatDueDate(
     return formatSingleDate(endIso!);
   }
 
-  // 跨天 → "开始 ~ 结束"
+  // 跨天 → "开始 ~ 结束"（带时间）
+  const startHasTime = hasTimePart(startIso!);
+  const endHasTime = hasTimePart(endIso!);
+  const startText = `${formatSingle(start)}${startHasTime ? " " + timeOf(start) : ""}`;
+  const endText = `${formatSingle(end)}${endHasTime ? " " + timeOf(end) : ""}`;
+
   const now = new Date();
   const overdue = end.getTime() < now.getTime() && !isToday(end);
   const isTodayRange = isToday(start) || isToday(end);
 
   return {
-    text: `${formatSingle(start)} ~ ${formatSingle(end)}`,
+    text: `${startText} ~ ${endText}`,
     overdue,
     isToday: isTodayRange,
   };
 }
 
-/** 格式化单个日期（含逾期/今天判断） */
+/** 格式化单个日期（含逾期/今天判断 + 时间部分） */
 function formatSingleDate(iso: string): DueDateInfo | null {
   const date = new Date(iso);
   if (isNaN(date.getTime())) return null;
 
   const now = new Date();
   const overdue = date.getTime() < now.getTime() && !isToday(date);
+  const withTime = hasTimePart(iso);
 
   if (isToday(date)) {
-    return { text: "今天", overdue: false, isToday: true };
+    return {
+      text: withTime ? `今天 ${timeOf(date)}` : "今天",
+      overdue: false,
+      isToday: true,
+    };
   }
   if (isYesterday(date)) {
-    return { text: "昨天", overdue: true, isToday: false };
+    return {
+      text: withTime ? `昨天 ${timeOf(date)}` : "昨天",
+      overdue: true,
+      isToday: false,
+    };
   }
 
-  return { text: formatSingle(date), overdue, isToday: false };
+  const dateText = formatSingle(date);
+  return {
+    text: withTime ? `${dateText} ${timeOf(date)}` : dateText,
+    overdue,
+    isToday: false,
+  };
 }
 
 /** 格式化页面副标题的日期（如"7月10日 · 周四"） */

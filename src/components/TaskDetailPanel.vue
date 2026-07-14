@@ -9,6 +9,8 @@ import {
   PRIORITY_LABELS,
   PRIORITY_COLORS,
   RECURRENCE_FREQS,
+  REMIND_PRESETS,
+  matchRemindPreset,
   type Priority,
   type Task,
   type RecurrenceFreq,
@@ -188,6 +190,39 @@ async function setRecurrence(freq: RecurrenceFreq | null, interval: number) {
   });
 }
 
+/** 设置提醒偏移（分钟）。null = 不提醒；0 = 准点；N = 提前 N 分钟 */
+async function setRemindOffset(offset: number | null) {
+  if (!task.value) return;
+  await taskStore.updateTask(task.value.id, {
+    remindOffsetMinutes: offset,
+  });
+}
+
+/** 当前任务在预设下拉中的选中索引（含"自定义"） */
+const remindPresetIndex = computed(() =>
+  matchRemindPreset(task.value?.remindOffsetMinutes),
+);
+
+/** 选"自定义"时输入框显示的分钟数（仅在自定义选中时使用） */
+const customRemindMinutes = ref<number>(0);
+const showCustomRemindInput = computed(
+  () => REMIND_PRESETS[remindPresetIndex.value]?.preset === false,
+);
+
+async function onRemindPresetChange(idx: number) {
+  const preset = REMIND_PRESETS[idx];
+  if (!preset) return;
+  if (preset.preset) {
+    if (preset.value === -1) {
+      // 自定义 → 默认 120 分钟（2 小时）
+      customRemindMinutes.value = task.value?.remindOffsetMinutes ?? 120;
+      await setRemindOffset(customRemindMinutes.value);
+    } else {
+      await setRemindOffset(preset.value);
+    }
+  }
+}
+
 async function createSubtask() {
   if (!task.value) return;
   const title = newSubtaskName.value.trim();
@@ -228,17 +263,17 @@ const priorityOptions = Object.entries(PRIORITY_LABELS).map(([k, v]) => ({
   label: v,
 }));
 
-// 开始日期（Date ↔ ISO 字符串）
+// 开始日期（Date ↔ ISO 字符串）—— 完整保留时分
 const dueStartModel = computed({
-  get: () => (task.value?.dueStartAt ? task.value.dueStartAt.split("T")[0] : undefined),
+  get: () => (task.value?.dueStartAt ?? undefined),
   set: (v: string | undefined) => {
     setDueRange(v ? new Date(v).toISOString() : null, task.value?.dueEndAt ?? null);
   },
 });
 
-// 结束日期（Date ↔ ISO 字符串）
+// 结束日期（Date ↔ ISO 字符串）—— 完整保留时分
 const dueEndModel = computed({
-  get: () => (task.value?.dueEndAt ? task.value.dueEndAt.split("T")[0] : undefined),
+  get: () => (task.value?.dueEndAt ?? undefined),
   set: (v: string | undefined) => {
     setDueRange(task.value?.dueStartAt ?? null, v ? new Date(v).toISOString() : null);
   },
@@ -369,8 +404,10 @@ function formatPriorityLabel(data: any) {
           <a-date-picker
             v-model="dueStartModel"
             size="small"
-            style="width: 130px"
+            style="width: 160px"
             :allow-clear="true"
+            show-time
+            format="YYYY-MM-DD HH:mm"
           />
         </div>
 
@@ -381,9 +418,43 @@ function formatPriorityLabel(data: any) {
           <a-date-picker
             v-model="dueEndModel"
             size="small"
-            style="width: 130px"
+            style="width: 160px"
             :allow-clear="true"
+            show-time
+            format="YYYY-MM-DD HH:mm"
           />
+        </div>
+
+        <!-- 提醒 -->
+        <div class="detail-panel__attr">
+          <icon-notification :size="16" />
+          <span class="detail-panel__attr-label">提醒</span>
+          <a-select
+            :model-value="remindPresetIndex"
+            size="small"
+            style="width: 160px"
+            @change="(v: any) => onRemindPresetChange(Number(v))"
+          >
+            <a-option
+              v-for="(opt, i) in REMIND_PRESETS"
+              :key="i"
+              :value="i"
+            >
+              {{ opt.label }}
+            </a-option>
+          </a-select>
+          <a-input-number
+            v-if="showCustomRemindInput"
+            :model-value="customRemindMinutes"
+            size="small"
+            :min="0"
+            :max="10080"
+            :step="5"
+            style="width: 100px"
+            @change="(v: number | undefined) => setRemindOffset(v ?? null)"
+          >
+            <template #append>分</template>
+          </a-input-number>
         </div>
 
         <!-- 重复规则 -->
@@ -507,8 +578,8 @@ function formatPriorityLabel(data: any) {
 
       <!-- 元信息 -->
       <div class="detail-panel__meta">
-        创建于 {{ new Date(task.createdAt).toLocaleDateString("zh-CN") }}
-        · 更新于 {{ new Date(task.updatedAt).toLocaleDateString("zh-CN") }}
+        创建于 {{ new Date(task.createdAt).toLocaleString("zh-CN", { hour12: false }) }}
+        · 更新于 {{ new Date(task.updatedAt).toLocaleString("zh-CN", { hour12: false }) }}
       </div>
     </div>
     </div>

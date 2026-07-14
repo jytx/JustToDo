@@ -34,6 +34,7 @@ interface CreateTaskInput {
   recurrenceInterval?: number;
   recurrenceEndAt?: string | null;
   recurrenceCount?: number | null;
+  remindOffsetMinutes?: number | null;
 }
 
 interface UpdateTaskInput {
@@ -47,6 +48,7 @@ interface UpdateTaskInput {
   recurrenceInterval?: number;
   recurrenceEndAt?: string | null;
   recurrenceCount?: number | null;
+  remindOffsetMinutes?: number | null;
 }
 
 export type SmartViewId = "today" | "upcoming" | "all";
@@ -126,6 +128,8 @@ interface RustTask {
   recurrence_interval: number;
   recurrence_end_at: string | null;
   recurrence_count: number | null;
+  remind_offset_minutes: number | null;
+  notified_at: string | null;
 }
 
 function mapTask(r: RustTask): Task {
@@ -147,6 +151,8 @@ function mapTask(r: RustTask): Task {
     recurrenceInterval: r.recurrence_interval,
     recurrenceEndAt: r.recurrence_end_at,
     recurrenceCount: r.recurrence_count,
+    remindOffsetMinutes: r.remind_offset_minutes,
+    notifiedAt: r.notified_at,
   };
 }
 
@@ -268,6 +274,7 @@ export async function createTask(params: CreateTaskInput): Promise<Task> {
     recurrence_interval: params.recurrenceInterval ?? 1,
     recurrence_end_at: params.recurrenceEndAt ?? null,
     recurrence_count: params.recurrenceCount ?? null,
+    remind_offset_minutes: params.remindOffsetMinutes ?? null,
   };
   const r = await invoke<RustTask>("task_create", { input });
   return mapTask(r);
@@ -288,6 +295,7 @@ export async function updateTask(
     recurrence_interval: fields.recurrenceInterval,
     recurrence_end_at: fields.recurrenceEndAt,
     recurrence_count: fields.recurrenceCount,
+    remind_offset_minutes: fields.remindOffsetMinutes,
   };
   await invoke<void>("task_update", { id, input });
 }

@@ -67,9 +67,9 @@ export interface Task {
   listId: string;
   parentId: string | null;
   priority: Priority;
-  /** ISO 8601 时间字符串或 null */
+  /** ISO 8601 时间字符串或 null（精确到秒） */
   dueStartAt: string | null;
-  /** ISO 8601 时间字符串或 null */
+  /** ISO 8601 时间字符串或 null（精确到秒） */
   dueEndAt: string | null;
   done: boolean;
   sortOrder: number;
@@ -84,6 +84,42 @@ export interface Task {
   recurrenceEndAt: string | null;
   /** 剩余重复次数（null = 不限） */
   recurrenceCount: number | null;
+  /** 提前多少分钟提醒（null = 不提醒；0 = 准点；N = 提前 N 分钟） */
+  remindOffsetMinutes: number | null;
+  /** 通知触发时间戳（null = 还没通知过） */
+  notifiedAt: string | null;
+}
+
+/** 提醒预设项（分钟）。value 表示 remindOffsetMinutes，传 null = 不提醒 */
+export interface RemindPreset {
+  /** 显示标签 */
+  label: string;
+  /** 提前分钟数（null = 不提醒；0 = 准点） */
+  value: number | null;
+  /** 是否为预设；false 表示"自定义" */
+  preset: boolean;
+}
+
+/** 提醒预设选项（详情面板下拉用） */
+export const REMIND_PRESETS: RemindPreset[] = [
+  { label: "不提醒", value: null, preset: true },
+  { label: "准点", value: 0, preset: true },
+  { label: "提前 5 分钟", value: 5, preset: true },
+  { label: "提前 10 分钟", value: 10, preset: true },
+  { label: "提前 15 分钟", value: 15, preset: true },
+  { label: "提前 30 分钟", value: 30, preset: true },
+  { label: "提前 1 小时", value: 60, preset: true },
+  { label: "自定义…", value: -1, preset: false },
+];
+
+/** 把 remindOffsetMinutes 映射回预设索引（找不到非"自定义"） */
+export function matchRemindPreset(value: number | null | undefined): number {
+  if (value === null || value === undefined) return 0; // 不提醒
+  const idx = REMIND_PRESETS.findIndex(
+    (p) => p.preset && p.value === value,
+  );
+  if (idx >= 0) return idx;
+  return REMIND_PRESETS.length - 1; // 自定义
 }
 
 /** 任务重复频率 */
@@ -127,6 +163,8 @@ export interface TaskRow {
   recurrence_interval: number;
   recurrence_end_at: string | null;
   recurrence_count: number | null;
+  remind_offset_minutes: number | null;
+  notified_at: string | null;
 }
 
 /** 清单数据库原始行 */
@@ -160,6 +198,8 @@ export function mapTaskRow(row: TaskRow): Task {
     recurrenceInterval: row.recurrence_interval,
     recurrenceEndAt: row.recurrence_end_at,
     recurrenceCount: row.recurrence_count,
+    remindOffsetMinutes: row.remind_offset_minutes,
+    notifiedAt: row.notified_at,
   };
 }
 
