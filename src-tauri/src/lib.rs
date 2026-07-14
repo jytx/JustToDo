@@ -43,14 +43,15 @@ pub fn run() {
             // 间隔由 app_settings.recurrence_check_interval 控制（分钟），可在设置页修改
             // Arc<AtomicU64> 在前后台共享，set_setting 修改时同步更新
             let check_interval_secs = {
-                // 从数据库读初始值（单位：分钟 → 秒），失败默认 3600（1 小时）
+                // 从数据库读初始值（单位：分钟 → 秒），失败默认 60 秒（1 分钟）
+                // 提醒精度为分钟级，1 分钟扫描一次足够
                 let mins = tauri::async_runtime::block_on(async {
                     commands::get_setting_inner(&pool, "recurrence_check_interval".to_string())
                         .await
                         .ok()
                         .flatten()
                         .and_then(|v| v.parse::<u64>().ok())
-                        .unwrap_or(60)
+                        .unwrap_or(1)
                 });
                 Arc::new(AtomicU64::new(mins * 60))
             };

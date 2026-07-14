@@ -289,14 +289,14 @@ pub async fn task_count_smart_view(
 
     let count: i64 = if view == "today" {
         sqlx::query_scalar(
-            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0 AND due_end_at < $1"
+            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0 AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($1, 'localtime')"
         )
         .bind(&end_of_today)
         .fetch_one(pool.inner())
         .await
     } else if view == "upcoming" {
         sqlx::query_scalar(
-            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0 AND due_end_at >= $1 AND due_end_at < $2"
+            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0 AND datetime(replace(due_end_at, 'T', ' '), 'localtime') >= datetime($1, 'localtime') AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($2, 'localtime')"
         )
         .bind(&end_of_today)
         .bind(&end_of_week)
@@ -405,10 +405,12 @@ pub async fn task_get_smart_view(
         .to_string();
 
     // today / upcoming 固定按日期+优先级；all 支持可选排序
+    // SQLite datetime() 默认按 UTC 解释无时区字符串；显式加 'localtime' 与
+    // 我们存的本地字面量语义匹配
     let sql = if view == "today" {
-        "SELECT * FROM tasks WHERE parent_id IS NULL AND done = 0 AND due_end_at < $1 ORDER BY due_end_at ASC, priority DESC, sort_order ASC".to_string()
+        "SELECT * FROM tasks WHERE parent_id IS NULL AND done = 0 AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($1, 'localtime') ORDER BY due_end_at ASC, priority DESC, sort_order ASC".to_string()
     } else if view == "upcoming" {
-        "SELECT * FROM tasks WHERE parent_id IS NULL AND done = 0 AND due_end_at >= $1 AND due_end_at < $2 ORDER BY due_end_at ASC, priority DESC, sort_order ASC".to_string()
+        "SELECT * FROM tasks WHERE parent_id IS NULL AND done = 0 AND datetime(replace(due_end_at, 'T', ' '), 'localtime') >= datetime($1, 'localtime') AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($2, 'localtime') ORDER BY due_end_at ASC, priority DESC, sort_order ASC".to_string()
     } else {
         // all 视图支持 sort
         let (sf, sd) = match (sort_field.as_deref(), sort_dir.as_deref()) {
@@ -1421,7 +1423,8 @@ pub async fn task_check_reminders_inner(
     //   - notified_at IS NULL
     //   - 要么 (due_end_at - offset) <= now  ← 准点/提前已到
     //   - 要么 due_end_at >= cutoff 且 due_end_at <= now  ← 应用启动补发窗口
-    // SQLite 的 datetime() 对 "YYYY-MM-DDTHH:mm:ss" 与 "YYYY-MM-DD HH:mm:ss" 都能解析
+    // SQLite 的 datetime() 无 'localtime' 时按 UTC 解释。我们的本地字面量（如
+    // "2026-07-14T17:25:00"）实际表达的是墙上时刻，必须显式声明 'localtime'。
     let rows = sqlx::query(
         "SELECT id, title, due_end_at, remind_offset_minutes FROM tasks
          WHERE remind_offset_minutes IS NOT NULL
@@ -1429,8 +1432,9 @@ pub async fn task_check_reminders_inner(
            AND done = 0
            AND notified_at IS NULL
            AND (
-             datetime(replace(due_end_at, 'T', ' '), '-' || remind_offset_minutes || ' minutes') <= datetime($1)
-             OR (datetime(replace(due_end_at, 'T', ' ')) >= datetime($2) AND datetime(replace(due_end_at, 'T', ' ')) <= datetime($1))
+             datetime(replace(due_end_at, 'T', ' '), '-' || remind_offset_minutes || ' minutes', 'localtime') <= datetime($1, 'localtime')
+             OR (datetime(replace(due_end_at, 'T', ' '), 'localtime') >= datetime($2, 'localtime')
+                 AND datetime(replace(due_end_at, 'T', ' '), 'localtime') <= datetime($1, 'localtime'))
            )",
     )
     .bind(&now_str)

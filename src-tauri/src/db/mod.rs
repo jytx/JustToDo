@@ -146,8 +146,9 @@ async fn run_migration_007(pool: &SqlitePool) -> Result<(), String> {
     .map_err(|e| format!("创建 app_settings 表失败: {}", e))?;
 
     // 写入默认值（幂等：仅当不存在时插入）
+    // 默认 1 分钟：提醒/重复任务扫描的合理粒度。旧值 60 在 INSERT OR IGNORE 下保留。
     sqlx::query(
-        "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('recurrence_check_interval', '60')",
+        "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('recurrence_check_interval', '1')",
     )
     .execute(pool)
     .await
