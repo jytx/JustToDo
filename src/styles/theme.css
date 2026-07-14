@@ -65,9 +65,11 @@ body {
   --jt-primary: #4F46E5;
 }
 
-/* === 深色模式 === */
+/* === 深色模式 ===
+   强调色优先从 --jt-accent-dark 读取（由 useTheme.setAccentColor 写入），
+   未设置时退回与浅色版不同的默认靛蓝浅色。 */
 body[arco-theme='dark'] {
-  --primary-6: #818CF8;
+  --primary-6: var(--jt-accent-dark, #818CF8);
   --primary-5: #A5B0FC;
   --primary-7: #6366F1;
 
@@ -89,7 +91,7 @@ body[arco-theme='dark'] {
   --color-fill-3: #333330;
 
   --jt-accent-soft: #2D2F4A;
-  --jt-accent: #818CF8;
+  --jt-accent: var(--jt-accent-dark, #818CF8);
   --jt-surface: #242420;
   --jt-surface-sunken: #2A2A25;
   --jt-surface-hover: #2F2F2A;
@@ -100,5 +102,5 @@ body[arco-theme='dark'] {
   --jt-success: #059669;
   --jt-error: #DC2626;
   --jt-warning: #F59E0B;
-  --jt-primary: #818CF8;
+  --jt-primary: var(--jt-accent-dark, #818CF8);
 }

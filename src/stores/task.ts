@@ -6,6 +6,20 @@ import { ref, computed } from "vue";
 import type { Task, Priority, SortField, SortDir } from "@/types";
 import * as db from "@/api/db";
 import type { SmartViewId } from "@/api/db";
+import { useSettingsStore } from "@/stores/settings";
+
+/**
+ * 在非 setup 上下文（如 createTask 的内部调用）安全获取 settings store。
+ * Pinia 在 store 内部嵌套调用 useStore 是允许的，但若尚未初始化则返回 null，
+ * 此时跳过自动今天兜底（使用调用方传入的原始参数）。
+ */
+function useSettingsMaybe() {
+  try {
+    return useSettingsStore();
+  } catch {
+    return null;
+  }
+}
 
 export const useTaskStore = defineStore("task", () => {
   const currentListId = ref<string>("inbox");
@@ -184,7 +198,27 @@ export const useTaskStore = defineStore("task", () => {
     dueStartAt?: string | null;
     dueEndAt?: string | null;
   }) {
-    const task = await db.createTask(params);
+    // 自动今天兜底：
+    // - 开关开启
+    // - 顶层任务（非子任务）
+    // - 调用方未提供任何日期（两个字段都为 null/undefined）
+    // 满足全部条件时，把 dueStartAt/dueEndAt 都填为本地"今天 00:00" ~ "今天 23:59:59"。
+    // 注意：父任务的子任务不参与此逻辑，避免无意中改变子任务语义。
+    let { dueStartAt, dueEndAt } = params;
+    if (
+      !params.parentId &&
+      dueStartAt == null &&
+      dueEndAt == null &&
+      useSettingsMaybe()?.newTasksDueToday
+    ) {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date();
+      end.setHours(23, 59, 59, 0);
+      dueStartAt = start.toISOString();
+      dueEndAt = end.toISOString();
+    }
+    const task = await db.createTask({ ...params, dueStartAt, dueEndAt });
     if (!params.parentId) {
       currentTasks.value.push(task);
     } else {

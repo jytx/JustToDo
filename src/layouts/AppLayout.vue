@@ -3,6 +3,7 @@
 // 集成全局搜索、快速添加、快捷键、键盘导航
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useTheme } from "@/composables/useTheme";
+import { useSettingsStore } from "@/stores/settings";
 import { useTaskStore } from "@/stores/task";
 import { useRoute } from "vue-router";
 import { SORT_FIELDS, SORT_FIELD_LABELS, type SortField } from "@/types";
@@ -15,7 +16,8 @@ import { useListStore } from "@/stores/list";
 import { useShortcuts } from "@/composables/useShortcuts";
 import { useQuickAdd } from "@/composables/useQuickAdd";
 
-const { isDark, toggleTheme } = useTheme();
+const { isDark } = useTheme();
+const settingsStore = useSettingsStore();
 const searchStore = useSearchStore();
 const listStore = useListStore();
 const taskStore = useTaskStore();
@@ -138,7 +140,13 @@ useShortcuts({
     listStore.loadLists();
     quickAdd.open();
   },
-  onToggleTheme: toggleTheme,
+  onNewTask: () => {
+    listStore.loadLists();
+    quickAdd.open();
+  },
+  onToggleTheme: () => {
+    settingsStore.cycleTheme();
+  },
 });
 </script>
 
@@ -168,7 +176,7 @@ useShortcuts({
         <a-button
           type="text"
           size="small"
-          @click="toggleTheme"
+          @click="settingsStore.cycleTheme()"
         >
           <template #icon>
             <icon-sun-fill v-if="isDark" :size="18" />

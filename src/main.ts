@@ -18,7 +18,8 @@ import "./styles/theme.css";
 import "./styles/typography.css";
 
 const app = createApp(App);
-app.use(createPinia());
+const pinia = createPinia();
+app.use(pinia);
 app.use(router);
 app.use(ArcoVue);
 app.use(ArcoVueIcon);
@@ -27,6 +28,13 @@ app.use(ArcoVueIcon);
 app.config.errorHandler = (err, _instance, info) => {
   console.error("[Vue Error]", err, info);
 };
+
+// 在挂载前同步等待设置初始化 —— 避免主题闪烁并让全局可立即读取设置
+import { useSettingsStore } from "@/stores/settings";
+const settingsStore = useSettingsStore(pinia);
+settingsStore.initialize().catch((e) => {
+  console.error("[SettingsStore] 启动初始化失败:", e);
+});
 
 app.mount("#app");
 

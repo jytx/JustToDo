@@ -539,7 +539,7 @@ function formatPriorityLabel(data: any) {
 }
 
 .detail-panel__resizer:hover {
-  background-color: rgba(79, 70, 229, 0.3);
+  background-color: color-mix(in srgb, var(--jt-primary) 30%, transparent);
 }
 
 .detail-panel__header {

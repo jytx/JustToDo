@@ -178,7 +178,7 @@ function onAttrMousedown(e: MouseEvent) {
 
 .add-task-bar--focused {
   background-color: var(--jt-surface);
-  box-shadow: inset 0 0 0 1px rgba(79, 70, 229, 0.3);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--jt-primary) 30%, transparent);
 }
 
 .add-task-bar__icon {

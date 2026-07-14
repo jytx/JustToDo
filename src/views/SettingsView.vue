@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // 设置页 —— 通用/外观/快捷键/数据/关于
-import { ref, onMounted } from "vue";
-import { useTheme } from "@/composables/useTheme";
+// 主题/强调色/自动今天/检查间隔统一通过 settings store 持久化
+import { ref, onMounted, computed } from "vue";
+import { storeToRefs } from "pinia";
+import { useSettingsStore, SETTINGS_KEYS } from "@/stores/settings";
 import {
   IconSettings,
   IconSkin,
@@ -11,14 +13,17 @@ import {
 } from "@arco-design/web-vue/es/icon";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import * as db from "@/api/db";
 
-const theme = useTheme();
+const settingsStore = useSettingsStore();
+const {
+  themeMode,
+  accentColor,
+  newTasksDueToday,
+  recurrenceCheckInterval,
+  error,
+} = storeToRefs(settingsStore);
+
 const attachmentPath = ref("");
-
-/** 重复任务检查间隔（分钟） */
-const recurrenceInterval = ref(60);
-const savingInterval = ref(false);
 
 const sections = [
   { id: "general", icon: IconSettings, label: "通用" },
@@ -30,8 +35,6 @@ const sections = [
 
 const activeSection = ref("general");
 
-const themeMode = ref(theme.isDark.value ? "dark" : "light");
-
 const accentColors = [
   { name: "靛蓝", value: "#4F46E5" },
   { name: "墨绿", value: "#047857" },
@@ -39,7 +42,11 @@ const accentColors = [
   { name: "紫罗兰", value: "#8B5CF6" },
 ];
 
-const selectedAccent = ref("#4F46E5");
+const themeModes = [
+  { value: "light", label: "浅色" },
+  { value: "dark", label: "深色" },
+  { value: "system", label: "跟随系统" },
+] as const;
 
 const shortcuts = [
   { action: "快速添加任务", mac: "⌘⇧A", win: "Ctrl+Shift+A" },
@@ -48,29 +55,18 @@ const shortcuts = [
   { action: "切换主题", mac: "⌘⇧L", win: "Ctrl+Shift+L" },
 ];
 
-function changeTheme(mode: string) {
-  themeMode.value = mode;
-  if (mode === "light") theme.setDark(false);
-  else if (mode === "dark") theme.setDark(true);
-  else {
-    // 跟随系统
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    theme.setDark(prefersDark);
-  }
-}
+/** 当前键是否正在保存（用于显示反馈） */
+const isSavingTheme = computed(() => settingsStore.isSaving(SETTINGS_KEYS.themeMode));
+const isSavingAccent = computed(() => settingsStore.isSaving(SETTINGS_KEYS.accentColor));
+const isSavingDueToday = computed(() =>
+  settingsStore.isSaving(SETTINGS_KEYS.newTasksDueToday),
+);
 
 onMounted(async () => {
   try {
     attachmentPath.value = await invoke<string>("get_attachment_path");
   } catch {
     attachmentPath.value = "无法获取路径";
-  }
-  // 加载重复任务检查间隔
-  try {
-    const val = await db.getSetting("recurrence_check_interval");
-    if (val) recurrenceInterval.value = Number(val) || 60;
-  } catch {
-    // 用默认值
   }
 });
 
@@ -83,21 +79,6 @@ async function changeAttachmentPath() {
     }
   } catch (e) {
     console.error("更改附件路径失败:", e);
-  }
-}
-
-/** 保存重复任务检查间隔 */
-async function saveRecurrenceInterval() {
-  savingInterval.value = true;
-  try {
-    await db.setSetting(
-      "recurrence_check_interval",
-      String(recurrenceInterval.value),
-    );
-  } catch (e) {
-    console.error("保存检查间隔失败:", e);
-  } finally {
-    savingInterval.value = false;
   }
 }
 </script>
@@ -152,7 +133,11 @@ async function saveRecurrenceInterval() {
           </div>
           <div class="settings-section__item">
             <span>新任务自动设为今天</span>
-            <a-switch :model-value="true" />
+            <a-switch
+              :model-value="newTasksDueToday"
+              :loading="isSavingDueToday"
+              @change="(v: any) => settingsStore.setNewTasksDueToday(Boolean(v))"
+            />
           </div>
           <div class="settings-section__item">
             <div>
@@ -163,13 +148,13 @@ async function saveRecurrenceInterval() {
             </div>
             <div class="settings-section__interval">
               <a-input-number
-                v-model="recurrenceInterval"
+                :model-value="recurrenceCheckInterval"
                 size="small"
                 :min="1"
                 :max="1440"
                 :step="1"
                 style="width: 100px"
-                @change="saveRecurrenceInterval"
+                @change="(v: number | undefined) => settingsStore.setRecurrenceCheckInterval(v ?? 60)"
               />
               <span class="settings-section__interval-unit">分钟</span>
             </div>
@@ -183,13 +168,14 @@ async function saveRecurrenceInterval() {
             <span>主题</span>
             <div class="settings-section__segmented">
               <a-button
-                v-for="m in ['light', 'dark', 'system']"
-                :key="m"
-                :type="themeMode === m ? 'primary' : 'text'"
+                v-for="m in themeModes"
+                :key="m.value"
+                :type="themeMode === m.value ? 'primary' : 'text'"
                 size="small"
-                @click="changeTheme(m)"
+                :loading="isSavingTheme && themeMode !== m.value"
+                @click="settingsStore.setThemeMode(m.value)"
               >
-                {{ m === 'light' ? '浅色' : m === 'dark' ? '深色' : '跟随系统' }}
+                {{ m.label }}
               </a-button>
             </div>
           </div>
@@ -200,13 +186,14 @@ async function saveRecurrenceInterval() {
                 v-for="c in accentColors"
                 :key="c.value"
                 class="settings-section__color-dot"
-                :class="{ 'settings-section__color-dot--active': selectedAccent === c.value }"
+                :class="{ 'settings-section__color-dot--active': accentColor === c.value }"
                 :style="{ backgroundColor: c.value }"
                 :title="c.name"
-                @click="selectedAccent = c.value"
+                @click="settingsStore.setAccentColor(c.value)"
               />
             </div>
           </div>
+          <p v-if="isSavingAccent" class="settings-section__hint">正在保存强调色...</p>
         </div>
 
         <!-- 快捷键 -->
@@ -259,6 +246,16 @@ async function saveRecurrenceInterval() {
             <span class="settings-section__about-tech">Tauri · Vue 3 · Arco Design</span>
           </div>
         </div>
+
+        <!-- 顶部错误提示（所有 section 共用） -->
+        <a-alert
+          v-if="error"
+          class="settings-view__alert"
+          type="error"
+          :show-icon="true"
+        >
+          {{ error }}
+        </a-alert>
       </div>
     </div>
   </div>
@@ -289,6 +286,10 @@ async function saveRecurrenceInterval() {
   padding: 0 24px 24px;
   flex: 1;
   overflow: hidden;
+}
+
+.settings-view__alert {
+  margin-top: 12px;
 }
 
 .settings-view__nav {
@@ -368,6 +369,12 @@ async function saveRecurrenceInterval() {
 
 .settings-section__color-dot--active {
   border-color: color-mix(in srgb, var(--jt-text-primary) 50%, transparent);
+}
+
+.settings-section__hint {
+  font-size: 12px;
+  color: var(--jt-text-tertiary);
+  margin: 4px 0 0;
 }
 
 .settings-section__shortcut {

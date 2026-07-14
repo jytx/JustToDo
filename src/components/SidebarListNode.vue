@@ -77,7 +77,7 @@ function onDragStart(e: DragEvent) {
     top: -1000px;
     left: -1000px;
     padding: 4px 12px;
-    background: var(--jt-primary, #4F46E5);
+    background: var(--jt-primary);
     color: #fff;
     font-size: 13px;
     border-radius: 6px;
