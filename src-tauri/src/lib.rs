@@ -150,7 +150,6 @@ pub fn run() {
             commands::task_get_subtasks,
             commands::task_generate_recurring,
             commands::task_check_reminders,
-            commands::test_notify,
             commands::get_setting,
             commands::set_setting,
             commands::tag_get_all,
