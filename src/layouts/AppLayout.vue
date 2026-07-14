@@ -130,6 +130,34 @@ function onNavigationKeydown(e: KeyboardEvent) {
 onMounted(() => window.addEventListener("keydown", onNavigationKeydown));
 onUnmounted(() => window.removeEventListener("keydown", onNavigationKeydown));
 
+/** 临时：点击后从前端调 sendNotification，确认系统通知链路 */
+async function testNotify() {
+  try {
+    const {
+      sendNotification,
+      isPermissionGranted,
+      requestPermission,
+    } = await import("@tauri-apps/plugin-notification");
+    let granted = false;
+    try {
+      granted = (await isPermissionGranted()) ?? false;
+    } catch {}
+    if (!granted) {
+      try {
+        const p = await requestPermission();
+        granted = p === "granted";
+      } catch {}
+    }
+    sendNotification({
+      title: "JustToDo 测试",
+      body: `这是从前端触发的测试通知 ${new Date().toLocaleTimeString()}`,
+    });
+    console.log("[JustToDo] 前端 sendNotification 已调用");
+  } catch (e) {
+    console.error("[JustToDo] 测试通知失败:", e);
+  }
+}
+
 // 全局快捷键
 useShortcuts({
   onSearch: () => {
@@ -171,6 +199,15 @@ useShortcuts({
           @click="quickAdd.open()"
         >
           <template #icon><icon-plus :size="20" /></template>
+        </a-button>
+        <!-- 临时测试按钮：直接从前端发通知 -->
+        <a-button
+          type="text"
+          size="small"
+          title="测试通知"
+          @click="testNotify"
+        >
+          <template #icon><icon-notification :size="18" /></template>
         </a-button>
         <div style="flex: 1"></div>
         <a-button

@@ -1521,6 +1521,22 @@ pub async fn task_check_reminders(
     Ok(count)
 }
 
+/// 临时：直接从前端/CLI 触发一条测试通知，用于排查 macOS 通知链路
+#[tauri::command]
+pub async fn test_notify(app: tauri::AppHandle) -> CmdResult<String> {
+    use tauri_plugin_notification::NotificationExt;
+    let res = app
+        .notification()
+        .builder()
+        .title("JustToDo 测试通知")
+        .body(format!("这是一条手动测试通知，发送于 {}", chrono::Local::now().format("%H:%M:%S")))
+        .show();
+    match res {
+        Ok(_) => Ok("通知已发送".to_string()),
+        Err(e) => Err(format!("通知发送失败：{}", e)),
+    }
+}
+
 // ─── 应用设置 ────────────────────────────────────────────
 
 /// 查询设置（纯函数版本，供内部调用）
