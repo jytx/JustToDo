@@ -18,12 +18,19 @@ export const SETTINGS_KEYS = {
   accentColor: "accent_color",
   newTasksDueToday: "new_tasks_due_today",
   recurrenceCheckInterval: "recurrence_check_interval",
+  startupView: "startup_view",
 } as const;
+
+/** 启动时打开的目标视图 */
+export type StartupView = "today" | "all" | "inbox";
+
+const STARTUP_VIEWS: readonly StartupView[] = ["today", "all", "inbox"];
 
 const DEFAULT_THEME_MODE: ThemeMode = "system";
 const DEFAULT_ACCENT_COLOR = "#4F46E5";
 const DEFAULT_NEW_TASKS_DUE_TODAY = true;
 const DEFAULT_RECURRENCE_CHECK_INTERVAL = 60;
+const DEFAULT_STARTUP_VIEW: StartupView = "today";
 
 /** 16 进制颜色 #RRGGBB 校验 */
 function isValidHexColor(v: string): boolean {
@@ -54,6 +61,13 @@ function parseIntervalMinutes(v: string | null): number {
   return Math.min(1440, Math.floor(n));
 }
 
+function parseStartupView(v: string | null): StartupView {
+  if (v && (STARTUP_VIEWS as readonly string[]).includes(v)) {
+    return v as StartupView;
+  }
+  return DEFAULT_STARTUP_VIEW;
+}
+
 export const useSettingsStore = defineStore("settings", () => {
   // 主题：复用 composable 的 mode ref（与 useTheme 共享状态）
   const theme = useTheme();
@@ -63,6 +77,7 @@ export const useSettingsStore = defineStore("settings", () => {
   const accentColor = ref<string>(DEFAULT_ACCENT_COLOR);
   const newTasksDueToday = ref<boolean>(DEFAULT_NEW_TASKS_DUE_TODAY);
   const recurrenceCheckInterval = ref<number>(DEFAULT_RECURRENCE_CHECK_INTERVAL);
+  const startupView = ref<StartupView>(DEFAULT_STARTUP_VIEW);
 
   const initialized = ref(false);
   const loading = ref(false);
@@ -105,22 +120,25 @@ export const useSettingsStore = defineStore("settings", () => {
     if (initialized.value || loading.value) return;
     loading.value = true;
     try {
-      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw] = await Promise.all([
+      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw] = await Promise.all([
         db.getSetting(SETTINGS_KEYS.themeMode).catch(() => null),
         db.getSetting(SETTINGS_KEYS.accentColor).catch(() => null),
         db.getSetting(SETTINGS_KEYS.newTasksDueToday).catch(() => null),
         db.getSetting(SETTINGS_KEYS.recurrenceCheckInterval).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.startupView).catch(() => null),
       ]);
 
       const mode = parseThemeMode(themeRaw);
       const accent = parseAccentColor(accentRaw);
       const dueToday = parseBoolean(dueTodayRaw, DEFAULT_NEW_TASKS_DUE_TODAY);
       const interval = parseIntervalMinutes(intervalRaw);
+      const startup = parseStartupView(startupRaw);
 
       themeMode.value = mode;
       accentColor.value = accent;
       newTasksDueToday.value = dueToday;
       recurrenceCheckInterval.value = interval;
+      startupView.value = startup;
 
       // 先应用强调色（不依赖模式），再应用主题
       theme.setAccentColor(accent);
@@ -190,6 +208,17 @@ export const useSettingsStore = defineStore("settings", () => {
     }
   }
 
+  /** 修改启动时打开的视图并持久化 */
+  async function setStartupView(v: StartupView): Promise<void> {
+    if (!(STARTUP_VIEWS as readonly string[]).includes(v)) return;
+    const prev = startupView.value;
+    startupView.value = v;
+    const ok = await persist(SETTINGS_KEYS.startupView, v, prev);
+    if (!ok) {
+      startupView.value = prev;
+    }
+  }
+
   /**
    * 主题"toggle"语义：用于顶部按钮 / Cmd+Shift+L
    * - 当前是 system：切到 light
@@ -209,6 +238,7 @@ export const useSettingsStore = defineStore("settings", () => {
     accentColor,
     newTasksDueToday,
     recurrenceCheckInterval,
+    startupView,
     initialized,
     loading,
     error,
@@ -218,6 +248,7 @@ export const useSettingsStore = defineStore("settings", () => {
     setAccentColor,
     setNewTasksDueToday,
     setRecurrenceCheckInterval,
+    setStartupView,
     cycleTheme,
     isSaving,
   };

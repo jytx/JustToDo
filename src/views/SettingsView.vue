@@ -3,7 +3,7 @@
 // 主题/强调色/自动今天/检查间隔统一通过 settings store 持久化
 import { ref, onMounted, computed } from "vue";
 import { storeToRefs } from "pinia";
-import { useSettingsStore, SETTINGS_KEYS } from "@/stores/settings";
+import { useSettingsStore, SETTINGS_KEYS, type StartupView } from "@/stores/settings";
 import {
   IconSettings,
   IconSkin,
@@ -20,6 +20,7 @@ const {
   accentColor,
   newTasksDueToday,
   recurrenceCheckInterval,
+  startupView,
   error,
 } = storeToRefs(settingsStore);
 
@@ -47,6 +48,13 @@ const themeModes = [
   { value: "dark", label: "深色" },
   { value: "system", label: "跟随系统" },
 ] as const;
+
+/** 启动时打开的视图选项 —— label 用于 UI，value 写入 settings.startupView */
+const startupViewOptions: Array<{ value: StartupView; label: string }> = [
+  { value: "today", label: "今天" },
+  { value: "all", label: "全部" },
+  { value: "inbox", label: "收件箱" },
+];
 
 const shortcuts = [
   { action: "快速添加任务", mac: "⌘⇧A", win: "Ctrl+Shift+A" },
@@ -123,12 +131,17 @@ async function changeAttachmentPath() {
           <div class="settings-section__item">
             <span>启动时打开</span>
             <a-select
-              :model-value="'今天'"
+              :model-value="startupView"
               :style="{ width: '200px' }"
+              @change="(v: any) => settingsStore.setStartupView(v as StartupView)"
             >
-              <a-option value="今天">今天</a-option>
-              <a-option value="全部">全部</a-option>
-              <a-option value="收件箱">收件箱</a-option>
+              <a-option
+                v-for="opt in startupViewOptions"
+                :key="opt.value"
+                :value="opt.value"
+              >
+                {{ opt.label }}
+              </a-option>
             </a-select>
           </div>
           <div class="settings-section__item">
