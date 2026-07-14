@@ -359,7 +359,7 @@ function formatPriorityLabel(data: any) {
           <a-select
             :model-value="task.priority"
             size="small"
-            style="width: 130px"
+            style="width: 160px"
             :format-label="formatPriorityLabel as any"
             @change="(v: any) => setPriority(v as Priority)"
           >
@@ -381,7 +381,7 @@ function formatPriorityLabel(data: any) {
           <a-select
             :model-value="task.listId"
             size="small"
-            style="width: 130px"
+            style="width: 160px"
             @change="(v: any) => moveToList(v)"
           >
             <a-option
@@ -465,7 +465,7 @@ function formatPriorityLabel(data: any) {
           <a-select
             :model-value="task.recurrenceFreq ?? ''"
             size="small"
-            style="width: 130px"
+            style="width: 160px"
             allow-clear
             placeholder="不重复"
             @change="(v: any) => setRecurrence(v || null, task?.recurrenceInterval || 1)"
@@ -490,7 +490,7 @@ function formatPriorityLabel(data: any) {
             size="small"
             :min="1"
             :max="365"
-            style="width: 130px"
+            style="width: 160px"
             @change="(v: number | undefined) => setRecurrence(task?.recurrenceFreq ?? null, v ?? 1)"
           />
         </div>
