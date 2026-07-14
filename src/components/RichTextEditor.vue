@@ -1,10 +1,24 @@
 <script setup lang="ts">
 // 富文本编辑器 —— 基于 Tiptap
-// 支持：加粗/斜体/删除线、标题、列表、引用、分隔线、代码块（语言高亮）、图片粘贴/拖拽/缩放/预览
+// 控件清单：
+//   - 文本格式：加粗 / 斜体 / 下划线 / 删除线 / 行内代码 / 清除格式
+//   - 段落：H1/H2/H3 标题下拉 / 引用 / 分隔线 / 硬换行
+//   - 列表：无序 / 有序 / 任务列表（todo 复选框）
+//   - 链接：插入 / 编辑（弹窗输入 URL）
+//   - 代码块：多语言高亮
+//   - 图片：粘贴 / 拖拽 / 缩放 / 预览
+//   - 气泡菜单：选中文本时浮出快捷工具栏
 import { useEditor, EditorContent } from "@tiptap/vue-3";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
+import Underline from "@tiptap/extension-underline";
+import Link from "@tiptap/extension-link";
+import HardBreak from "@tiptap/extension-hard-break";
+import TaskList from "@tiptap/extension-task-list";
+import TaskItem from "@tiptap/extension-task-item";
+import { BubbleMenuPlugin } from "@tiptap/extension-bubble-menu";
+import { PluginKey } from "@tiptap/pm/state";
 import { common, createLowlight } from "lowlight";
 import { watch, onBeforeUnmount, onMounted, ref, nextTick, computed } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
@@ -35,7 +49,21 @@ const editor = useEditor({
   extensions: [
     StarterKit.configure({
       codeBlock: false,
+      // HardBreak 已单独加载并禁用 StarterKit 自带的，避免冲突
+      hardBreak: false,
     }),
+    Underline,
+    Link.configure({
+      openOnClick: false, // 单击不直接打开链接，方便编辑
+      autolink: true, // 自动识别 URL 转为链接
+      HTMLAttributes: {
+        rel: "noopener noreferrer",
+        target: "_blank",
+      },
+    }),
+    HardBreak,
+    TaskList,
+    TaskItem.configure({ nested: true }),
     CodeBlockLowlight.configure({ lowlight }),
     Image.configure({
       inline: false,
@@ -98,6 +126,68 @@ const editor = useEditor({
   },
 });
 
+// ─── 气泡菜单（bubble menu）── 选中文本时浮出 ───────────
+const bubbleMenuRef = ref<HTMLElement | null>(null);
+
+// ─── 链接弹窗状态 ───────────────────────────────────
+const linkDialogVisible = ref(false);
+const linkInputValue = ref("");
+/** 记录弹窗打开时光标是否在已有链接上（用于切换为"编辑"模式） */
+const linkIsEditing = ref(false);
+
+function openLinkDialog() {
+  if (!editor.value) return;
+  // 优先取选中文本所在链接的 href（编辑模式）
+  const existing = editor.value.getAttributes("link").href as string | undefined;
+  linkIsEditing.value = !!existing;
+  linkInputValue.value = existing ?? "";
+  linkDialogVisible.value = true;
+}
+
+function closeLinkDialog() {
+  linkDialogVisible.value = false;
+  linkInputValue.value = "";
+  linkIsEditing.value = false;
+}
+
+function applyLink() {
+  if (!editor.value) return;
+  const url = linkInputValue.value.trim();
+  if (!url) {
+    // 清空链接
+    editor.value.chain().focus().extendMarkRange("link").unsetLink().run();
+  } else {
+    // 自动补 https://
+    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    editor.value
+      .chain()
+      .focus()
+      .extendMarkRange("link")
+      .setLink({ href: normalized })
+      .run();
+  }
+  closeLinkDialog();
+}
+
+function removeLink() {
+  if (!editor.value) return;
+  editor.value.chain().focus().extendMarkRange("link").unsetLink().run();
+  closeLinkDialog();
+}
+
+/** 标题下拉选择 */
+function onHeadingSelect(key: string) {
+  if (!editor.value) return;
+  const chain = editor.value.chain().focus();
+  if (key === "h1") chain.toggleHeading({ level: 1 }).run();
+  else if (key === "h2") chain.toggleHeading({ level: 2 }).run();
+  else if (key === "h3") chain.toggleHeading({ level: 3 }).run();
+  else {
+    // "p"：清掉所有 heading 级别，回到普通段落
+    chain.setParagraph().run();
+  }
+}
+
 watch(
   () => props.modelValue,
   (val) => {
@@ -123,6 +213,17 @@ onMounted(() => {
   };
   nextTick(() => {
     editorContainerRef.value?.addEventListener("click", handler);
+
+    // 挂载气泡菜单插件（选中文本时浮出快捷工具栏）
+    if (editor.value && bubbleMenuRef.value) {
+      const plugin = BubbleMenuPlugin({
+        pluginKey: new PluginKey("richTextBubbleMenu"),
+        editor: editor.value,
+        element: bubbleMenuRef.value,
+        options: { placement: "top" },
+      });
+      editor.value.registerPlugin(plugin);
+    }
   });
   (window as any).__richTextClickHandler = handler;
 
@@ -242,12 +343,13 @@ async function insertImageFromFile() {
   <div class="rich-text" v-if="editor">
     <!-- 工具栏 -->
     <div class="rich-text__toolbar">
+      <!-- 文本格式组 -->
       <a-button
         size="mini"
         shape="circle"
         :type="editor.isActive('bold') ? 'primary' : 'text'"
         @click="editor.chain().focus().toggleBold().run()"
-        title="加粗"
+        title="加粗 (Cmd+B)"
       >
         <icon-bold :size="16" />
       </a-button>
@@ -256,9 +358,18 @@ async function insertImageFromFile() {
         shape="circle"
         :type="editor.isActive('italic') ? 'primary' : 'text'"
         @click="editor.chain().focus().toggleItalic().run()"
-        title="斜体"
+        title="斜体 (Cmd+I)"
       >
         <icon-italic :size="16" />
+      </a-button>
+      <a-button
+        size="mini"
+        shape="circle"
+        :type="editor.isActive('underline') ? 'primary' : 'text'"
+        @click="editor.chain().focus().toggleUnderline().run()"
+        title="下划线 (Cmd+U)"
+      >
+        <icon-underline :size="16" />
       </a-button>
       <a-button
         size="mini"
@@ -269,16 +380,59 @@ async function insertImageFromFile() {
       >
         <icon-strikethrough :size="16" />
       </a-button>
-      <span class="rich-text__divider" />
       <a-button
         size="mini"
         shape="circle"
-        :type="editor.isActive('heading', { level: 2 }) ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleHeading({ level: 2 }).run()"
-        title="标题"
+        :type="editor.isActive('code') ? 'primary' : 'text'"
+        @click="editor.chain().focus().toggleCode().run()"
+        title="行内代码"
       >
-        <icon-bold :size="16" />
+        <icon-code :size="14" />
       </a-button>
+      <a-button
+        size="mini"
+        shape="circle"
+        type="text"
+        @click="editor.chain().focus().clearNodes().unsetAllMarks().run()"
+        title="清除格式"
+      >
+        <icon-eraser :size="16" />
+      </a-button>
+      <span class="rich-text__divider" />
+
+      <!-- 段落块组 -->
+      <!-- 标题下拉（H1/H2/H3 + 段落） -->
+      <a-dropdown trigger="click" position="bl" :popup-offset="4">
+        <a-button
+          size="mini"
+          shape="circle"
+          :type="editor.isActive('heading') ? 'primary' : 'text'"
+          title="标题级别"
+        >
+          <span class="rich-text__heading-label">
+            <template v-if="editor.isActive('heading', { level: 1 })">H1</template>
+            <template v-else-if="editor.isActive('heading', { level: 2 })">H2</template>
+            <template v-else-if="editor.isActive('heading', { level: 3 })">H3</template>
+            <template v-else>¶</template>
+          </span>
+        </a-button>
+        <template #content>
+          <a-menu class="rich-text__heading-menu" @menu-item-click="onHeadingSelect">
+            <a-menu-item key="p">
+              <span class="rich-text__heading-menu-text">¶ 正文</span>
+            </a-menu-item>
+            <a-menu-item key="h1">
+              <span class="rich-text__heading-menu-text">H1 标题</span>
+            </a-menu-item>
+            <a-menu-item key="h2">
+              <span class="rich-text__heading-menu-text">H2 标题</span>
+            </a-menu-item>
+            <a-menu-item key="h3">
+              <span class="rich-text__heading-menu-text">H3 标题</span>
+            </a-menu-item>
+          </a-menu>
+        </template>
+      </a-dropdown>
       <a-button
         size="mini"
         shape="circle"
@@ -288,7 +442,27 @@ async function insertImageFromFile() {
       >
         <icon-quote :size="16" />
       </a-button>
+      <a-button
+        size="mini"
+        shape="circle"
+        type="text"
+        @click="editor.chain().focus().setHorizontalRule().run()"
+        title="分隔线"
+      >
+        <icon-minus :size="16" />
+      </a-button>
+      <a-button
+        size="mini"
+        shape="circle"
+        type="text"
+        @click="editor.chain().focus().setHardBreak().run()"
+        title="硬换行 (Shift+Enter)"
+      >
+        <icon-refresh :size="14" />
+      </a-button>
       <span class="rich-text__divider" />
+
+      <!-- 列表组 -->
       <a-button
         size="mini"
         shape="circle"
@@ -307,7 +481,18 @@ async function insertImageFromFile() {
       >
         <icon-ordered-list :size="16" />
       </a-button>
+      <a-button
+        size="mini"
+        shape="circle"
+        :type="editor.isActive('taskList') ? 'primary' : 'text'"
+        @click="editor.chain().focus().toggleTaskList().run()"
+        title="任务列表"
+      >
+        <icon-check-square :size="16" />
+      </a-button>
       <span class="rich-text__divider" />
+
+      <!-- 代码块 + 链接 + 图片 -->
       <a-button
         size="mini"
         shape="circle"
@@ -315,27 +500,17 @@ async function insertImageFromFile() {
         @click="editor.chain().focus().toggleCodeBlock().run()"
         title="代码块"
       >
-        <icon-code :size="16" />
+        <icon-code-square :size="16" />
       </a-button>
       <a-button
         size="mini"
         shape="circle"
-        :type="editor.isActive('code') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleCode().run()"
-        title="行内代码"
+        :type="editor.isActive('link') ? 'primary' : 'text'"
+        @click="openLinkDialog"
+        title="插入 / 编辑链接"
       >
-        <icon-code :size="14" />
+        <icon-link :size="16" />
       </a-button>
-      <a-button
-        size="mini"
-        shape="circle"
-        type="text"
-        @click="editor.chain().focus().setHorizontalRule().run()"
-        title="分隔线"
-      >
-        <icon-minus :size="16" />
-      </a-button>
-      <span class="rich-text__divider" />
       <a-button
         type="text"
         size="mini"
@@ -352,6 +527,67 @@ async function insertImageFromFile() {
     <div ref="editorContainerRef" class="rich-text__editor-wrapper">
       <EditorContent :editor="editor" class="rich-text__editor" />
     </div>
+
+    <!-- 气泡菜单：选中文本时由 BubbleMenuPlugin 浮出（脱离文档流，用 teleport 到 body 防止被遮） -->
+    <teleport to="body">
+      <div ref="bubbleMenuRef" class="rich-text__bubble-menu">
+        <a-button
+          size="mini"
+          shape="circle"
+          :type="editor.isActive('bold') ? 'primary' : 'text'"
+          @click="editor.chain().focus().toggleBold().run()"
+          title="加粗"
+        >
+          <icon-bold :size="14" />
+        </a-button>
+        <a-button
+          size="mini"
+          shape="circle"
+          :type="editor.isActive('italic') ? 'primary' : 'text'"
+          @click="editor.chain().focus().toggleItalic().run()"
+          title="斜体"
+        >
+          <icon-italic :size="14" />
+        </a-button>
+        <a-button
+          size="mini"
+          shape="circle"
+          :type="editor.isActive('underline') ? 'primary' : 'text'"
+          @click="editor.chain().focus().toggleUnderline().run()"
+          title="下划线"
+        >
+          <icon-underline :size="14" />
+        </a-button>
+        <a-button
+          size="mini"
+          shape="circle"
+          :type="editor.isActive('strike') ? 'primary' : 'text'"
+          @click="editor.chain().focus().toggleStrike().run()"
+          title="删除线"
+        >
+          <icon-strikethrough :size="14" />
+        </a-button>
+        <a-button
+          size="mini"
+          shape="circle"
+          :type="editor.isActive('code') ? 'primary' : 'text'"
+          @click="editor.chain().focus().toggleCode().run()"
+          title="行内代码"
+        >
+          <icon-code :size="12" />
+        </a-button>
+        <span class="rich-text__bubble-divider" />
+        <a-button
+          size="mini"
+          shape="circle"
+          :type="editor.isActive('link') ? 'primary' : 'text'"
+          @click="openLinkDialog"
+          title="链接"
+        >
+          <icon-link :size="14" />
+        </a-button>
+      </div>
+    </teleport>
 
     <!-- 图片预览 lightbox -->
     <teleport to="body">
@@ -401,6 +637,42 @@ async function insertImageFromFile() {
         </div>
       </div>
     </teleport>
+
+    <!-- 链接弹窗 -->
+    <a-modal
+      :visible="linkDialogVisible"
+      :width="440"
+      :footer="false"
+      :mask-closable="false"
+      :title="linkIsEditing ? '编辑链接' : '插入链接'"
+      @cancel="closeLinkDialog"
+      @ok="applyLink"
+    >
+      <div class="rich-text__link-field">
+        <label class="rich-text__link-label">链接地址</label>
+        <a-input
+          v-model="linkInputValue"
+          placeholder="https://example.com"
+          allow-clear
+          autofocus
+          @keydown.enter.prevent="applyLink"
+          @keydown.esc="closeLinkDialog"
+        />
+        <p class="rich-text__link-hint">
+          支持 http / https 协议；留空可清除链接；输入 example.com 自动补 https://
+        </p>
+      </div>
+      <div class="rich-text__link-actions">
+        <a-button v-if="linkIsEditing" status="danger" type="outline" size="small" @click="removeLink">
+          移除链接
+        </a-button>
+        <span style="flex: 1" />
+        <a-button size="small" @click="closeLinkDialog">取消</a-button>
+        <a-button type="primary" size="small" @click="applyLink">
+          {{ linkIsEditing ? "更新" : "插入" }}
+        </a-button>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -463,11 +735,40 @@ async function insertImageFromFile() {
 }
 
 /* 标题 */
+.rich-text__editor :deep(.rich-text__content h1) {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 14px 0 8px;
+  line-height: 1.4;
+}
 .rich-text__editor :deep(.rich-text__content h2) {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
   margin: 12px 0 8px;
   line-height: 1.4;
+}
+.rich-text__editor :deep(.rich-text__content h3) {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 10px 0 6px;
+  line-height: 1.4;
+}
+
+/* 下划线 */
+.rich-text__editor :deep(.rich-text__content u) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* 链接 */
+.rich-text__editor :deep(.rich-text__content a) {
+  color: var(--jt-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.rich-text__editor :deep(.rich-text__content a:hover) {
+  opacity: 0.8;
 }
 
 /* 引用 */
@@ -490,6 +791,39 @@ async function insertImageFromFile() {
 .rich-text__editor :deep(.rich-text__content ol) {
   padding-left: 20px;
   margin: 0 0 8px;
+}
+
+/* 任务列表 */
+.rich-text__editor :deep(.rich-text__content ul[data-type="taskList"]) {
+  list-style: none;
+  padding-left: 4px;
+  margin: 4px 0 8px;
+}
+.rich-text__editor :deep(.rich-text__content ul[data-type="taskList"] li) {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 2px 0;
+}
+.rich-text__editor :deep(.rich-text__content ul[data-type="taskList"] li > label) {
+  flex-shrink: 0;
+  margin-top: 4px;
+  user-select: none;
+}
+.rich-text__editor :deep(.rich-text__content ul[data-type="taskList"] li > div) {
+  flex: 1;
+  min-width: 0;
+}
+.rich-text__editor :deep(.rich-text__content ul[data-type="taskList"] input[type="checkbox"]) {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--jt-primary);
+}
+.rich-text__editor :deep(.rich-text__content ul[data-type="taskList"] li[data-checked="true"] > div) {
+  color: var(--jt-text-tertiary);
+  text-decoration: line-through;
 }
 
 /* 图片 */
@@ -682,5 +1016,79 @@ async function insertImageFromFile() {
   font-size: 13px;
   font-family: var(--font-mono);
   white-space: nowrap;
+}
+
+/* ─── 标题下拉按钮（按钮里显示当前级别） ───────────────── */
+.rich-text__heading-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  min-width: 14px;
+  display: inline-block;
+  text-align: center;
+}
+
+.rich-text__heading-menu-text {
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+.rich-text__heading-menu :deep(.arco-menu-item) {
+  padding: 0 !important;
+  margin: 0 !important;
+  min-height: 32px !important;
+}
+.rich-text__heading-menu :deep(.arco-menu-item-inner) {
+  padding: 0 12px !important;
+}
+
+/* ─── 链接弹窗 ─────────────────────────────────────── */
+.rich-text__link-field {
+  margin-top: 4px;
+}
+.rich-text__link-label {
+  display: block;
+  font-size: 12px;
+  color: var(--jt-text-secondary);
+  margin-bottom: 8px;
+}
+.rich-text__link-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--jt-text-tertiary);
+  line-height: 1.5;
+}
+.rich-text__link-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+  align-items: center;
+}
+
+/* ─── 气泡菜单（bubble menu）── 选中文字时浮出 ─────────────── */
+.rich-text__bubble-menu {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background-color: var(--jt-surface);
+  border-radius: 8px;
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.08),
+    0 2px 6px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--jt-border);
+}
+.rich-text__bubble-divider {
+  width: 1px;
+  height: 16px;
+  background-color: var(--jt-border);
+  margin: 0 2px;
+}
+
+body[arco-theme="dark"] .rich-text__bubble-menu {
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.3);
 }
 </style>

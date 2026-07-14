@@ -10,6 +10,8 @@ import PriorityDot from "./PriorityDot.vue";
 
 const props = defineProps<{
   modelValue: boolean;
+  /** 可选：默认选中的清单 ID（外部指定时优先） */
+  defaultListId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -49,7 +51,33 @@ watch(open, async (isOpen) => {
   if (isOpen) {
     title.value = "";
     priority.value = 0;
-    selectedListId.value = listStore.sortedLists[0]?.id ?? "inbox";
+    // 优先使用外部传入的默认清单（如果是目录，自动 fallback 到它下面第一个子清单）
+    let defaultId: string | null = null;
+    if (props.defaultListId) {
+      const node = listStore.getById(props.defaultListId);
+      if (node) {
+        if (node.isFolder) {
+          // 目录：递归穿透多层目录，找第一个真实清单
+          let cur: string | null = node.id;
+          while (cur) {
+            const child = actualLists.value.find((l) => l.parentId === cur);
+            if (child) {
+              defaultId = child.id;
+              break;
+            }
+            // 没有真实清单子节点，尝试下钻到第一个目录子节点
+            const folderChild = listStore.sortedLists.find(
+              (l) => l.parentId === cur && l.isFolder,
+            );
+            if (folderChild) cur = folderChild.id;
+            else break;
+          }
+        } else {
+          defaultId = node.id;
+        }
+      }
+    }
+    selectedListId.value = defaultId ?? firstActualListId();
     dueStartAt.value = null;
     dueEndAt.value = null;
     feedback.value = null;
@@ -95,13 +123,31 @@ const selectedListColor = computed(
   () => listStore.getById(selectedListId.value)?.color ?? null,
 );
 
+/** 仅真实清单（排除目录）—— 任务只能附加到清单，不能附加到目录 */
+const actualLists = computed(() =>
+  listStore.sortedLists.filter((l) => !l.isFolder),
+);
+
+/** 在真实清单里查找第一个（按 sortOrder） */
+function firstActualListId(): string {
+  return actualLists.value[0]?.id ?? "inbox";
+}
+
 async function submit(keepOpen: boolean) {
   const trimmed = title.value.trim();
   if (!trimmed) return;
 
+  // 防御：确保 listId 是真实清单而非目录（任务只能附加到清单）
+  let targetListId = selectedListId.value;
+  const node = listStore.getById(targetListId);
+  if (!node || node.isFolder) {
+    targetListId = firstActualListId();
+    selectedListId.value = targetListId;
+  }
+
   await taskStore.createTask({
     title: trimmed,
-    listId: selectedListId.value,
+    listId: targetListId,
     priority: priority.value,
     dueStartAt: dueStartAt.value,
     dueEndAt: dueEndAt.value,
@@ -198,7 +244,7 @@ function onKeyDown(e: KeyboardEvent) {
           </template>
         </a-trigger>
 
-        <!-- 清单 —— 同样 a-trigger + 自定义 popup -->
+        <!-- 清单 —— 扁平下拉选择（不支持目录嵌套，纯简单列表） -->
         <a-trigger
           v-model:popup-visible="listPopupVisible"
           trigger="click"
@@ -215,7 +261,7 @@ function onKeyDown(e: KeyboardEvent) {
           <template #content>
             <div class="quick-add__popup quick-add__popup--list">
               <button
-                v-for="list in listStore.sortedLists"
+                v-for="list in actualLists"
                 :key="list.id"
                 type="button"
                 class="quick-add__popup-item"

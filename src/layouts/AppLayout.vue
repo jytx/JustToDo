@@ -13,14 +13,15 @@ import QuickAddDialog from "@/components/QuickAddDialog.vue";
 import { useSearchStore } from "@/stores/search";
 import { useListStore } from "@/stores/list";
 import { useShortcuts } from "@/composables/useShortcuts";
+import { useQuickAdd } from "@/composables/useQuickAdd";
 
 const { isDark, toggleTheme } = useTheme();
 const searchStore = useSearchStore();
 const listStore = useListStore();
 const taskStore = useTaskStore();
 const route = useRoute();
+const quickAdd = useQuickAdd();
 
-const quickAddOpen = ref(false);
 const sidebarCollapsed = ref(false);
 const panelWidth = ref(360);
 
@@ -68,7 +69,7 @@ const deleteModalVisible = computed({
 // ─── 键盘导航 ────────────────────────────────────────────
 function onNavigationKeydown(e: KeyboardEvent) {
   // 0. 上下文守卫：搜索/快速添加/删除确认对话框打开时不处理
-  if (searchStore.open || quickAddOpen.value || taskStore.pendingDeleteId) return;
+  if (searchStore.open || quickAdd.visible.value || taskStore.pendingDeleteId) return;
 
   // 1. 输入框/文本域/contentEditable 聚焦时不处理（让位给输入）
   const active = document.activeElement;
@@ -135,7 +136,7 @@ useShortcuts({
   },
   onQuickAdd: () => {
     listStore.loadLists();
-    quickAddOpen.value = true;
+    quickAdd.open();
   },
   onToggleTheme: toggleTheme,
 });
@@ -159,7 +160,7 @@ useShortcuts({
         <a-button
           type="text"
           size="small"
-          @click="quickAddOpen = true"
+          @click="quickAdd.open()"
         >
           <template #icon><icon-plus :size="20" /></template>
         </a-button>
@@ -222,7 +223,11 @@ useShortcuts({
     <SearchPalette />
 
     <!-- 快速添加对话框 -->
-    <QuickAddDialog v-model="quickAddOpen" />
+    <QuickAddDialog
+      :model-value="quickAdd.visible.value"
+      :default-list-id="quickAdd.defaultListId.value ?? undefined"
+      @update:model-value="quickAdd.close()"
+    />
 
     <!-- 删除任务确认对话框（键盘 Backspace 或任务项菜单触发） -->
     <a-modal

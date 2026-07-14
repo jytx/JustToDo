@@ -5,11 +5,13 @@ import { ref, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { ListTreeNode } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
+import { useQuickAdd } from "@/composables/useQuickAdd";
 import {
   IconFolder,
   IconMore,
   IconEdit,
   IconDelete,
+  IconPlus,
   IconRight,
   IconDown,
 } from "@arco-design/web-vue/es/icon";
@@ -22,6 +24,7 @@ const props = defineProps<{
 const taskStore = useTaskStore();
 const router = useRouter();
 const route = useRoute();
+const quickAdd = useQuickAdd();
 
 /** 当前清单项是否处于路由激活态（仅清单，非目录） */
 const isActive = computed(
@@ -189,6 +192,14 @@ function onDrop(e: DragEvent) {
         :style="{ color: node.color }"
       />
       <span class="list-node__name">{{ node.name }}</span>
+      <!-- 在目录下新建任务（hover 才显示） -->
+      <button
+        class="list-node__add-btn"
+        title="在此目录下新建任务"
+        @click.stop="quickAdd.open(node.id)"
+      >
+        <icon-plus :size="14" />
+      </button>
       <a-dropdown trigger="click" position="br" :popup-offset="4">
         <button class="list-node__menu-btn" @click.stop>
           <icon-more :size="16" />
@@ -415,6 +426,41 @@ function onDrop(e: DragEvent) {
 .list-node__list-item:hover .list-node__count,
 .list-node__folder:hover .list-node__count {
   right: 32px;
+}
+
+/* 在目录下新建任务按钮 —— 仅目录行有，hover 显示 */
+.list-node__add-btn {
+  position: absolute;
+  right: 28px;
+  margin: 0;
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  color: var(--jt-text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 5;
+}
+
+.list-node__folder:hover .list-node__add-btn {
+  opacity: 1;
+}
+
+.list-node__add-btn:hover {
+  background-color: var(--jt-surface-hover);
+  color: var(--jt-text-primary);
+}
+
+/* hover 时让位：让 + 按钮跟更多按钮共存时计数再往左一点 */
+.list-node__folder:hover .list-node__count {
+  right: 56px;
 }
 
 /* 更多按钮 */

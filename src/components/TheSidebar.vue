@@ -16,6 +16,7 @@ import {
   IconMenuUnfold,
   IconRight,
   IconDown,
+  IconFolder,
 } from "@arco-design/web-vue/es/icon";
 // IconEdit 移到 SidebarListNode 中使用
 import { useListStore } from "@/stores/list";
@@ -145,7 +146,8 @@ function cancelDelete() {
 /** 新建清单弹窗 */
 const showCreateDialog = ref(false);
 const newListName = ref("");
-const newListFolder = ref(""); // 目录路径，支持 "A/B" 多级
+/** 目录路径字符串，支持 "A/B" 多级（可输入已有目录路径名以提示筛选） */
+const newListFolder = ref("");
 const selectedColor = ref('#10B981');
 
 /** 8 种预定义颜色 */
@@ -159,6 +161,46 @@ function startNewList() {
   newListFolder.value = "";
   selectedColor.value = '#10B981';
   showCreateDialog.value = true;
+}
+
+/** 输入提示：把已有的目录拼成完整路径，作为自动补全的数据源 */
+const folderSuggestions = computed(() => {
+  const folders = listStore.sortedLists.filter((l) => l.isFolder);
+  // 按"根→叶"路径分组，输出完整路径字符串
+  const buildPath = (id: string): string => {
+    const ids: string[] = [];
+    let cur: string | null | undefined = id;
+    while (cur) {
+      ids.unshift(cur);
+      const node: any = listStore.getById(cur);
+      cur = node?.parentId ?? null;
+    }
+    return ids
+      .map((nid) => listStore.getById(nid)?.name)
+      .filter(Boolean)
+      .join("/");
+  };
+  return folders.map((f) => {
+    const path = buildPath(f.id);
+    return {
+      value: path,
+      label: path, // Arco 默认按 label 字段展示，这里保持一致
+      name: path,
+    };
+  });
+});
+
+/** 自定义过滤：输入值是完整路径的前缀或片段时命中 */
+function folderFilterOption(inputValue: string, option: any) {
+  if (!inputValue) return true;
+  const v = String(option.value ?? "").toLowerCase();
+  const i = inputValue.toLowerCase();
+  return v.includes(i) || i.includes(v);
+}
+
+/** 选中自动补全项时回填到输入框 */
+function onFolderSelect(value: string) {
+  newListFolder.value = value;
 }
 
 /** 处理清单拖拽移动 */
@@ -267,7 +309,7 @@ onMounted(async () => {
           <icon-right v-else :size="12" class="sidebar__toggle-icon" />
           <span>清单</span>
         </div>
-        <a-button size="mini" type="text" @click.stop="startNewList">
+        <a-button size="mini" type="text" title="新建清单" @click.stop="startNewList">
           <template #icon><icon-plus :size="16" /></template>
         </a-button>
       </div>
@@ -408,10 +450,21 @@ onMounted(async () => {
     </div>
     <div class="create-list-dialog__field">
       <label class="create-list-dialog__label">目录（可选，支持 A/B 多级）</label>
-      <a-input
+      <a-auto-complete
         v-model="newListFolder"
+        :data="folderSuggestions"
+        :filter-option="folderFilterOption"
         placeholder="如：工作/项目A"
-      />
+        allow-clear
+        @select="onFolderSelect"
+      >
+        <template #option="{ data }">
+          <span class="create-list-dialog__folder-suggestion">
+            <icon-folder :size="13" />
+            <span>{{ data.raw?.name ?? data.value }}</span>
+          </span>
+        </template>
+      </a-auto-complete>
     </div>
     <div class="create-list-dialog__colors">
       <span class="create-list-dialog__label">颜色</span>
@@ -824,5 +877,17 @@ onMounted(async () => {
 .sidebar__list-tree {
   display: flex;
   flex-direction: column;
+}
+
+/* 自动补全：目录路径候选 */
+.create-list-dialog__folder-suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.2;
+}
+
+.create-list-dialog__folder-suggestion :deep(.arco-icon) {
+  color: var(--jt-text-tertiary);
 }
 </style>
