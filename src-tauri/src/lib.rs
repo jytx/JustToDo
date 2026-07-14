@@ -17,7 +17,7 @@ fn ping() -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -177,13 +177,11 @@ pub fn run() {
 
     // 仅在开发模式下启用 MCP 插件（用于 AI 辅助 GUI 测试，不影响 release 构建）
     #[cfg(dev)]
-    {
-        builder = builder.plugin(tauri_plugin_mcp::init_with_config(
-            tauri_plugin_mcp::PluginConfig::new("JustToDo".to_string())
-                .start_socket_server(true)
-                .socket_path(std::path::PathBuf::from("/tmp/tauri-mcp.sock")),
-        ));
-    }
+    let builder = builder.plugin(tauri_plugin_mcp::init_with_config(
+        tauri_plugin_mcp::PluginConfig::new("JustToDo".to_string())
+            .start_socket_server(true)
+            .socket_path(std::path::PathBuf::from("/tmp/tauri-mcp.sock")),
+    ));
 
     builder
         .run(tauri::generate_context!())

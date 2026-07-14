@@ -1031,17 +1031,6 @@ pub async fn habit_get_logs(
 use tauri::{AppHandle, Manager};
 use std::path::PathBuf;
 
-/// 获取附件存储目录（用户配置或默认 app data/attachments）
-#[tauri::command]
-pub async fn get_attachment_dir(app: AppHandle) -> CmdResult<String> {
-    let dir = app.path().app_data_dir()
-        .map_err(|e| format!("获取 app data 目录失败: {}", e))?
-        .join("attachments");
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("创建附件目录失败: {}", e))?;
-    Ok(dir.to_string_lossy().to_string())
-}
-
 /// 设置自定义附件存储路径
 #[tauri::command]
 pub async fn set_attachment_dir(app: AppHandle, path: String) -> CmdResult<String> {
