@@ -15,6 +15,7 @@ import {
   type Task,
   type RecurrenceFreq,
 } from "@/types";
+import { toLocalIso, fromLocalIso, parseLocalIso } from "@/utils/date";
 import TaskCheckbox from "./TaskCheckbox.vue";
 import PriorityDot from "./PriorityDot.vue";
 import RichTextEditor from "./RichTextEditor.vue";
@@ -263,19 +264,19 @@ const priorityOptions = Object.entries(PRIORITY_LABELS).map(([k, v]) => ({
   label: v,
 }));
 
-// 开始日期（Date ↔ ISO 字符串）—— 完整保留时分
+// 开始日期（与本地时间字面量互转）—— 不再走 new Date().toISOString()
 const dueStartModel = computed({
-  get: () => (task.value?.dueStartAt ?? undefined),
+  get: () => fromLocalIso(task.value?.dueStartAt) ?? undefined,
   set: (v: string | undefined) => {
-    setDueRange(v ? new Date(v).toISOString() : null, task.value?.dueEndAt ?? null);
+    setDueRange(toLocalIso(v), task.value?.dueEndAt ?? null);
   },
 });
 
-// 结束日期（Date ↔ ISO 字符串）—— 完整保留时分
+// 结束日期（与本地时间字面量互转）—— 不再走 new Date().toISOString()
 const dueEndModel = computed({
-  get: () => (task.value?.dueEndAt ?? undefined),
+  get: () => fromLocalIso(task.value?.dueEndAt) ?? undefined,
   set: (v: string | undefined) => {
-    setDueRange(task.value?.dueStartAt ?? null, v ? new Date(v).toISOString() : null);
+    setDueRange(task.value?.dueStartAt ?? null, toLocalIso(v));
   },
 });
 
@@ -578,8 +579,8 @@ function formatPriorityLabel(data: any) {
 
       <!-- 元信息 -->
       <div class="detail-panel__meta">
-        创建于 {{ new Date(task.createdAt).toLocaleString("zh-CN", { hour12: false }) }}
-        · 更新于 {{ new Date(task.updatedAt).toLocaleString("zh-CN", { hour12: false }) }}
+        创建于 {{ (parseLocalIso(task.createdAt) ?? new Date(task.createdAt)).toLocaleString("zh-CN", { hour12: false }) }}
+        · 更新于 {{ (parseLocalIso(task.updatedAt) ?? new Date(task.updatedAt)).toLocaleString("zh-CN", { hour12: false }) }}
       </div>
     </div>
     </div>

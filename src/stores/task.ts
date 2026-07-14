@@ -7,6 +7,7 @@ import type { Task, Priority, SortField, SortDir } from "@/types";
 import * as db from "@/api/db";
 import type { SmartViewId } from "@/api/db";
 import { useSettingsStore } from "@/stores/settings";
+import { nowLocalIso } from "@/utils/date";
 
 /**
  * 在非 setup 上下文（如 createTask 的内部调用）安全获取 settings store。
@@ -215,8 +216,9 @@ export const useTaskStore = defineStore("task", () => {
       start.setHours(0, 0, 0, 0);
       const end = new Date();
       end.setHours(23, 59, 59, 0);
-      dueStartAt = start.toISOString();
-      dueEndAt = end.toISOString();
+      // 本地字面量，无时区标记，与 picker 路径保持一致
+      dueStartAt = nowLocalIso(start);
+      dueEndAt = nowLocalIso(end);
     }
     const task = await db.createTask({ ...params, dueStartAt, dueEndAt });
     if (!params.parentId) {

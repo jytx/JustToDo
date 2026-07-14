@@ -6,6 +6,7 @@ import { ref, watch, nextTick, computed } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { PRIORITY_LABELS, PRIORITY_COLORS, type Priority } from "@/types";
+import { toLocalIso, fromLocalIso } from "@/utils/date";
 import PriorityDot from "./PriorityDot.vue";
 
 const props = defineProps<{
@@ -86,19 +87,22 @@ watch(open, async (isOpen) => {
   }
 });
 
-/** a-range-picker 的 v-model 桥接 —— 开始/结束日期范围 */
+/** a-range-picker 的 v-model 桥接 —— 与本地时间字面量互转 */
 const dueRangeModel = computed({
   get: (): [string, string] | undefined => {
     if (!dueStartAt.value && !dueEndAt.value) return undefined;
-    return [dueStartAt.value ?? dueEndAt.value!, dueEndAt.value ?? dueStartAt.value!];
+    return [
+      fromLocalIso(dueStartAt.value) ?? fromLocalIso(dueEndAt.value)!,
+      fromLocalIso(dueEndAt.value) ?? fromLocalIso(dueStartAt.value)!,
+    ];
   },
   set: (v: [string, string] | undefined) => {
     if (!v) {
       dueStartAt.value = null;
       dueEndAt.value = null;
     } else {
-      dueStartAt.value = v[0] ? new Date(v[0]).toISOString() : null;
-      dueEndAt.value = v[1] ? new Date(v[1]).toISOString() : null;
+      dueStartAt.value = toLocalIso(v[0]);
+      dueEndAt.value = toLocalIso(v[1]);
     }
   },
 });

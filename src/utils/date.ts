@@ -1,7 +1,70 @@
-// 日期工具 —— 将 ISO 时间格式化为 UI 友好的相对/绝对文本
-// 遵循 UI 设计：逾期用红字，今天到期加粗
+// 日期工具 —— 统一以"本地时间字面量"（YYYY-MM-DDTHH:mm:ss，无时区标记）作为存储/比较格式
+// 避免 new Date() ↔ toISOString() 来回弹造成的时区偏差
 
-/** 判断日期是否是今天 */
+/** 本地时间字面量正则（支持无秒、含秒；容忍空格或 T 分隔） */
+const LOCAL_ISO_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/;
+
+/**
+ * 把"本地时间字面量"解析为本地 Date
+ * 不会让 JS 引擎自己误判时区（无 Z/偏移时按本地构造）
+ */
+export function parseLocalIso(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const m = LOCAL_ISO_RE.exec(iso);
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s] = m;
+  return new Date(
+    Number(y),
+    Number(mo) - 1,
+    Number(d),
+    Number(h),
+    Number(mi),
+    Number(s ?? "0"),
+    0,
+  );
+}
+
+/** 提取 YYYY-MM-DD 部分（用于 range-picker "YYYY-MM-DD HH:mm" 展示） */
+export function localIsoToDateOnly(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const m = LOCAL_ISO_RE.exec(iso);
+  if (!m) return null;
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
+/**
+ * 把 picker 字符串（"2026-07-14" / "2026-07-14 09:00" / "2026-07-14T09:00"）规范化为
+ * 完整的本地时间字面量 "2026-07-14T09:00:00"。返回 null 表示输入为空或非法。
+ */
+export function toLocalIso(pickerStr: string | null | undefined): string | null {
+  if (!pickerStr) return null;
+  const m = LOCAL_ISO_RE.exec(pickerStr);
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s] = m;
+  return `${y}-${mo}-${d}T${h}:${mi}:${s ?? "00"}`;
+}
+
+/** 把本地时间字面量转回 picker 用的 "YYYY-MM-DD HH:mm" 格式 */
+export function fromLocalIso(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const m = LOCAL_ISO_RE.exec(iso);
+  if (!m) return null;
+  const [, y, mo, d, h, mi] = m;
+  return `${y}-${mo}-${d} ${h}:${mi}`;
+}
+
+/** 返回当前本地时间的字面量（用于"今天兑底"） */
+export function nowLocalIso(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const mo = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const h = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  const s = String(date.getSeconds()).padStart(2, "0");
+  return `${y}-${mo}-${d}T${h}:${mi}:${s}`;
+}
+
+/** 判断日期是否是今天（接受 Date） */
 function isToday(date: Date): boolean {
   const today = new Date();
   return (
@@ -13,16 +76,17 @@ function isToday(date: Date): boolean {
 
 /** ISO 字符串是否带有"非零"时分秒（精度 > 天） */
 function hasTimePart(iso: string): boolean {
-  // ISO 8601 形如 2026-07-14T14:30:00.000Z（或带时区偏移）
-  // 含 T...HH:MM 且 HH:MM 不是 "00:00" 视为有时间
-  const m = iso.match(/T(\d{2}):(\d{2})/);
+  // 本地时间字面量 "YYYY-MM-DDTHH:mm:ss"，取 T/HH:MM 部分
+  const m = iso.match(/[T ](\d{2}):(\d{2})/);
   if (!m) return false;
   return !(m[1] === "00" && m[2] === "00");
 }
 
 /** 提取 HH:mm 部分（用于"今天 14:00"格式） */
-function timeOf(date: Date): string {
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+function timeOf(iso: string): string {
+  const m = iso.match(/[T ](\d{2}):(\d{2})/);
+  if (!m) return "00:00";
+  return `${m[1]}:${m[2]}`;
 }
 
 /** 判断日期是否是昨天 */
@@ -74,6 +138,11 @@ function formatSingle(date: Date): string {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
+/** 把本地时间字面量转成本地 Date（不重新拼字段以避免精度损失） */
+function localIsoToDate(iso: string): Date | null {
+  return parseLocalIso(iso);
+}
+
 /** 格式化截止日期为 UI 文本（支持开始~结束范围） */
 export function formatDueDate(
   startIso: string | null,
@@ -93,9 +162,9 @@ export function formatDueDate(
   }
 
   // 有范围：开始和结束都存在
-  const start = new Date(startIso!);
-  const end = new Date(endIso!);
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+  const start = localIsoToDate(startIso!);
+  const end = localIsoToDate(endIso!);
+  if (!start || !end || isNaN(start.getTime()) || isNaN(end.getTime())) return null;
 
   // 同一天 → 按单日显示（带上时间）
   const sameDay =
@@ -110,8 +179,8 @@ export function formatDueDate(
   // 跨天 → "开始 ~ 结束"（带时间）
   const startHasTime = hasTimePart(startIso!);
   const endHasTime = hasTimePart(endIso!);
-  const startText = `${formatSingle(start)}${startHasTime ? " " + timeOf(start) : ""}`;
-  const endText = `${formatSingle(end)}${endHasTime ? " " + timeOf(end) : ""}`;
+  const startText = `${formatSingle(start)}${startHasTime ? " " + timeOf(startIso!) : ""}`;
+  const endText = `${formatSingle(end)}${endHasTime ? " " + timeOf(endIso!) : ""}`;
 
   const now = new Date();
   const overdue = end.getTime() < now.getTime() && !isToday(end);
@@ -126,8 +195,8 @@ export function formatDueDate(
 
 /** 格式化单个日期（含逾期/今天判断 + 时间部分） */
 function formatSingleDate(iso: string): DueDateInfo | null {
-  const date = new Date(iso);
-  if (isNaN(date.getTime())) return null;
+  const date = localIsoToDate(iso);
+  if (!date || isNaN(date.getTime())) return null;
 
   const now = new Date();
   const overdue = date.getTime() < now.getTime() && !isToday(date);
@@ -135,14 +204,14 @@ function formatSingleDate(iso: string): DueDateInfo | null {
 
   if (isToday(date)) {
     return {
-      text: withTime ? `今天 ${timeOf(date)}` : "今天",
+      text: withTime ? `今天 ${timeOf(iso)}` : "今天",
       overdue: false,
       isToday: true,
     };
   }
   if (isYesterday(date)) {
     return {
-      text: withTime ? `昨天 ${timeOf(date)}` : "昨天",
+      text: withTime ? `昨天 ${timeOf(iso)}` : "昨天",
       overdue: true,
       isToday: false,
     };
@@ -150,7 +219,7 @@ function formatSingleDate(iso: string): DueDateInfo | null {
 
   const dateText = formatSingle(date);
   return {
-    text: withTime ? `${dateText} ${timeOf(date)}` : dateText,
+    text: withTime ? `${dateText} ${timeOf(iso)}` : dateText,
     overdue,
     isToday: false,
   };

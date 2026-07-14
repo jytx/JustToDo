@@ -11,6 +11,8 @@ pub struct Task {
     pub list_id: String,
     pub parent_id: Option<String>,
     pub priority: i32,
+    /// 本地时间字面量（"YYYY-MM-DDTHH:mm:ss"，无时区标记）。
+    /// 与前端 toLocalIso() / utils/date.nowLocalIso() 输出格式一致。
     pub due_start_at: Option<String>,
     pub due_end_at: Option<String>,
     pub done: bool,

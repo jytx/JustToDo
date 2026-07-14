@@ -15,8 +15,9 @@ fn uuid() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
+/// 当前本地时间字面量（"YYYY-MM-DDTHH:mm:ss"），与前端 toLocalIso 输出格式一致
 fn now() -> String {
-    chrono::Utc::now().to_rfc3339()
+    format_local_naive(chrono::Local::now().naive_local())
 }
 
 /// 根据 sort_field + sort_dir 生成 ORDER BY 子句（不含前缀 "ORDER BY "）
@@ -272,16 +273,18 @@ pub async fn task_count_smart_view(
     pool: State<'_, sqlx::SqlitePool>,
     view: String,
 ) -> CmdResult<i64> {
-    let today = chrono::Utc::now().date_naive();
-    let end_of_today = (today + chrono::Duration::days(1))
+    // 本地时间字面量（与前端/DB 格式一致：YYYY-MM-DDTHH:mm:ss）
+    // SQLite 的 datetime() 函数对 T 或空格分隔都能解析
+    let now = chrono::Local::now().naive_local();
+    let end_of_today = (now.date() + chrono::Duration::days(1))
         .and_hms_opt(0, 0, 0)
         .unwrap()
-        .format("%Y-%m-%d %H:%M:%S")
+        .format("%Y-%m-%dT%H:%M:%S")
         .to_string();
-    let end_of_week = (today + chrono::Duration::days(7))
+    let end_of_week = (now.date() + chrono::Duration::days(7))
         .and_hms_opt(0, 0, 0)
         .unwrap()
-        .format("%Y-%m-%d %H:%M:%S")
+        .format("%Y-%m-%dT%H:%M:%S")
         .to_string();
 
     let count: i64 = if view == "today" {
@@ -389,16 +392,16 @@ pub async fn task_get_smart_view(
     sort_field: Option<String>,
     sort_dir: Option<String>,
 ) -> CmdResult<Vec<Task>> {
-    let today = chrono::Utc::now().date_naive();
-    let end_of_today = (today + chrono::Duration::days(1))
+    let now = chrono::Local::now().naive_local();
+    let end_of_today = (now.date() + chrono::Duration::days(1))
         .and_hms_opt(0, 0, 0)
         .unwrap()
-        .format("%Y-%m-%d %H:%M:%S")
+        .format("%Y-%m-%dT%H:%M:%S")
         .to_string();
-    let end_of_week = (today + chrono::Duration::days(7))
+    let end_of_week = (now.date() + chrono::Duration::days(7))
         .and_hms_opt(0, 0, 0)
         .unwrap()
-        .format("%Y-%m-%d %H:%M:%S")
+        .format("%Y-%m-%dT%H:%M:%S")
         .to_string();
 
     // today / upcoming 固定按日期+优先级；all 支持可选排序
@@ -1192,14 +1195,10 @@ pub async fn task_remove_tag(
 
 // ─── 任务重复规则 ────────────────────────────────────────
 
-/// 根据频率和间隔，从当前日期计算下一个 due_end_at（保持 ISO 8601 格式）
-/// current 为当前实例的 due_end_at ISO 字符串
+/// 根据频率和间隔，从当前日期计算下一个 due_end_at（本地时间字面量）
 fn next_recurrence_date(current_iso: &str, freq: &str, interval: i32) -> Option<String> {
-    // 解析为 NaiveDateTime（支持 RFC3339）
-    let dt = chrono::DateTime::parse_from_rfc3339(current_iso)
-        .ok()?
-        .with_timezone(&chrono::Utc)
-        .naive_utc();
+    // 解析本地 NaiveDateTime（兼容 RFC 3339 与本地字面量）
+    let dt = parse_local_naive(current_iso)?;
     let interval = interval.max(1) as u32; // 间隔最小为 1
     let next: Option<chrono::NaiveDateTime> = match freq {
         "daily" | "weekly" => {
@@ -1224,8 +1223,7 @@ fn next_recurrence_date(current_iso: &str, freq: &str, interval: i32) -> Option<
         }
         _ => return None,
     };
-    let next = next?;
-    Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(next, chrono::Utc).to_rfc3339())
+    Some(format_local_naive(next?))
 }
 
 /// 计算某年某月的天数
@@ -1249,11 +1247,11 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 /// 懒生成重复任务实例（应用启动时调用）
 /// 对每个设置了 recurrence_freq 的模板任务，扫描并生成应该已出现但缺失的实例
 pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<usize, String> {
-    let today_end = (chrono::Utc::now().date_naive() + chrono::Duration::days(1))
+    let now = chrono::Local::now().naive_local();
+    let tomorrow_start = (now.date() + chrono::Duration::days(1))
         .and_hms_opt(0, 0, 0)
-        .unwrap()
-        .format("%Y-%m-%d %H:%M:%S")
-        .to_string();
+        .unwrap();
+    let today_end_str = format_local_naive(tomorrow_start);
 
     // 查询所有模板任务（recurrence_freq IS NOT NULL）
     let templates = sqlx::query(
@@ -1311,14 +1309,8 @@ pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<us
                 None => break,
             };
 
-            // 解析下一个日期的 NaiveDateTime 用于比较
-            let next_naive = match chrono::DateTime::parse_from_rfc3339(&next_iso) {
-                Ok(d) => d.with_timezone(&chrono::Utc).naive_utc().format("%Y-%m-%d %H:%M:%S").to_string(),
-                Err(_) => break,
-            };
-
-            // 如果下一个日期 > 今天，停止生成
-            if next_naive.as_str() >= today_end.as_str() {
+            // 如果下一个日期 >= 明天 00:00（本地），停止生成
+            if next_iso.as_str() >= today_end_str.as_str() {
                 break;
             }
 
@@ -1335,7 +1327,7 @@ pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<us
             if exists.is_none() {
                 // 生成新实例
                 let new_id = uuid();
-                let ts = now();
+                let ts = format_local_naive(now);
                 let new_sort_order = chrono::Utc::now().timestamp_millis();
                 sqlx::query(
                     "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, recurrence_freq, recurrence_interval, recurrence_end_at, recurrence_count)
@@ -1381,24 +1373,45 @@ pub struct PendingReminder {
     pub body: String,
 }
 
-/// 解析 due_end_at（RFC 3339）失败时返回 None；否则返回 UTC DateTime
-fn parse_iso_utc(iso: &str) -> Option<chrono::DateTime<chrono::Utc>> {
-    chrono::DateTime::parse_from_rfc3339(iso)
-        .ok()
-        .map(|d| d.with_timezone(&chrono::Utc))
+/// 解析本地时间字面量（"YYYY-MM-DDTHH:mm:ss" 或 "YYYY-MM-DD HH:mm:ss"）。
+/// 返回本地 NaiveDateTime，与 SQLite `datetime()` 函数行为一致。
+/// 兼容旧的 RFC 3339 字符串（带 Z 或 ±HH:mm），按其绝对时刻转为本地 NaiveDateTime。
+fn parse_local_naive(s: &str) -> Option<chrono::NaiveDateTime> {
+    let trimmed = s.trim();
+    // 先尝试带时区的 RFC 3339（兼容历史数据）
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(trimmed) {
+        return Some(dt.with_timezone(&chrono::Local).naive_local());
+    }
+    // 再尝试两种本地字面量
+    for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"] {
+        if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(trimmed, fmt) {
+            return Some(naive);
+        }
+    }
+    // 最后尝试无秒格式
+    for fmt in ["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M"] {
+        if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(trimmed, fmt) {
+            return Some(naive);
+        }
+    }
+    None
+}
+
+/// 本地时间字面量格式（与前端 toLocalIso / nowLocalIso 一致）
+fn format_local_naive(naive: chrono::NaiveDateTime) -> String {
+    naive.format("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
 /// 扫库找"该通知但还没通知过"的任务
-/// - 标准扫描：trigger_at = due_end_at - remind_offset_minutes*60s；trigger_at <= now
+/// - 标准扫描：trigger_at = due_end_at - remind_offset_minutes 分钟；trigger_at <= now
 /// - 启动补发：due_end_at 在过去 24h 内 且 notified_at IS NULL
-/// 返回 (pending_reminders, count_to_mark)
 pub async fn task_check_reminders_inner(
     pool: &sqlx::SqlitePool,
     on_emit: impl Fn(&PendingReminder),
 ) -> Result<usize, String> {
-    let now = chrono::Utc::now();
-    let now_iso = now.to_rfc3339();
-    let cutoff_iso = (now - chrono::Duration::hours(24)).to_rfc3339();
+    let now = chrono::Local::now().naive_local();
+    let now_str = format_local_naive(now);
+    let cutoff_str = format_local_naive(now - chrono::Duration::hours(24));
 
     // 一次性把"待通知"任务拉出来
     // 条件：
@@ -1408,6 +1421,7 @@ pub async fn task_check_reminders_inner(
     //   - notified_at IS NULL
     //   - 要么 (due_end_at - offset) <= now  ← 准点/提前已到
     //   - 要么 due_end_at >= cutoff 且 due_end_at <= now  ← 应用启动补发窗口
+    // SQLite 的 datetime() 对 "YYYY-MM-DDTHH:mm:ss" 与 "YYYY-MM-DD HH:mm:ss" 都能解析
     let rows = sqlx::query(
         "SELECT id, title, due_end_at, remind_offset_minutes FROM tasks
          WHERE remind_offset_minutes IS NOT NULL
@@ -1415,12 +1429,12 @@ pub async fn task_check_reminders_inner(
            AND done = 0
            AND notified_at IS NULL
            AND (
-             datetime(due_end_at, '-' || remind_offset_minutes || ' minutes') <= $1
-             OR (due_end_at >= $2 AND due_end_at <= $1)
+             datetime(replace(due_end_at, 'T', ' '), '-' || remind_offset_minutes || ' minutes') <= datetime($1)
+             OR (datetime(replace(due_end_at, 'T', ' ')) >= datetime($2) AND datetime(replace(due_end_at, 'T', ' ')) <= datetime($1))
            )",
     )
-    .bind(&now_iso)
-    .bind(&cutoff_iso)
+    .bind(&now_str)
+    .bind(&cutoff_str)
     .fetch_all(pool)
     .await
     .map_err(|e| format!("查询待通知任务失败: {}", e))?;
@@ -1441,7 +1455,7 @@ pub async fn task_check_reminders_inner(
 
         // 标记为已通知（即使通知发送失败，也不再重复）
         sqlx::query("UPDATE tasks SET notified_at = $1, updated_at = $1 WHERE id = $2")
-            .bind(&now_iso)
+            .bind(&now_str)
             .bind(&task_id)
             .execute(pool)
             .await
@@ -1453,13 +1467,11 @@ pub async fn task_check_reminders_inner(
 
 /// 根据截止时间 + 偏移量生成中文通知正文
 fn build_reminder_body(due_end_at: &str, offset_minutes: i32) -> String {
-    let due_dt = parse_iso_utc(due_end_at);
-    let time_str = due_dt
-        .map(|d| d.format("%H:%M").to_string())
-        .unwrap_or_else(|| "".to_string());
-    let date_str = due_dt
-        .map(|d| format!("{}月{}日", d.format("%m").to_string(), d.format("%d").to_string()))
-        .unwrap_or_else(|| "".to_string());
+    let due_dt = parse_local_naive(due_end_at);
+    let (time_str, date_str) = match due_dt {
+        Some(d) => (d.format("%H:%M").to_string(), format!("{}月{}日", d.format("%m"), d.format("%d"))),
+        None => (String::new(), String::new()),
+    };
 
     if offset_minutes <= 0 {
         if time_str.is_empty() {

@@ -67,9 +67,9 @@ export interface Task {
   listId: string;
   parentId: string | null;
   priority: Priority;
-  /** ISO 8601 时间字符串或 null（精确到秒） */
+  /** 本地时间字面量（"YYYY-MM-DDTHH:mm:ss"，无时区标记）或 null */
   dueStartAt: string | null;
-  /** ISO 8601 时间字符串或 null（精确到秒） */
+  /** 本地时间字面量（"YYYY-MM-DDTHH:mm:ss"，无时区标记）或 null */
   dueEndAt: string | null;
   done: boolean;
   sortOrder: number;
