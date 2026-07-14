@@ -65,6 +65,20 @@ body {
   --jt-primary: #4F46E5;
 }
 
+/* === 隐藏全局滚动条（保留滚动能力）===
+   - WebKit / Blink（macOS Safari/Chrome、Linux Chromium、Tauri WebView 默认 Chromium）
+   - Firefox
+   - IE / Edge legacy */
+* {
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* IE/Edge legacy */
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;                  /* WebKit */
+}
+
 /* === 深色模式 ===
    强调色优先从 --jt-accent-dark 读取（由 useTheme.setAccentColor 写入），
    未设置时退回与浅色版不同的默认靛蓝浅色。 */
