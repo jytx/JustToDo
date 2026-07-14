@@ -543,7 +543,8 @@ pub async fn task_update(
             .map_err(|e| format!("更新任务失败: {}", e))?;
     }
     if let Some(due_end_at) = &input.due_end_at {
-        sqlx::query("UPDATE tasks SET due_end_at = $1, updated_at = $2 WHERE id = $3")
+        // 截止时间改变时重置 notified_at，让新一轮 reminder 重新检查
+        sqlx::query("UPDATE tasks SET due_end_at = $1, notified_at = NULL, updated_at = $2 WHERE id = $3")
             .bind(due_end_at).bind(&ts).bind(&id)
             .execute(pool.inner()).await
             .map_err(|e| format!("更新任务失败: {}", e))?;
