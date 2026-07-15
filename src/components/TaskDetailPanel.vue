@@ -199,9 +199,20 @@ async function setRemindOffset(offset: number | null) {
   });
 }
 
-/** 当前任务在预设下拉中的选中索引（含"自定义"） */
-const remindPresetIndex = computed(() =>
-  matchRemindPreset(task.value?.remindOffsetMinutes),
+/** 用户在提醒下拉中当前选中的索引（与 task 解耦，保证下拉不"自动跳回"） */
+const remindPresetIndex = ref<number>(0);
+
+/** 任务切换或字段变化时把下拉同步到 task 当前值 */
+watch(
+  () => [task.value?.id, task.value?.remindOffsetMinutes],
+  ([id]) => {
+    if (id !== undefined) {
+      remindPresetIndex.value = matchRemindPreset(
+        task.value?.remindOffsetMinutes,
+      );
+    }
+  },
+  { immediate: true },
 );
 
 /** 是否显示自定义分钟数输入框 */
@@ -210,7 +221,7 @@ const showCustomRemindInput = computed(
 );
 
 /**
- * input-number 的双向绑定 —— 直接桥到 task.remindOffsetMinutes
+ * input-number 的双向绑定 —— 与 task.remindOffsetMinutes 直接桥接
  * get: 自定义分支显示当前偏移或兜底 120
  * set: 用户输入立即写库
  */
@@ -218,7 +229,7 @@ const customRemindMinutes = computed<number>({
   get: () => {
     if (!showCustomRemindInput.value) return 0;
     const v = task.value?.remindOffsetMinutes;
-    return typeof v === "number" ? v : 120;
+    return typeof v === "number" && v >= 0 ? v : 120;
   },
   set: (v) => {
     if (typeof v === "number" && v >= 0) {
@@ -232,15 +243,14 @@ async function onRemindPresetChange(idx: number) {
   if (!preset) return;
   if (preset.preset) {
     if (preset.value === -1) {
-      // 自定义 → 不立刻写值；input-number 出现后用户改值时写
-      // 兜底：若 task 还没有 remindOffsetMinutes，给个 120
-      if (
-        task.value &&
-        (task.value.remindOffsetMinutes === null ||
-          task.value.remindOffsetMinutes === undefined)
-      ) {
-        await setRemindOffset(120);
-      }
+      // 自定义：保留 task 当前偏移（或兜底 120），并立即写库
+      // 让 task 真正变成"非预设值"，下拉不再跳回
+      const current = task.value?.remindOffsetMinutes;
+      const isPreset = typeof current === "number" && !!REMIND_PRESETS.find(
+        (p) => p.preset && p.value === current,
+      );
+      const candidate = isPreset ? 120 : current ?? 120;
+      await setRemindOffset(candidate);
     } else {
       await setRemindOffset(preset.value);
     }
