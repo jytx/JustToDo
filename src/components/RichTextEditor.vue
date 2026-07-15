@@ -30,21 +30,41 @@ import RichTextFloatingMenu from "./RichTextFloatingMenu.vue";
 const lowlight = createLowlight(common);
 
 /**
- * 自定义扩展：覆盖 Tiptap 内置的 Mod-a 行为。
- * 默认 Tiptap 用 AllSelection，在含 taskList 的 doc 中只会选中光标所在的 listItem
- * （已知 issue），用 TextSelection 从 doc 起点到 doc 末尾可正确全选。
+ * 自定义扩展：覆盖 Tiptap 内置的 Mod-a / selectAll 行为。
+ *
+ * 默认 Tiptap 用 AllSelection（from=0, to=doc.content.size），
+ * 但在含 taskList 的 doc 中表现是"只选光标所在 listItem"。
+ * 改用 TextSelection.create(doc, 0, doc.content.size) 能正确全选整篇。
+ *
+ * 两层兜底：
+ *  1. addCommands 覆盖 selectAll 命令（被 mod-a 调用）
+ *  2. addKeyboardShortcuts 直接拦截 Mod-a 并 return true
  */
 const SelectAllFix = Extension.create({
   name: "selectAllFix",
+  addCommands() {
+    return {
+      selectAll:
+        () =>
+        ({ state, dispatch }) => {
+          const tr = state.tr.setSelection(
+            TextSelection.create(state.doc, 0, state.doc.content.size),
+          );
+          if (dispatch) dispatch(tr);
+          return true;
+        },
+    };
+  },
   addKeyboardShortcuts() {
     return {
       "Mod-a": () => {
         const { state, dispatch } = this.editor.view;
-        const { doc } = state;
-        const tr = state.tr.setSelection(
-          TextSelection.create(doc, 0, doc.content.size),
+        if (!dispatch) return true;
+        dispatch(
+          state.tr.setSelection(
+            TextSelection.create(state.doc, 0, state.doc.content.size),
+          ),
         );
-        if (dispatch) dispatch(tr);
         return true;
       },
     };
@@ -141,6 +161,94 @@ function runSlashCommand(item: SlashCommandItem) {
   }
 }
 
+/**
+ * Slash Command Tiptap Extension —— 把 Suggestion ProseMirror Plugin 包装成
+ * Tiptap Extension，在 addProseMirrorPlugins 时拿到 this.editor。
+ * 直接传 Suggestion 进 extensions 数组会被静默忽略（这是 3.x 设计）。
+ */
+const SlashCommandExt = Extension.create({
+  name: "slashCommand",
+  addProseMirrorPlugins() {
+    const ed = this.editor;
+    return [
+      (Suggestion as any)({
+        editor: ed,
+        char: "/",
+        startOfLine: false,
+        allowSpaces: false,
+        items: ({ query }: { query: string }) =>
+          slashItems.filter((it) => {
+            const q = query.trim().toLowerCase();
+            if (!q) return true;
+            const hay = [it.title, it.description ?? "", ...(it.keywords ?? [])]
+              .join(" ")
+              .toLowerCase();
+            return hay.includes(q);
+          }),
+        command: ({
+          editor,
+          range,
+          props: item,
+        }: {
+          editor: import("@tiptap/core").Editor;
+          range: { from: number; to: number };
+          props: SlashCommandItem;
+        }) => {
+          editor.chain().focus().deleteRange(range as any).run();
+          runSlashCommand(item);
+        },
+        // Vue createApp 挂 SlashCommandMenu；由 Suggestion utility 提供 mount + 定位
+        render: () => {
+          let mountedApp: { unmount: () => void } | null = null;
+          let unmountSuggestion: (() => void) | null = null;
+
+          function buildComponentProps(props: any) {
+            const rect = props.clientRect?.();
+            return {
+              items: (props.items as SlashCommandItem[]) ?? [],
+              query: (props.query as string) ?? "",
+              editor: props.editor,
+              open: true,
+              rect: rect
+                ? { left: rect.left, top: rect.top, bottom: rect.bottom }
+                : null,
+            };
+          }
+
+          function teardown() {
+            if (unmountSuggestion) {
+              unmountSuggestion();
+              unmountSuggestion = null;
+            }
+            if (mountedApp) {
+              mountedApp.unmount();
+              mountedApp = null;
+            }
+          }
+
+          function setupWith(props: any) {
+            teardown();
+            const element = document.createElement("div");
+            element.setAttribute("data-slash-menu", "1");
+            const app = createApp(SlashCommandMenu, buildComponentProps(props));
+            app.mount(element);
+            unmountSuggestion = props.mount(element);
+            mountedApp = app;
+          }
+
+          return {
+            onStart: (props: any) => setupWith(props),
+            onUpdate: (props: any) => setupWith(props),
+            onExit: () => teardown(),
+            // 必须 return true 让 Tiptap 知道按键被拦截，避免继续插入字符
+            onKeyDown: () => true,
+          };
+        },
+      }),
+    ];
+  },
+});
+
 
 const previewSrc = computed(() => allImages.value[previewIndex.value] ?? null);
 
@@ -188,73 +296,10 @@ const editor = useEditor({
         alwaysPreserveAspectRatio: true,
       },
     } as any),
-    // Slash Command —— 输入 / 唤起 block 选择菜单
-    (Suggestion as any)({
-      char: "/",
-      startOfLine: false,
-      allowSpaces: false,
-      items: ({ query }: { query: string }) =>
-        slashItems.filter((it) => {
-          const q = query.trim().toLowerCase();
-          if (!q) return true;
-          const hay = [it.title, it.description ?? "", ...(it.keywords ?? [])]
-            .join(" ")
-            .toLowerCase();
-          return hay.includes(q);
-        }),
-      command: ({ editor, range, props: item }: any) => {
-        // 先删除用户输入的 "/xxx" 字符
-        editor.chain().focus().deleteRange(range).run();
-        runSlashCommand(item as SlashCommandItem);
-      },
-      // 用 Vue createApp 挂一个 SlashCommandMenu 实例，由 Suggestion utility
-      // 管理 mount 到 body、定位 + 滚动/resize 跟随。
-      render: () => {
-        let mountedApp: { unmount: () => void } | null = null;
-        let unmountSuggestion: (() => void) | null = null;
-
-        function buildProps(props: any) {
-          const rect = props.clientRect?.();
-          return {
-            items: props.items as SlashCommandItem[],
-            query: props.query as string,
-            editor: props.editor,
-            open: true,
-            rect: rect
-              ? { left: rect.left, top: rect.top, bottom: rect.bottom }
-              : null,
-          };
-        }
-
-        function teardown() {
-          if (unmountSuggestion) {
-            unmountSuggestion();
-            unmountSuggestion = null;
-          }
-          if (mountedApp) {
-            mountedApp.unmount();
-            mountedApp = null;
-          }
-        }
-
-        function setupWith(props: any) {
-          teardown();
-          const element = document.createElement("div");
-          const app = createApp(SlashCommandMenu, buildProps(props));
-          app.mount(element);
-          // Suggestion utility 把 element 放到 body 并持续定位，返回 dispose 函数
-          unmountSuggestion = props.mount(element);
-          mountedApp = app;
-        }
-
-        return {
-          onStart: (props: any) => setupWith(props),
-          onUpdate: (props: any) => setupWith(props),
-          onExit: () => teardown(),
-          onKeyDown: () => false,
-        };
-      },
-    }),
+    // Slash Command —— 用顶层 SlashCommandExt（包装了 @tiptap/suggestion）。
+    // 直接放在这里会被 Tiptap 静默忽略——Suggestion 是 ProseMirror Plugin factory，
+    // 不是 Tiptap Extension，必须经 Extension.create 包装。
+    SlashCommandExt,
   ],
   onUpdate: ({ editor }) => {
     emit("update:modelValue", editor.getHTML());
@@ -561,13 +606,12 @@ function fileToBase64(file: File): Promise<string> {
   height: 0;
 }
 
-/* Drag Handle —— tiptap-extension-global-drag-handle 自带 .drag-handle 类
-   默认位置：block 左侧 vertical-center 浮出。
-   - 编辑器不在 hover 时拖拽手柄由插件设了 .hide 类显示为不可见，
-     这里只控制鼠标 hover 显示的具体样式（颜色、字号）。*/
+/* Drag Handle —— tiptap-extension-global-drag-handle 插件只创建空 div，
+   这里给它一个 ⋮⋮ (vertical 6-dot) 的 SVG 视觉（CSS background 模拟）。*/
 .rich-text__editor :deep(.drag-handle) {
-  width: 20px;
-  height: 20px;
+  position: relative;
+  width: 18px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -576,6 +620,27 @@ function fileToBase64(file: File): Promise<string> {
   border-radius: 4px;
   transition: background-color 0.12s, color 0.12s;
   user-select: none;
+  flex-shrink: 0;
+}
+
+/* SVG 6-dot 图标（两个竖列、3 个圆点）—— 用 ::before + ::after 画两个列 */
+.rich-text__editor :deep(.drag-handle)::before,
+.rich-text__editor :deep(.drag-handle)::after {
+  content: "";
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background-color: currentColor;
+  box-shadow:
+    0 -5px 0 0 currentColor,
+    0 5px 0 0 currentColor;
+}
+.rich-text__editor :deep(.drag-handle)::before {
+  left: 5px;
+}
+.rich-text__editor :deep(.drag-handle)::after {
+  left: 10px;
 }
 
 .rich-text__editor :deep(.drag-handle:hover) {
@@ -588,7 +653,9 @@ function fileToBase64(file: File): Promise<string> {
   pointer-events: none;
 }
 
-/* drag handle 自身 SVG 由插件内联提供 6-dot 图案；保持默认大小即可 */
+.rich-text__editor :deep(.drag-handle:active) {
+  cursor: grabbing;
+}
 
 .rich-text__editor :deep(.rich-text__content p) {
   margin: 0;
