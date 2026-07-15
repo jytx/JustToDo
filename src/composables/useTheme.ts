@@ -87,10 +87,34 @@ function setAccentColor(hex: string): void {
   root.style.setProperty("--jt-accent-dark", darkHex);
   root.style.setProperty("--jt-primary-dark", darkHex);
 
-  // Arco 主色
-  root.style.setProperty("--primary-6", hex);
-  root.style.setProperty("--primary-5", lightenForDark(hex));
-  root.style.setProperty("--primary-7", darkHex);
+  // Arco 主色 —— 注意：Arco --primary-* 要 "R, G, B" 三元组字符串，
+  // 它内部用 rgb(var(--primary-6)) 拼装。如果给 hex 会被忽略并 fallback。
+  const rgb = hexToRgbTriple(hex);
+  const darkRgb = hexToRgbTriple(darkHex);
+  root.style.setProperty("--primary-6", rgb);
+  root.style.setProperty("--primary-5", darkRgb);
+  root.style.setProperty("--primary-7", darkRgb);
+
+  // Arco 在 body 上把 --primary-6 重新指向 var(--arcoblue-6)。
+  // 仅覆盖 --primary-* 会被 body 规则按 cascade 顺序吃掉，必须连 arcoblue 一起覆盖。
+  // 同时提供 --jt-*-rgb 占位供 theme.css 的 body 末尾覆盖读取。
+  root.style.setProperty("--arcoblue-6", rgb);
+  root.style.setProperty("--arcoblue-5", darkRgb);
+  root.style.setProperty("--arcoblue-7", darkRgb);
+
+  root.style.setProperty("--jt-primary-rgb", rgb);
+  root.style.setProperty("--jt-primary-rgb-hover", darkRgb);
+  root.style.setProperty("--jt-primary-rgb-active", darkRgb);
+  root.style.setProperty("--jt-accent-dark-rgb", darkRgb);
+}
+
+/** "#RRGGBB" → "R, G, B"（Arco 主题变量期望的格式） */
+function hexToRgbTriple(hex: string): string {
+  const m = hex.replace("#", "");
+  const r = parseInt(m.slice(0, 2), 16);
+  const g = parseInt(m.slice(2, 4), 16);
+  const b = parseInt(m.slice(4, 6), 16);
+  return `${r}, ${g}, ${b}`;
 }
 
 function toggleTheme(): void {

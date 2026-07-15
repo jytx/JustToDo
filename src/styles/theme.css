@@ -18,10 +18,19 @@ body {
 }
 
 :root {
-  /* Arco 主色调覆盖 */
-  --primary-6: #4F46E5;       /* 靛蓝强调 */
-  --primary-5: #6366F1;
-  --primary-7: #4338CA;
+  /* Arco 主色调覆盖
+     注：Arco 2.x 中 --primary-* 等颜色变量需要 "R, G, B" 字符串格式，
+     因为 Arco 内部用 rgb(var(--primary-6)) 引用。hex 会被忽略并 fallback 到默认色。
+     同时 Arco 在 body 上声明 --primary-6: var(--arcoblue-6)，所以我们必须连
+     --arcoblue-* 一起覆盖。 */
+  --primary-6: 79, 70, 229;       /* 靛蓝强调 #4F46E5 */
+  --primary-5: 99, 102, 241;      /* #6366F1 */
+  --primary-7: 67, 56, 202;       /* #4338CA */
+
+  /* 同步覆盖 Arco 的 --arcoblue-* 默认（否则 body 上的指向会覆盖 :root 的 --primary-*） */
+  --arcoblue-6: 79, 70, 229;      /* 与 --primary-6 同值 */
+  --arcoblue-5: 99, 102, 241;
+  --arcoblue-7: 67, 56, 202;
 
   /* 语义色 */
   --success-6: #059669;
@@ -83,9 +92,14 @@ body {
    强调色优先从 --jt-accent-dark 读取（由 useTheme.setAccentColor 写入），
    未设置时退回与浅色版不同的默认靛蓝浅色。 */
 body[arco-theme='dark'] {
-  --primary-6: var(--jt-accent-dark, #818CF8);
-  --primary-5: #A5B0FC;
-  --primary-7: #6366F1;
+  --primary-6: var(--jt-accent-dark, 129, 140, 248);       /* #818CF8 */
+  --primary-5: 165, 176, 252;                              /* #A5B0FC */
+  --primary-7: 99, 102, 241;                               /* #6366F1 */
+
+  /* 同步覆盖深色模式下 Arco 的 --arcoblue-* 兜底 */
+  --arcoblue-6: var(--jt-accent-dark, 129, 140, 248);
+  --arcoblue-5: 165, 176, 252;
+  --arcoblue-7: 99, 102, 241;
 
   --color-bg-1: #1A1A17;
   --color-bg-2: #242420;

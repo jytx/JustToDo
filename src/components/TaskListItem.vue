@@ -263,7 +263,7 @@ function onDelete() {
 
 .task-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   padding: 10px 12px;
   border-radius: 8px;
