@@ -158,11 +158,17 @@ function quickDay(daysFromNow: number) {
 
 // ─── 时间选择（hh / mi 简易） ─────────────────────
 const showTimePicker = ref(false);
+
+function getCurrentTargetIso(): string | null {
+  if (activeTab.value === "date") return editDate.value;
+  // 时间段时优先取 start，缺省时回退到 end
+  return editStart.value ?? editEnd.value;
+}
+
 function setTime(hh: number, mi: number) {
-  const base =
-    activeTab.value === "date"
-      ? parseLocalIso(editDate.value) ?? new Date()
-      : parseLocalIso(editStart.value) ?? new Date();
+  // 拿到当前目标的 Date 副本（如果未设置就用 today）
+  const cur = parseLocalIso(getCurrentTargetIso());
+  const base = cur ?? new Date();
   base.setHours(hh, mi, 0, 0);
   const iso = toLocalIso(
     `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-${String(base.getDate()).padStart(2, "0")} ${String(hh).padStart(2, "0")}:${String(mi).padStart(2, "0")}:00`,
@@ -170,9 +176,28 @@ function setTime(hh: number, mi: number) {
   if (activeTab.value === "date") {
     editDate.value = iso;
   } else {
+    // 时间段：先设 start；end 不动（如果之前有）或置空
     editStart.value = iso;
+    if (!editEnd.value) {
+      // 默认 end = start + 1 小时
+      const end = new Date(base);
+      end.setHours(end.getHours() + 1);
+      editEnd.value = toLocalIso(
+        `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")} ${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}:00`,
+      );
+    }
   }
   showTimePicker.value = false;
+}
+
+function setEndTime(hh: number, mi: number) {
+  const cur = parseLocalIso(editEnd.value) ?? parseLocalIso(editStart.value) ?? new Date();
+  const base = new Date(cur);
+  base.setHours(hh, mi, 0, 0);
+  editEnd.value = toLocalIso(
+    `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-${String(base.getDate()).padStart(2, "0")} ${String(hh).padStart(2, "0")}:${String(mi).padStart(2, "0")}:00`,
+  );
+  showEndTimePicker.value = false;
 }
 
 const currentTimeLabel = computed(() => {
@@ -182,6 +207,23 @@ const currentTimeLabel = computed(() => {
   if (!d) return "时间";
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 });
+
+const endTimeLabel = computed(() => {
+  if (!editEnd.value) return "结束时间";
+  const d = parseLocalIso(editEnd.value);
+  if (!d) return "结束时间";
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+});
+
+const showEndTimePicker = ref(false);
+
+// 拿当前 target 的小时/分钟（用于 setTime 时保留另一边）
+function getCurrentHours(): number {
+  return parseLocalIso(getCurrentTargetIso())?.getHours() ?? 9;
+}
+function getCurrentMinutes(): number {
+  return parseLocalIso(getCurrentTargetIso())?.getMinutes() ?? 0;
+}
 
 // ─── 确认 / 清除 ─────────────────────────────────
 function onConfirm() {
@@ -201,7 +243,7 @@ function onClear() {
 
 // 时分快捷
 const hourOptions = Array.from({ length: 24 }, (_, i) => i);
-const minuteOptions = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...,55
 </script>
 
 <template>
@@ -280,10 +322,22 @@ const minuteOptions = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
     <button
       type="button"
       class="date-popover__row"
-      @click="showTimePicker = !showTimePicker"
+      @click="showTimePicker = !showTimePicker; showEndTimePicker = false"
     >
-      <icon-clock-circle :size="16" />
-      <span>{{ currentTimeLabel }}</span>
+      <icon-clock-circle :size="14" />
+      <span>{{ activeTab === "range" ? "开始" : "时间" }} · {{ currentTimeLabel }}</span>
+      <span class="date-popover__row-arrow"><icon-right :size="12" /></span>
+    </button>
+
+    <!-- 时间段 tab 的结束时间行 -->
+    <button
+      v-if="activeTab === 'range'"
+      type="button"
+      class="date-popover__row"
+      @click="showEndTimePicker = !showEndTimePicker; showTimePicker = false"
+    >
+      <icon-clock-circle :size="14" />
+      <span>结束 · {{ endTimeLabel }}</span>
       <span class="date-popover__row-arrow"><icon-right :size="12" /></span>
     </button>
 
@@ -295,7 +349,7 @@ const minuteOptions = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
           :key="h"
           type="button"
           class="date-popover__time-cell"
-          @click="setTime(h, (parseLocalIso(activeTab === 'date' ? editDate : editStart)?.getMinutes() ?? 0))"
+          @click="setTime(h, getCurrentMinutes())"
         >
           {{ String(h).padStart(2, "0") }}
         </button>
@@ -306,7 +360,33 @@ const minuteOptions = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
           :key="m"
           type="button"
           class="date-popover__time-cell"
-          @click="setTime((parseLocalIso(activeTab === 'date' ? editDate : editStart)?.getHours() ?? 0), m)"
+          @click="setTime(getCurrentHours(), m)"
+        >
+          {{ String(m).padStart(2, "0") }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 结束时间选择（弹出） -->
+    <div v-if="showEndTimePicker" class="date-popover__time">
+      <div class="date-popover__time-col">
+        <button
+          v-for="h in hourOptions"
+          :key="h"
+          type="button"
+          class="date-popover__time-cell"
+          @click="setEndTime(h, parseLocalIso(editEnd)?.getMinutes() ?? 0)"
+        >
+          {{ String(h).padStart(2, "0") }}
+        </button>
+      </div>
+      <div class="date-popover__time-col">
+        <button
+          v-for="m in minuteOptions"
+          :key="m"
+          type="button"
+          class="date-popover__time-cell"
+          @click="setEndTime(parseLocalIso(editEnd)?.getHours() ?? 0, m)"
         >
           {{ String(m).padStart(2, "0") }}
         </button>
@@ -500,32 +580,34 @@ const minuteOptions = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
 .date-popover__time {
   display: flex;
-  gap: 8px;
-  max-height: 200px;
+  gap: 6px;
+  max-height: 144px;
   overflow: hidden;
   border: 1px solid var(--jt-border);
-  border-radius: 8px;
-  padding: 4px;
+  border-radius: 6px;
+  padding: 2px;
 }
 
 .date-popover__time-col {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 2px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
   overflow-y: auto;
-  max-height: 200px;
+  max-height: 140px;
 }
 
 .date-popover__time-cell {
   border: none;
   background: transparent;
-  padding: 4px;
-  border-radius: 4px;
-  font-size: 12px;
+  padding: 2px 0;
+  border-radius: 3px;
+  font-size: 11px;
   color: var(--jt-text-primary);
   cursor: pointer;
   font-family: var(--font-mono);
+  text-align: center;
+  line-height: 1.4;
 }
 
 .date-popover__time-cell:hover {

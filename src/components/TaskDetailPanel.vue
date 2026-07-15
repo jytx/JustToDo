@@ -226,8 +226,10 @@ const recurrenceLabel = computed(() => {
   const unit = RECURRENCE_FREQS.find(
     (f) => f.value === task.value!.recurrenceFreq,
   )?.label ?? "";
-  if (task.value.recurrenceInterval === 1) return `每${unit}`;
-  return `每 ${task.value.recurrenceInterval} ${unit}`;
+  // 去掉 label 自带的"每"前缀，避免"每每天"
+  const cleanUnit = unit.replace(/^每/, "");
+  if (task.value.recurrenceInterval === 1) return `每${cleanUnit}`;
+  return `每 ${task.value.recurrenceInterval} ${cleanUnit}`;
 });
 
 async function onRecurrenceConfirm(freq: RecurrenceFreq | null, interval: number) {
@@ -294,6 +296,57 @@ async function confirmDelete() {
   if (!task.value) return;
   if (!confirm("确定要删除这个任务吗？")) return;
   await taskStore.deleteTask(task.value.id);
+}
+
+// ─── 更多菜单操作 ─────────────────────────────────
+
+/**
+ * 在描述末尾插入一个空的 taskList（检查项）
+ * 实际效果是：定位到 ProseMirror 视图，插入 `<ul data-type="taskList"><li>...</li></ul>`
+ */
+async function insertChecklistFromDescription() {
+  if (!task.value) return;
+  // 通过任务内容做 hack：在 note 末尾追加一个空 taskList HTML
+  const cur = task.value.note ?? "";
+  const checklistHtml = '<ul data-type="taskList"><li data-checked="false"><p>新检查项</p></li></ul>';
+  const next = cur + checklistHtml;
+  await taskStore.updateTask(task.value.id, { note: next });
+  // 重新触发编辑器加载
+  noteDraft.value = next;
+}
+
+/** 创建任务副本 */
+async function duplicateTask() {
+  if (!task.value) return;
+  const t = task.value;
+  // createTask 只支持基础字段，recurrence/reminder/note 走 update
+  const newTask = await taskStore.createTask({
+    title: `${t.title}（副本）`,
+    listId: t.listId,
+    priority: t.priority,
+    dueStartAt: t.dueStartAt,
+    dueEndAt: t.dueEndAt,
+  });
+  if (newTask) {
+    await taskStore.updateTask(newTask.id, {
+      note: t.note ?? "",
+      recurrenceFreq: t.recurrenceFreq,
+      recurrenceInterval: t.recurrenceInterval,
+      remindOffsetMinutes: t.remindOffsetMinutes,
+    });
+  }
+}
+
+/** 复制任务链接到剪贴板 */
+async function copyTaskLink() {
+  if (!task.value) return;
+  const url = `jtd://task/${task.value.id}`;
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch {
+    // fallback：弹窗
+    prompt("复制任务 ID：", task.value.id);
+  }
 }
 
 // ─── 标题编辑：使用 textarea 自动撑高 ─────────────
@@ -493,9 +546,48 @@ function autoResize(e: Event) {
       <span style="flex: 1" />
 
       <!-- 更多菜单 -->
-      <a-button size="mini" type="text" @click="moreVisible = !moreVisible">
-        <icon-more :size="16" />
-      </a-button>
+      <Popover v-model:visible="moreVisible" placement="bottom-left">
+        <template #trigger>
+          <button class="detail-panel__more-btn" @click="moreVisible = !moreVisible">
+            <icon-more :size="16" />
+          </button>
+        </template>
+        <div class="detail-panel__popup detail-panel__popup--more">
+          <button
+            type="button"
+            class="detail-panel__popup-item"
+            @click="insertChecklistFromDescription(); moreVisible = false"
+          >
+            <icon-check-square :size="14" />
+            <span>添加检查项</span>
+          </button>
+          <button
+            type="button"
+            class="detail-panel__popup-item"
+            @click="duplicateTask(); moreVisible = false"
+          >
+            <icon-copy :size="14" />
+            <span>创建副本</span>
+          </button>
+          <button
+            type="button"
+            class="detail-panel__popup-item"
+            @click="copyTaskLink(); moreVisible = false"
+          >
+            <icon-link :size="14" />
+            <span>复制链接</span>
+          </button>
+          <a-divider style="margin: 4px 0" />
+          <button
+            type="button"
+            class="detail-panel__popup-item detail-panel__popup-item--danger"
+            @click="confirmDelete(); moreVisible = false"
+          >
+            <icon-delete :size="14" />
+            <span>删除任务</span>
+          </button>
+        </div>
+      </Popover>
     </div>
 
     <!-- 标签 chip 列表（已关联的） -->
@@ -793,6 +885,37 @@ function formatMeta(iso: string): string {
 .detail-panel__popup-item--active {
   background: var(--jt-accent-soft);
   color: var(--jt-primary);
+}
+
+.detail-panel__popup-item--danger {
+  color: var(--jt-error);
+}
+
+.detail-panel__popup-item--danger:hover {
+  background: color-mix(in srgb, var(--jt-error) 10%, transparent);
+}
+
+.detail-panel__popup--more {
+  min-width: 180px;
+}
+
+.detail-panel__more-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+}
+
+.detail-panel__more-btn:hover {
+  background: var(--jt-surface-sunken);
+  color: var(--jt-text-primary);
 }
 
 .detail-panel__list-dot {

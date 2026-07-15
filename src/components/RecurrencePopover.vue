@@ -63,7 +63,7 @@ function onConfirm() {
         @click="localFreq = f.value as RecurrenceFreq"
       >
         <icon-refresh :size="14" />
-        <span>每{{ f.label }}</span>
+        <span>{{ f.label }}</span>
         <icon-check v-if="localFreq === f.value" :size="12" class="recurrence-popover__check" />
       </button>
     </div>

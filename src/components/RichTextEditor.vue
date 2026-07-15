@@ -20,6 +20,7 @@ import TaskItem from "@tiptap/extension-task-item";
 import { BubbleMenuPlugin } from "@tiptap/extension-bubble-menu";
 import { Extension } from "@tiptap/core";
 import { PluginKey, TextSelection } from "@tiptap/pm/state";
+import { InputRule } from "@tiptap/core";
 import { common, createLowlight } from "lowlight";
 import { watch, onBeforeUnmount, onMounted, ref, nextTick, computed } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
@@ -45,6 +46,37 @@ const SelectAllFix = Extension.create({
         return true;
       },
     };
+  },
+});
+
+/**
+ * 任务列表 input rule：输入 "[ ]" 自动转换为任务项
+ * （Tiptap TaskList/TaskItem 自身不包含 input rule，需手写）
+ */
+const TaskListInputRule = Extension.create({
+  name: "taskListInputRule",
+  addInputRules() {
+    return [
+      new InputRule({
+        find: /\[ \]$/,
+        handler: ({ range, chain }) => {
+          chain()
+            .deleteRange({ from: range.from, to: range.to })
+            .toggleTaskList()
+            .run();
+        },
+      }),
+      new InputRule({
+        find: /\[x\]$/,
+        handler: ({ range, chain }) => {
+          chain()
+            .deleteRange({ from: range.from, to: range.to })
+            .toggleTaskList()
+            .updateAttributes("taskItem", { checked: true })
+            .run();
+        },
+      }),
+    ];
   },
 });
 
@@ -91,8 +123,11 @@ const editor = useEditor({
     HardBreak,
     TaskList,
     TaskItem.configure({ nested: true }),
+    // 任务列表 input rule：输入 "- [ ] " / "- [x] " 自动变 checklist
+    // （Tiptap 自带 TaskList/TaskItem 不包含 input rule，需手写）
     CodeBlockLowlight.configure({ lowlight }),
     SelectAllFix,
+    TaskListInputRule,
     Image.configure({
       inline: false,
       allowBase64: false,
@@ -555,6 +590,129 @@ async function insertImageFromFile() {
       </a-button>
     </div>
 
+    <!-- 底部紧凑工具条（hideToolbar 模式下显示，滴答清单风格） -->
+    <div v-if="hideToolbar" class="rich-text__bottom-bar">
+      <a-button
+                size="mini"
+        shape="circle"
+        :type="editor.isActive('bold') ? 'primary' : 'text'"
+        @click="editor.chain().focus().toggleBold().run()"
+        title="加粗"
+      >
+        <icon-bold :size="14" />
+      </a-button>
+      <a-button
+                size="mini"
+        shape="circle"
+        :type="editor.isActive('italic') ? 'primary' : 'text'"
+        @click="editor.chain().focus().toggleItalic().run()"
+        title="斜体"
+      >
+        <icon-italic :size="14" />
+      </a-button>
+      <a-button
+                size="mini"
+        shape="circle"
+        :type="editor.isActive('underline') ? 'primary' : 'text'"
+        @click="editor.chain().focus().toggleUnderline().run()"
+        title="下划线"
+      >
+        <icon-underline :size="14" />
+      </a-button>
+      <a-button
+                size="mini"
+        shape="circle"
+        :type="editor.isActive('strike') ? 'primary' : 'text'"
+        @click="editor.chain().focus().toggleStrike().run()"
+        title="删除线"
+      >
+        <icon-strikethrough :size="14" />
+      </a-button>
+      <a-divider direction="vertical" :margin="2" />
+      <a-button
+                size="mini"
+        shape="circle"
+        :type="editor.isActive('heading', { level: 1 }) ? 'primary' : 'text'"
+        @click="onHeadingSelect('h1')"
+        title="H1 标题"
+      >
+        <span class="rich-text__heading-label">H1</span>
+      </a-button>
+      <a-button
+                size="mini"
+        shape="circle"
+        :type="editor.isActive('heading', { level: 2 }) ? 'primary' : 'text'"
+        @click="onHeadingSelect('h2')"
+        title="H2 标题"
+      >
+        <span class="rich-text__heading-label">H2</span>
+      </a-button>
+      <a-button
+                size="mini"
+        shape="circle"
+        :type="editor.isActive('bulletList') ? 'primary' : 'text'"
+        @click="editor.chain().focus().toggleBulletList().run()"
+        title="无序列表"
+      >
+        <icon-list :size="14" />
+      </a-button>
+      <a-button
+                size="mini"
+        shape="circle"
+        :type="editor.isActive('orderedList') ? 'primary' : 'text'"
+        @click="editor.chain().focus().toggleOrderedList().run()"
+        title="有序列表"
+      >
+        <icon-ordered-list :size="14" />
+      </a-button>
+      <a-button
+                size="mini"
+        shape="circle"
+        :type="editor.isActive('taskList') ? 'primary' : 'text'"
+        @click="editor.chain().focus().toggleTaskList().run()"
+        title="任务列表"
+      >
+        <icon-check-square :size="14" />
+      </a-button>
+      <a-divider direction="vertical" :margin="2" />
+      <a-button
+                size="mini"
+        shape="circle"
+        :type="editor.isActive('blockquote') ? 'primary' : 'text'"
+        @click="editor.chain().focus().toggleBlockquote().run()"
+        title="引用"
+      >
+        <icon-quote :size="14" />
+      </a-button>
+      <a-button
+                size="mini"
+        shape="circle"
+        :type="editor.isActive('codeBlock') ? 'primary' : 'text'"
+        @click="editor.chain().focus().toggleCodeBlock().run()"
+        title="代码块"
+      >
+        <icon-code-square :size="14" />
+      </a-button>
+      <a-button
+                size="mini"
+        shape="circle"
+        :type="editor.isActive('link') ? 'primary' : 'text'"
+        @click="openLinkDialog"
+        title="链接"
+      >
+        <icon-link :size="14" />
+      </a-button>
+      <a-button
+                size="mini"
+        shape="circle"
+        :loading="uploading"
+        @click="insertImageFromFile"
+        title="插入图片"
+      >
+        <icon-image :size="14" />
+      </a-button>
+    </div>
+
     <!-- 编辑区 -->
     <div ref="editorContainerRef" class="rich-text__editor-wrapper">
       <EditorContent :editor="editor" class="rich-text__editor" />
@@ -729,6 +887,27 @@ async function insertImageFromFile() {
   background-color: var(--jt-surface-sunken);
   align-items: center;
   flex-wrap: wrap;
+}
+
+.rich-text__bottom-bar {
+  display: flex;
+  gap: 2px;
+  padding: 6px 4px;
+  margin-top: 8px;
+  border-top: 1px solid var(--jt-border);
+  align-items: center;
+  flex-wrap: wrap;
+  position: sticky;
+  bottom: 0;
+  background: var(--jt-surface);
+  z-index: 1;
+}
+
+.rich-text--borderless .rich-text__bottom-bar {
+  border-top: none;
+  padding: 4px 0 0;
+  margin-top: 12px;
+  position: static;
 }
 
 .rich-text__divider {
