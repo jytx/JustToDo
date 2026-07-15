@@ -18,6 +18,7 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Placeholder from "@tiptap/extension-placeholder";
 import Suggestion from "@tiptap/suggestion";
+import GlobalDragHandle from "tiptap-extension-global-drag-handle";
 import { Extension } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { common, createLowlight } from "lowlight";
@@ -164,6 +165,11 @@ const editor = useEditor({
     CodeBlockLowlight.configure({ lowlight }),
     TaskList,
     TaskItem.configure({ nested: true }),
+    // Global Drag Handle —— hover block 时浮出 ⋮⋮，拖动重排
+    GlobalDragHandle.configure({
+      dragHandleWidth: 20,
+      scrollTreshold: 100,
+    }),
     Placeholder.configure({
       // 整篇空的时候显示主提示；具体每个空段落也会复用这个 placeholder
       placeholder: props.placeholder ?? "按 / 唤起命令，输入备注…",
@@ -550,6 +556,35 @@ function fileToBase64(file: File): Promise<string> {
   pointer-events: none;
   height: 0;
 }
+
+/* Drag Handle —— tiptap-extension-global-drag-handle 自带 .drag-handle 类
+   默认位置：block 左侧 vertical-center 浮出。
+   - 编辑器不在 hover 时拖拽手柄由插件设了 .hide 类显示为不可见，
+     这里只控制鼠标 hover 显示的具体样式（颜色、字号）。*/
+.rich-text__editor :deep(.drag-handle) {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--jt-text-tertiary);
+  cursor: grab;
+  border-radius: 4px;
+  transition: background-color 0.12s, color 0.12s;
+  user-select: none;
+}
+
+.rich-text__editor :deep(.drag-handle:hover) {
+  background-color: var(--jt-surface-hover);
+  color: var(--jt-text-primary);
+}
+
+.rich-text__editor :deep(.drag-handle.hide) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* drag handle 自身 SVG 由插件内联提供 6-dot 图案；保持默认大小即可 */
 
 .rich-text__editor :deep(.rich-text__content p) {
   margin: 0;
