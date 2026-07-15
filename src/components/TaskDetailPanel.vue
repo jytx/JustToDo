@@ -12,7 +12,7 @@ import {
   type Task,
   type RecurrenceFreq,
 } from "@/types";
-import { formatDueDate } from "@/utils/date";
+import { formatDueDate, parseLocalIso } from "@/utils/date";
 import TaskCheckbox from "./TaskCheckbox.vue";
 import PriorityDot from "./PriorityDot.vue";
 import RichTextEditor from "./RichTextEditor.vue";
@@ -171,7 +171,52 @@ const dueInfo = computed(() => {
   if (!task.value) return null;
   return formatDueDate(task.value.dueStartAt, task.value.dueEndAt);
 });
-const dueLabel = computed(() => dueInfo.value?.text ?? "设置日期");
+
+/** 顶部 chip 标签：支持范围 "今天 09:00 - 11:00" */
+const dueLabel = computed(() => {
+  if (!task.value) return "设置日期";
+  const start = task.value.dueStartAt;
+  const end = task.value.dueEndAt;
+  if (!start && !end) return "设置日期";
+
+  // 范围（有 start + end）
+  if (start && end) {
+    const s = parseLocalIso(start);
+    const e = parseLocalIso(end);
+    if (!s || !e) return dueInfo.value?.text ?? "设置日期";
+
+    // 同一天
+    const sameDay =
+      s.getFullYear() === e.getFullYear() &&
+      s.getMonth() === e.getMonth() &&
+      s.getDate() === e.getDate();
+
+    if (sameDay) {
+      // 用 dueInfo.text 作为日期部分（同一天 fallback）
+      const dayText = dueInfo.value?.text ?? "";
+      const sHasTime = !isMidnight(s);
+      const eHasTime = !isMidnight(e);
+      if (sHasTime || eHasTime) {
+        const sStr = sHasTime ? ` ${pad(s.getHours())}:${pad(s.getMinutes())}` : "";
+        const eStr = eHasTime ? ` - ${pad(e.getHours())}:${pad(e.getMinutes())}` : "";
+        return `${dayText}${sStr}${eStr}`;
+      }
+      return dayText;
+    }
+    // 跨天：保留 dueInfo.text（它会展示 "开始 ~ 结束"）
+    return dueInfo.value?.text ?? "设置日期";
+  }
+
+  // 单点（只有 end 或只有 start）
+  return dueInfo.value?.text ?? "设置日期";
+});
+
+function pad(n: number) {
+  return String(n).padStart(2, "0");
+}
+function isMidnight(d: Date) {
+  return d.getHours() === 0 && d.getMinutes() === 0;
+}
 
 async function onDateConfirm(start: string | null, end: string | null) {
   if (!task.value) return;
@@ -546,7 +591,7 @@ function autoResize(e: Event) {
       <span style="flex: 1" />
 
       <!-- 更多菜单 -->
-      <Popover v-model:visible="moreVisible" placement="bottom-left">
+      <Popover v-model:visible="moreVisible" placement="bottom-right">
         <template #trigger>
           <button class="detail-panel__more-btn" @click="moreVisible = !moreVisible">
             <icon-more :size="16" />

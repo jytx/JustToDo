@@ -39,6 +39,22 @@ function updatePosition() {
   } else if (props.placement === "bottom-center") {
     left = tr.left + scrollX + tr.width / 2 - pu.width / 2;
   }
+  // 边界检查：避免超出视口
+  const viewportW = document.documentElement.clientWidth;
+  const viewportH = document.documentElement.clientHeight;
+  if (left < 4) left = 4;
+  if (left + pu.width > viewportW - 4) left = viewportW - pu.width - 4;
+  if (top + pu.height > scrollY + viewportH - 4) {
+    // 翻转到 trigger 上方
+    const topAbove = tr.top + scrollY - pu.height - props.offset;
+    popupStyle.value = {
+      position: "absolute",
+      top: topAbove + "px",
+      left: left + "px",
+      zIndex: "9999",
+    };
+    return;
+  }
   popupStyle.value = {
     position: "absolute",
     top: top + "px",
