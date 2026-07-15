@@ -18,12 +18,35 @@ import HardBreak from "@tiptap/extension-hard-break";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import { BubbleMenuPlugin } from "@tiptap/extension-bubble-menu";
-import { PluginKey } from "@tiptap/pm/state";
+import { Extension } from "@tiptap/core";
+import { PluginKey, TextSelection } from "@tiptap/pm/state";
 import { common, createLowlight } from "lowlight";
 import { watch, onBeforeUnmount, onMounted, ref, nextTick, computed } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 
 const lowlight = createLowlight(common);
+
+/**
+ * 自定义扩展：覆盖 Tiptap 内置的 Mod-a 行为。
+ * 默认 Tiptap 用 AllSelection，在含 taskList 的 doc 中只会选中光标所在的 listItem
+ * （已知 issue），用 TextSelection 从 doc 起点到 doc 末尾可正确全选。
+ */
+const SelectAllFix = Extension.create({
+  name: "selectAllFix",
+  addKeyboardShortcuts() {
+    return {
+      "Mod-a": () => {
+        const { state, dispatch } = this.editor.view;
+        const { doc } = state;
+        const tr = state.tr.setSelection(
+          TextSelection.create(doc, 0, doc.content.size),
+        );
+        if (dispatch) dispatch(tr);
+        return true;
+      },
+    };
+  },
+});
 
 const props = defineProps<{
   modelValue: string;
@@ -65,6 +88,7 @@ const editor = useEditor({
     TaskList,
     TaskItem.configure({ nested: true }),
     CodeBlockLowlight.configure({ lowlight }),
+    SelectAllFix,
     Image.configure({
       inline: false,
       allowBase64: false,
