@@ -23,7 +23,14 @@ const emit = defineEmits<{
 }>();
 
 type TabKey = "date" | "range";
-const activeTab = ref<TabKey>("date");
+/** 默认 tab：根据 props 推断：start 和 end 同一天（或只有一个）→ date，否则 range */
+const initialTab = (): TabKey => {
+  const s = parseLocalIso(props.startIso);
+  const e = parseLocalIso(props.endIso);
+  if (!s || !e) return "date";
+  return isSameDay(s, e) ? "date" : "range";
+};
+const activeTab = ref<TabKey>(initialTab());
 
 // 临时编辑状态
 const editDate = ref<string | null>(null); // YYYY-MM-DDTHH:mm:ss 或 null
@@ -36,6 +43,17 @@ watch(
     editDate.value = e ?? s ?? null;
     editStart.value = s ?? null;
     editEnd.value = e ?? null;
+    // 同步 tab 推断
+    const sd = parseLocalIso(s as string | null);
+    const ed = parseLocalIso(e as string | null);
+    if (sd && ed && !isSameDay(sd, ed)) {
+      activeTab.value = "range";
+    } else if (!sd && !ed) {
+      // 双 null 不强制切
+    } else if (activeTab.value === "range" && (!sd || !ed || isSameDay(sd, ed))) {
+      // 从 range 退回单点 → 切回 date tab
+      activeTab.value = "date";
+    }
   },
   { immediate: true },
 );
@@ -63,9 +81,8 @@ const calendarGrid = computed(() => {
   for (let d = 1; d <= daysInMonth; d++) {
     cells.push({ date: new Date(year, month, d), inMonth: true });
   }
-  // 尾部（下月头）补足 6 行
-  const total = cells.length;
-  const need = total <= 35 ? 35 - total : 42 - total;
+  // 尾部（下月头）补足 6 行 42 格
+  const need = 42 - cells.length;
   for (let d = 1; d <= need; d++) {
     cells.push({ date: new Date(year, month + 1, d), inMonth: false });
   }
@@ -617,13 +634,7 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
   color: #fff;
 }
 
-/* 时间段范围高亮 */
-.date-popover__day--range-in {
-  background: var(--jt-accent-soft);
-  color: var(--jt-text-primary);
-  border-radius: 0;
-}
-
+/* 时间段范围高亮 —— 端点优先级必须高于 in，所以写在前面 */
 .date-popover__day--range-start,
 .date-popover__day--range-end {
   background: var(--jt-primary) !important;
@@ -639,6 +650,13 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 .date-popover__day--range-end {
   border-top-left-radius: 0 !important;
   border-bottom-left-radius: 0 !important;
+}
+
+/* 范围内格子：必须在端点之后，否则会因特异度相同被覆盖 */
+.date-popover__day--range-in {
+  background: var(--jt-accent-soft);
+  color: var(--jt-text-primary);
+  border-radius: 0;
 }
 
 .date-popover__row {
