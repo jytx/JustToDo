@@ -796,8 +796,13 @@ async function insertImageFromFile() {
 /* 任务列表 */
 .rich-text__editor :deep(.rich-text__content ul[data-type="taskList"]) {
   list-style: none;
-  padding-left: 4px;
+  padding-left: 0;
   margin: 4px 0 8px;
+}
+.rich-text__editor :deep(.rich-text__content ul[data-type="taskList"] ul[data-type="taskList"]) {
+  /* 嵌套二级任务列表：每级缩进 24px，与父级 checkbox 位置明显错开 */
+  padding-left: 24px;
+  margin: 2px 0 4px;
 }
 .rich-text__editor :deep(.rich-text__content ul[data-type="taskList"] li) {
   display: flex;
