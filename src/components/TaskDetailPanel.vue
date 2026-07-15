@@ -468,17 +468,17 @@ function formatPriorityLabel(data: any) {
               {{ opt.label }}
             </a-option>
           </a-select>
+        </div>
+        <div v-if="showCustomRemindInput" class="detail-panel__attr detail-panel__attr--sub">
           <a-input-number
-            v-if="showCustomRemindInput"
             v-model="customRemindMinutes"
             size="small"
             :min="0"
             :max="10080"
             :step="5"
-            style="width: 100px"
-          >
-            <template #append>分</template>
-          </a-input-number>
+            style="width: 160px"
+            placeholder="提前分钟数"
+          />
         </div>
 
         <!-- 重复规则 -->
@@ -706,6 +706,12 @@ function formatPriorityLabel(data: any) {
   font-size: 13px;
   color: var(--jt-text-secondary);
   min-width: 72px;
+}
+
+/* 子行无图标无 label，输入框左边对齐上方"提醒"控件起点
+   = 16 (icon) + 8 (gap) + 72 (label min-width) + 8 (gap) = 104 */
+.detail-panel__attr--sub {
+  padding-left: 104px;
 }
 
 .detail-panel__list-dot {
