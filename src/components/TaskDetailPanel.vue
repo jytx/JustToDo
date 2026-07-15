@@ -204,38 +204,27 @@ const remindPresetIndex = computed(() =>
   matchRemindPreset(task.value?.remindOffsetMinutes),
 );
 
-/** 自定义分钟数（与 input-number 双向绑定，watch 后写入 DB） */
-const customRemindMinutes = ref<number>(
-  task.value?.remindOffsetMinutes ?? 120,
-);
+/** 是否显示自定义分钟数输入框 */
 const showCustomRemindInput = computed(
   () => REMIND_PRESETS[remindPresetIndex.value]?.preset === false,
 );
 
-// 任务切换时同步自定义值
-watch(
-  () => task.value?.id,
-  () => {
+/**
+ * input-number 的双向绑定 —— 直接桥到 task.remindOffsetMinutes
+ * get: 自定义分支显示当前偏移或兜底 120
+ * set: 用户输入立即写库
+ */
+const customRemindMinutes = computed<number>({
+  get: () => {
+    if (!showCustomRemindInput.value) return 0;
     const v = task.value?.remindOffsetMinutes;
-    customRemindMinutes.value = v ?? 120;
+    return typeof v === "number" ? v : 120;
   },
-);
-// 切到自定义（或当前就是自定义）时，把 customRemindMinutes 与当前偏移对齐
-watch(remindPresetIndex, (idx) => {
-  if (REMIND_PRESETS[idx]?.preset === false) {
-    const v = task.value?.remindOffsetMinutes;
-    if (typeof v === "number" && v !== customRemindMinutes.value) {
-      customRemindMinutes.value = v;
+  set: (v) => {
+    if (typeof v === "number" && v >= 0) {
+      setRemindOffset(v);
     }
-  }
-});
-
-// input-number 任意变化都立即写入 DB
-watch(customRemindMinutes, async (v) => {
-  if (!task.value) return;
-  if (showCustomRemindInput.value && typeof v === "number" && v >= 0) {
-    await setRemindOffset(v);
-  }
+  },
 });
 
 async function onRemindPresetChange(idx: number) {
@@ -243,9 +232,15 @@ async function onRemindPresetChange(idx: number) {
   if (!preset) return;
   if (preset.preset) {
     if (preset.value === -1) {
-      // 自定义 → 把 input-number 同步到当前值或 120
-      const v = task.value?.remindOffsetMinutes;
-      customRemindMinutes.value = typeof v === "number" ? v : 120;
+      // 自定义 → 不立刻写值；input-number 出现后用户改值时写
+      // 兜底：若 task 还没有 remindOffsetMinutes，给个 120
+      if (
+        task.value &&
+        (task.value.remindOffsetMinutes === null ||
+          task.value.remindOffsetMinutes === undefined)
+      ) {
+        await setRemindOffset(120);
+      }
     } else {
       await setRemindOffset(preset.value);
     }
