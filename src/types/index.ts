@@ -88,6 +88,17 @@ export interface Task {
   remindOffsetMinutes: number | null;
   /** 通知触发时间戳（null = 还没通知过） */
   notifiedAt: string | null;
+  /** 检查项列表（独立于 note 富文本；滴答清单风格） */
+  checklist: ChecklistItem[];
+}
+
+/** 检查项（独立存储；后端 JSON 数组） */
+export interface ChecklistItem {
+  id: string;
+  title: string;
+  done: boolean;
+  /** 排序权重（数字小 = 排前） */
+  order: number;
 }
 
 /** 提醒预设项（分钟）。value 表示 remindOffsetMinutes，传 null = 不提醒 */
@@ -165,6 +176,8 @@ export interface TaskRow {
   recurrence_count: number | null;
   remind_offset_minutes: number | null;
   notified_at: string | null;
+  /** JSON 字符串（后端 Vec<ChecklistItem> 序列化） */
+  checklist: string;
 }
 
 /** 清单数据库原始行 */
@@ -200,7 +213,19 @@ export function mapTaskRow(row: TaskRow): Task {
     recurrenceCount: row.recurrence_count,
     remindOffsetMinutes: row.remind_offset_minutes,
     notifiedAt: row.notified_at,
+    checklist: parseChecklist(row.checklist),
   };
+}
+
+/** 把 JSON 字符串解析为 ChecklistItem 列表（解析失败则空列表） */
+function parseChecklist(raw: string): ChecklistItem[] {
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr as ChecklistItem[];
+  } catch {
+    return [];
+  }
 }
 
 /** 将数据库行转换为前端 List 接口 */

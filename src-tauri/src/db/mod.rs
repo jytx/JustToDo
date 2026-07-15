@@ -88,6 +88,9 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
     // 008: 任务提醒字段（remind_offset_minutes + notified_at）
     run_migration_008(&pool).await?;
 
+    // 009: 任务检查项字段（checklist JSON 数组）
+    run_migration_009(&pool).await?;
+
     Ok(pool)
 }
 
@@ -164,5 +167,13 @@ async fn run_migration_007(pool: &SqlitePool) -> Result<(), String> {
 async fn run_migration_008(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "tasks", "remind_offset_minutes", "INTEGER").await?;
     add_column_if_missing(pool, "tasks", "notified_at", "TEXT").await?;
+    Ok(())
+}
+
+/// 迁移 009：任务检查项字段
+/// - checklist: JSON 数组 [{id, title, done, order}]，独立于 note 富文本
+///   任务详情面板把"描述（富文本）"和"检查项（独立列表）"分开管理（滴答清单风格）
+async fn run_migration_009(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "tasks", "checklist", "TEXT NOT NULL DEFAULT '[]'").await?;
     Ok(())
 }

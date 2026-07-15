@@ -3,7 +3,7 @@
 // 这样绕过了 plugin-sql 前端 API 的 IPC 问题，走标准 invoke 通道
 
 import { invoke } from "@tauri-apps/api/core";
-import type { List, Task, Priority, RecurrenceFreq } from "@/types";
+import type { List, Task, Priority, RecurrenceFreq, ChecklistItem } from "@/types";
 
 // ─── 类型（与 Rust models.rs 对应）──────────────────────
 
@@ -49,6 +49,8 @@ interface UpdateTaskInput {
   recurrenceEndAt?: string | null;
   recurrenceCount?: number | null;
   remindOffsetMinutes?: number | null;
+  /** 检查项列表（整组覆盖） */
+  checklist?: ChecklistItem[];
 }
 
 export type SmartViewId = "today" | "upcoming" | "all";
@@ -130,6 +132,7 @@ interface RustTask {
   recurrence_count: number | null;
   remind_offset_minutes: number | null;
   notified_at: string | null;
+  checklist: ChecklistItem[];
 }
 
 function mapTask(r: RustTask): Task {
@@ -153,6 +156,7 @@ function mapTask(r: RustTask): Task {
     recurrenceCount: r.recurrence_count,
     remindOffsetMinutes: r.remind_offset_minutes,
     notifiedAt: r.notified_at,
+    checklist: r.checklist,
   };
 }
 
@@ -296,6 +300,7 @@ export async function updateTask(
     recurrence_end_at: fields.recurrenceEndAt,
     recurrence_count: fields.recurrenceCount,
     remind_offset_minutes: fields.remindOffsetMinutes,
+    checklist: fields.checklist,
   };
   await invoke<void>("task_update", { id, input });
 }

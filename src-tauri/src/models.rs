@@ -3,6 +3,16 @@
 
 use serde::{Deserialize, Serialize};
 
+/// 检查项（独立于 note 富文本）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChecklistItem {
+    pub id: String,
+    pub title: String,
+    pub done: bool,
+    /// 排序权重（数字小 = 排前）
+    pub order: i32,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Task {
     pub id: String,
@@ -28,6 +38,8 @@ pub struct Task {
     pub remind_offset_minutes: Option<i32>,
     /// 通知触发时间戳（null = 还没通知过）
     pub notified_at: Option<String>,
+    /// 检查项列表（与 note 富文本分离；migration 009 默认 "[]"）
+    pub checklist: Vec<ChecklistItem>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -79,4 +91,6 @@ pub struct UpdateTaskInput {
     pub recurrence_count: Option<Option<i32>>,
     /// Option<Option<i32>> 允许显式清空提醒（传 null）
     pub remind_offset_minutes: Option<Option<i32>>,
+    /// 检查项列表（整组覆盖；前端负责构造完整数组）
+    pub checklist: Option<Vec<ChecklistItem>>,
 }

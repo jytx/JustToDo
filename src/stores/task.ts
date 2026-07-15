@@ -3,7 +3,7 @@
 
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import type { Task, Priority, SortField, SortDir } from "@/types";
+import type { Task, Priority, SortField, SortDir, ChecklistItem } from "@/types";
 import * as db from "@/api/db";
 import type { SmartViewId } from "@/api/db";
 import { useSettingsStore } from "@/stores/settings";
@@ -189,6 +189,98 @@ export const useTaskStore = defineStore("task", () => {
     } else if (currentTagId.value) {
       await loadTagTasks(currentTagId.value, keepSelection);
     }
+    // 检查并迁移旧 taskList 数据（一次性）
+    void migrateOldTaskListsInNote();
+  }
+
+  // 标记是否跑过迁移（避免重复）
+  const migrationDone = ref(false);
+
+  /**
+   * 一次性迁移：旧版本 Tiptap 编辑器把检查项存进 task.note 的 taskList 节点。
+   * 新版用独立 task.checklist 字段。启动时扫一次：
+   * 1) note 里的 <ul data-type="taskList"><li data-checked>...<p>title</p>...</li></ul>
+   * 2) 把每个 li 转为 ChecklistItem 追加进 task.checklist
+   * 3) 从 note 中删除 taskList 节点
+   * 4) 写回 DB（只在该任务的 checklist 实际有变化时）
+   */
+  async function migrateOldTaskListsInNote() {
+    if (migrationDone.value) return;
+    migrationDone.value = true;
+    // 收集所有任务（跨当前列表/视图合并）
+    const all = collectAllLoadedTasks();
+    for (const t of all) {
+      const extracted = extractTaskListsFromNote(t.note);
+      if (extracted.items.length === 0) continue;
+      const merged = mergeChecklist(t.checklist, extracted.items);
+      const cleanedNote = extracted.cleaned;
+      try {
+        await db.updateTask(t.id, { checklist: merged, note: cleanedNote });
+      } catch (e) {
+        console.warn("[migrate] 任务", t.id, "迁移失败:", e);
+      }
+    }
+  }
+
+  /** 收集所有 store 里已加载的 task（去重） */
+  function collectAllLoadedTasks(): Task[] {
+    const seen = new Set<string>();
+    const out: Task[] = [];
+    const push = (t: Task) => {
+      if (seen.has(t.id)) return;
+      seen.add(t.id);
+      out.push(t);
+    };
+    currentTasks.value.forEach(push);
+    subtasks.value.forEach(push);
+    for (const arr of Object.values(subtaskCache.value)) arr.forEach(push);
+    return out;
+  }
+
+  /** 把 checklist 数组按 id 去重合并（新提取的优先） */
+  function mergeChecklist(existing: ChecklistItem[], extracted: ChecklistItem[]): ChecklistItem[] {
+    const map = new Map<string, ChecklistItem>();
+    for (const it of existing) map.set(it.id, it);
+    for (const it of extracted) {
+      if (!map.has(it.id)) map.set(it.id, it);
+    }
+    return Array.from(map.values()).sort((a, b) => a.order - b.order);
+  }
+
+  /**
+   * 从 task.note HTML 提取 taskList 节点，转换为 ChecklistItem 数组
+   * 同时返回清理后的 note（移除 taskList 节点）
+   * 解析失败则返回空 items 和原 note
+   */
+  function extractTaskListsFromNote(html: string): {
+    items: ChecklistItem[];
+    cleaned: string;
+  } {
+    if (!html || !html.includes("taskList")) return { items: [], cleaned: html };
+    try {
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const taskLists = doc.querySelectorAll('ul[data-type="taskList"]');
+      if (taskLists.length === 0) return { items: [], cleaned: html };
+      const items: ChecklistItem[] = [];
+      let orderBase = 1000;
+      for (const ul of Array.from(taskLists)) {
+        const lis = ul.querySelectorAll(':scope > li');
+        for (const li of Array.from(lis)) {
+          const title = (li.textContent || "").trim() || "未命名";
+          const checked = li.getAttribute("data-checked") === "true";
+          items.push({
+            id: crypto.randomUUID(),
+            title,
+            done: checked,
+            order: orderBase++,
+          });
+        }
+        ul.remove();
+      }
+      return { items, cleaned: doc.body.innerHTML };
+    } catch {
+      return { items: [], cleaned: html };
+    }
   }
 
   async function createTask(params: {
@@ -307,6 +399,68 @@ export const useTaskStore = defineStore("task", () => {
     }
     subtaskCache.value = newCache;
     refreshCounts();
+  }
+
+  // ─── 检查项操作（独立于 note 富文本）────────────────────
+
+  /** 给指定任务追加一个检查项 */
+  async function addChecklistItem(taskId: string, title: string) {
+    const task = findTaskById(taskId);
+    if (!task) return;
+    const maxOrder = task.checklist.reduce((m, it) => Math.max(m, it.order), -1);
+    const newItem = {
+      id: crypto.randomUUID(),
+      title: title.trim() || "新检查项",
+      done: false,
+      order: maxOrder + 1,
+    };
+    const next = [...task.checklist, newItem];
+    await updateTask(taskId, { checklist: next });
+  }
+
+  /** 更新一个检查项的 title / done / order */
+  async function updateChecklistItem(
+    taskId: string,
+    itemId: string,
+    patch: Partial<{ title: string; done: boolean; order: number }>,
+  ) {
+    const task = findTaskById(taskId);
+    if (!task) return;
+    const next = task.checklist.map((it) =>
+      it.id === itemId ? { ...it, ...patch } : it,
+    );
+    await updateTask(taskId, { checklist: next });
+  }
+
+  /** 切换检查项的完成状态 */
+  async function toggleChecklistItem(taskId: string, itemId: string) {
+    const task = findTaskById(taskId);
+    if (!task) return;
+    const item = task.checklist.find((it) => it.id === itemId);
+    if (!item) return;
+    await updateChecklistItem(taskId, itemId, { done: !item.done });
+  }
+
+  /** 删除一个检查项 */
+  async function removeChecklistItem(taskId: string, itemId: string) {
+    const task = findTaskById(taskId);
+    if (!task) return;
+    const next = task.checklist.filter((it) => it.id !== itemId);
+    await updateTask(taskId, { checklist: next });
+  }
+
+  /** 在任务的所有数据副本中找 task（currentTasks / subtasks / subtaskCache / selectedTaskObj） */
+  function findTaskById(id: string): Task | null {
+    if (selectedTaskObj.value?.id === id) return selectedTaskObj.value;
+    const fromCur = currentTasks.value.find((t) => t.id === id);
+    if (fromCur) return fromCur;
+    const fromSub = subtasks.value.find((t) => t.id === id);
+    if (fromSub) return fromSub;
+    for (const arr of Object.values(subtaskCache.value)) {
+      const found = arr.find((t) => t.id === id);
+      if (found) return found;
+    }
+    return null;
   }
 
   async function deleteTask(id: string) {
@@ -540,5 +694,10 @@ export const useTaskStore = defineStore("task", () => {
     loadSubtasksToCache,
     getCachedSubtasks,
     getSubtasks,
+    // 检查项操作
+    addChecklistItem,
+    updateChecklistItem,
+    toggleChecklistItem,
+    removeChecklistItem,
   };
 });

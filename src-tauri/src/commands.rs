@@ -57,6 +57,13 @@ fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
         recurrence_count: row.get("recurrence_count"),
         remind_offset_minutes: row.try_get("remind_offset_minutes").ok().flatten(),
         notified_at: row.try_get("notified_at").ok().flatten(),
+        // checklist 存的是 JSON 字符串，反序列化为 Vec
+        // 字段 NOT NULL DEFAULT '[]'，所以一定存在；解析失败则为空列表
+        checklist: row
+            .try_get::<String, _>("checklist")
+            .ok()
+            .and_then(|s| serde_json::from_str::<Vec<ChecklistItem>>(&s).ok())
+            .unwrap_or_default(),
     }
 }
 
@@ -507,6 +514,7 @@ pub async fn task_create(
         recurrence_count,
         remind_offset_minutes,
         notified_at: None,
+        checklist: Vec::new(),
     })
 }
 
@@ -587,6 +595,15 @@ pub async fn task_update(
             .bind(remind).bind(&ts).bind(&id)
             .execute(pool.inner()).await
             .map_err(|e| format!("更新提醒失败: {}", e))?;
+    }
+    // 检查项列表（整组覆盖为 JSON 数组）
+    if let Some(checklist) = &input.checklist {
+        let json = serde_json::to_string(checklist)
+            .map_err(|e| format!("序列化检查项失败: {}", e))?;
+        sqlx::query("UPDATE tasks SET checklist = $1, updated_at = $2 WHERE id = $3")
+            .bind(json).bind(&ts).bind(&id)
+            .execute(pool.inner()).await
+            .map_err(|e| format!("更新检查项失败: {}", e))?;
     }
 
     Ok(())

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 任务详情面板 —— 滴答清单风格沉浸式
 // 顶部 chips 行 + 大标题 + 无边框 Tiptap 描述/检查项 + 底部 footer
-import { ref, watch, computed } from "vue";
+import { ref, watch, computed, nextTick } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
@@ -347,18 +347,55 @@ async function confirmDelete() {
 
 /**
  * 在描述末尾插入一个空的 taskList（检查项）
- * 实际效果是：定位到 ProseMirror 视图，插入 `<ul data-type="taskList"><li>...</li></ul>`
- */
-async function insertChecklistFromDescription() {
+/** 添加一个新检查项（独立字段 task.checklist） */
+async function insertChecklistItem() {
   if (!task.value) return;
-  // 通过任务内容做 hack：在 note 末尾追加一个空 taskList HTML
-  const cur = task.value.note ?? "";
-  const checklistHtml = '<ul data-type="taskList"><li data-checked="false"><p>新检查项</p></li></ul>';
-  const next = cur + checklistHtml;
-  await taskStore.updateTask(task.value.id, { note: next });
-  // 重新触发编辑器加载
-  noteDraft.value = next;
+  await taskStore.addChecklistItem(task.value.id, "新检查项");
+  // 滚动到新加的检查项
+  await nextTick();
+  const inputs = document.querySelectorAll<HTMLInputElement>(
+    '.detail-panel__checklist-input',
+  );
+  const last = inputs[inputs.length - 1];
+  if (last) {
+    last.focus();
+    last.select();
+  }
 }
+
+/** 切换检查项完成态 */
+async function toggleChecklistItem(itemId: string) {
+  if (!task.value) return;
+  await taskStore.toggleChecklistItem(task.value.id, itemId);
+}
+
+/** 删除检查项 */
+async function removeChecklistItem(itemId: string) {
+  if (!task.value) return;
+  await taskStore.removeChecklistItem(task.value.id, itemId);
+}
+
+/** 失焦保存检查项的 title 改动 */
+async function saveChecklistItem(itemId: string) {
+  if (!task.value) return;
+  const item = task.value.checklist.find((it) => it.id === itemId);
+  if (!item) return;
+  const trimmed = item.title.trim();
+  if (!trimmed) {
+    // 空标题 = 删除该项
+    await removeChecklistItem(itemId);
+    return;
+  }
+  if (trimmed !== item.title) {
+    await taskStore.updateChecklistItem(task.value.id, itemId, { title: trimmed });
+  }
+}
+
+/** 按 order 排序的检查项 */
+const sortedChecklist = computed(() => {
+  if (!task.value) return [];
+  return [...task.value.checklist].sort((a, b) => a.order - b.order);
+});
 
 /** 创建任务副本 */
 async function duplicateTask() {
@@ -601,7 +638,7 @@ function autoResize(e: Event) {
           <button
             type="button"
             class="detail-panel__popup-item"
-            @click="insertChecklistFromDescription(); moreVisible = false"
+            @click="insertChecklistItem(); moreVisible = false"
           >
             <icon-check-square :size="14" />
             <span>添加检查项</span>
@@ -694,6 +731,42 @@ function autoResize(e: Event) {
         placeholder="输入内容或使用 / 快速插入"
         @update:model-value="(v) => { noteDraft = v; saveNote(v); }"
       />
+
+      <!-- 检查项区（独立于描述） -->
+      <div class="detail-panel__checklist">
+        <div
+          v-for="item in sortedChecklist"
+          :key="item.id"
+          class="detail-panel__checklist-item"
+          :class="{ 'detail-panel__checklist-item--done': item.done }"
+        >
+          <button
+            class="detail-panel__checklist-check"
+            :aria-label="item.done ? '取消完成' : '标记完成'"
+            @click="toggleChecklistItem(item.id)"
+          >
+            <icon-check v-if="item.done" :size="12" />
+          </button>
+          <input
+            v-model="item.title"
+            class="detail-panel__checklist-input"
+            :class="{ 'detail-panel__checklist-input--done': item.done }"
+            @blur="saveChecklistItem(item.id)"
+            @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+          />
+          <button
+            class="detail-panel__checklist-remove"
+            title="删除"
+            @click="removeChecklistItem(item.id)"
+          >
+            <icon-close :size="12" />
+          </button>
+        </div>
+        <button class="detail-panel__checklist-add" @click="insertChecklistItem">
+          <icon-plus :size="14" />
+          <span>添加检查项</span>
+        </button>
+      </div>
     </div>
 
     <!-- 底部 footer -->
@@ -829,6 +902,116 @@ function formatMeta(iso: string): string {
   flex: 1;
   overflow-y: auto;
   padding: 12px 20px 20px;
+}
+
+/* ─── 检查项区（独立于描述） ─────────────────── */
+.detail-panel__checklist {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-panel__checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  transition: opacity 0.12s;
+}
+
+.detail-panel__checklist-item--done {
+  opacity: 0.5;
+}
+
+.detail-panel__checklist-check {
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--jt-text-tertiary);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+  transition: all 0.12s;
+  padding: 0;
+}
+
+.detail-panel__checklist-check:hover {
+  border-color: var(--jt-primary);
+}
+
+.detail-panel__checklist-item--done .detail-panel__checklist-check {
+  background: var(--jt-primary);
+  border-color: var(--jt-primary);
+}
+
+.detail-panel__checklist-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--jt-text-primary);
+  padding: 4px 0;
+  min-width: 0;
+}
+
+.detail-panel__checklist-input--done {
+  text-decoration: line-through;
+  color: var(--jt-text-tertiary);
+}
+
+.detail-panel__checklist-remove {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.12s;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.detail-panel__checklist-item:hover .detail-panel__checklist-remove {
+  opacity: 1;
+}
+
+.detail-panel__checklist-remove:hover {
+  background: var(--jt-surface-sunken);
+  color: var(--jt-error);
+}
+
+.detail-panel__checklist-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  font-family: var(--font-body);
+  align-self: flex-start;
+  transition: all 0.12s;
+}
+
+.detail-panel__checklist-add:hover {
+  background: var(--jt-surface-sunken);
+  color: var(--jt-text-primary);
 }
 
 .detail-panel__title {

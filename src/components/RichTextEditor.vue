@@ -15,12 +15,9 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
 import HardBreak from "@tiptap/extension-hard-break";
-import TaskList from "@tiptap/extension-task-list";
-import TaskItem from "@tiptap/extension-task-item";
 import { BubbleMenuPlugin } from "@tiptap/extension-bubble-menu";
 import { Extension } from "@tiptap/core";
 import { PluginKey, TextSelection } from "@tiptap/pm/state";
-import { InputRule } from "@tiptap/core";
 import { common, createLowlight } from "lowlight";
 import { watch, onBeforeUnmount, onMounted, ref, nextTick, computed } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
@@ -46,37 +43,6 @@ const SelectAllFix = Extension.create({
         return true;
       },
     };
-  },
-});
-
-/**
- * 任务列表 input rule：输入 "[ ]" 自动转换为任务项
- * （Tiptap TaskList/TaskItem 自身不包含 input rule，需手写）
- */
-const TaskListInputRule = Extension.create({
-  name: "taskListInputRule",
-  addInputRules() {
-    return [
-      new InputRule({
-        find: /\[ \]$/,
-        handler: ({ range, chain }) => {
-          chain()
-            .deleteRange({ from: range.from, to: range.to })
-            .toggleTaskList()
-            .run();
-        },
-      }),
-      new InputRule({
-        find: /\[x\]$/,
-        handler: ({ range, chain }) => {
-          chain()
-            .deleteRange({ from: range.from, to: range.to })
-            .toggleTaskList()
-            .updateAttributes("taskItem", { checked: true })
-            .run();
-        },
-      }),
-    ];
   },
 });
 
@@ -121,13 +87,8 @@ const editor = useEditor({
       },
     }),
     HardBreak,
-    TaskList,
-    TaskItem.configure({ nested: true }),
-    // 任务列表 input rule：输入 "- [ ] " / "- [x] " 自动变 checklist
-    // （Tiptap 自带 TaskList/TaskItem 不包含 input rule，需手写）
     CodeBlockLowlight.configure({ lowlight }),
     SelectAllFix,
-    TaskListInputRule,
     Image.configure({
       inline: false,
       allowBase64: false,
@@ -548,15 +509,6 @@ async function insertImageFromFile() {
       >
         <icon-ordered-list :size="16" />
       </a-button>
-      <a-button
-        size="mini"
-        shape="circle"
-        :type="editor.isActive('taskList') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleTaskList().run()"
-        title="任务列表"
-      >
-        <icon-check-square :size="16" />
-      </a-button>
       <span class="rich-text__divider" />
 
       <!-- 代码块 + 链接 + 图片 -->
@@ -664,15 +616,6 @@ async function insertImageFromFile() {
         title="有序列表"
       >
         <icon-ordered-list :size="14" />
-      </a-button>
-      <a-button
-                size="mini"
-        shape="circle"
-        :type="editor.isActive('taskList') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleTaskList().run()"
-        title="任务列表"
-      >
-        <icon-check-square :size="14" />
       </a-button>
       <a-divider direction="vertical" :margin="2" />
       <a-button
