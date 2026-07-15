@@ -16,6 +16,7 @@ import Link from "@tiptap/extension-link";
 import HardBreak from "@tiptap/extension-hard-break";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
+import Placeholder from "@tiptap/extension-placeholder";
 import { Extension } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { common, createLowlight } from "lowlight";
@@ -88,6 +89,12 @@ const editor = useEditor({
     CodeBlockLowlight.configure({ lowlight }),
     TaskList,
     TaskItem.configure({ nested: true }),
+    Placeholder.configure({
+      // 整篇空的时候显示主提示；具体每个空段落也会复用这个 placeholder
+      placeholder: props.placeholder ?? "按 / 唤起命令，输入备注…",
+      showOnlyWhenEditable: true,
+      showOnlyCurrent: false,
+    }),
     SelectAllFix,
     Image.configure({
       inline: false,
@@ -392,8 +399,20 @@ function fileToBase64(file: File): Promise<string> {
   pointer-events: none;
 }
 
+/* Placeholder extension 渲染在每个空段落内（不是 :empty 的 doc） */
+.rich-text__editor :deep(.rich-text__content p.is-editor-empty:first-child::before),
+.rich-text__editor :deep(.rich-text__content p.is-empty::before) {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--jt-text-tertiary);
+  pointer-events: none;
+  height: 0;
+}
+
 .rich-text__editor :deep(.rich-text__content p) {
-  margin: 0 0 8px;
+  margin: 0;
+  /* Notion 风格的段落间距 */
+  padding: 3px 0;
 }
 
 .rich-text__editor :deep(.rich-text__content p:first-child) {
@@ -404,24 +423,24 @@ function fileToBase64(file: File): Promise<string> {
   margin-bottom: 0;
 }
 
-/* 标题 */
+/* 标题 — Notion 风格相对正文略大 */
 .rich-text__editor :deep(.rich-text__content h1) {
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 700;
-  margin: 14px 0 8px;
-  line-height: 1.4;
+  margin: 8px 0 4px;
+  line-height: 1.3;
 }
 .rich-text__editor :deep(.rich-text__content h2) {
-  font-size: 17px;
-  font-weight: 700;
-  margin: 12px 0 8px;
-  line-height: 1.4;
+  font-size: 20px;
+  font-weight: 600;
+  margin: 6px 0 4px;
+  line-height: 1.3;
 }
 .rich-text__editor :deep(.rich-text__content h3) {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
-  margin: 10px 0 6px;
-  line-height: 1.4;
+  margin: 4px 0 2px;
+  line-height: 1.3;
 }
 
 /* 下划线 */
@@ -444,8 +463,8 @@ function fileToBase64(file: File): Promise<string> {
 /* 引用 */
 .rich-text__editor :deep(.rich-text__content blockquote) {
   border-left: 3px solid var(--jt-primary);
-  padding-left: 12px;
-  margin: 8px 0;
+  padding: 4px 12px;
+  margin: 4px 0;
   color: var(--jt-text-secondary);
   font-style: italic;
 }
@@ -460,19 +479,19 @@ function fileToBase64(file: File): Promise<string> {
 .rich-text__editor :deep(.rich-text__content ul),
 .rich-text__editor :deep(.rich-text__content ol) {
   padding-left: 20px;
-  margin: 0 0 8px;
+  margin: 4px 0;
 }
 
 /* 任务列表 */
 .rich-text__editor :deep(.rich-text__content ul[data-type="taskList"]) {
   list-style: none;
   padding-left: 0;
-  margin: 4px 0 8px;
+  margin: 4px 0;
 }
 .rich-text__editor :deep(.rich-text__content ul[data-type="taskList"] ul[data-type="taskList"]) {
   /* 嵌套二级任务列表：每级缩进 24px，与父级 checkbox 位置明显错开 */
   padding-left: 24px;
-  margin: 2px 0 4px;
+  margin: 2px 0 2px;
 }
 .rich-text__editor :deep(.rich-text__content ul[data-type="taskList"] li) {
   display: flex;
