@@ -51,6 +51,10 @@ const SelectAllFix = Extension.create({
 const props = defineProps<{
   modelValue: string;
   placeholder?: string;
+  /** 无边框模式（融入父容器，详情面板主区用） */
+  borderless?: boolean;
+  /** 隐藏顶部常驻工具条（仅保留选中文字的浮气泡） */
+  hideToolbar?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -364,9 +368,13 @@ async function insertImageFromFile() {
 </script>
 
 <template>
-  <div class="rich-text" v-if="editor">
-    <!-- 工具栏 -->
-    <div class="rich-text__toolbar">
+  <div
+    class="rich-text"
+    :class="{ 'rich-text--borderless': borderless }"
+    v-if="editor"
+  >
+    <!-- 工具栏（可隐藏） -->
+    <div v-if="!hideToolbar" class="rich-text__toolbar">
       <!-- 文本格式组 -->
       <a-button
         size="mini"
@@ -707,6 +715,12 @@ async function insertImageFromFile() {
   overflow: hidden;
 }
 
+.rich-text--borderless {
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+}
+
 .rich-text__toolbar {
   display: flex;
   gap: 2px;
@@ -730,6 +744,11 @@ async function insertImageFromFile() {
   min-height: 160px;
   max-height: none;
   overflow-y: visible;
+}
+
+.rich-text--borderless .rich-text__editor-wrapper {
+  padding: 0;
+  min-height: 0;
 }
 
 .rich-text__editor :deep(.rich-text__content) {

@@ -1,24 +1,26 @@
 <script setup lang="ts">
-// 任务详情面板 —— 右栏常驻面板，可拖拽调整宽度
-// 含：标题编辑、优先级、截止日期、清单切换、备注、子任务、标签
-import { ref, watch, computed, h } from "vue";
+// 任务详情面板 —— 滴答清单风格沉浸式
+// 顶部 chips 行 + 大标题 + 无边框 Tiptap 描述/检查项 + 底部 footer
+import { ref, watch, computed } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
 import {
   PRIORITY_LABELS,
-  PRIORITY_COLORS,
   RECURRENCE_FREQS,
-  REMIND_PRESETS,
-  matchRemindPreset,
   type Priority,
   type Task,
   type RecurrenceFreq,
 } from "@/types";
-import { toLocalIso, fromLocalIso, parseLocalIso } from "@/utils/date";
+import { formatDueDate } from "@/utils/date";
 import TaskCheckbox from "./TaskCheckbox.vue";
 import PriorityDot from "./PriorityDot.vue";
 import RichTextEditor from "./RichTextEditor.vue";
+import PropertyChip from "./PropertyChip.vue";
+import Popover from "./Popover.vue";
+import DatePopover from "./DatePopover.vue";
+import ReminderPopover from "./ReminderPopover.vue";
+import RecurrencePopover from "./RecurrencePopover.vue";
 import * as db from "@/api/db";
 
 const taskStore = useTaskStore();
@@ -36,17 +38,9 @@ const emit = defineEmits<{
 const task = computed(() => taskStore.selectedTask);
 const titleDraft = ref("");
 const noteDraft = ref("");
-const newSubtaskName = ref("");
 
 /** 当前任务的关联标签 */
 const taskTags = ref<db.Tag[]>([]);
-
-/** 可选标签列表（排除已关联的） */
-const availableTagOptions = computed(() =>
-  tagStore.tags
-    .filter((t) => !taskTags.value.some((tt) => tt.id === t.id))
-    .map((t) => ({ id: t.id, name: t.name })),
-);
 
 /** 父任务链（面包屑导航）—— 从直接父级到根级 */
 const parentChain = ref<Task[]>([]);
@@ -60,7 +54,7 @@ async function loadParentChain() {
   while (currentParentId) {
     const parent = await db.getTaskById(currentParentId);
     if (!parent) break;
-    chain.unshift(parent); // 头部插入，保证根任务在前
+    chain.unshift(parent);
     currentParentId = parent.parentId;
   }
   parentChain.value = chain;
@@ -87,7 +81,7 @@ function startResize(e: MouseEvent) {
 
   function onMouseMove(ev: MouseEvent) {
     const delta = startX - ev.clientX;
-    const newWidth = Math.max(280, Math.min(650, startWidth + delta));
+    const newWidth = Math.max(320, Math.min(720, startWidth + delta));
     emit("update:panelWidth", newWidth);
   }
 
@@ -103,9 +97,6 @@ function startResize(e: MouseEvent) {
   document.body.style.cursor = "col-resize";
   document.body.style.userSelect = "none";
 }
-
-// ESC 关闭面板的逻辑已统一到 AppLayout.vue 的 onNavigationKeydown，
-// 这里不再独立监听（避免双重处理，且保留"输入框聚焦时 ESC 先 blur"的逻辑）
 
 watch(
   () => task.value?.id,
@@ -124,24 +115,7 @@ watch(
   { immediate: true },
 );
 
-const subtasks = computed(() =>
-  task.value ? taskStore.getSubtasks(task.value.id) : [],
-);
-
-const priorityColor = computed(() =>
-  task.value ? PRIORITY_COLORS[task.value.priority] : "priority-none",
-);
-
-const priorityColorValue = computed(() => {
-  const c = priorityColor.value;
-  if (c === "error") return "var(--jt-error)";
-  if (c === "warning") return "var(--jt-warning)";
-  if (c === "info") return "#3B82F6";
-  return "var(--jt-text-tertiary)";
-});
-
-// 清单下拉选项
-
+// ─── 标题编辑 ─────────────────────────────────────
 async function saveTitle() {
   if (!task.value) return;
   const trimmed = titleDraft.value.trim();
@@ -150,124 +124,142 @@ async function saveTitle() {
   }
 }
 
-async function saveNote() {
+// ─── 描述编辑 ─────────────────────────────────────
+async function saveNote(value: string) {
   if (!task.value) return;
-  if (noteDraft.value !== task.value.note) {
-    await taskStore.updateTask(task.value.id, { note: noteDraft.value });
+  if (value !== task.value.note) {
+    await taskStore.updateTask(task.value.id, { note: value });
   }
 }
+
+// ─── 优先级 ───────────────────────────────────────
+const priority = computed<Priority>(() => task.value?.priority ?? 0);
+const priorityColorValue = computed(() => {
+  const map: Record<number, string> = {
+    0: "var(--jt-text-tertiary)",
+    1: "#3B82F6",
+    2: "var(--jt-warning)",
+    3: "var(--jt-error)",
+  };
+  return map[priority.value] ?? "var(--jt-text-tertiary)";
+});
+const priorityLabel = computed(() => {
+  if (!task.value || task.value.priority === 0) return "优先级";
+  return PRIORITY_LABELS[task.value.priority];
+});
 
 async function setPriority(p: Priority) {
   if (!task.value) return;
   await taskStore.updateTask(task.value.id, { priority: p });
 }
 
+// ─── 清单 ─────────────────────────────────────────
+const listOptions = computed(() =>
+  listStore.sortedLists.map((l) => ({ id: l.id, name: l.name, color: l.color })),
+);
+const currentList = computed(() =>
+  listOptions.value.find((l) => l.id === task.value?.listId) ?? null,
+);
+
 async function moveToList(listId: string) {
   if (!task.value) return;
   await taskStore.updateTask(task.value.id, { listId });
 }
 
-/** 子任务 checkbox 切换 —— 不触发 selectTask */
-async function onSubtaskToggle(sub: Task) {
-  await taskStore.toggleTask(sub.id, !sub.done);
-}
+// ─── 日期 ─────────────────────────────────────────
+const dueInfo = computed(() => {
+  if (!task.value) return null;
+  return formatDueDate(task.value.dueStartAt, task.value.dueEndAt);
+});
+const dueLabel = computed(() => dueInfo.value?.text ?? "设置日期");
 
-/** 点击子任务行 —— 进入该子任务的详情 */
-function onSubtaskClick(sub: Task) {
-  taskStore.selectTask(sub.id);
-}
-
-async function setDueRange(start: string | null, end: string | null) {
+async function onDateConfirm(start: string | null, end: string | null) {
   if (!task.value) return;
-  await taskStore.updateTask(task.value.id, { dueStartAt: start, dueEndAt: end });
+  await taskStore.updateTask(task.value.id, {
+    dueStartAt: start,
+    dueEndAt: end,
+  });
+  // 重置 notified_at：Tiptap 任务列表提醒依赖 dueEndAt 变化时重新触发
+  await db.updateTask(task.value.id, { notifiedAt: null } as any);
+  dateVisible.value = false;
 }
 
-/** 设置重复规则（freq + interval） */
-async function setRecurrence(freq: RecurrenceFreq | null, interval: number) {
+async function onDateClear() {
+  if (!task.value) return;
+  await taskStore.updateTask(task.value.id, {
+    dueStartAt: null,
+    dueEndAt: null,
+  });
+  dateVisible.value = false;
+}
+
+// ─── 提醒 ─────────────────────────────────────────
+const remindLabel = computed(() => {
+  if (!task.value || task.value.remindOffsetMinutes == null) return "提醒";
+  const offset = task.value.remindOffsetMinutes;
+  if (offset === 0) return "准点";
+  if (offset < 60) return `提前 ${offset} 分钟`;
+  if (offset < 1440) return `提前 ${Math.floor(offset / 60)} 小时`;
+  return `提前 ${Math.floor(offset / 1440)} 天`;
+});
+
+async function onReminderConfirm(value: number | null) {
+  if (!task.value) return;
+  await taskStore.updateTask(task.value.id, {
+    remindOffsetMinutes: value,
+  });
+  await db.updateTask(task.value.id, { notifiedAt: null } as any);
+  reminderVisible.value = false;
+}
+
+async function onReminderClear() {
+  if (!task.value) return;
+  await taskStore.updateTask(task.value.id, {
+    remindOffsetMinutes: null,
+  });
+  reminderVisible.value = false;
+}
+
+// ─── 重复 ─────────────────────────────────────────
+const recurrenceLabel = computed(() => {
+  if (!task.value?.recurrenceFreq) return "重复";
+  const unit = RECURRENCE_FREQS.find(
+    (f) => f.value === task.value!.recurrenceFreq,
+  )?.label ?? "";
+  if (task.value.recurrenceInterval === 1) return `每${unit}`;
+  return `每 ${task.value.recurrenceInterval} ${unit}`;
+});
+
+async function onRecurrenceConfirm(freq: RecurrenceFreq | null, interval: number) {
   if (!task.value) return;
   await taskStore.updateTask(task.value.id, {
     recurrenceFreq: freq,
     recurrenceInterval: interval,
   });
+  recurrenceVisible.value = false;
 }
 
-/** 设置提醒偏移（分钟）。null = 不提醒；0 = 准点；N = 提前 N 分钟 */
-async function setRemindOffset(offset: number | null) {
-  if (!task.value) return;
-  await taskStore.updateTask(task.value.id, {
-    remindOffsetMinutes: offset,
-  });
-}
-
-/** 下拉当前显示的索引（直接从 task 派生） */
-const remindPresetIndex = computed(() =>
-  matchRemindPreset(task.value?.remindOffsetMinutes),
+// ─── 标签 ─────────────────────────────────────────
+const availableTagOptions = computed(() =>
+  tagStore.tags
+    .filter((t) => !taskTags.value.some((tt) => tt.id === t.id))
+    .map((t) => ({ id: t.id, name: t.name })),
 );
-
-/** 是否显示自定义分钟数输入框 */
-const showCustomRemindInput = computed(
-  () => REMIND_PRESETS[remindPresetIndex.value]?.preset === false,
-);
-
-/**
- * input-number 的双向绑定 —— 与 task.remindOffsetMinutes 直接桥接
- * get: 自定义分支显示当前偏移或兜底 120
- * set: 用户输入立即写库
- */
-const customRemindMinutes = computed<number>({
-  get: () => {
-    if (!showCustomRemindInput.value) return 0;
-    const v = task.value?.remindOffsetMinutes;
-    return typeof v === "number" && v >= 0 ? v : 120;
-  },
-  set: (v) => {
-    if (typeof v === "number" && v >= 0) {
-      setRemindOffset(v);
-    }
-  },
+const tagLabel = computed(() => {
+  if (taskTags.value.length === 0) return "标签";
+  if (taskTags.value.length === 1) return taskTags.value[0].name;
+  return `${taskTags.value[0].name} +${taskTags.value.length - 1}`;
 });
 
-async function onRemindPresetChange(idx: number) {
-  const preset = REMIND_PRESETS[idx];
-  if (!preset) return;
-  if (preset.value === null) {
-    // 不提醒
-    await setRemindOffset(null);
-  } else if (preset.preset) {
-    // 预设项（0/5/10/15/30/60）
-    await setRemindOffset(preset.value);
-  } else {
-    // 自定义（preset === false，value === -1）：
-    // 让 task 真正变成非预设值（120 或当前偏移），下拉才会停在 idx=7
-    const current = task.value?.remindOffsetMinutes;
-    const isPreset = typeof current === "number" && !!REMIND_PRESETS.find(
-      (p) => p.preset && p.value === current,
-    );
-    const candidate = isPreset ? 120 : current ?? 120;
-    await setRemindOffset(candidate);
-  }
-}
-
-async function createSubtask() {
-  if (!task.value) return;
-  const title = newSubtaskName.value.trim();
-  if (!title) return;
-  await taskStore.createSubtask(task.value, title);
-  newSubtaskName.value = "";
-}
-
-/** 添加已存在的标签 */
 async function addExistingTag(tagId: string) {
   if (!task.value || !tagId) return;
   await db.addTaskTag(task.value.id, tagId);
   await loadTaskTags();
 }
 
-/** 创建新标签并关联（a-select allow-create 触发） */
 async function createNewTag(name: string) {
   const trimmed = (name || "").trim();
   if (!trimmed || !task.value) return;
-
   let tag = tagStore.getByName(trimmed);
   if (!tag) {
     tag = await tagStore.createTag(trimmed);
@@ -282,332 +274,350 @@ async function removeTaskTag(tagId: string) {
   await loadTaskTags();
 }
 
-// 优先级下拉选项
-const priorityOptions = Object.entries(PRIORITY_LABELS).map(([k, v]) => ({
-  value: Number(k),
-  label: v,
-}));
+// ─── 弹层显隐状态 ───────────────────────────────
+const dateVisible = ref(false);
+const reminderVisible = ref(false);
+const recurrenceVisible = ref(false);
+const priorityVisible = ref(false);
+const tagVisible = ref(false);
+const listVisible = ref(false);
+const moreVisible = ref(false);
 
-// 开始日期（与本地时间字面量互转）—— 不再走 new Date().toISOString()
-const dueStartModel = computed({
-  get: () => fromLocalIso(task.value?.dueStartAt) ?? undefined,
-  set: (v: string | undefined) => {
-    setDueRange(toLocalIso(v), task.value?.dueEndAt ?? null);
-  },
-});
-
-// 结束日期（与本地时间字面量互转）—— 不再走 new Date().toISOString()
-const dueEndModel = computed({
-  get: () => fromLocalIso(task.value?.dueEndAt) ?? undefined,
-  set: (v: string | undefined) => {
-    setDueRange(task.value?.dueStartAt ?? null, toLocalIso(v));
-  },
-});
-
-// 清单下拉选项
-const listOptions = computed(() =>
-  listStore.sortedLists.map((l) => ({ value: l.id, label: l.name, color: l.color })),
-);
-
-/** 优先级颜色 → CSS 值 */
-const PRIORITY_DOT_COLORS: Record<number, string> = {
-  0: "var(--jt-text-tertiary)",
-  1: "#3B82F6",
-  2: "var(--jt-warning)",
-  3: "var(--jt-error)",
-};
-
-/** select 选中值的自定义渲染：彩色圆点 + 文字 */
-function formatPriorityLabel(data: any) {
-  const color = PRIORITY_DOT_COLORS[data.value as number] ?? "var(--jt-text-tertiary)";
-  const isNone = data.value === 0;
-  return h("span", { style: "display: inline-flex; align-items: center; gap: 6px;" }, [
-    h("span", {
-      style: `width:9px;height:9px;border-radius:50%;background-color:${isNone ? "transparent" : color};border:2px solid ${color};box-sizing:border-box;display:inline-block;flex-shrink:0;`,
-    }),
-    data.label,
-  ]);
+// ─── 完成切换 ─────────────────────────────────────
+async function onToggle() {
+  if (!task.value) return;
+  await taskStore.toggleTask(task.value.id, !task.value.done);
 }
+
+// ─── 删除 ─────────────────────────────────────────
+async function confirmDelete() {
+  if (!task.value) return;
+  if (!confirm("确定要删除这个任务吗？")) return;
+  await taskStore.deleteTask(task.value.id);
+}
+
+// ─── 标题编辑：使用 textarea 自动撑高 ─────────────
+const titleEditing = ref(false);
+const titleInputRef = ref<HTMLTextAreaElement | null>(null);
+const titleHeight = ref(0);
+
+function startEditTitle() {
+  if (!task.value) return;
+  titleEditing.value = true;
+  // 下一帧聚焦并放到末尾
+  setTimeout(() => {
+    const el = titleInputRef.value;
+    if (el) {
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
+  }, 0);
+}
+
+function finishEditTitle() {
+  titleEditing.value = false;
+  saveTitle();
+}
+
+function onTitleKeydown(e: KeyboardEvent) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    finishEditTitle();
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    titleDraft.value = task.value?.title ?? "";
+    titleEditing.value = false;
+  }
+}
+
+watch(titleEditing, async (editing) => {
+  if (editing) {
+    await new Promise((r) => requestAnimationFrame(r));
+    if (titleInputRef.value) {
+      titleInputRef.value.style.height = "auto";
+      titleInputRef.value.style.height = titleInputRef.value.scrollHeight + "px";
+      titleHeight.value = titleInputRef.value.scrollHeight;
+    }
+  }
+});
+
+function autoResize(e: Event) {
+  const el = e.target as HTMLTextAreaElement;
+  el.style.height = "auto";
+  el.style.height = el.scrollHeight + "px";
+  titleHeight.value = el.scrollHeight;
+}
+
+// ─── 优先级下拉渲染（已用 <PriorityDot> 替代） ───────
+// PRIORITY_DOT_COLORS 由 PriorityDot 组件内部处理
 </script>
 
 <template>
-    <div
-      v-if="task"
-      class="detail-panel"
-      :style="{ width: (panelWidth ?? 360) + 'px' }"
-    >
+  <div
+    v-if="task"
+    class="detail-panel"
+    :style="{ width: (panelWidth ?? 360) + 'px' }"
+  >
     <!-- 拖拽手柄 -->
-    <div class="detail-panel__resizer" @mousedown="startResize"></div>
+    <div class="detail-panel__resizer" @mousedown="startResize" />
 
-    <!-- 顶栏 -->
-    <div class="detail-panel__header">
-      <!-- 面包屑：父任务链 -->
-      <div v-if="parentChain.length" class="detail-panel__breadcrumb">
+    <!-- 顶部 chips 行 -->
+    <div class="detail-panel__chips">
+      <div class="detail-panel__checkbox-wrap">
+        <TaskCheckbox
+          v-if="task"
+          :done="task.done"
+          @toggle="onToggle"
+          :size="20"
+        />
+      </div>
+
+      <a-divider direction="vertical" :margin="8" />
+
+      <!-- 日期 -->
+      <Popover v-model:visible="dateVisible" placement="bottom-left">
+        <template #trigger>
+          <PropertyChip
+            :active="!!(task.dueStartAt || task.dueEndAt)"
+            :style="dueInfo ? (dueInfo.overdue ? { color: 'var(--jt-error)' } : (dueInfo.isToday ? { color: 'var(--jt-primary)', fontWeight: '600' } : {})) : {}"
+            @click="dateVisible = !dateVisible"
+          >
+            <template #icon>
+              <icon-calendar :size="14" />
+            </template>
+            {{ dueLabel }}
+          </PropertyChip>
+        </template>
+        <DatePopover
+          :start-iso="task.dueStartAt"
+          :end-iso="task.dueEndAt"
+          @confirm="onDateConfirm"
+          @clear="onDateClear"
+        />
+      </Popover>
+
+      <!-- 提醒 -->
+      <Popover v-model:visible="reminderVisible" placement="bottom-left">
+        <template #trigger>
+          <PropertyChip :active="task.remindOffsetMinutes != null" @click="reminderVisible = !reminderVisible">
+            <template #icon>
+              <icon-notification :size="14" />
+            </template>
+            {{ remindLabel }}
+          </PropertyChip>
+        </template>
+        <ReminderPopover
+          :value="task.remindOffsetMinutes"
+          @confirm="onReminderConfirm"
+          @clear="onReminderClear"
+        />
+      </Popover>
+
+      <!-- 重复 -->
+      <Popover v-model:visible="recurrenceVisible" placement="bottom-left">
+        <template #trigger>
+          <PropertyChip :active="!!task.recurrenceFreq" @click="recurrenceVisible = !recurrenceVisible">
+            <template #icon>
+              <icon-refresh :size="14" />
+            </template>
+            {{ recurrenceLabel }}
+          </PropertyChip>
+        </template>
+        <RecurrencePopover
+          :freq="task.recurrenceFreq"
+          :interval="task.recurrenceInterval"
+          @confirm="onRecurrenceConfirm"
+        />
+      </Popover>
+
+      <!-- 优先级 -->
+      <Popover v-model:visible="priorityVisible" placement="bottom-left">
+        <template #trigger>
+          <PropertyChip
+            :active="task.priority > 0"
+            :style="task.priority > 0 ? { color: priorityColorValue } : {}"
+            @click="priorityVisible = !priorityVisible"
+          >
+            <template #icon>
+              <icon-fire :size="14" />
+            </template>
+            {{ priorityLabel }}
+          </PropertyChip>
+        </template>
+        <div class="detail-panel__popup">
+          <button
+            v-for="(label, p) in PRIORITY_LABELS"
+            :key="p"
+            type="button"
+            class="detail-panel__popup-item"
+            :class="{ 'detail-panel__popup-item--active': Number(p) === task.priority }"
+            @click="setPriority(Number(p) as Priority); priorityVisible = false"
+          >
+            <PriorityDot :priority="(Number(p) as Priority)" :size="10" />
+            <span>{{ label }}</span>
+          </button>
+        </div>
+      </Popover>
+
+      <!-- 标签 -->
+      <Popover v-model:visible="tagVisible" placement="bottom-left">
+        <template #trigger>
+          <PropertyChip :active="taskTags.length > 0" @click="tagVisible = !tagVisible">
+            <template #icon>
+              <icon-tag :size="14" />
+            </template>
+            {{ tagLabel }}
+          </PropertyChip>
+        </template>
+        <div class="detail-panel__popup detail-panel__popup--tag">
+          <button
+            v-for="opt in availableTagOptions"
+            :key="opt.id"
+            type="button"
+            class="detail-panel__popup-item"
+            @click="addExistingTag(opt.id); tagVisible = false"
+          >
+            <icon-tag :size="12" />
+            <span>{{ opt.name }}</span>
+          </button>
+          <a-input
+            placeholder="+ 新建标签"
+            size="mini"
+            allow-clear
+            style="margin-top: 4px"
+            @keydown.enter="(e: any) => { createNewTag(e.target.value); (e.target as HTMLInputElement).value = ''; tagVisible = false; }"
+          />
+        </div>
+      </Popover>
+
+      <span style="flex: 1" />
+
+      <!-- 更多菜单 -->
+      <a-button size="mini" type="text" @click="moreVisible = !moreVisible">
+        <icon-more :size="16" />
+      </a-button>
+    </div>
+
+    <!-- 标签 chip 列表（已关联的） -->
+    <div v-if="taskTags.length" class="detail-panel__tag-list">
+      <a-tag
+        v-for="tag in taskTags"
+        :key="tag.id"
+        size="small"
+        closable
+        @close="removeTaskTag(tag.id)"
+      >
+        {{ tag.name }}
+      </a-tag>
+    </div>
+
+    <!-- 面包屑（父任务链） -->
+    <div v-if="parentChain.length" class="detail-panel__breadcrumb">
+      <template v-for="(p, i) in parentChain" :key="p.id">
         <a-button
-          v-for="(parent, i) in parentChain"
-          :key="parent.id"
           type="text"
           size="mini"
-          class="detail-panel__breadcrumb-item"
-          @click="taskStore.selectTask(parent.id)"
+          @click="taskStore.selectTask(p.id)"
         >
-          <icon-left v-if="i === 0" :size="12" />
-          {{ parent.title }}
+          <icon-left v-if="i === parentChain.length - 1" :size="12" />
+          <span>{{ p.title }}</span>
         </a-button>
-      </div>
+        <span v-if="i < parentChain.length - 1" class="detail-panel__breadcrumb-sep">/</span>
+      </template>
     </div>
 
-    <div class="detail-panel__body">
-      <!-- 标题区 -->
-      <div class="detail-panel__title-row">
-        <TaskCheckbox
-          :done="task.done"
-          @toggle="taskStore.toggleTask(task.id, !task.done)"
-        />
-        <input
-          v-model="titleDraft"
-          class="detail-panel__title-input"
-          @blur="saveTitle"
-          @keydown.enter="($event.target as HTMLInputElement).blur()"
-        />
-      </div>
+    <!-- 主区：标题 + 描述 -->
+    <div class="detail-panel__main">
+      <!-- 大标题 -->
+      <textarea
+        v-if="titleEditing"
+        ref="titleInputRef"
+        v-model="titleDraft"
+        class="detail-panel__title-input"
+        :style="{ minHeight: '40px' }"
+        rows="1"
+        @blur="finishEditTitle"
+        @keydown="onTitleKeydown"
+        @input="autoResize"
+      />
+      <h1
+        v-else
+        class="detail-panel__title"
+        :class="{ 'detail-panel__title--done': task.done }"
+        @click="startEditTitle"
+      >
+        {{ task.title }}
+      </h1>
 
-      <a-divider class="my-2" />
+      <!-- 描述（无边框 Tiptap） -->
+      <RichTextEditor
+        :model-value="noteDraft"
+        borderless
+        hide-toolbar
+        placeholder="输入内容或使用 / 快速插入"
+        @update:model-value="(v) => { noteDraft = v; saveNote(v); }"
+      />
+    </div>
 
-      <!-- 属性区 -->
-      <div class="detail-panel__attrs">
-        <!-- 优先级 -->
-        <div class="detail-panel__attr">
-          <icon-fire :size="16" :style="{ color: priorityColorValue }" />
-          <span class="detail-panel__attr-label">优先级</span>
-          <a-select
-            :model-value="task.priority"
-            size="small"
-            style="width: 160px"
-            :format-label="formatPriorityLabel as any"
-            @change="(v: any) => setPriority(v as Priority)"
+    <!-- 底部 footer -->
+    <div class="detail-panel__footer">
+      <!-- 当前清单 -->
+      <Popover v-model:visible="listVisible" placement="bottom-left">
+        <template #trigger>
+          <PropertyChip compact :active="!!currentList" @click="listVisible = !listVisible">
+            <template #icon>
+              <icon-folder :size="12" />
+            </template>
+            {{ currentList?.name ?? "选择清单" }}
+          </PropertyChip>
+        </template>
+        <div class="detail-panel__popup detail-panel__popup--list">
+          <button
+            v-for="opt in listOptions"
+            :key="opt.id"
+            type="button"
+            class="detail-panel__popup-item"
+            :class="{ 'detail-panel__popup-item--active': opt.id === task.listId }"
+            @click="moveToList(opt.id); listVisible = false"
           >
-            <a-option
-              v-for="opt in priorityOptions"
-              :key="opt.value"
-              :value="opt.value"
-            >
-              <PriorityDot :priority="opt.value as Priority" :size="8" />
-              <span style="margin-left: 6px">{{ opt.label }}</span>
-            </a-option>
-          </a-select>
-        </div>
-
-        <!-- 清单 -->
-        <div class="detail-panel__attr">
-          <icon-folder :size="16" />
-          <span class="detail-panel__attr-label">清单</span>
-          <a-select
-            :model-value="task.listId"
-            size="small"
-            style="width: 160px"
-            @change="(v: any) => moveToList(v)"
-          >
-            <a-option
-              v-for="opt in listOptions"
-              :key="opt.value"
-              :value="opt.value"
-            >
-              <span
-                class="detail-panel__list-dot"
-                :style="{ backgroundColor: opt.color }"
-              />
-              <span style="margin-left: 6px">{{ opt.label }}</span>
-            </a-option>
-          </a-select>
-        </div>
-
-        <!-- 开始日期 -->
-        <div class="detail-panel__attr">
-          <icon-calendar :size="16" />
-          <span class="detail-panel__attr-label">开始日期</span>
-          <a-date-picker
-            v-model="dueStartModel"
-            size="small"
-            style="width: 160px"
-            :allow-clear="true"
-            show-time
-            format="YYYY-MM-DD HH:mm"
-          />
-        </div>
-
-        <!-- 结束日期 -->
-        <div class="detail-panel__attr">
-          <icon-clock-circle :size="16" />
-          <span class="detail-panel__attr-label">结束日期</span>
-          <a-date-picker
-            v-model="dueEndModel"
-            size="small"
-            style="width: 160px"
-            :allow-clear="true"
-            show-time
-            format="YYYY-MM-DD HH:mm"
-          />
-        </div>
-
-        <!-- 提醒 -->
-        <div class="detail-panel__attr">
-          <icon-notification :size="16" />
-          <span class="detail-panel__attr-label">提醒</span>
-          <a-select
-            :model-value="remindPresetIndex"
-            size="small"
-            style="width: 160px"
-            @change="(v: any) => onRemindPresetChange(Number(v))"
-          >
-            <a-option
-              v-for="(opt, i) in REMIND_PRESETS"
-              :key="i"
-              :value="i"
-            >
-              {{ opt.label }}
-            </a-option>
-          </a-select>
-        </div>
-        <div v-if="showCustomRemindInput" class="detail-panel__attr detail-panel__attr--sub">
-          <a-input-number
-            v-model="customRemindMinutes"
-            size="small"
-            :min="0"
-            :max="10080"
-            :step="5"
-            style="width: 160px"
-            placeholder="提前分钟数"
-          />
-        </div>
-
-        <!-- 重复规则 -->
-        <div class="detail-panel__attr">
-          <icon-refresh :size="16" />
-          <span class="detail-panel__attr-label">重复</span>
-          <a-select
-            :model-value="task.recurrenceFreq ?? ''"
-            size="small"
-            style="width: 160px"
-            allow-clear
-            placeholder="不重复"
-            @change="(v: any) => setRecurrence(v || null, task?.recurrenceInterval || 1)"
-          >
-            <a-option value="">不重复</a-option>
-            <a-option
-              v-for="f in RECURRENCE_FREQS"
-              :key="f.value"
-              :value="f.value"
-            >
-              {{ f.label }}
-            </a-option>
-          </a-select>
-        </div>
-
-        <!-- 间隔（仅当设置了频率时显示） -->
-        <div v-if="task.recurrenceFreq" class="detail-panel__attr">
-          <icon-schedule :size="16" />
-          <span class="detail-panel__attr-label">间隔</span>
-          <a-input-number
-            :model-value="task.recurrenceInterval || 1"
-            size="small"
-            :min="1"
-            :max="365"
-            style="width: 160px"
-            @change="(v: number | undefined) => setRecurrence(task?.recurrenceFreq ?? null, v ?? 1)"
-          />
-        </div>
-      </div>
-
-      <a-divider class="my-2" />
-
-      <!-- 备注区（富文本） -->
-      <div class="detail-panel__section">
-        <span class="detail-panel__section-title">备注</span>
-        <RichTextEditor
-          :model-value="noteDraft"
-          @update:model-value="(v) => { noteDraft = v; saveNote(); }"
-        />
-      </div>
-
-      <a-divider class="my-2" />
-
-      <!-- 子任务区 -->
-      <div class="detail-panel__section">
-        <span class="detail-panel__section-title">
-          子任务 ({{ subtasks.filter((t: Task) => t.done).length }}/{{ subtasks.length }})
-        </span>
-        <div class="detail-panel__subtasks">
-          <div
-            v-for="sub in subtasks"
-            :key="sub.id"
-            class="detail-panel__subtask"
-            @click="onSubtaskClick(sub)"
-          >
-            <TaskCheckbox
-              :done="sub.done"
-              @toggle="onSubtaskToggle(sub)"
-            />
             <span
-              class="detail-panel__subtask-title"
-              :class="{ 'detail-panel__subtask-title--done': sub.done }"
-            >
-              {{ sub.title }}
-            </span>
-          </div>
-          <div class="detail-panel__add-subtask">
-            <icon-plus :size="16" />
-            <input
-              v-model="newSubtaskName"
-              @keydown.enter="createSubtask"
-              class="detail-panel__subtask-input"
-              placeholder="添加子任务..."
+              class="detail-panel__list-dot"
+              :style="{ backgroundColor: opt.color }"
             />
-          </div>
+            <span>{{ opt.name }}</span>
+          </button>
         </div>
-      </div>
+      </Popover>
 
-      <a-divider class="my-2" />
+      <span style="flex: 1" />
 
-      <!-- 标签区 -->
-      <div class="detail-panel__section">
-        <span class="detail-panel__section-title">标签</span>
-        <div class="detail-panel__tags">
-          <a-tag
-            v-for="tag in taskTags"
-            :key="tag.id"
-            size="small"
-            closable
-            @close="removeTaskTag(tag.id)"
-          >
-            {{ tag.name }}
-          </a-tag>
-          <a-select
-            :model-value="[]"
-            size="mini"
-            allow-create
-            allow-search
-            :style="{ minWidth: '100px', flex: 1 }"
-            placeholder="选择或创建标签..."
-            :bordered="false"
-            :options="availableTagOptions"
-            :field-names="{ value: 'id', label: 'name' }"
-            @create="createNewTag"
-            @change="(v: any) => addExistingTag(v)"
-          />
-        </div>
-      </div>
+      <span class="detail-panel__meta">
+        {{ formatMeta(task.createdAt) }}
+      </span>
 
-      <a-divider class="my-2" />
-
-      <!-- 元信息 -->
-      <div class="detail-panel__meta">
-        创建于 {{ (parseLocalIso(task.createdAt) ?? new Date(task.createdAt)).toLocaleString("zh-CN", { hour12: false }) }}
-        · 更新于 {{ (parseLocalIso(task.updatedAt) ?? new Date(task.updatedAt)).toLocaleString("zh-CN", { hour12: false }) }}
-      </div>
+      <a-button
+        size="mini"
+        type="text"
+        status="danger"
+        @click="confirmDelete"
+      >
+        <icon-delete :size="14" />
+      </a-button>
     </div>
-    </div>
+  </div>
 </template>
+
+<script lang="ts">
+// 辅助函数：格式化元信息日期
+function formatMeta(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return `${d.getMonth() + 1}月${d.getDate()}日`;
+  } catch {
+    return "";
+  }
+}
+</script>
 
 <style scoped>
 .detail-panel {
@@ -615,11 +625,13 @@ function formatPriorityLabel(data: any) {
   top: 0;
   right: 0;
   bottom: 0;
-  background-color: var(--jt-surface);
-  border-left: 1px solid var(--jt-border);
   z-index: 1000;
-  overflow-y: auto;
-  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.06);
+  background: var(--jt-surface);
+  border-left: 1px solid var(--jt-border);
+  box-shadow: -2px 0 12px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .detail-panel__resizer {
@@ -629,89 +641,158 @@ function formatPriorityLabel(data: any) {
   bottom: 0;
   width: 6px;
   cursor: col-resize;
-  z-index: 10;
-  transition: background-color 0.15s;
+  z-index: 1;
+  transition: background-color 0.15s ease;
 }
 
 .detail-panel__resizer:hover {
   background-color: color-mix(in srgb, var(--jt-primary) 30%, transparent);
 }
 
-.detail-panel__header {
-  display: flex;
-  align-items: center;
-  padding: 6px 8px 0;
-  gap: 4px;
-  min-height: 32px;
-}
-
-.detail-panel__breadcrumb {
+/* ─── 顶部 chips ───────────────────────────────── */
+.detail-panel__chips {
   display: flex;
   align-items: center;
   gap: 2px;
+  padding: 12px 16px 8px;
   flex-wrap: wrap;
-  overflow: hidden;
 }
 
-.detail-panel__breadcrumb-item {
-  font-size: 12px !important;
-  color: var(--jt-text-tertiary);
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.detail-panel__breadcrumb-item:hover {
-  color: var(--jt-primary);
-}
-
-.detail-panel__body {
-  padding: 0 16px 16px;
-}
-
-.detail-panel__title-row {
+.detail-panel__checkbox-wrap {
+  padding-right: 4px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 4px;
+}
+
+/* ─── 标签列表（已关联） ────────────────────────── */
+.detail-panel__tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 16px 4px;
+}
+
+/* ─── 面包屑 ───────────────────────────────────── */
+.detail-panel__breadcrumb {
+  padding: 0 16px 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.detail-panel__breadcrumb-sep {
+  color: var(--jt-text-tertiary);
+  font-size: 11px;
+  margin: 0 2px;
+}
+
+/* ─── 主区 ─────────────────────────────────────── */
+.detail-panel__main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 20px 20px;
+}
+
+.detail-panel__title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--jt-text-primary);
+  margin: 0 0 16px;
+  cursor: text;
+  padding: 4px 0;
+  border-radius: 4px;
+  transition: background-color 0.12s;
+  word-break: break-word;
+}
+
+.detail-panel__title:hover {
+  background-color: var(--jt-surface-hover);
+}
+
+.detail-panel__title--done {
+  text-decoration: line-through;
+  color: var(--jt-text-tertiary);
 }
 
 .detail-panel__title-input {
-  flex: 1;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--jt-text-primary);
+  width: 100%;
   border: none;
   outline: none;
+  resize: none;
+  padding: 4px 0;
+  margin: 0 0 16px;
   background: transparent;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--jt-text-primary);
-  font-family: var(--font-body);
-  padding: 2px 0;
+  font-family: var(--font-display), Georgia, serif;
+  overflow: hidden;
 }
 
-.detail-panel__attrs {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.detail-panel__attr {
+/* ─── 底部 footer ──────────────────────────────── */
+.detail-panel__footer {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 2px 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--jt-border);
+  background: var(--jt-surface);
 }
 
-.detail-panel__attr-label {
+.detail-panel__meta {
+  font-size: 11px;
+  color: var(--jt-text-tertiary);
+  font-family: var(--font-mono);
+  margin-right: 4px;
+}
+
+/* ─── 弹层（共享） ────────────────────────────── */
+.detail-panel__popup {
+  background: var(--jt-surface);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+  padding: 6px;
+  min-width: 180px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.detail-panel__popup--list {
+  min-width: 200px;
+}
+
+.detail-panel__popup--tag {
+  min-width: 200px;
+}
+
+.detail-panel__popup-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 8px 12px;
+  border-radius: 8px;
   font-size: 13px;
-  color: var(--jt-text-secondary);
-  min-width: 72px;
+  color: var(--jt-text-primary);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
 }
 
-/* 子行无图标无 label，输入框左边对齐上方"提醒"控件起点
-   = 16 (icon) + 8 (gap) + 72 (label min-width) + 8 (gap) = 104 */
-.detail-panel__attr--sub {
-  padding-left: 104px;
+.detail-panel__popup-item:hover {
+  background: var(--jt-surface-sunken);
+}
+
+.detail-panel__popup-item--active {
+  background: var(--jt-accent-soft);
+  color: var(--jt-primary);
 }
 
 .detail-panel__list-dot {
@@ -719,97 +800,5 @@ function formatPriorityLabel(data: any) {
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-  display: inline-block;
-}
-
-.detail-panel__section {
-  margin-bottom: 2px;
-}
-
-.detail-panel__section-title {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--jt-text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 6px;
-}
-
-.detail-panel__subtasks {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.detail-panel__subtask {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.detail-panel__subtask:hover {
-  background-color: var(--jt-surface-hover);
-}
-
-.detail-panel__subtask-title {
-  font-size: 12px;
-}
-
-.detail-panel__subtask-title--done {
-  text-decoration: line-through;
-  color: var(--jt-text-tertiary);
-}
-
-.detail-panel__add-subtask {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  color: var(--jt-text-tertiary);
-}
-
-.detail-panel__subtask-input {
-  flex: 1;
-  border: none;
-  outline: none;
-  background: transparent;
-  font-size: 13px;
-  color: inherit;
-  font-family: var(--font-body);
-}
-
-.detail-panel__tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
-}
-
-.detail-panel__tags :deep(.arco-tag) {
-  font-size: 11px;
-  padding: 0 6px;
-  height: 20px;
-  line-height: 18px;
-}
-
-.detail-panel__tags :deep(.arco-tag .arco-icon) {
-  font-size: 10px;
-}
-
-.detail-panel__tags :deep(.arco-select-view) {
-  background: transparent;
-}
-
-.detail-panel__tags :deep(.arco-select-view-input) {
-  font-size: 13px;
-}
-
-.detail-panel__meta {
-  font-size: 11px;
-  color: var(--jt-text-tertiary);
 }
 </style>
