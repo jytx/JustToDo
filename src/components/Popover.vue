@@ -29,32 +29,56 @@ const popupStyle = ref<Record<string, string>>({});
 function updatePosition() {
   if (!triggerRef.value || !popupRef.value) return;
   const tr = triggerRef.value.getBoundingClientRect();
-  const pu = popupRef.value.getBoundingClientRect();
+  // 用 popup 自身尺寸（包括 padding/border）
+  let pu = popupRef.value.getBoundingClientRect();
+  // 如果 popup 宽度被 absolute 拉伸成视口宽（>600px 视为异常），改读内容元素宽度
+  if (pu.width > 600 && popupRef.value.firstElementChild) {
+    pu = popupRef.value.firstElementChild.getBoundingClientRect();
+  }
   const scrollY = window.scrollY;
   const scrollX = window.scrollX;
-  const top = tr.bottom + scrollY + props.offset;
-  let left = tr.left + scrollX;
-  if (props.placement === "bottom-right") {
-    left = tr.right + scrollX - pu.width;
-  } else if (props.placement === "bottom-center") {
-    left = tr.left + scrollX + tr.width / 2 - pu.width / 2;
-  }
-  // 边界检查：避免超出视口
   const viewportW = document.documentElement.clientWidth;
   const viewportH = document.documentElement.clientHeight;
-  if (left < 4) left = 4;
-  if (left + pu.width > viewportW - 4) left = viewportW - pu.width - 4;
-  if (top + pu.height > scrollY + viewportH - 4) {
-    // 翻转到 trigger 上方
-    const topAbove = tr.top + scrollY - pu.height - props.offset;
-    popupStyle.value = {
-      position: "absolute",
-      top: topAbove + "px",
-      left: left + "px",
-      zIndex: "9999",
-    };
-    return;
+  const margin = 4;
+
+  // 先按指定 placement 计算 left
+  let placement = props.placement;
+  let top = tr.bottom + scrollY + props.offset;
+  let left = tr.left + scrollX;
+  if (placement === "bottom-right") {
+    left = tr.right + scrollX - pu.width;
+  } else if (placement === "bottom-center") {
+    left = tr.left + scrollX + tr.width / 2 - pu.width / 2;
   }
+
+  // 智能翻转：超出右边界 → 改成 bottom-right 或居中
+  if (left + pu.width > viewportW - margin) {
+    // 试 bottom-right
+    const newLeft = tr.right + scrollX - pu.width;
+    if (newLeft >= margin) {
+      placement = "bottom-right";
+      left = newLeft;
+    } else {
+      // 都装不下，强制居中并夹在视口内
+      placement = "bottom-center";
+      left = tr.left + scrollX + tr.width / 2 - pu.width / 2;
+    }
+  }
+  // 超出左边界 → 改成 bottom-left
+  if (left < margin) {
+    placement = "bottom-left";
+    left = tr.left + scrollX;
+    if (left + pu.width > viewportW - margin) {
+      // 还是超出，夹在视口内
+      left = Math.max(margin, viewportW - pu.width - margin);
+    }
+  }
+
+  // 底部翻转到 trigger 上方
+  if (top + pu.height > scrollY + viewportH - margin) {
+    top = tr.top + scrollY - pu.height - props.offset;
+  }
+
   popupStyle.value = {
     position: "absolute",
     top: top + "px",
@@ -126,6 +150,8 @@ watch(
 }
 
 .popover-content {
-  /* 内容由调用方控制样式 */
+  /* 由内容驱动宽度，避免 position:absolute 被父级（body）撑成视口宽 */
+  width: max-content;
+  max-width: calc(100vw - 8px);
 }
 </style>
