@@ -204,20 +204,48 @@ const remindPresetIndex = computed(() =>
   matchRemindPreset(task.value?.remindOffsetMinutes),
 );
 
-/** 选"自定义"时输入框显示的分钟数（仅在自定义选中时使用） */
-const customRemindMinutes = ref<number>(0);
+/** 自定义分钟数（与 input-number 双向绑定，watch 后写入 DB） */
+const customRemindMinutes = ref<number>(
+  task.value?.remindOffsetMinutes ?? 120,
+);
 const showCustomRemindInput = computed(
   () => REMIND_PRESETS[remindPresetIndex.value]?.preset === false,
 );
+
+// 任务切换时同步自定义值
+watch(
+  () => task.value?.id,
+  () => {
+    const v = task.value?.remindOffsetMinutes;
+    customRemindMinutes.value = v ?? 120;
+  },
+);
+// 切到自定义（或当前就是自定义）时，把 customRemindMinutes 与当前偏移对齐
+watch(remindPresetIndex, (idx) => {
+  if (REMIND_PRESETS[idx]?.preset === false) {
+    const v = task.value?.remindOffsetMinutes;
+    if (typeof v === "number" && v !== customRemindMinutes.value) {
+      customRemindMinutes.value = v;
+    }
+  }
+});
+
+// input-number 任意变化都立即写入 DB
+watch(customRemindMinutes, async (v) => {
+  if (!task.value) return;
+  if (showCustomRemindInput.value && typeof v === "number" && v >= 0) {
+    await setRemindOffset(v);
+  }
+});
 
 async function onRemindPresetChange(idx: number) {
   const preset = REMIND_PRESETS[idx];
   if (!preset) return;
   if (preset.preset) {
     if (preset.value === -1) {
-      // 自定义 → 默认 120 分钟（2 小时）
-      customRemindMinutes.value = task.value?.remindOffsetMinutes ?? 120;
-      await setRemindOffset(customRemindMinutes.value);
+      // 自定义 → 把 input-number 同步到当前值或 120
+      const v = task.value?.remindOffsetMinutes;
+      customRemindMinutes.value = typeof v === "number" ? v : 120;
     } else {
       await setRemindOffset(preset.value);
     }
@@ -446,13 +474,12 @@ function formatPriorityLabel(data: any) {
           </a-select>
           <a-input-number
             v-if="showCustomRemindInput"
-            :model-value="customRemindMinutes"
+            v-model="customRemindMinutes"
             size="small"
             :min="0"
             :max="10080"
             :step="5"
             style="width: 100px"
-            @change="(v: number | undefined) => setRemindOffset(v ?? null)"
           >
             <template #append>分</template>
           </a-input-number>
