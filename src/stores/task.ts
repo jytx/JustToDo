@@ -410,7 +410,7 @@ export const useTaskStore = defineStore("task", () => {
     const maxOrder = task.checklist.reduce((m, it) => Math.max(m, it.order), -1);
     const newItem = {
       id: crypto.randomUUID(),
-      title: title.trim() || "新检查项",
+      title: title.trim(),
       done: false,
       order: maxOrder + 1,
     };

@@ -7,7 +7,6 @@
 //   - 链接：插入 / 编辑（弹窗输入 URL）
 //   - 代码块：多语言高亮
 //   - 图片：粘贴 / 拖拽 / 缩放 / 预览
-//   - 气泡菜单：选中文本时浮出快捷工具栏
 import { useEditor, EditorContent } from "@tiptap/vue-3";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
@@ -15,9 +14,10 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
 import HardBreak from "@tiptap/extension-hard-break";
-import { BubbleMenuPlugin } from "@tiptap/extension-bubble-menu";
+import TaskList from "@tiptap/extension-task-list";
+import TaskItem from "@tiptap/extension-task-item";
 import { Extension } from "@tiptap/core";
-import { PluginKey, TextSelection } from "@tiptap/pm/state";
+import { TextSelection } from "@tiptap/pm/state";
 import { common, createLowlight } from "lowlight";
 import { watch, onBeforeUnmount, onMounted, ref, nextTick, computed } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
@@ -51,8 +51,6 @@ const props = defineProps<{
   placeholder?: string;
   /** 无边框模式（融入父容器，详情面板主区用） */
   borderless?: boolean;
-  /** 隐藏顶部常驻工具条（仅保留选中文字的浮气泡） */
-  hideToolbar?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -88,6 +86,8 @@ const editor = useEditor({
     }),
     HardBreak,
     CodeBlockLowlight.configure({ lowlight }),
+    TaskList,
+    TaskItem.configure({ nested: true }),
     SelectAllFix,
     Image.configure({
       inline: false,
@@ -150,67 +150,7 @@ const editor = useEditor({
   },
 });
 
-// ─── 气泡菜单（bubble menu）── 选中文本时浮出 ───────────
-const bubbleMenuRef = ref<HTMLElement | null>(null);
-
-// ─── 链接弹窗状态 ───────────────────────────────────
-const linkDialogVisible = ref(false);
-const linkInputValue = ref("");
-/** 记录弹窗打开时光标是否在已有链接上（用于切换为"编辑"模式） */
-const linkIsEditing = ref(false);
-
-function openLinkDialog() {
-  if (!editor.value) return;
-  // 优先取选中文本所在链接的 href（编辑模式）
-  const existing = editor.value.getAttributes("link").href as string | undefined;
-  linkIsEditing.value = !!existing;
-  linkInputValue.value = existing ?? "";
-  linkDialogVisible.value = true;
-}
-
-function closeLinkDialog() {
-  linkDialogVisible.value = false;
-  linkInputValue.value = "";
-  linkIsEditing.value = false;
-}
-
-function applyLink() {
-  if (!editor.value) return;
-  const url = linkInputValue.value.trim();
-  if (!url) {
-    // 清空链接
-    editor.value.chain().focus().extendMarkRange("link").unsetLink().run();
-  } else {
-    // 自动补 https://
-    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-    editor.value
-      .chain()
-      .focus()
-      .extendMarkRange("link")
-      .setLink({ href: normalized })
-      .run();
-  }
-  closeLinkDialog();
-}
-
-function removeLink() {
-  if (!editor.value) return;
-  editor.value.chain().focus().extendMarkRange("link").unsetLink().run();
-  closeLinkDialog();
-}
-
-/** 标题下拉选择 */
-function onHeadingSelect(key: string) {
-  if (!editor.value) return;
-  const chain = editor.value.chain().focus();
-  if (key === "h1") chain.toggleHeading({ level: 1 }).run();
-  else if (key === "h2") chain.toggleHeading({ level: 2 }).run();
-  else if (key === "h3") chain.toggleHeading({ level: 3 }).run();
-  else {
-    // "p"：清掉所有 heading 级别，回到普通段落
-    chain.setParagraph().run();
-  }
-}
+// ─── 工具条相关状态已抽离到 RichTextToolbar 组件 ───
 
 watch(
   () => props.modelValue,
@@ -220,6 +160,16 @@ watch(
     }
   },
 );
+
+// 暴露给父级：让外部工具条能拿到 editor 实例并调用命令
+defineExpose({
+  /** Tiptap editor 实例（首次挂载前为 null） */
+  get editor() {
+    return editor.value;
+  },
+  /** 聚焦编辑器（点击工具条按钮前自动调用，确保命令作用于当前内容） */
+  focus: () => editor.value?.commands.focus(),
+});
 
 onMounted(() => {
   // 监听编辑器内图片点击 → 预览
@@ -237,17 +187,6 @@ onMounted(() => {
   };
   nextTick(() => {
     editorContainerRef.value?.addEventListener("click", handler);
-
-    // 挂载气泡菜单插件（选中文本时浮出快捷工具栏）
-    if (editor.value && bubbleMenuRef.value) {
-      const plugin = BubbleMenuPlugin({
-        pluginKey: new PluginKey("richTextBubbleMenu"),
-        editor: editor.value,
-        element: bubbleMenuRef.value,
-        options: { placement: "top" },
-      });
-      editor.value.registerPlugin(plugin);
-    }
   });
   (window as any).__richTextClickHandler = handler;
 
@@ -350,17 +289,6 @@ function fileToBase64(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
-
-async function insertImageFromFile() {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = "image/*";
-  input.onchange = () => {
-    const file = input.files?.[0];
-    if (file) uploadImage(file);
-  };
-  input.click();
-}
 </script>
 
 <template>
@@ -369,358 +297,10 @@ async function insertImageFromFile() {
     :class="{ 'rich-text--borderless': borderless }"
     v-if="editor"
   >
-    <!-- 工具栏（可隐藏） -->
-    <div v-if="!hideToolbar" class="rich-text__toolbar">
-      <!-- 文本格式组 -->
-      <a-button
-        size="mini"
-        shape="circle"
-        :type="editor.isActive('bold') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleBold().run()"
-        title="加粗 (Cmd+B)"
-      >
-        <icon-bold :size="16" />
-      </a-button>
-      <a-button
-        size="mini"
-        shape="circle"
-        :type="editor.isActive('italic') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleItalic().run()"
-        title="斜体 (Cmd+I)"
-      >
-        <icon-italic :size="16" />
-      </a-button>
-      <a-button
-        size="mini"
-        shape="circle"
-        :type="editor.isActive('underline') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleUnderline().run()"
-        title="下划线 (Cmd+U)"
-      >
-        <icon-underline :size="16" />
-      </a-button>
-      <a-button
-        size="mini"
-        shape="circle"
-        :type="editor.isActive('strike') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleStrike().run()"
-        title="删除线"
-      >
-        <icon-strikethrough :size="16" />
-      </a-button>
-      <a-button
-        size="mini"
-        shape="circle"
-        :type="editor.isActive('code') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleCode().run()"
-        title="行内代码"
-      >
-        <icon-code :size="14" />
-      </a-button>
-      <a-button
-        size="mini"
-        shape="circle"
-        type="text"
-        @click="editor.chain().focus().clearNodes().unsetAllMarks().run()"
-        title="清除格式"
-      >
-        <icon-eraser :size="16" />
-      </a-button>
-      <span class="rich-text__divider" />
-
-      <!-- 段落块组 -->
-      <!-- 标题下拉（H1/H2/H3 + 段落） -->
-      <a-dropdown trigger="click" position="bl" :popup-offset="4">
-        <a-button
-          size="mini"
-          shape="circle"
-          :type="editor.isActive('heading') ? 'primary' : 'text'"
-          title="标题级别"
-        >
-          <span class="rich-text__heading-label">
-            <template v-if="editor.isActive('heading', { level: 1 })">H1</template>
-            <template v-else-if="editor.isActive('heading', { level: 2 })">H2</template>
-            <template v-else-if="editor.isActive('heading', { level: 3 })">H3</template>
-            <template v-else>¶</template>
-          </span>
-        </a-button>
-        <template #content>
-          <a-menu class="rich-text__heading-menu" @menu-item-click="onHeadingSelect">
-            <a-menu-item key="p">
-              <span class="rich-text__heading-menu-text">¶ 正文</span>
-            </a-menu-item>
-            <a-menu-item key="h1">
-              <span class="rich-text__heading-menu-text">H1 标题</span>
-            </a-menu-item>
-            <a-menu-item key="h2">
-              <span class="rich-text__heading-menu-text">H2 标题</span>
-            </a-menu-item>
-            <a-menu-item key="h3">
-              <span class="rich-text__heading-menu-text">H3 标题</span>
-            </a-menu-item>
-          </a-menu>
-        </template>
-      </a-dropdown>
-      <a-button
-        size="mini"
-        shape="circle"
-        :type="editor.isActive('blockquote') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleBlockquote().run()"
-        title="引用"
-      >
-        <icon-quote :size="16" />
-      </a-button>
-      <a-button
-        size="mini"
-        shape="circle"
-        type="text"
-        @click="editor.chain().focus().setHorizontalRule().run()"
-        title="分隔线"
-      >
-        <icon-minus :size="16" />
-      </a-button>
-      <a-button
-        size="mini"
-        shape="circle"
-        type="text"
-        @click="editor.chain().focus().setHardBreak().run()"
-        title="硬换行 (Shift+Enter)"
-      >
-        <icon-refresh :size="14" />
-      </a-button>
-      <span class="rich-text__divider" />
-
-      <!-- 列表组 -->
-      <a-button
-        size="mini"
-        shape="circle"
-        :type="editor.isActive('bulletList') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleBulletList().run()"
-        title="无序列表"
-      >
-        <icon-list :size="16" />
-      </a-button>
-      <a-button
-        size="mini"
-        shape="circle"
-        :type="editor.isActive('orderedList') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleOrderedList().run()"
-        title="有序列表"
-      >
-        <icon-ordered-list :size="16" />
-      </a-button>
-      <span class="rich-text__divider" />
-
-      <!-- 代码块 + 链接 + 图片 -->
-      <a-button
-        size="mini"
-        shape="circle"
-        :type="editor.isActive('codeBlock') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleCodeBlock().run()"
-        title="代码块"
-      >
-        <icon-code-square :size="16" />
-      </a-button>
-      <a-button
-        size="mini"
-        shape="circle"
-        :type="editor.isActive('link') ? 'primary' : 'text'"
-        @click="openLinkDialog"
-        title="插入 / 编辑链接"
-      >
-        <icon-link :size="16" />
-      </a-button>
-      <a-button
-        type="text"
-        size="mini"
-        shape="circle"
-        :loading="uploading"
-        @click="insertImageFromFile"
-        title="插入图片"
-      >
-        <icon-image :size="16" />
-      </a-button>
-    </div>
-
-    <!-- 底部紧凑工具条（hideToolbar 模式下显示，滴答清单风格） -->
-    <div v-if="hideToolbar" class="rich-text__bottom-bar">
-      <a-button
-                size="mini"
-        shape="circle"
-        :type="editor.isActive('bold') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleBold().run()"
-        title="加粗"
-      >
-        <icon-bold :size="14" />
-      </a-button>
-      <a-button
-                size="mini"
-        shape="circle"
-        :type="editor.isActive('italic') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleItalic().run()"
-        title="斜体"
-      >
-        <icon-italic :size="14" />
-      </a-button>
-      <a-button
-                size="mini"
-        shape="circle"
-        :type="editor.isActive('underline') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleUnderline().run()"
-        title="下划线"
-      >
-        <icon-underline :size="14" />
-      </a-button>
-      <a-button
-                size="mini"
-        shape="circle"
-        :type="editor.isActive('strike') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleStrike().run()"
-        title="删除线"
-      >
-        <icon-strikethrough :size="14" />
-      </a-button>
-      <a-divider direction="vertical" :margin="2" />
-      <a-button
-                size="mini"
-        shape="circle"
-        :type="editor.isActive('heading', { level: 1 }) ? 'primary' : 'text'"
-        @click="onHeadingSelect('h1')"
-        title="H1 标题"
-      >
-        <span class="rich-text__heading-label">H1</span>
-      </a-button>
-      <a-button
-                size="mini"
-        shape="circle"
-        :type="editor.isActive('heading', { level: 2 }) ? 'primary' : 'text'"
-        @click="onHeadingSelect('h2')"
-        title="H2 标题"
-      >
-        <span class="rich-text__heading-label">H2</span>
-      </a-button>
-      <a-button
-                size="mini"
-        shape="circle"
-        :type="editor.isActive('bulletList') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleBulletList().run()"
-        title="无序列表"
-      >
-        <icon-list :size="14" />
-      </a-button>
-      <a-button
-                size="mini"
-        shape="circle"
-        :type="editor.isActive('orderedList') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleOrderedList().run()"
-        title="有序列表"
-      >
-        <icon-ordered-list :size="14" />
-      </a-button>
-      <a-divider direction="vertical" :margin="2" />
-      <a-button
-                size="mini"
-        shape="circle"
-        :type="editor.isActive('blockquote') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleBlockquote().run()"
-        title="引用"
-      >
-        <icon-quote :size="14" />
-      </a-button>
-      <a-button
-                size="mini"
-        shape="circle"
-        :type="editor.isActive('codeBlock') ? 'primary' : 'text'"
-        @click="editor.chain().focus().toggleCodeBlock().run()"
-        title="代码块"
-      >
-        <icon-code-square :size="14" />
-      </a-button>
-      <a-button
-                size="mini"
-        shape="circle"
-        :type="editor.isActive('link') ? 'primary' : 'text'"
-        @click="openLinkDialog"
-        title="链接"
-      >
-        <icon-link :size="14" />
-      </a-button>
-      <a-button
-                size="mini"
-        shape="circle"
-        :loading="uploading"
-        @click="insertImageFromFile"
-        title="插入图片"
-      >
-        <icon-image :size="14" />
-      </a-button>
-    </div>
-
     <!-- 编辑区 -->
     <div ref="editorContainerRef" class="rich-text__editor-wrapper">
       <EditorContent :editor="editor" class="rich-text__editor" />
     </div>
-
-    <!-- 气泡菜单：选中文本时由 BubbleMenuPlugin 浮出（脱离文档流，用 teleport 到 body 防止被遮） -->
-    <teleport to="body">
-      <div ref="bubbleMenuRef" class="rich-text__bubble-menu">
-        <a-button
-          size="mini"
-          shape="circle"
-          :type="editor.isActive('bold') ? 'primary' : 'text'"
-          @click="editor.chain().focus().toggleBold().run()"
-          title="加粗"
-        >
-          <icon-bold :size="14" />
-        </a-button>
-        <a-button
-          size="mini"
-          shape="circle"
-          :type="editor.isActive('italic') ? 'primary' : 'text'"
-          @click="editor.chain().focus().toggleItalic().run()"
-          title="斜体"
-        >
-          <icon-italic :size="14" />
-        </a-button>
-        <a-button
-          size="mini"
-          shape="circle"
-          :type="editor.isActive('underline') ? 'primary' : 'text'"
-          @click="editor.chain().focus().toggleUnderline().run()"
-          title="下划线"
-        >
-          <icon-underline :size="14" />
-        </a-button>
-        <a-button
-          size="mini"
-          shape="circle"
-          :type="editor.isActive('strike') ? 'primary' : 'text'"
-          @click="editor.chain().focus().toggleStrike().run()"
-          title="删除线"
-        >
-          <icon-strikethrough :size="14" />
-        </a-button>
-        <a-button
-          size="mini"
-          shape="circle"
-          :type="editor.isActive('code') ? 'primary' : 'text'"
-          @click="editor.chain().focus().toggleCode().run()"
-          title="行内代码"
-        >
-          <icon-code :size="12" />
-        </a-button>
-        <span class="rich-text__bubble-divider" />
-        <a-button
-          size="mini"
-          shape="circle"
-          :type="editor.isActive('link') ? 'primary' : 'text'"
-          @click="openLinkDialog"
-          title="链接"
-        >
-          <icon-link :size="14" />
-        </a-button>
-      </div>
-    </teleport>
 
     <!-- 图片预览 lightbox -->
     <teleport to="body">
@@ -770,42 +350,6 @@ async function insertImageFromFile() {
         </div>
       </div>
     </teleport>
-
-    <!-- 链接弹窗 -->
-    <a-modal
-      :visible="linkDialogVisible"
-      :width="440"
-      :footer="false"
-      :mask-closable="false"
-      :title="linkIsEditing ? '编辑链接' : '插入链接'"
-      @cancel="closeLinkDialog"
-      @ok="applyLink"
-    >
-      <div class="rich-text__link-field">
-        <label class="rich-text__link-label">链接地址</label>
-        <a-input
-          v-model="linkInputValue"
-          placeholder="https://example.com"
-          allow-clear
-          autofocus
-          @keydown.enter.prevent="applyLink"
-          @keydown.esc="closeLinkDialog"
-        />
-        <p class="rich-text__link-hint">
-          支持 http / https 协议；留空可清除链接；输入 example.com 自动补 https://
-        </p>
-      </div>
-      <div class="rich-text__link-actions">
-        <a-button v-if="linkIsEditing" status="danger" type="outline" size="small" @click="removeLink">
-          移除链接
-        </a-button>
-        <span style="flex: 1" />
-        <a-button size="small" @click="closeLinkDialog">取消</a-button>
-        <a-button type="primary" size="small" @click="applyLink">
-          {{ linkIsEditing ? "更新" : "插入" }}
-        </a-button>
-      </div>
-    </a-modal>
   </div>
 </template>
 
@@ -820,45 +364,6 @@ async function insertImageFromFile() {
   border: none;
   border-radius: 0;
   overflow: visible;
-}
-
-.rich-text__toolbar {
-  display: flex;
-  gap: 2px;
-  padding: 4px;
-  border-bottom: 1px solid var(--jt-border);
-  background-color: var(--jt-surface-sunken);
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.rich-text__bottom-bar {
-  display: flex;
-  gap: 2px;
-  padding: 6px 4px;
-  margin-top: 8px;
-  border-top: 1px solid var(--jt-border);
-  align-items: center;
-  flex-wrap: wrap;
-  position: sticky;
-  bottom: 0;
-  background: var(--jt-surface);
-  z-index: 1;
-}
-
-.rich-text--borderless .rich-text__bottom-bar {
-  border-top: none;
-  padding: 4px 0 0;
-  margin-top: 12px;
-  position: static;
-}
-
-.rich-text__divider {
-  width: 1px;
-  height: 16px;
-  background-color: var(--jt-border);
-  margin: 0 2px;
-  flex-shrink: 0;
 }
 
 .rich-text__editor-wrapper {
@@ -1187,78 +692,5 @@ async function insertImageFromFile() {
   font-family: var(--font-mono);
   white-space: nowrap;
 }
-
-/* ─── 标题下拉按钮（按钮里显示当前级别） ───────────────── */
-.rich-text__heading-label {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  min-width: 14px;
-  display: inline-block;
-  text-align: center;
-}
-
-.rich-text__heading-menu-text {
-  font-family: var(--font-body);
-  font-size: 13px;
-}
-
-.rich-text__heading-menu :deep(.arco-menu-item) {
-  padding: 0 !important;
-  margin: 0 !important;
-  min-height: 32px !important;
-}
-.rich-text__heading-menu :deep(.arco-menu-item-inner) {
-  padding: 0 12px !important;
-}
-
-/* ─── 链接弹窗 ─────────────────────────────────────── */
-.rich-text__link-field {
-  margin-top: 4px;
-}
-.rich-text__link-label {
-  display: block;
-  font-size: 12px;
-  color: var(--jt-text-secondary);
-  margin-bottom: 8px;
-}
-.rich-text__link-hint {
-  margin: 8px 0 0;
-  font-size: 11px;
-  color: var(--jt-text-tertiary);
-  line-height: 1.5;
-}
-.rich-text__link-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 20px;
-  align-items: center;
-}
-
-/* ─── 气泡菜单（bubble menu）── 选中文字时浮出 ─────────────── */
-.rich-text__bubble-menu {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 4px;
-  background-color: var(--jt-surface);
-  border-radius: 8px;
-  box-shadow:
-    0 6px 20px rgba(0, 0, 0, 0.08),
-    0 2px 6px rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--jt-border);
-}
-.rich-text__bubble-divider {
-  width: 1px;
-  height: 16px;
-  background-color: var(--jt-border);
-  margin: 0 2px;
-}
-
-body[arco-theme="dark"] .rich-text__bubble-menu {
-  box-shadow:
-    0 6px 20px rgba(0, 0, 0, 0.4),
-    0 2px 6px rgba(0, 0, 0, 0.3);
-}
+/* 工具条已抽离到 RichTextToolbar 组件，样式也一并迁过去 */
 </style>

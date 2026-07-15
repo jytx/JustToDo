@@ -12,6 +12,8 @@ const props = defineProps<{
   disabled?: boolean;
   /** 紧凑变体（用在小 footer） */
   compact?: boolean;
+  /** 只显示图标（窄屏塌缩用），由父级通过 a-tooltip 提供文字提示 */
+  iconOnly?: boolean;
 }>();
 
 // emit click 事件，让父级 a-trigger / a-button 等组件能正常 attach onClick
@@ -34,6 +36,7 @@ function onClick(e: MouseEvent) {
     :class="{
       'property-chip--active': active,
       'property-chip--compact': compact,
+      'property-chip--icon-only': iconOnly,
     }"
     :disabled="disabled"
     v-bind="attrs"
@@ -42,7 +45,7 @@ function onClick(e: MouseEvent) {
     <slot name="icon">
       <span v-if="false" class="property-chip__icon" />
     </slot>
-    <span class="property-chip__content">
+    <span v-if="!iconOnly" class="property-chip__content">
       <slot />
     </span>
     <slot name="suffix" />
@@ -66,6 +69,7 @@ function onClick(e: MouseEvent) {
   transition: background-color 0.12s ease, color 0.12s ease;
   white-space: nowrap;
   user-select: none;
+  flex-shrink: 0;
 }
 
 .property-chip:hover:not(:disabled) {
@@ -80,11 +84,11 @@ function onClick(e: MouseEvent) {
 
 .property-chip--active {
   color: var(--jt-text-primary);
-  background-color: var(--jt-surface-sunken);
+  background-color: transparent;
 }
 
 .property-chip--active:hover {
-  background-color: var(--jt-surface-hover);
+  background-color: var(--jt-surface-sunken);
 }
 
 /* 紧凑变体（footer 用） */
@@ -93,6 +97,17 @@ function onClick(e: MouseEvent) {
   padding: 0 8px;
   font-size: 12px;
   border-radius: 5px;
+}
+
+/* 只显示图标（窄屏塌缩用） */
+.property-chip--icon-only {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+}
+
+.property-chip--icon-only.property-chip--compact {
+  width: 24px;
 }
 
 .property-chip__content {
