@@ -132,3 +132,179 @@ body[arco-theme='dark'] {
   --jt-warning: #F59E0B;
   --jt-primary: var(--jt-accent-dark, #818CF8);
 }
+
+/*
+ * 高优先级覆盖：Arco 在 body 上声明 --primary-6: var(--arcoblue-6)，
+ * 而我们 :root / body[arco-theme=dark] 上的覆盖会被这个 body 规则按 cascade 顺序吃掉。
+ * 把 arcoblue-* 的最终值放到文件末尾的 body 选择器，覆盖最强。
+ */
+body {
+  --arcoblue-6: var(--jt-primary-rgb, 79, 70, 229);
+  --arcoblue-5: var(--jt-primary-rgb-hover, 99, 102, 241);
+  --arcoblue-7: var(--jt-primary-rgb-active, 67, 56, 202);
+}
+
+/* 深色模式 */
+body[arco-theme='dark'] {
+  --arcoblue-6: var(--jt-accent-dark-rgb, 129, 140, 248);
+  --arcoblue-5: 165, 176, 252;
+  --arcoblue-7: 99, 102, 241;
+}
+
+/*
+ * 全局统一：Arco a-input-number / a-input / a-input-tag
+ * 默认风格（圆角 2px、透明边框、灰底填充）跟项目视觉不一致。
+ * 改为：32px 高、1px 灰边、4px 圆角、白底 surface，
+ * focus 时主色边框 + 主色软环；step 按钮 hover 浅灰底。
+ *
+ * 影响：SettingsView 重复检查间隔、ReminderPopover 自定义分钟数、
+ *       RecurrencePopover 间隔输入。
+ */
+
+/* === 基础外观 === */
+.arco-input-wrapper.arco-input-number,
+.arco-input-wrapper.arco-input {
+  background-color: var(--color-bg-2);
+  border: 1px solid var(--color-border-2);
+  border-radius: 4px;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+/* === 各尺寸 === */
+/* 默认（medium）32px 高 */
+.arco-input-wrapper.arco-input-number.arco-input-number-size-medium,
+.arco-input-wrapper.arco-input.arco-input-size-medium {
+  height: 32px;
+}
+/* small 也提到 28px（与项目其它 small 控件一致） */
+.arco-input-wrapper.arco-input-number.arco-input-number-size-small,
+.arco-input-wrapper.arco-input.arco-input-size-small {
+  height: 28px;
+}
+
+/* === hover: 边框加到一个明显的浅灰，背景保持白色 === */
+.arco-input-wrapper.arco-input-number:not(.arco-input-number-disabled):hover,
+.arco-input-wrapper.arco-input:not(.arco-input-disabled):hover {
+  border-color: var(--jt-text-tertiary);
+  background-color: var(--color-bg-2);
+}
+
+/* === focus: 主色边框 + 主色软环 === */
+.arco-input-wrapper.arco-input-number:focus,
+.arco-input-wrapper.arco-input-number:focus-within,
+.arco-input-wrapper.arco-input:focus,
+.arco-input-wrapper.arco-input:focus-within {
+  border-color: var(--jt-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-primary) 20%, transparent);
+  background-color: var(--color-bg-2);
+}
+
+/* === input 内部 === */
+.arco-input-wrapper .arco-input {
+  background-color: transparent;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--jt-text-primary);
+}
+
+/* === step +/- 按钮 === */
+.arco-input-number-step {
+  color: var(--jt-text-secondary);
+  border-color: var(--color-border-2);
+  transition: background-color 0.12s, color 0.12s;
+}
+.arco-input-number-step:hover {
+  background-color: var(--jt-surface-hover);
+  color: var(--jt-text-primary);
+}
+
+/* === disabled === */
+.arco-input-wrapper.arco-input-number-disabled,
+.arco-input-wrapper.arco-input-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: var(--color-bg-3);
+}
+
+/* === 深色模式：整体提亮 === */
+body[arco-theme='dark'] .arco-input-wrapper.arco-input-number,
+body[arco-theme='dark'] .arco-input-wrapper.arco-input {
+  background-color: var(--color-bg-2);
+  border-color: var(--color-border-2);
+  color: var(--jt-text-primary);
+}
+body[arco-theme='dark'] .arco-input-wrapper.arco-input-number-step {
+  border-color: var(--color-border-2);
+}
+body[arco-theme='dark'] .arco-input-wrapper.arco-input-number:not(.arco-input-number-disabled):hover,
+body[arco-theme='dark'] .arco-input-wrapper.arco-input:not(.arco-input-disabled):hover {
+  border-color: var(--jt-text-tertiary);
+  background-color: var(--color-bg-2);
+}
+
+/*
+ * 全局统一：Arco a-button type="outline" 视觉风格
+ * - 小尺寸弧角与项目其它控件对齐 (4px / 28px small)
+ * - disabled 不再用 Arco 自带的 primary-light-3 (淡蓝) / danger-light-3 (淡红)，
+ *   而是 jt-text-tertiary (中性灰) / jt-error (主红)，并加 0.55 透明度统一弱化。
+ * 影响：SettingsView 数据区 4 个 disabled 按钮、未来所有 outline 按钮。
+ */
+.arco-btn.arco-btn-outline {
+  border-radius: 4px;
+}
+.arco-btn.arco-btn-outline.arco-btn-size-small {
+  height: 28px;
+}
+
+/* outline normal disabled —— 中性灰描边 + 文字 + 弱化 */
+.arco-btn.arco-btn-outline.arco-btn-disabled,
+.arco-btn.arco-btn-outline[disabled] {
+  color: var(--jt-text-tertiary);
+  background-color: transparent;
+  border-color: var(--jt-text-tertiary);
+  opacity: 0.55;
+}
+
+/* outline danger disabled —— 主红描边 + 文字 + 弱化 */
+.arco-btn.arco-btn-outline.arco-btn-status-danger.arco-btn-disabled,
+.arco-btn.arco-btn-outline.arco-btn-status-danger[disabled] {
+  color: var(--jt-error);
+  background-color: transparent;
+  border-color: var(--jt-error);
+  opacity: 0.55;
+}
+
+/* 深色模式 */
+body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-disabled,
+body[arco-theme='dark'] .arco-btn.arco-btn-outline[disabled] {
+  color: var(--jt-text-tertiary);
+  border-color: var(--jt-text-tertiary);
+  opacity: 0.55;
+}
+body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger.arco-btn-disabled,
+body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabled] {
+  color: var(--jt-error);
+  border-color: var(--jt-error);
+  opacity: 0.55;
+}
+
+/*
+ * 全局统一：Arco a-button 文字与水平 padding
+ * - 文字 13 → 12px（更紧凑，符合整体风格）
+ * - 水平 padding 12px（mini/small/medium/large 统一；only-icon 仍是 0）
+ * Arco 当前 size-* 默认 padding/font-size 见 .arco-btn-size-{mini,small,medium,large}。
+ */
+.arco-btn,
+.arco-btn-size-mini,
+.arco-btn-size-small,
+.arco-btn-size-medium,
+.arco-btn-size-large {
+  font-size: 12px;
+}
+.arco-btn-size-mini:not(.arco-btn-only-icon):not(.arco-btn-shape-circle),
+.arco-btn-size-small:not(.arco-btn-only-icon):not(.arco-btn-shape-circle),
+.arco-btn-size-medium:not(.arco-btn-only-icon):not(.arco-btn-shape-circle),
+.arco-btn-size-large:not(.arco-btn-only-icon):not(.arco-btn-shape-circle) {
+  padding-left: 12px;
+  padding-right: 12px;
+}
