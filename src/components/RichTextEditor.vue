@@ -17,11 +17,13 @@ import HardBreak from "@tiptap/extension-hard-break";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Placeholder from "@tiptap/extension-placeholder";
+import Suggestion from "@tiptap/suggestion";
 import { Extension } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { common, createLowlight } from "lowlight";
-import { watch, onBeforeUnmount, onMounted, ref, nextTick, computed } from "vue";
+import { watch, onBeforeUnmount, onMounted, ref, nextTick, computed, createApp } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import SlashCommandMenu, { type SlashCommandItem } from "./SlashCommandMenu.vue";
 
 const lowlight = createLowlight(common);
 
@@ -66,8 +68,81 @@ const previewIndex = ref(0);
 const previewScale = ref(1);
 const editorContainerRef = ref<HTMLElement | null>(null);
 
+// ─── Slash Command 菜单（Notion-like 输入 / 唤起 block 菜单）────────
+// items 定义每个 block 类型；command 在被选中时执行（call editor commands）
+const slashItems: SlashCommandItem[] = [
+  { key: "text", title: "正文", description: "Paragraph", keywords: ["text", "p"] },
+  { key: "h1", title: "H1 标题", description: "Heading 1", keywords: ["heading", "标题"] },
+  { key: "h2", title: "H2 标题", description: "Heading 2", keywords: ["heading", "标题"] },
+  { key: "h3", title: "H3 标题", description: "Heading 3", keywords: ["heading", "标题"] },
+  {
+    key: "bullet",
+    title: "无序列表",
+    description: "Bullet list",
+    keywords: ["ul", "list", "列表"],
+  },
+  {
+    key: "ordered",
+    title: "有序列表",
+    description: "Numbered list",
+    keywords: ["ol", "list", "列表"],
+  },
+  {
+    key: "todo",
+    title: "待办列表",
+    description: "To-do list",
+    keywords: ["task", "todo", "checklist"],
+  },
+  { key: "quote", title: "引用", description: "Quote", keywords: ["blockquote"] },
+  { key: "code", title: "代码", description: "Code block", keywords: ["pre"] },
+  { key: "hr", title: "分隔线", description: "Divider", keywords: ["hr", "line"] },
+];
+
+/** 实际执行 slash 选中的 command */
+function runSlashCommand(item: SlashCommandItem) {
+  const editorInstance = editor.value;
+  if (!editorInstance) return;
+  // 先聚焦编辑器，确保 command 作用在 selection 上
+  editorInstance.commands.focus();
+  const chain = editorInstance.chain().focus();
+  switch (item.key) {
+    case "text":
+      chain.setParagraph().run();
+      break;
+    case "h1":
+      chain.toggleHeading({ level: 1 }).run();
+      break;
+    case "h2":
+      chain.toggleHeading({ level: 2 }).run();
+      break;
+    case "h3":
+      chain.toggleHeading({ level: 3 }).run();
+      break;
+    case "bullet":
+      chain.toggleBulletList().run();
+      break;
+    case "ordered":
+      chain.toggleOrderedList().run();
+      break;
+    case "todo":
+      chain.toggleTaskList().run();
+      break;
+    case "quote":
+      chain.toggleBlockquote().run();
+      break;
+    case "code":
+      chain.toggleCodeBlock().run();
+      break;
+    case "hr":
+      chain.setHorizontalRule().run();
+      break;
+  }
+}
+
+
 const previewSrc = computed(() => allImages.value[previewIndex.value] ?? null);
 
+// editor 实例由 useEditor() 创建，再以 ref 暴露给外部（defineExpose 用）
 const editor = useEditor({
   content: props.modelValue || "",
   extensions: [
@@ -106,6 +181,73 @@ const editor = useEditor({
         alwaysPreserveAspectRatio: true,
       },
     } as any),
+    // Slash Command —— 输入 / 唤起 block 选择菜单
+    (Suggestion as any)({
+      char: "/",
+      startOfLine: false,
+      allowSpaces: false,
+      items: ({ query }: { query: string }) =>
+        slashItems.filter((it) => {
+          const q = query.trim().toLowerCase();
+          if (!q) return true;
+          const hay = [it.title, it.description ?? "", ...(it.keywords ?? [])]
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(q);
+        }),
+      command: ({ editor, range, props: item }: any) => {
+        // 先删除用户输入的 "/xxx" 字符
+        editor.chain().focus().deleteRange(range).run();
+        runSlashCommand(item as SlashCommandItem);
+      },
+      // 用 Vue createApp 挂一个 SlashCommandMenu 实例，由 Suggestion utility
+      // 管理 mount 到 body、定位 + 滚动/resize 跟随。
+      render: () => {
+        let mountedApp: { unmount: () => void } | null = null;
+        let unmountSuggestion: (() => void) | null = null;
+
+        function buildProps(props: any) {
+          const rect = props.clientRect?.();
+          return {
+            items: props.items as SlashCommandItem[],
+            query: props.query as string,
+            editor: props.editor,
+            open: true,
+            rect: rect
+              ? { left: rect.left, top: rect.top, bottom: rect.bottom }
+              : null,
+          };
+        }
+
+        function teardown() {
+          if (unmountSuggestion) {
+            unmountSuggestion();
+            unmountSuggestion = null;
+          }
+          if (mountedApp) {
+            mountedApp.unmount();
+            mountedApp = null;
+          }
+        }
+
+        function setupWith(props: any) {
+          teardown();
+          const element = document.createElement("div");
+          const app = createApp(SlashCommandMenu, buildProps(props));
+          app.mount(element);
+          // Suggestion utility 把 element 放到 body 并持续定位，返回 dispose 函数
+          unmountSuggestion = props.mount(element);
+          mountedApp = app;
+        }
+
+        return {
+          onStart: (props: any) => setupWith(props),
+          onUpdate: (props: any) => setupWith(props),
+          onExit: () => teardown(),
+          onKeyDown: () => false,
+        };
+      },
+    }),
   ],
   onUpdate: ({ editor }) => {
     emit("update:modelValue", editor.getHTML());
