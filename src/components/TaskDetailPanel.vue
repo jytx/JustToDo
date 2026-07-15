@@ -199,20 +199,9 @@ async function setRemindOffset(offset: number | null) {
   });
 }
 
-/** 用户在提醒下拉中当前选中的索引（与 task 解耦，保证下拉不"自动跳回"） */
-const remindPresetIndex = ref<number>(0);
-
-/** 任务切换或字段变化时把下拉同步到 task 当前值 */
-watch(
-  () => [task.value?.id, task.value?.remindOffsetMinutes],
-  ([id]) => {
-    if (id !== undefined) {
-      remindPresetIndex.value = matchRemindPreset(
-        task.value?.remindOffsetMinutes,
-      );
-    }
-  },
-  { immediate: true },
+/** 下拉当前显示的索引（直接从 task 派生） */
+const remindPresetIndex = computed(() =>
+  matchRemindPreset(task.value?.remindOffsetMinutes),
 );
 
 /** 是否显示自定义分钟数输入框 */
