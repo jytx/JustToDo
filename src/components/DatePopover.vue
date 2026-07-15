@@ -92,32 +92,90 @@ const selectedDay = computed<Date | null>(() => {
   return null;
 });
 
+/** 时间段模式下的"范围高亮"—— 用于日历格子 */
+const rangeHighlight = computed(() => {
+  if (activeTab.value !== "range") return null;
+  const s = parseLocalIso(editStart.value);
+  const e = parseLocalIso(editEnd.value);
+  if (!s) return null;
+  return { start: s, end: e };
+});
+
+/** 日历格子的范围状态：'in' 范围内 | 'start' 开始 | 'end' 结束 | null */
+function getRangeClass(d: Date): "in" | "start" | "end" | null {
+  const r = rangeHighlight.value;
+  if (!r) return null;
+  const time = d.getTime();
+  const s = r.start.getTime();
+  const e = r.end ? r.end.getTime() : null;
+  if (e && time > s && time < e) return "in";
+  if (isSameDay(d, r.start)) return "start";
+  if (r.end && isSameDay(d, r.end)) return "end";
+  return null;
+}
+
 function selectDay(d: Date) {
-  // 保持原来的时分秒
-  const cur =
-    activeTab.value === "date"
-      ? parseLocalIso(editDate.value)
-      : parseLocalIso(editStart.value);
-  const hh = cur?.getHours() ?? 9;
-  const mi = cur?.getMinutes() ?? 0;
-  const next = new Date(d);
-  next.setHours(hh, mi, 0, 0);
-  const iso = toLocalIso(
-    `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")} ${String(hh).padStart(2, "0")}:${String(mi).padStart(2, "0")}:00`,
-  );
   if (activeTab.value === "date") {
-    editDate.value = iso;
-  } else {
-    editStart.value = iso;
-    // 自动结束：若未设置或早于开始，则设为开始
-    if (!editEnd.value || (parseLocalIso(editEnd.value) ?? new Date(0)) < next) {
-      const end = new Date(next);
-      end.setHours(end.getHours() + 1);
-      editEnd.value = toLocalIso(
-        `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")} ${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}:00`,
-      );
-    }
+    // 单点日期：保持原来的时分秒（缺省 9:00）
+    const cur = parseLocalIso(editDate.value);
+    const hh = cur?.getHours() ?? 9;
+    const mi = cur?.getMinutes() ?? 0;
+    const next = new Date(d);
+    next.setHours(hh, mi, 0, 0);
+    editDate.value = toLocalIso(
+      `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")} ${String(hh).padStart(2, "0")}:${String(mi).padStart(2, "0")}:00`,
+    );
+    return;
   }
+
+  // ─── 时间段（range）：状态机 ─────────────────
+  // 状态 1：未选 → 设 start
+  // 状态 2：已选 start 但还没结束（或已选 end 但被重置）→ 设 end
+  // 状态 3：start + end 都有 → 重新开始，把这次点的作为新 start
+  const startD = parseLocalIso(editStart.value);
+  const endD = parseLocalIso(editEnd.value);
+  const hasFullRange = startD && endD;
+
+  if (!editStart.value || hasFullRange) {
+    // 第一次选 / 重新开始：设 start，end 清空
+    const next = new Date(d);
+    next.setHours(9, 0, 0, 0);
+    editStart.value = toLocalIso(
+      `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")} 09:00:00`,
+    );
+    editEnd.value = null;
+    return;
+  }
+
+  // 已选 start，未选 end：这次的点作为 end
+  const startParsed = startD!;
+  const next = new Date(d);
+  next.setHours(10, 0, 0, 0); // end 缺省 10:00（比 start 晚 1h）
+
+  // 如果用户点的日期早于 start，交换（让 start 是早的）
+  let finalStart = startParsed;
+  let finalEnd = next;
+  if (next < startParsed) {
+    // 这次点的更早：把这次的当 start，之前的 start 当 end
+    const newStart = new Date(d);
+    newStart.setHours(9, 0, 0, 0);
+    finalStart = newStart;
+    finalEnd = startParsed;
+  }
+
+  // 缺省 1h 间隔
+  if (finalEnd.getTime() - finalStart.getTime() < 60 * 60 * 1000) {
+    const adjusted = new Date(finalStart);
+    adjusted.setHours(adjusted.getHours() + 1);
+    finalEnd = adjusted;
+  }
+
+  editStart.value = toLocalIso(
+    `${finalStart.getFullYear()}-${String(finalStart.getMonth() + 1).padStart(2, "0")}-${String(finalStart.getDate()).padStart(2, "0")} ${String(finalStart.getHours()).padStart(2, "0")}:${String(finalStart.getMinutes()).padStart(2, "0")}:00`,
+  );
+  editEnd.value = toLocalIso(
+    `${finalEnd.getFullYear()}-${String(finalEnd.getMonth() + 1).padStart(2, "0")}-${String(finalEnd.getDate()).padStart(2, "0")} ${String(finalEnd.getHours()).padStart(2, "0")}:${String(finalEnd.getMinutes()).padStart(2, "0")}:00`,
+  );
 }
 
 function prevMonth() {
@@ -146,14 +204,16 @@ function quickDay(daysFromNow: number) {
   );
   if (activeTab.value === "date") {
     editDate.value = iso;
-  } else {
-    editStart.value = iso;
-    const end = new Date(d);
-    end.setHours(end.getHours() + 1);
-    editEnd.value = toLocalIso(
-      `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")} ${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}:00`,
-    );
+    return;
   }
+  // 时间段：start = 今天 N 天，end = start + 1 天（明天 N+1 天 10:00）
+  editStart.value = iso;
+  const end = new Date(d);
+  end.setDate(end.getDate() + 1);
+  end.setHours(10, 0, 0, 0);
+  editEnd.value = toLocalIso(
+    `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")} ${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}:00`,
+  );
 }
 
 // ─── 时间选择（hh / mi 简易） ─────────────────────
@@ -270,13 +330,13 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 
     <!-- 快捷按钮 -->
     <div class="date-popover__quick">
-      <button type="button" class="date-popover__quick-btn" @click="quickDay(0)">
+      <button type="button" class="date-popover__quick-btn" :title="activeTab === 'range' ? '今天到明天' : '今天'" @click="quickDay(0)">
         <icon-sun :size="16" />
       </button>
-      <button type="button" class="date-popover__quick-btn" @click="quickDay(1)">
+      <button type="button" class="date-popover__quick-btn" :title="activeTab === 'range' ? '明天全天' : '明天'" @click="quickDay(1)">
         <icon-sunrise :size="16" />
       </button>
-      <button type="button" class="date-popover__quick-btn" @click="quickDay(7)">
+      <button type="button" class="date-popover__quick-btn" :title="activeTab === 'range' ? '本周' : '下周'" @click="quickDay(7)">
         <icon-calendar :size="16" />
       </button>
       <button type="button" class="date-popover__quick-btn" title="无日期" @click="onClear">
@@ -310,7 +370,10 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
         :class="{
           'date-popover__day--out': !c.inMonth,
           'date-popover__day--today': isToday(c.date),
-          'date-popover__day--selected': selectedDay && isSameDay(c.date, selectedDay),
+          'date-popover__day--selected': activeTab === 'date' && selectedDay && isSameDay(c.date, selectedDay),
+          'date-popover__day--range-start': getRangeClass(c.date) === 'start',
+          'date-popover__day--range-end': getRangeClass(c.date) === 'end',
+          'date-popover__day--range-in': getRangeClass(c.date) === 'in',
         }"
         @click="selectDay(c.date)"
       >
@@ -552,6 +615,30 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 
 .date-popover__day--selected.date-popover__day--today {
   color: #fff;
+}
+
+/* 时间段范围高亮 */
+.date-popover__day--range-in {
+  background: var(--jt-accent-soft);
+  color: var(--jt-text-primary);
+  border-radius: 0;
+}
+
+.date-popover__day--range-start,
+.date-popover__day--range-end {
+  background: var(--jt-primary) !important;
+  color: #fff !important;
+  font-weight: 500;
+}
+
+.date-popover__day--range-start {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+.date-popover__day--range-end {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
 }
 
 .date-popover__row {
