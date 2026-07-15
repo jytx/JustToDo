@@ -25,6 +25,7 @@ import { common, createLowlight } from "lowlight";
 import { watch, onBeforeUnmount, onMounted, ref, nextTick, computed, createApp } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import SlashCommandMenu, { type SlashCommandItem } from "./SlashCommandMenu.vue";
+import RichTextFloatingMenu from "./RichTextFloatingMenu.vue";
 
 const lowlight = createLowlight(common);
 
@@ -456,6 +457,9 @@ function fileToBase64(file: File): Promise<string> {
     <div ref="editorContainerRef" class="rich-text__editor-wrapper">
       <EditorContent :editor="editor" class="rich-text__editor" />
     </div>
+
+    <!-- 空段落浮 + 按钮（Notion-like 入口之一） -->
+    <RichTextFloatingMenu :editor="editor" />
 
     <!-- 图片预览 lightbox -->
     <teleport to="body">
