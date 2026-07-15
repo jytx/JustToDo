@@ -4,6 +4,7 @@
 import { ref, onMounted, computed } from "vue";
 import { storeToRefs } from "pinia";
 import { useSettingsStore, SETTINGS_KEYS, type StartupView } from "@/stores/settings";
+import SelectPopover from "@/components/SelectPopover.vue";
 import {
   IconSettings,
   IconSkin,
@@ -55,6 +56,15 @@ const startupViewOptions: Array<{ value: StartupView; label: string }> = [
   { value: "all", label: "全部" },
   { value: "inbox", label: "收件箱" },
 ];
+
+/** SelectPopover 要求 value 是 string，这里把 StartupView 转 string 喂给组件 */
+const startupSelectOptions = computed(() =>
+  startupViewOptions.map((o) => ({ value: String(o.value), label: o.label })),
+);
+
+function onStartupViewChange(v: string) {
+  settingsStore.setStartupView(v as StartupView);
+}
 
 const shortcuts = [
   { action: "快速添加任务", mac: "⌘⇧A", win: "Ctrl+Shift+A" },
@@ -121,28 +131,21 @@ async function changeAttachmentPath() {
           <h2 class="settings-section__title">通用</h2>
           <div class="settings-section__item">
             <span>语言</span>
-            <a-select
+            <SelectPopover
               :model-value="'简体中文'"
-              :style="{ width: '200px' }"
-            >
-              <a-option value="简体中文">简体中文</a-option>
-            </a-select>
+              :options="[{ value: '简体中文', label: '简体中文' }]"
+              :width="120"
+              disabled
+            />
           </div>
           <div class="settings-section__item">
             <span>启动时打开</span>
-            <a-select
-              :model-value="startupView"
-              :style="{ width: '200px' }"
-              @change="(v: any) => settingsStore.setStartupView(v as StartupView)"
-            >
-              <a-option
-                v-for="opt in startupViewOptions"
-                :key="opt.value"
-                :value="opt.value"
-              >
-                {{ opt.label }}
-              </a-option>
-            </a-select>
+            <SelectPopover
+              :model-value="String(startupView ?? '')"
+              :options="startupSelectOptions"
+              :width="120"
+              @update:model-value="onStartupViewChange"
+            />
           </div>
           <div class="settings-section__item">
             <span>新任务自动设为今天</span>
