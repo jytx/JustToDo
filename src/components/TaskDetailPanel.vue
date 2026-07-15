@@ -762,10 +762,6 @@ function autoResize(e: Event) {
             <icon-close :size="12" />
           </button>
         </div>
-        <button class="detail-panel__checklist-add" @click="insertChecklistItem">
-          <icon-plus :size="14" />
-          <span>添加检查项</span>
-        </button>
       </div>
     </div>
 
@@ -990,28 +986,6 @@ function formatMeta(iso: string): string {
 .detail-panel__checklist-remove:hover {
   background: var(--jt-surface-sunken);
   color: var(--jt-error);
-}
-
-.detail-panel__checklist-add {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-  padding: 4px 8px;
-  border: none;
-  background: transparent;
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--jt-text-tertiary);
-  cursor: pointer;
-  font-family: var(--font-body);
-  align-self: flex-start;
-  transition: all 0.12s;
-}
-
-.detail-panel__checklist-add:hover {
-  background: var(--jt-surface-sunken);
-  color: var(--jt-text-primary);
 }
 
 .detail-panel__title {
