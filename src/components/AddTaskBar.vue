@@ -4,6 +4,8 @@ import { ref, computed, nextTick } from "vue";
 import { PRIORITY_LABELS, PRIORITY_COLORS, type Priority } from "@/types";
 import { toLocalIso, fromLocalIso } from "@/utils/date";
 import PriorityDot from "./PriorityDot.vue";
+import MenuPopover from "./MenuPopover.vue";
+import MenuPopoverItem from "./MenuPopoverItem.vue";
 
 defineProps<{
   listId: string;
@@ -125,33 +127,28 @@ function onAttrMousedown(e: MouseEvent) {
       :class="{ 'add-task-bar__attrs--hidden': !focused }"
       @mousedown="onAttrMousedown"
     >
-      <a-dropdown
-        v-model:popup-visible="showPriorityMenu"
-        trigger="click"
-        position="br"
-        :popup-offset="4"
-      >
-        <a-button
-          type="text"
-          size="mini"
-          :style="priorityStyle"
-        >
-          <template #icon><icon-fire /></template>
-          {{ priorityLabel }}
-        </a-button>
-        <template #content>
-          <a-menu
-            class="add-task-priority-menu"
-            :selected-keys="[String(priority)]"
-            @menu-item-click="(key: string) => selectPriority(Number(key) as Priority)"
+      <MenuPopover v-model:visible="showPriorityMenu">
+        <template #trigger>
+          <a-button
+            type="text"
+            size="mini"
+            :style="priorityStyle"
+            @click="showPriorityMenu = !showPriorityMenu"
           >
-            <a-menu-item v-for="(label, p) in PRIORITY_LABELS" :key="p">
-              <PriorityDot :priority="Number(p) as Priority" :size="10" />
-              <span style="margin-left: 8px">{{ label }}</span>
-            </a-menu-item>
-          </a-menu>
+            <template #icon><icon-fire /></template>
+            {{ priorityLabel }}
+          </a-button>
         </template>
-      </a-dropdown>
+        <MenuPopoverItem
+          v-for="(label, p) in PRIORITY_LABELS"
+          :key="p"
+          :active="Number(p) === priority"
+          @click="selectPriority(Number(p) as Priority)"
+        >
+          <PriorityDot :priority="Number(p) as Priority" :size="10" />
+          <span>{{ label }}</span>
+        </MenuPopoverItem>
+      </MenuPopover>
 
       <a-range-picker
         v-model="dueRangeModel"
@@ -223,12 +220,5 @@ function onAttrMousedown(e: MouseEvent) {
   font-size: 11px;
   color: var(--jt-text-tertiary);
   margin-left: 4px;
-}
-</style>
-
-<!-- 优先级菜单（非 scoped，弹层渲染到 body） -->
-<style>
-.add-task-priority-menu {
-  min-width: 100px;
 }
 </style>

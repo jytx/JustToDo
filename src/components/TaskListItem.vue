@@ -7,6 +7,8 @@ import { formatDueDate } from "@/utils/date";
 import { useTaskStore } from "@/stores/task";
 import TaskCheckbox from "./TaskCheckbox.vue";
 import PriorityDot from "./PriorityDot.vue";
+import MenuPopover from "./MenuPopover.vue";
+import MenuPopoverItem from "./MenuPopoverItem.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -144,6 +146,14 @@ watch(childCount, (n) => {
     expanded.value = false;
   }
 });
+
+// ─── 任务行右侧更多菜单 ──────────────────────────────
+const menuOpen = ref(false);
+
+function onDelete() {
+  menuOpen.value = false;
+  taskStore.requestDelete(props.task.id);
+}
 </script>
 
 <template>
@@ -215,22 +225,20 @@ watch(childCount, (n) => {
 
       <div class="task-item__actions">
         <PriorityDot :priority="task.priority" />
-        <a-dropdown trigger="click" position="br" :popup-offset="4">
-          <button
-            class="task-item__menu-btn"
-            @click.stop
-          >
-            <icon-more :size="16" />
-          </button>
-          <template #content>
-            <a-menu class="task-item-ctx-menu" @menu-item-click="() => taskStore.requestDelete(task.id)">
-              <a-menu-item key="delete" class="task-item-ctx-menu--danger">
-                <icon-delete :size="15" />
-                <span style="margin-left: 8px">删除任务</span>
-              </a-menu-item>
-            </a-menu>
+        <MenuPopover v-model:visible="menuOpen">
+          <template #trigger>
+            <button
+              class="task-item__menu-btn"
+              @click.stop="menuOpen = !menuOpen"
+            >
+              <icon-more :size="16" />
+            </button>
           </template>
-        </a-dropdown>
+          <MenuPopoverItem danger @click="onDelete">
+            <icon-delete :size="15" />
+            <span>删除任务</span>
+          </MenuPopoverItem>
+        </MenuPopover>
       </div>
     </div>
 
@@ -435,37 +443,5 @@ watch(childCount, (n) => {
 .task-item__menu-btn:hover {
   background-color: var(--jt-surface-hover);
   color: var(--jt-text-primary);
-}
-</style>
-
-<!-- 任务项上下文菜单（非 scoped，弹层渲染到 body） -->
-<style>
-/* 去掉外层容器的 padding（菜单项本身保持不变） */
-.arco-dropdown:has(.task-item-ctx-menu) {
-  padding: 0;
-}
-
-.task-item-ctx-menu .arco-menu-inner {
-  padding: 0;
-}
-
-.task-item-ctx-menu .arco-menu-item {
-  margin-bottom: 0;
-}
-
-.task-item-ctx-menu .arco-menu-item .arco-icon {
-  margin-right: 0;
-}
-
-.task-item-ctx-menu {
-  min-width: 100px;
-}
-
-.task-item-ctx-menu--danger {
-  color: var(--jt-error) !important;
-}
-
-.task-item-ctx-menu--danger .arco-icon {
-  color: var(--jt-error);
 }
 </style>

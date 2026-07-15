@@ -11,6 +11,8 @@ import TheSidebar from "@/components/TheSidebar.vue";
 import TaskDetailPanel from "@/components/TaskDetailPanel.vue";
 import SearchPalette from "@/components/SearchPalette.vue";
 import QuickAddDialog from "@/components/QuickAddDialog.vue";
+import MenuPopover from "@/components/MenuPopover.vue";
+import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 import { useSearchStore } from "@/stores/search";
 import { useListStore } from "@/stores/list";
 import { useShortcuts } from "@/composables/useShortcuts";
@@ -48,9 +50,13 @@ const topbarStyle = computed(() => {
   return { right: `${panelWidth.value + 24}px` };
 });
 
-/** 排序变更（a-doption + Arco dropdown 默认 hideOnSelect=true 自动关闭） */
+/** 排序菜单开关 */
+const sortMenuOpen = ref(false);
+
+/** 排序变更（选择后关闭菜单） */
 async function onSortChange(field: SortField) {
   await taskStore.setSort(field);
+  sortMenuOpen.value = false;
 }
 
 /** 删除确认对话框标题 */
@@ -184,41 +190,26 @@ useShortcuts({
           </template>
         </a-button>
         <!-- 排序按钮（仅清单/标签/全部视图显示） -->
-        <a-dropdown
-          v-if="showSortButton"
-          trigger="click"
-          position="br"
-          unmount-on-close
-          @select="(key: any) => onSortChange(String(key) as SortField)"
-        >
-          <a-button
-            type="text"
-            size="small"
-            :title="`排序: ${SORT_FIELD_LABELS[taskStore.currentSort.field]}`"
-          >
-            <template #icon><icon-sort :size="18" /></template>
-          </a-button>
-          <template #content>
-            <a-doption
-              v-for="f in SORT_FIELDS"
-              :key="f.value"
-              :value="f.value"
-              class="sort-menu__item"
-              :class="{ 'sort-menu__item--active': f.value === taskStore.currentSort.field }"
+        <MenuPopover v-if="showSortButton" v-model:visible="sortMenuOpen">
+          <template #trigger>
+            <a-button
+              type="text"
+              size="small"
+              :title="`排序: ${SORT_FIELD_LABELS[taskStore.currentSort.field]}`"
+              @click="sortMenuOpen = !sortMenuOpen"
             >
-              <icon-check
-                v-if="f.value === taskStore.currentSort.field"
-                :size="14"
-              />
-              <span
-                v-else
-                class="sort-menu__placeholder"
-                aria-hidden="true"
-              />
-              <span>{{ f.label }}</span>
-            </a-doption>
+              <template #icon><icon-sort :size="18" /></template>
+            </a-button>
           </template>
-        </a-dropdown>
+          <MenuPopoverItem
+            v-for="f in SORT_FIELDS"
+            :key="f.value"
+            :active="f.value === taskStore.currentSort.field"
+            @click="onSortChange(f.value)"
+          >
+            <span>{{ f.label }}</span>
+          </MenuPopoverItem>
+        </MenuPopover>
       </div>
 
       <router-view />
@@ -253,46 +244,6 @@ useShortcuts({
     </a-modal>
   </div>
 </template>
-
-<!-- 排序下拉菜单（非 scoped，因为 popup 渲染到 body） -->
-<style>
-/* 排序 dropdown popup 容器：去掉内层 padding */
-.arco-dropdown-popup .arco-dropdown-group {
-  padding: 0 !important;
-  margin: 0 !important;
-}
-
-/* doption 项（li）去掉默认 padding/margin */
-.sort-menu__item {
-  padding: 0 !important;
-  margin: 0 !important;
-  min-width: 140px !important;
-  min-height: 32px !important;
-}
-
-/* 选中项的底色 */
-.sort-menu__item--active {
-  background-color: var(--jt-accent-soft) !important;
-  color: var(--jt-primary) !important;
-}
-
-/* doption 内部内容容器：grid 两列对齐 */
-.sort-menu__item .arco-dropdown-option-content {
-  display: grid !important;
-  grid-template-columns: 18px 1fr !important;
-  align-items: center !important;
-  gap: 6px !important;
-  padding: 0 8px !important;
-  width: 100% !important;
-}
-
-/* 占位元素 */
-.sort-menu__placeholder {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-}
-</style>
 
 <style scoped>
 .app-layout {

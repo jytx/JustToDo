@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 侧边栏 —— 四区块导航（智能视图 / 清单 / 标签 / 习惯）
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   IconStar,
@@ -23,6 +23,8 @@ import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
 import { useTaskStore } from "@/stores/task";
 import SidebarListNode from "./SidebarListNode.vue";
+import MenuPopover from "./MenuPopover.vue";
+import MenuPopoverItem from "./MenuPopoverItem.vue";
 import * as db from "@/api/db";
 
 const props = defineProps<{
@@ -105,6 +107,7 @@ async function askDeleteList(list: { id: string; name: string }) {
 }
 
 async function askDeleteTag(tag: { id: string; name: string }) {
+  tagMenuOpen[tag.id] = false;
   confirmDelete.value = {
     type: "tag",
     id: tag.id,
@@ -112,6 +115,9 @@ async function askDeleteTag(tag: { id: string; name: string }) {
     taskCount: 0, // 不查了，删除标签不会删除任务
   };
 }
+
+/** 每个标签对应一个菜单开关（key 为 tag.id） */
+const tagMenuOpen = reactive<Record<string, boolean>>({});
 
 async function confirmDeleteAction() {
   if (!confirmDelete.value) return;
@@ -346,27 +352,23 @@ onMounted(async () => {
         <icon-tag :size="16" class="sidebar__item-icon" />
         <span class="sidebar__item-title">{{ tag.name }}</span>
         <span v-if="taskStore.tagCounts[tag.id]" class="sidebar__count">{{ taskStore.tagCounts[tag.id] }}</span>
-        <a-dropdown
-          trigger="click"
-          position="br"
-          :popup-offset="4"
+        <MenuPopover
+          v-model:visible="tagMenuOpen[tag.id]"
         >
-          <button
-            class="sidebar__item-menu-btn"
-            @click.stop.prevent
-            :title="`编辑 ${tag.name}`"
-          >
-            <icon-more :size="16" />
-          </button>
-          <template #content>
-            <a-menu class="sidebar-ctx-menu" @menu-item-click="() => askDeleteTag(tag)">
-              <a-menu-item key="delete" class="sidebar-ctx-menu--danger">
-                <icon-delete :size="15" />
-                <span style="margin-left: 8px">删除标签</span>
-              </a-menu-item>
-            </a-menu>
+          <template #trigger>
+            <button
+              class="sidebar__item-menu-btn"
+              @click.stop.prevent="tagMenuOpen[tag.id] = !tagMenuOpen[tag.id]"
+              :title="`编辑 ${tag.name}`"
+            >
+              <icon-more :size="16" />
+            </button>
           </template>
-        </a-dropdown>
+          <MenuPopoverItem danger @click="askDeleteTag(tag)">
+            <icon-delete :size="15" />
+            <span>删除标签</span>
+          </MenuPopoverItem>
+        </MenuPopover>
       </router-link>
 
       <div
@@ -723,6 +725,7 @@ onMounted(async () => {
 
 .sidebar__item-menu-btn {
   position: absolute;
+  top: 50%;
   right: 4px;
   background: transparent;
   border: none;
@@ -732,6 +735,8 @@ onMounted(async () => {
   color: var(--jt-text-tertiary);
   display: flex;
   align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
   opacity: 0;
   transition: opacity 0.15s;
   z-index: 5;
@@ -819,21 +824,6 @@ onMounted(async () => {
 }
 
 .sidebar__menu-danger {
-  color: var(--jt-error);
-}
-</style>
-
-<!-- 侧边栏上下文菜单（非 scoped，弹层渲染到 body） -->
-<style>
-.sidebar-ctx-menu {
-  min-width: 100px;
-}
-
-.sidebar-ctx-menu--danger {
-  color: var(--jt-error) !important;
-}
-
-.sidebar-ctx-menu--danger .arco-icon {
   color: var(--jt-error);
 }
 </style>

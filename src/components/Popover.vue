@@ -13,7 +13,13 @@ const props = withDefaults(
     /** 弹层相对 trigger 的偏移（px） */
     offset?: number;
     /** 弹层位置 */
-    placement?: "bottom-left" | "bottom-right" | "bottom-center" | "top-left";
+    placement?:
+      | "bottom-left"
+      | "bottom-right"
+      | "bottom-center"
+      | "top-left"
+      | "top-right"
+      | "top-center";
   }>(),
   { offset: 6, placement: "bottom-left" },
 );
@@ -43,11 +49,15 @@ function updatePosition() {
 
   // 先按指定 placement 计算 left
   let placement = props.placement;
-  let top = tr.bottom + scrollY + props.offset;
+  // top-* 系列：弹层在 trigger 上方；其它在下方
+  let top =
+    placement.startsWith("top-")
+      ? tr.top + scrollY - props.offset
+      : tr.bottom + scrollY + props.offset;
   let left = tr.left + scrollX;
-  if (placement === "bottom-right") {
+  if (placement === "bottom-right" || placement === "top-right") {
     left = tr.right + scrollX - pu.width;
-  } else if (placement === "bottom-center") {
+  } else if (placement === "bottom-center" || placement === "top-center") {
     left = tr.left + scrollX + tr.width / 2 - pu.width / 2;
   }
 

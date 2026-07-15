@@ -15,6 +15,8 @@ import {
   IconRight,
   IconDown,
 } from "@arco-design/web-vue/es/icon";
+import MenuPopover from "./MenuPopover.vue";
+import MenuPopoverItem from "./MenuPopoverItem.vue";
 
 const props = defineProps<{
   node: ListTreeNode;
@@ -40,10 +42,17 @@ const emit = defineEmits<{
   move: [draggedId: string, targetNode: ListTreeNode, position: "before" | "after" | "inside"];
 }>();
 
-function onMenuClick(key: string) {
+function onMenuClick(key: "edit" | "delete") {
+  folderMenuOpen.value = false;
+  listMenuOpen.value = false;
   if (key === "edit") emit("edit", props.node);
   else if (key === "delete") emit("delete", props.node);
 }
+
+/** 目录行更多菜单（独立 ref） */
+const folderMenuOpen = ref(false);
+/** 清单行更多菜单（独立 ref） */
+const listMenuOpen = ref(false);
 
 /** 点击清单行 → 路由跳转 */
 function goToList() {
@@ -200,23 +209,21 @@ function onDrop(e: DragEvent) {
       >
         <icon-plus :size="14" />
       </button>
-      <a-dropdown trigger="click" position="br" :popup-offset="4">
-        <button class="list-node__menu-btn" @click.stop>
-          <icon-more :size="16" />
-        </button>
-        <template #content>
-          <a-menu class="sidebar-ctx-menu" @menu-item-click="onMenuClick">
-            <a-menu-item key="edit">
-              <icon-edit :size="15" />
-              <span style="margin-left: 8px">编辑目录</span>
-            </a-menu-item>
-            <a-menu-item key="delete" class="sidebar-ctx-menu--danger">
-              <icon-delete :size="15" />
-              <span style="margin-left: 8px">删除目录</span>
-            </a-menu-item>
-          </a-menu>
+      <MenuPopover v-model:visible="folderMenuOpen">
+        <template #trigger>
+          <button class="list-node__menu-btn" @click.stop="folderMenuOpen = !folderMenuOpen">
+            <icon-more :size="16" />
+          </button>
         </template>
-      </a-dropdown>
+        <MenuPopoverItem @click="onMenuClick('edit')">
+          <icon-edit :size="15" />
+          <span>编辑目录</span>
+        </MenuPopoverItem>
+        <MenuPopoverItem danger @click="onMenuClick('delete')">
+          <icon-delete :size="15" />
+          <span>删除目录</span>
+        </MenuPopoverItem>
+      </MenuPopover>
     </div>
 
     <!-- 清单（非目录）—— 用 div 包裹以支持 draggable -->
@@ -244,28 +251,21 @@ function onDrop(e: DragEvent) {
       />
       <span class="list-node__title">{{ node.name }}</span>
       <span v-if="taskStore.listCounts[node.id]" class="list-node__count">{{ taskStore.listCounts[node.id] }}</span>
-      <a-dropdown
-        v-if="node.id !== 'inbox'"
-        trigger="click"
-        position="br"
-        :popup-offset="4"
-      >
-        <button class="list-node__menu-btn" @click.stop.prevent>
-          <icon-more :size="16" />
-        </button>
-        <template #content>
-          <a-menu class="sidebar-ctx-menu" @menu-item-click="onMenuClick">
-            <a-menu-item key="edit">
-              <icon-edit :size="15" />
-              <span style="margin-left: 8px">编辑清单</span>
-            </a-menu-item>
-            <a-menu-item key="delete" class="sidebar-ctx-menu--danger">
-              <icon-delete :size="15" />
-              <span style="margin-left: 8px">删除清单</span>
-            </a-menu-item>
-          </a-menu>
+      <MenuPopover v-if="node.id !== 'inbox'" v-model:visible="listMenuOpen">
+        <template #trigger>
+          <button class="list-node__menu-btn" @click.stop.prevent="listMenuOpen = !listMenuOpen">
+            <icon-more :size="16" />
+          </button>
         </template>
-      </a-dropdown>
+        <MenuPopoverItem @click="onMenuClick('edit')">
+          <icon-edit :size="15" />
+          <span>编辑清单</span>
+        </MenuPopoverItem>
+        <MenuPopoverItem danger @click="onMenuClick('delete')">
+          <icon-delete :size="15" />
+          <span>删除清单</span>
+        </MenuPopoverItem>
+      </MenuPopover>
     </div>
 
     <!-- 递归渲染子节点 -->
@@ -466,6 +466,7 @@ function onDrop(e: DragEvent) {
 /* 更多按钮 */
 .list-node__menu-btn {
   position: absolute;
+  top: 50%;
   right: 4px;
   margin: 0;
   padding: 0;
@@ -476,6 +477,8 @@ function onDrop(e: DragEvent) {
   color: var(--jt-text-tertiary);
   display: flex;
   align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
   opacity: 0;
   transition: opacity 0.15s;
   z-index: 5;
@@ -486,7 +489,9 @@ function onDrop(e: DragEvent) {
 }
 
 .list-node__menu-btn:hover {
-  background-color: var(--jt-surface-hover);
+  /* 选中态已有 accent-soft 背景，hover 不再叠加背景，只通过图标颜色加深反馈 */
+  background-color: transparent;
+  color: var(--jt-text-primary);
   color: var(--jt-text-primary);
 }
 </style>
