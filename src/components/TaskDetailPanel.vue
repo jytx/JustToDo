@@ -230,19 +230,21 @@ const customRemindMinutes = computed<number>({
 async function onRemindPresetChange(idx: number) {
   const preset = REMIND_PRESETS[idx];
   if (!preset) return;
-  if (preset.preset) {
-    if (preset.value === -1) {
-      // 自定义：保留 task 当前偏移（或兜底 120），并立即写库
-      // 让 task 真正变成"非预设值"，下拉不再跳回
-      const current = task.value?.remindOffsetMinutes;
-      const isPreset = typeof current === "number" && !!REMIND_PRESETS.find(
-        (p) => p.preset && p.value === current,
-      );
-      const candidate = isPreset ? 120 : current ?? 120;
-      await setRemindOffset(candidate);
-    } else {
-      await setRemindOffset(preset.value);
-    }
+  if (preset.value === null) {
+    // 不提醒
+    await setRemindOffset(null);
+  } else if (preset.preset) {
+    // 预设项（0/5/10/15/30/60）
+    await setRemindOffset(preset.value);
+  } else {
+    // 自定义（preset === false，value === -1）：
+    // 让 task 真正变成非预设值（120 或当前偏移），下拉才会停在 idx=7
+    const current = task.value?.remindOffsetMinutes;
+    const isPreset = typeof current === "number" && !!REMIND_PRESETS.find(
+      (p) => p.preset && p.value === current,
+    );
+    const candidate = isPreset ? 120 : current ?? 120;
+    await setRemindOffset(candidate);
   }
 }
 
