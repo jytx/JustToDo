@@ -16,7 +16,6 @@ import Link from "@tiptap/extension-link";
 import HardBreak from "@tiptap/extension-hard-break";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
-import Placeholder from "@tiptap/extension-placeholder";
 import Suggestion from "@tiptap/suggestion";
 import GlobalDragHandle from "tiptap-extension-global-drag-handle";
 import { Extension } from "@tiptap/core";
@@ -279,12 +278,10 @@ const editor = useEditor({
       dragHandleWidth: 20,
       scrollTreshold: 100,
     }),
-    Placeholder.configure({
-      // 整篇空的时候显示主提示；具体每个空段落也会复用这个 placeholder
-      placeholder: props.placeholder ?? "按 / 唤起命令，输入备注…",
-      showOnlyWhenEditable: true,
-      showOnlyCurrent: false,
-    }),
+    // 注：故意不加 @tiptap/extension-placeholder。
+    // 它默认给每个空段落都加提示文字，回车后每行都显示，体验差。
+    // 改为依赖下方 CSS `.rich-text__content:empty::before { ... }`，仅在
+    // doc 完全为空时显示一次"按 / 唤起命令…"，符合 Notion-like 行为。
     SelectAllFix,
     Image.configure({
       inline: false,
@@ -307,7 +304,9 @@ const editor = useEditor({
   editorProps: {
     attributes: {
       class: "rich-text__content",
-      "data-placeholder": props.placeholder ?? "添加备注...",
+      // 文档完全空时显示的提示。
+      // 由 CSS `.rich-text__content:empty::before` 通过 data-placeholder 读取。
+      "data-placeholder": props.placeholder ?? "按 / 唤起命令，输入备注…",
     },
     handlePaste: (_view, event) => {
       const cd = event.clipboardData;
@@ -591,19 +590,12 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 .rich-text__editor :deep(.rich-text__content:empty)::before {
+  /* doc 完全空时显示的占位提示。
+     注意：这里**不能再给每个空段落加 .is-empty 提示**，
+     否则按回车后每行都显示，体验差。*/
   content: attr(data-placeholder);
   color: var(--jt-text-tertiary);
   pointer-events: none;
-}
-
-/* Placeholder extension 渲染在每个空段落内（不是 :empty 的 doc） */
-.rich-text__editor :deep(.rich-text__content p.is-editor-empty:first-child::before),
-.rich-text__editor :deep(.rich-text__content p.is-empty::before) {
-  content: attr(data-placeholder);
-  float: left;
-  color: var(--jt-text-tertiary);
-  pointer-events: none;
-  height: 0;
 }
 
 /* Drag Handle —— tiptap-extension-global-drag-handle 插件只创建空 div，
