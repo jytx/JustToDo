@@ -119,67 +119,16 @@ const slashItems: SlashCommandItem[] = [
   { key: "hr", title: "分隔线", description: "Divider", keywords: ["hr", "line"] },
 ];
 
-/** 实际执行 slash 选中的 command */
-function runSlashCommand(item: SlashCommandItem) {
-  const editorInstance = editor.value;
-  if (!editorInstance) return;
-  // 先聚焦编辑器，确保 command 作用在 selection 上
-  editorInstance.commands.focus();
-  const chain = editorInstance.chain().focus();
-  switch (item.key) {
-    case "text":
-      chain.setParagraph().run();
-      break;
-    case "h1":
-      chain.toggleHeading({ level: 1 }).run();
-      break;
-    case "h2":
-      chain.toggleHeading({ level: 2 }).run();
-      break;
-    case "h3":
-      chain.toggleHeading({ level: 3 }).run();
-      break;
-    case "bullet":
-      // 不用 toggleBulletList：它在 bulletList 内会取消回 paragraph，
-      // 用户看到"什么都没出现"。先判断：若已在 bulletList 跳过；否则 wrap。
-      if (!editorInstance.isActive("bulletList")) {
-        chain.toggleBulletList().run();
-      }
-      break;
-    case "ordered":
-      if (!editorInstance.isActive("orderedList")) {
-        chain.toggleOrderedList().run();
-      }
-      break;
-    case "todo":
-      // 关键点：toggleTaskList 行为 = "在则取消出、不在则包入"。
-      // slash 菜单的本意是"新增任务列表块"，所以只在没在 taskList 时才 toggle。
-      // 若已在 taskList 内，保留并把光标留在原地。
-      if (!editorInstance.isActive("taskList")) {
-        chain.toggleTaskList().run();
-      }
-      break;
-    case "quote":
-      // 同理：toggleBlockquote 在 blockquote 内会取消
-      if (!editorInstance.isActive("blockquote")) {
-        chain.toggleBlockquote().run();
-      }
-      break;
-    case "code":
-      if (!editorInstance.isActive("codeBlock")) {
-        chain.toggleCodeBlock().run();
-      }
-      break;
-    case "hr":
-      chain.setHorizontalRule().run();
-      break;
-  }
-}
-
 /**
  * Slash Command Tiptap Extension —— 把 Suggestion ProseMirror Plugin 包装成
  * Tiptap Extension，在 addProseMirrorPlugins 时拿到 this.editor。
  * 直接传 Suggestion 进 extensions 数组会被静默忽略（这是 3.x 设计）。
+ *
+ * 选 block 命令在 command 回调里：
+ *  - editor.chain().focus().deleteRange(range) 删除 /xxx 范围
+ *  - 链上 toggleXxx / setParagraph / setHorizontalRule 等切换 block 类型
+ *  - 一次 .run() 让二者合并到同一个 ProseMirror transaction，
+ *    避免双 transaction 之间 Suggestion utility 维护的 range 失效造成字符残留。
  */
 const SlashCommandExt = Extension.create({
   name: "slashCommand",
@@ -209,8 +158,42 @@ const SlashCommandExt = Extension.create({
           range: { from: number; to: number };
           props: SlashCommandItem;
         }) => {
-          editor.chain().focus().deleteRange(range as any).run();
-          runSlashCommand(item);
+          // 一次 transaction 把"删除 /xxx 范围"和"切换 block 类型"合并，
+          // 避免两次 transaction 之间 Suggestion utility 的 range 引用失效
+          // 造成字符残留。
+          const c = editor.chain().focus().deleteRange(range as any);
+          switch (item.key) {
+            case "text":
+              c.setParagraph().run();
+              break;
+            case "h1":
+              c.toggleHeading({ level: 1 }).run();
+              break;
+            case "h2":
+              c.toggleHeading({ level: 2 }).run();
+              break;
+            case "h3":
+              c.toggleHeading({ level: 3 }).run();
+              break;
+            case "bullet":
+              if (!editor.isActive("bulletList")) c.toggleBulletList().run();
+              break;
+            case "ordered":
+              if (!editor.isActive("orderedList")) c.toggleOrderedList().run();
+              break;
+            case "todo":
+              if (!editor.isActive("taskList")) c.toggleTaskList().run();
+              break;
+            case "quote":
+              if (!editor.isActive("blockquote")) c.toggleBlockquote().run();
+              break;
+            case "code":
+              if (!editor.isActive("codeBlock")) c.toggleCodeBlock().run();
+              break;
+            case "hr":
+              c.setHorizontalRule().run();
+              break;
+          }
         },
         // Vue createApp 挂 SlashCommandMenu；由 Suggestion utility 提供 mount + 定位
         render: () => {
