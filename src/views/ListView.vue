@@ -116,16 +116,20 @@ onMounted(async () => {
 
 .list-view__title {
   font-family: var(--font-display);
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--jt-text-primary);
   margin: 0;
+  line-height: 1.3;
 }
 
 .list-view__subtitle {
   font-size: 12px;
   color: var(--jt-text-secondary);
   margin: 4px 0 0;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 .list-view__tasks {
@@ -162,8 +166,9 @@ onMounted(async () => {
 
 .list-view__empty-title {
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
+  letter-spacing: -0.01em;
   color: var(--jt-text-primary);
   margin: 0 0 4px;
 }

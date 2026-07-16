@@ -571,6 +571,7 @@ onMounted(async () => {
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 16px;
+  letter-spacing: -0.02em;
 }
 
 .sidebar__nav {

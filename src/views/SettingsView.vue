@@ -290,10 +290,12 @@ async function changeAttachmentPath() {
 
 .settings-view__title {
   font-family: var(--font-display);
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--jt-text-primary);
   margin: 0;
+  line-height: 1.3;
 }
 
 .settings-view__body {
@@ -348,9 +350,11 @@ async function changeAttachmentPath() {
 
 .settings-section__title {
   font-family: var(--font-display);
-  font-size: 18px;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   margin: 0 0 20px;
+  color: var(--jt-text-primary);
 }
 
 .settings-section__item {
@@ -454,6 +458,8 @@ async function changeAttachmentPath() {
   font-family: var(--font-display);
   font-size: 20px;
   font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--jt-text-primary);
 }
 
 .settings-section__about-version {

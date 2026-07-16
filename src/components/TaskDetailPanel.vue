@@ -1172,6 +1172,7 @@ function formatMeta(iso: string): string {
   font-family: var(--font-display);
   font-size: 22px;
   font-weight: 600;
+  letter-spacing: -0.02em;
   line-height: 1.5;
   color: var(--jt-text-primary);
   margin: 0 0 16px;

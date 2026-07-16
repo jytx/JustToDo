@@ -696,22 +696,25 @@ function fileToBase64(file: File): Promise<string> {
   margin-bottom: 0;
 }
 
-/* 标题 — Notion 风格相对正文略大 */
+/* 标题 — Geist 显示气质：靠字号 + 字重 + 字间距区分层级 */
 .rich-text__editor :deep(.rich-text__content h1) {
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 600;
+  letter-spacing: -0.025em;
   margin: 8px 0 4px;
   line-height: 1.3;
 }
 .rich-text__editor :deep(.rich-text__content h2) {
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 600;
+  letter-spacing: -0.02em;
   margin: 6px 0 4px;
   line-height: 1.3;
 }
 .rich-text__editor :deep(.rich-text__content h3) {
   font-size: 16px;
   font-weight: 600;
+  letter-spacing: -0.015em;
   margin: 4px 0 2px;
   line-height: 1.3;
 }
