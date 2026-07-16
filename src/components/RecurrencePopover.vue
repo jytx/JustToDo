@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 重复弹层 —— 选择频率 + 间隔
 import { ref, computed, watch } from "vue";
-import { RECURRENCE_FREQS, type RecurrenceFreq } from "@/types";
+import { RECURRENCE_FREQS, formatRecurrence, type RecurrenceFreq } from "@/types";
 
 const props = defineProps<{
   freq: RecurrenceFreq | null;
@@ -25,12 +25,9 @@ watch(
   { immediate: true },
 );
 
-const summary = computed(() => {
-  if (!localFreq.value) return "";
-  const unit = RECURRENCE_FREQS.find((f) => f.value === localFreq.value)?.label ?? "";
-  if (localInterval.value === 1) return `每${unit}`;
-  return `每 ${localInterval.value} ${unit}`;
-});
+const summary = computed(() =>
+  formatRecurrence(localFreq.value, localInterval.value),
+);
 
 function onConfirm() {
   if (!localFreq.value) {

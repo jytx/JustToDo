@@ -84,6 +84,8 @@ export interface Task {
   recurrenceEndAt: string | null;
   /** 剩余重复次数（null = 不限） */
   recurrenceCount: number | null;
+  /** 重复实例的来源模板 id（null = 普通任务或自身即模板） */
+  recurrenceOriginId: string | null;
   /** 提前多少分钟提醒（null = 不提醒；0 = 准点；N = 提前 N 分钟） */
   remindOffsetMinutes: number | null;
   /** 通知触发时间戳（null = 还没通知过） */
@@ -153,6 +155,23 @@ export const RECURRENCE_FREQS: Array<{ value: RecurrenceFreq; label: string }> =
 ];
 
 /**
+ * 格式化重复规则为中文描述。
+ * label 自带"每"前缀（如"每天"），这里统一去掉后重新拼接，避免"每每天"。
+ * - freq 为 null → 空串
+ * - interval = 1 → "每天" / "每周" ...
+ * - interval > 1 → "每 3 天" / "每 2 周" ...
+ */
+export function formatRecurrence(
+  freq: RecurrenceFreq | null,
+  interval: number,
+): string {
+  if (!freq) return "";
+  const unit = RECURRENCE_FREQ_LABELS[freq].replace(/^每/, "");
+  const n = interval || 1;
+  return n === 1 ? `每${unit}` : `每 ${n} ${unit}`;
+}
+
+/**
  * 数据库返回的原始行（snake_case + 整数 done/priority）。
  * 前端通过 mapTaskRow 转换为 Task 接口。
  */
@@ -174,6 +193,7 @@ export interface TaskRow {
   recurrence_interval: number;
   recurrence_end_at: string | null;
   recurrence_count: number | null;
+  recurrence_origin_id: string | null;
   remind_offset_minutes: number | null;
   notified_at: string | null;
   /** JSON 字符串（后端 Vec<ChecklistItem> 序列化） */
@@ -211,6 +231,7 @@ export function mapTaskRow(row: TaskRow): Task {
     recurrenceInterval: row.recurrence_interval,
     recurrenceEndAt: row.recurrence_end_at,
     recurrenceCount: row.recurrence_count,
+    recurrenceOriginId: row.recurrence_origin_id,
     remindOffsetMinutes: row.remind_offset_minutes,
     notifiedAt: row.notified_at,
     checklist: parseChecklist(row.checklist),

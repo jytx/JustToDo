@@ -1,9 +1,9 @@
 // Tauri 命令 —— 前端通过 invoke() 调用这些函数
 // 所有命令返回 Result<T, String>，错误信息清晰传到前端
 
+use chrono::{Datelike, Timelike};
 use sqlx::Row;
 use tauri::State;
-use chrono::{Datelike, Timelike};
 
 use crate::models::*;
 
@@ -23,9 +23,16 @@ fn now() -> String {
 /// 根据 sort_field + sort_dir 生成 ORDER BY 子句（不含前缀 "ORDER BY "）
 /// 总是先按 done 排（未完成在前），再按用户指定字段
 fn order_by_clause(sort_field: &str, sort_dir: &str) -> String {
-    let dir = if sort_dir.eq_ignore_ascii_case("desc") { "DESC" } else { "ASC" };
+    let dir = if sort_dir.eq_ignore_ascii_case("desc") {
+        "DESC"
+    } else {
+        "ASC"
+    };
     match sort_field {
-        "priority" => format!("priority {}, sort_order ASC", if dir == "ASC" { "DESC" } else { "ASC" }), // 默认 desc
+        "priority" => format!(
+            "priority {}, sort_order ASC",
+            if dir == "ASC" { "DESC" } else { "ASC" }
+        ), // 默认 desc
         "due" => format!(
             "(CASE WHEN due_end_at IS NULL THEN 1 ELSE 0 END), due_end_at {}, sort_order ASC",
             dir
@@ -55,6 +62,7 @@ fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
         recurrence_interval: row.get("recurrence_interval"),
         recurrence_end_at: row.get("recurrence_end_at"),
         recurrence_count: row.get("recurrence_count"),
+        recurrence_origin_id: row.try_get("recurrence_origin_id").ok().flatten(),
         remind_offset_minutes: row.try_get("remind_offset_minutes").ok().flatten(),
         notified_at: row.try_get("notified_at").ok().flatten(),
         // checklist 存的是 JSON 字符串，反序列化为 Vec
@@ -185,7 +193,9 @@ pub async fn list_rename(
         return Err("收件箱不能重命名".to_string());
     }
     sqlx::query("UPDATE lists SET name = $1, color = $2 WHERE id = $3")
-        .bind(&name).bind(&color).bind(&id)
+        .bind(&name)
+        .bind(&color)
+        .bind(&id)
         .execute(pool.inner())
         .await
         .map_err(|e| format!("更新清单失败: {}", e))?;
@@ -246,7 +256,9 @@ pub async fn list_reorder(
 
 /// 统计各清单的未完成根任务数量（供侧边栏显示）
 #[tauri::command]
-pub async fn task_count_by_list(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<(String, i64)>> {
+pub async fn task_count_by_list(
+    pool: State<'_, sqlx::SqlitePool>,
+) -> CmdResult<Vec<(String, i64)>> {
     let rows = sqlx::query(
         "SELECT list_id, COUNT(*) as cnt FROM tasks WHERE parent_id IS NULL AND done = 0 GROUP BY list_id"
     )
@@ -254,7 +266,10 @@ pub async fn task_count_by_list(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<
     .await
     .map_err(|e| format!("统计任务数量失败: {}", e))?;
 
-    Ok(rows.iter().map(|r| (r.get::<String, _>("list_id"), r.get::<i64, _>("cnt"))).collect())
+    Ok(rows
+        .iter()
+        .map(|r| (r.get::<String, _>("list_id"), r.get::<i64, _>("cnt")))
+        .collect())
 }
 
 /// 统计各标签的未完成根任务数量（供侧边栏显示）
@@ -265,13 +280,16 @@ pub async fn task_count_by_tag(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<V
          FROM task_tags tt
          JOIN tasks t ON t.id = tt.task_id
          WHERE t.parent_id IS NULL AND t.done = 0
-         GROUP BY tt.tag_id"
+         GROUP BY tt.tag_id",
     )
     .fetch_all(pool.inner())
     .await
     .map_err(|e| format!("统计标签任务数量失败: {}", e))?;
 
-    Ok(rows.iter().map(|r| (r.get::<String, _>("tag_id"), r.get::<i64, _>("cnt"))).collect())
+    Ok(rows
+        .iter()
+        .map(|r| (r.get::<String, _>("tag_id"), r.get::<i64, _>("cnt")))
+        .collect())
 }
 
 /// 统计智能视图的未完成根任务数量
@@ -364,22 +382,18 @@ async fn resolve_sort_pref(
         return Ok((f.to_string(), d.to_string()));
     }
     let row_opt = match pref_type {
-        "list" => {
-            sqlx::query("SELECT sort_field, sort_dir FROM lists WHERE id = $1")
-                .bind(pref_id)
-                .fetch_optional(pool)
-                .await
-                .ok()
-                .flatten()
-        }
-        "tag" => {
-            sqlx::query("SELECT sort_field, sort_dir FROM tag_sort_prefs WHERE tag_id = $1")
-                .bind(pref_id)
-                .fetch_optional(pool)
-                .await
-                .ok()
-                .flatten()
-        }
+        "list" => sqlx::query("SELECT sort_field, sort_dir FROM lists WHERE id = $1")
+            .bind(pref_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten(),
+        "tag" => sqlx::query("SELECT sort_field, sort_dir FROM tag_sort_prefs WHERE tag_id = $1")
+            .bind(pref_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten(),
         _ => None,
     };
     if let Some(row) = row_opt {
@@ -512,6 +526,7 @@ pub async fn task_create(
         recurrence_interval,
         recurrence_end_at,
         recurrence_count,
+        recurrence_origin_id: None,
         remind_offset_minutes,
         notified_at: None,
         checklist: Vec::new(),
@@ -528,64 +543,96 @@ pub async fn task_update(
 
     if let Some(title) = &input.title {
         sqlx::query("UPDATE tasks SET title = $1, updated_at = $2 WHERE id = $3")
-            .bind(title).bind(&ts).bind(&id)
-            .execute(pool.inner()).await
+            .bind(title)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
             .map_err(|e| format!("更新任务失败: {}", e))?;
     }
     if let Some(note) = &input.note {
         sqlx::query("UPDATE tasks SET note = $1, updated_at = $2 WHERE id = $3")
-            .bind(note).bind(&ts).bind(&id)
-            .execute(pool.inner()).await
+            .bind(note)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
             .map_err(|e| format!("更新任务失败: {}", e))?;
     }
     if let Some(priority) = input.priority {
         sqlx::query("UPDATE tasks SET priority = $1, updated_at = $2 WHERE id = $3")
-            .bind(priority).bind(&ts).bind(&id)
-            .execute(pool.inner()).await
+            .bind(priority)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
             .map_err(|e| format!("更新任务失败: {}", e))?;
     }
     if let Some(due_start_at) = &input.due_start_at {
         sqlx::query("UPDATE tasks SET due_start_at = $1, updated_at = $2 WHERE id = $3")
-            .bind(due_start_at).bind(&ts).bind(&id)
-            .execute(pool.inner()).await
+            .bind(due_start_at)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
             .map_err(|e| format!("更新任务失败: {}", e))?;
     }
     if let Some(due_end_at) = &input.due_end_at {
         // 截止时间改变时重置 notified_at，让新一轮 reminder 重新检查
-        sqlx::query("UPDATE tasks SET due_end_at = $1, notified_at = NULL, updated_at = $2 WHERE id = $3")
-            .bind(due_end_at).bind(&ts).bind(&id)
-            .execute(pool.inner()).await
-            .map_err(|e| format!("更新任务失败: {}", e))?;
+        sqlx::query(
+            "UPDATE tasks SET due_end_at = $1, notified_at = NULL, updated_at = $2 WHERE id = $3",
+        )
+        .bind(due_end_at)
+        .bind(&ts)
+        .bind(&id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("更新任务失败: {}", e))?;
     }
     if let Some(list_id) = &input.list_id {
         sqlx::query("UPDATE tasks SET list_id = $1, updated_at = $2 WHERE id = $3")
-            .bind(list_id).bind(&ts).bind(&id)
-            .execute(pool.inner()).await
+            .bind(list_id)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
             .map_err(|e| format!("更新任务失败: {}", e))?;
     }
     // 重复规则字段（Option<Option<T>> 表示可能清除字段）
     if let Some(freq) = &input.recurrence_freq {
         sqlx::query("UPDATE tasks SET recurrence_freq = $1, updated_at = $2 WHERE id = $3")
-            .bind(freq).bind(&ts).bind(&id)
-            .execute(pool.inner()).await
+            .bind(freq)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
             .map_err(|e| format!("更新任务失败: {}", e))?;
     }
     if let Some(interval) = input.recurrence_interval {
         sqlx::query("UPDATE tasks SET recurrence_interval = $1, updated_at = $2 WHERE id = $3")
-            .bind(interval).bind(&ts).bind(&id)
-            .execute(pool.inner()).await
+            .bind(interval)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
             .map_err(|e| format!("更新任务失败: {}", e))?;
     }
     if let Some(end_at) = &input.recurrence_end_at {
         sqlx::query("UPDATE tasks SET recurrence_end_at = $1, updated_at = $2 WHERE id = $3")
-            .bind(end_at).bind(&ts).bind(&id)
-            .execute(pool.inner()).await
+            .bind(end_at)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
             .map_err(|e| format!("更新任务失败: {}", e))?;
     }
     if let Some(count) = &input.recurrence_count {
         sqlx::query("UPDATE tasks SET recurrence_count = $1, updated_at = $2 WHERE id = $3")
-            .bind(count).bind(&ts).bind(&id)
-            .execute(pool.inner()).await
+            .bind(count)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
             .map_err(|e| format!("更新任务失败: {}", e))?;
     }
     // 提醒规则（Option<Option<i32>> 允许显式清空）
@@ -598,11 +645,14 @@ pub async fn task_update(
     }
     // 检查项列表（整组覆盖为 JSON 数组）
     if let Some(checklist) = &input.checklist {
-        let json = serde_json::to_string(checklist)
-            .map_err(|e| format!("序列化检查项失败: {}", e))?;
+        let json =
+            serde_json::to_string(checklist).map_err(|e| format!("序列化检查项失败: {}", e))?;
         sqlx::query("UPDATE tasks SET checklist = $1, updated_at = $2 WHERE id = $3")
-            .bind(json).bind(&ts).bind(&id)
-            .execute(pool.inner()).await
+            .bind(json)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
             .map_err(|e| format!("更新检查项失败: {}", e))?;
     }
 
@@ -715,11 +765,18 @@ pub async fn tag_create(pool: State<'_, sqlx::SqlitePool>, name: String) -> CmdR
     let ts = now();
 
     sqlx::query("INSERT INTO tags (id, name, created_at) VALUES ($1, $2, $3)")
-        .bind(&id).bind(&name).bind(&ts)
-        .execute(pool.inner()).await
+        .bind(&id)
+        .bind(&name)
+        .bind(&ts)
+        .execute(pool.inner())
+        .await
         .map_err(|e| format!("创建标签失败: {}", e))?;
 
-    Ok(Tag { id, name, created_at: ts })
+    Ok(Tag {
+        id,
+        name,
+        created_at: ts,
+    })
 }
 
 /// 查询指定标签下的所有任务（包括有子任务的根任务）
@@ -764,15 +821,13 @@ pub async fn list_set_sort_pref(
     sort_field: String,
     sort_dir: String,
 ) -> CmdResult<()> {
-    sqlx::query(
-        "UPDATE lists SET sort_field = $1, sort_dir = $2 WHERE id = $3",
-    )
-    .bind(&sort_field)
-    .bind(&sort_dir)
-    .bind(&list_id)
-    .execute(pool.inner())
-    .await
-    .map_err(|e| format!("设置清单排序失败: {}", e))?;
+    sqlx::query("UPDATE lists SET sort_field = $1, sort_dir = $2 WHERE id = $3")
+        .bind(&sort_field)
+        .bind(&sort_dir)
+        .bind(&list_id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("设置清单排序失败: {}", e))?;
     Ok(())
 }
 
@@ -820,16 +875,23 @@ pub async fn tag_get_sort_pref(
 pub async fn tag_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdResult<()> {
     sqlx::query("DELETE FROM tags WHERE id = $1")
         .bind(&id)
-        .execute(pool.inner()).await
+        .execute(pool.inner())
+        .await
         .map_err(|e| format!("删除标签失败: {}", e))?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn tag_rename(pool: State<'_, sqlx::SqlitePool>, id: String, name: String) -> CmdResult<()> {
+pub async fn tag_rename(
+    pool: State<'_, sqlx::SqlitePool>,
+    id: String,
+    name: String,
+) -> CmdResult<()> {
     sqlx::query("UPDATE tags SET name = $1 WHERE id = $2")
-        .bind(&name).bind(&id)
-        .execute(pool.inner()).await
+        .bind(&name)
+        .bind(&id)
+        .execute(pool.inner())
+        .await
         .map_err(|e| format!("重命名标签失败: {}", e))?;
     Ok(())
 }
@@ -890,7 +952,10 @@ pub async fn habit_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<H
         .await
         .map_err(|e| format!("查询习惯失败: {}", e))?;
 
-    let today = chrono::Utc::now().date_naive().format("%Y-%m-%d").to_string();
+    let today = chrono::Utc::now()
+        .date_naive()
+        .format("%Y-%m-%d")
+        .to_string();
     let mut result = Vec::new();
 
     for r in &rows {
@@ -906,16 +971,21 @@ pub async fn habit_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<H
         };
 
         let today_count: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(SUM(count), 0) FROM habit_logs WHERE habit_id = $1 AND log_date = $2"
-        )
-        .bind(&id).bind(&today)
-        .fetch_one(pool.inner()).await.unwrap_or(0);
-
-        let total_days: i64 = sqlx::query_scalar(
-            "SELECT COUNT(DISTINCT log_date) FROM habit_logs WHERE habit_id = $1"
+            "SELECT COALESCE(SUM(count), 0) FROM habit_logs WHERE habit_id = $1 AND log_date = $2",
         )
         .bind(&id)
-        .fetch_one(pool.inner()).await.unwrap_or(0);
+        .bind(&today)
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or(0);
+
+        let total_days: i64 = sqlx::query_scalar(
+            "SELECT COUNT(DISTINCT log_date) FROM habit_logs WHERE habit_id = $1",
+        )
+        .bind(&id)
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or(0);
 
         let streak = calc_streak(pool.inner(), &id, &today).await;
 
@@ -982,8 +1052,13 @@ pub async fn habit_create(
     .map_err(|e| format!("创建习惯失败: {}", e))?;
 
     Ok(Habit {
-        id, name: input.name, color, repeat_rule, target_count,
-        remind_at: input.remind_at, created_at: ts,
+        id,
+        name: input.name,
+        color,
+        repeat_rule,
+        target_count,
+        remind_at: input.remind_at,
+        created_at: ts,
     })
 }
 
@@ -991,7 +1066,8 @@ pub async fn habit_create(
 pub async fn habit_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdResult<()> {
     sqlx::query("DELETE FROM habits WHERE id = $1")
         .bind(&id)
-        .execute(pool.inner()).await
+        .execute(pool.inner())
+        .await
         .map_err(|e| format!("删除习惯失败: {}", e))?;
     Ok(())
 }
@@ -1002,21 +1078,28 @@ pub async fn habit_toggle_check(
     habit_id: String,
     date: Option<String>,
 ) -> CmdResult<bool> {
-    let log_date = date.unwrap_or_else(|| chrono::Utc::now().date_naive().format("%Y-%m-%d").to_string());
+    let log_date = date.unwrap_or_else(|| {
+        chrono::Utc::now()
+            .date_naive()
+            .format("%Y-%m-%d")
+            .to_string()
+    });
     let id = uuid();
     let ts = now();
 
-    let existing: Option<String> = sqlx::query_scalar(
-        "SELECT id FROM habit_logs WHERE habit_id = $1 AND log_date = $2"
-    )
-    .bind(&habit_id).bind(&log_date)
-    .fetch_optional(pool.inner()).await
-    .map_err(|e| format!("查询打卡记录失败: {}", e))?;
+    let existing: Option<String> =
+        sqlx::query_scalar("SELECT id FROM habit_logs WHERE habit_id = $1 AND log_date = $2")
+            .bind(&habit_id)
+            .bind(&log_date)
+            .fetch_optional(pool.inner())
+            .await
+            .map_err(|e| format!("查询打卡记录失败: {}", e))?;
 
     if let Some(log_id) = existing {
         sqlx::query("DELETE FROM habit_logs WHERE id = $1")
             .bind(&log_id)
-            .execute(pool.inner()).await
+            .execute(pool.inner())
+            .await
             .map_err(|e| format!("取消打卡失败: {}", e))?;
         Ok(false)
     } else {
@@ -1034,33 +1117,37 @@ pub async fn habit_get_logs(
     habit_id: String,
 ) -> CmdResult<Vec<(String, i32)>> {
     let rows = sqlx::query(
-        "SELECT log_date, count FROM habit_logs WHERE habit_id = $1 ORDER BY log_date DESC"
+        "SELECT log_date, count FROM habit_logs WHERE habit_id = $1 ORDER BY log_date DESC",
     )
     .bind(habit_id)
-    .fetch_all(pool.inner()).await
+    .fetch_all(pool.inner())
+    .await
     .map_err(|e| format!("查询打卡历史失败: {}", e))?;
 
-    Ok(rows.iter().map(|r| (r.get::<String, _>("log_date"), r.get::<i32, _>("count"))).collect())
+    Ok(rows
+        .iter()
+        .map(|r| (r.get::<String, _>("log_date"), r.get::<i32, _>("count")))
+        .collect())
 }
 
 // ─── 附件 / 文件存储 ─────────────────────────────────────
 
-use tauri::{AppHandle, Manager};
 use std::path::PathBuf;
+use tauri::{AppHandle, Manager};
 
 /// 设置自定义附件存储路径
 #[tauri::command]
 pub async fn set_attachment_dir(app: AppHandle, path: String) -> CmdResult<String> {
     let dir = PathBuf::from(&path);
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("创建目录失败: {}", e))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建目录失败: {}", e))?;
 
     // 记录到 app data 目录的配置文件
-    let config_path = app.path().app_data_dir()
+    let config_path = app
+        .path()
+        .app_data_dir()
         .map_err(|e| format!("获取 app data 目录失败: {}", e))?
         .join("attachment_path.txt");
-    std::fs::write(&config_path, &path)
-        .map_err(|e| format!("保存配置失败: {}", e))?;
+    std::fs::write(&config_path, &path).map_err(|e| format!("保存配置失败: {}", e))?;
 
     Ok(path)
 }
@@ -1068,34 +1155,33 @@ pub async fn set_attachment_dir(app: AppHandle, path: String) -> CmdResult<Strin
 /// 获取当前附件存储路径（读配置或返回默认）
 #[tauri::command]
 pub async fn get_attachment_path(app: AppHandle) -> CmdResult<String> {
-    let config_path = app.path().app_data_dir()
+    let config_path = app
+        .path()
+        .app_data_dir()
         .map_err(|e| format!("获取 app data 目录失败: {}", e))?
         .join("attachment_path.txt");
 
     if config_path.exists() {
-        let path = std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("读取配置失败: {}", e))?;
+        let path =
+            std::fs::read_to_string(&config_path).map_err(|e| format!("读取配置失败: {}", e))?;
         if std::path::Path::new(&path).exists() {
             return Ok(path);
         }
     }
 
     // 返回默认路径
-    let default = app.path().app_data_dir()
+    let default = app
+        .path()
+        .app_data_dir()
         .map_err(|e| format!("获取 app data 目录失败: {}", e))?
         .join("attachments");
-    std::fs::create_dir_all(&default)
-        .map_err(|e| format!("创建默认附件目录失败: {}", e))?;
+    std::fs::create_dir_all(&default).map_err(|e| format!("创建默认附件目录失败: {}", e))?;
     Ok(default.to_string_lossy().to_string())
 }
 
 /// 保存图片（base64 数据）到附件目录，返回文件名
 #[tauri::command]
-pub async fn save_image(
-    app: AppHandle,
-    data: String,
-    ext: String,
-) -> CmdResult<String> {
+pub async fn save_image(app: AppHandle, data: String, ext: String) -> CmdResult<String> {
     let dir = get_attachment_path(app.clone()).await?;
     let id = uuid();
     let filename = format!("{}.{}", id, ext);
@@ -1104,8 +1190,7 @@ pub async fn save_image(
     // 解码 base64
     use std::io::Write;
     let bytes = base64_decode(&data)?;
-    let mut file = std::fs::File::create(&filepath)
-        .map_err(|e| format!("创建文件失败: {}", e))?;
+    let mut file = std::fs::File::create(&filepath).map_err(|e| format!("创建文件失败: {}", e))?;
     file.write_all(&bytes)
         .map_err(|e| format!("写入文件失败: {}", e))?;
 
@@ -1114,25 +1199,32 @@ pub async fn save_image(
 
 /// 获取附件的完整路径
 #[tauri::command]
-pub async fn get_attachment_fullpath(
-    app: AppHandle,
-    filename: String,
-) -> CmdResult<String> {
+pub async fn get_attachment_fullpath(app: AppHandle, filename: String) -> CmdResult<String> {
     let dir = get_attachment_path(app).await?;
-    Ok(PathBuf::from(&dir).join(&filename).to_string_lossy().to_string())
+    Ok(PathBuf::from(&dir)
+        .join(&filename)
+        .to_string_lossy()
+        .to_string())
 }
 
 /// 简单的 base64 解码（不依赖外部 crate）
 fn base64_decode(input: &str) -> CmdResult<Vec<u8>> {
     const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let input: Vec<u8> = input.bytes().filter(|b| *b != b'\n' && *b != b'\r').collect();
+    let input: Vec<u8> = input
+        .bytes()
+        .filter(|b| *b != b'\n' && *b != b'\r')
+        .collect();
     let mut output = Vec::new();
     let mut buffer = 0u32;
     let mut bits = 0;
 
     for byte in input {
-        if byte == b'=' { break; }
-        let val = TABLE.iter().position(|&b| b == byte)
+        if byte == b'=' {
+            break;
+        }
+        let val = TABLE
+            .iter()
+            .position(|&b| b == byte)
             .ok_or_else(|| "无效的 base64 字符".to_string())? as u32;
         buffer = (buffer << 6) | val;
         bits += 6;
@@ -1155,7 +1247,7 @@ pub async fn task_get_tags(
     let rows = sqlx::query(
         "SELECT t.id, t.name, t.created_at FROM tags t
          JOIN task_tags tt ON t.id = tt.tag_id
-         WHERE tt.task_id = $1 ORDER BY t.name ASC"
+         WHERE tt.task_id = $1 ORDER BY t.name ASC",
     )
     .bind(task_id)
     .fetch_all(pool.inner())
@@ -1178,12 +1270,12 @@ pub async fn task_add_tag(
     task_id: String,
     tag_id: String,
 ) -> CmdResult<()> {
-    sqlx::query(
-        "INSERT OR IGNORE INTO task_tags (task_id, tag_id) VALUES ($1, $2)"
-    )
-    .bind(task_id).bind(tag_id)
-    .execute(pool.inner()).await
-    .map_err(|e| format!("添加任务标签失败: {}", e))?;
+    sqlx::query("INSERT OR IGNORE INTO task_tags (task_id, tag_id) VALUES ($1, $2)")
+        .bind(task_id)
+        .bind(tag_id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("添加任务标签失败: {}", e))?;
     Ok(())
 }
 
@@ -1193,12 +1285,12 @@ pub async fn task_remove_tag(
     task_id: String,
     tag_id: String,
 ) -> CmdResult<()> {
-    sqlx::query(
-        "DELETE FROM task_tags WHERE task_id = $1 AND tag_id = $2"
-    )
-    .bind(task_id).bind(tag_id)
-    .execute(pool.inner()).await
-    .map_err(|e| format!("移除任务标签失败: {}", e))?;
+    sqlx::query("DELETE FROM task_tags WHERE task_id = $1 AND tag_id = $2")
+        .bind(task_id)
+        .bind(tag_id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("移除任务标签失败: {}", e))?;
     Ok(())
 }
 
@@ -1211,7 +1303,11 @@ fn next_recurrence_date(current_iso: &str, freq: &str, interval: i32) -> Option<
     let interval = interval.max(1) as u32; // 间隔最小为 1
     let next: Option<chrono::NaiveDateTime> = match freq {
         "daily" | "weekly" => {
-            let days = if freq == "daily" { interval } else { interval * 7 };
+            let days = if freq == "daily" {
+                interval
+            } else {
+                interval * 7
+            };
             Some(dt + chrono::Duration::days(days as i64))
         }
         "monthly" => {
@@ -1253,8 +1349,9 @@ fn days_in_month(year: i32, month: u32) -> u32 {
     }
 }
 
-/// 懒生成重复任务实例（应用启动时调用）
-/// 对每个设置了 recurrence_freq 的模板任务，扫描并生成应该已出现但缺失的实例
+/// 懒生成重复任务实例（应用启动 + 后台定时调用）
+/// 对每个设置了 recurrence_freq 的模板任务，每次扫描最多补一期（不一次性补齐历史欠账）。
+/// 下一期基准由 DB 的 last_instance 查询自动提供，连续扫描会慢慢追上当前日期。
 pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<usize, String> {
     let now = chrono::Local::now().naive_local();
     let tomorrow_start = (now.date() + chrono::Duration::days(1))
@@ -1263,12 +1360,10 @@ pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<us
     let today_end_str = format_local_naive(tomorrow_start);
 
     // 查询所有模板任务（recurrence_freq IS NOT NULL）
-    let templates = sqlx::query(
-        "SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| format!("查询重复模板失败: {}", e))?;
+    let templates = sqlx::query("SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL")
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("查询重复模板失败: {}", e))?;
 
     let mut generated = 0usize;
 
@@ -1281,8 +1376,9 @@ pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<us
         let interval = template.recurrence_interval.max(1);
 
         // 基准日期：查询该模板已有实例的最新 due_end_at，没有则用模板自己的 due_end_at
+        // 用 recurrence_origin_id 关联实例与模板（而非 parent_id，后者已回归子任务语义）
         let last_instance = sqlx::query(
-            "SELECT due_end_at FROM tasks WHERE parent_id = $1 AND due_end_at IS NOT NULL ORDER BY due_end_at DESC LIMIT 1",
+            "SELECT due_end_at FROM tasks WHERE recurrence_origin_id = $1 AND due_end_at IS NOT NULL ORDER BY due_end_at DESC LIMIT 1",
         )
         .bind(&template.id)
         .fetch_optional(pool)
@@ -1295,74 +1391,80 @@ pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<us
             (None, None) => continue, // 模板没有截止日期，无法生成
         };
 
-        let Some(mut current_iso) = current_iso_opt else { continue };
+        let Some(current_iso) = current_iso_opt else {
+            continue;
+        };
 
-        // 循环生成，直到超过今天或达到结束条件
-        loop {
-            // 检查剩余次数
-            if let Some(count) = template.recurrence_count {
-                if count <= 0 {
-                    break;
-                }
+        // 单步生成：每次扫描最多补一期，不一次性补齐所有历史欠账。
+        // 下一期基准由 DB 的 last_instance 查询（recurrence_origin_id 关联）自动提供，
+        // 因此连续多次扫描会慢慢追上当前日期，每天最多补 1 个，避免一开机堆一堆过期任务。
+        // 示例（每天重复）：上次是周五，周一开机 → 生成周六那期；周二扫描 → 周日那期；逐步追上。
+
+        // 检查剩余次数（达到上限则不再生成）
+        if let Some(count) = template.recurrence_count {
+            if count <= 0 {
+                continue;
             }
-            // 检查结束日期
-            if let Some(end_at) = &template.recurrence_end_at {
-                if current_iso.as_str() > end_at.as_str() {
-                    break;
-                }
-            }
-
-            // 计算下一个日期
-            let next_iso = match next_recurrence_date(&current_iso, freq, interval) {
-                Some(d) => d,
-                None => break,
-            };
-
-            // 如果下一个日期 >= 明天 00:00（本地），停止生成
-            if next_iso.as_str() >= today_end_str.as_str() {
-                break;
-            }
-
-            // 检查该日期是否已有实例（避免重复生成）
-            let exists = sqlx::query(
-                "SELECT id FROM tasks WHERE parent_id = $1 AND due_end_at = $2 LIMIT 1",
-            )
-            .bind(&template.id)
-            .bind(&next_iso)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| format!("检查实例存在失败: {}", e))?;
-
-            if exists.is_none() {
-                // 生成新实例
-                let new_id = uuid();
-                let ts = format_local_naive(now);
-                let new_sort_order = chrono::Utc::now().timestamp_millis();
-                sqlx::query(
-                    "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, recurrence_freq, recurrence_interval, recurrence_end_at, recurrence_count)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $11, NULL, NULL, 1, NULL, NULL)",
-                )
-                .bind(&new_id)
-                .bind(&template.title)
-                .bind(&template.note)
-                .bind(&template.list_id)
-                .bind(&template.id) // parent_id 指向模板
-                .bind(template.priority)
-                .bind(&template.due_start_at) // 保留模板的开始日期（可优化为相对计算）
-                .bind(&next_iso)
-                .bind(new_sort_order)
-                .bind(&ts)
-                .bind(&ts)
-                .execute(pool)
-                .await
-                .map_err(|e| format!("生成实例失败: {}", e))?;
-                generated += 1;
-            }
-
-            // 减少剩余次数（模板自身的 count 不变，用生成的实例数量判断）
-            // 注意：这里不复用模板的 count 字段做减法，而是用生成数量判断
-            current_iso = next_iso;
         }
+        // 检查结束日期（基准已超过结束日则不再生成）
+        if let Some(end_at) = &template.recurrence_end_at {
+            if current_iso.as_str() > end_at.as_str() {
+                continue;
+            }
+        }
+
+        // 计算下一个日期
+        let next_iso = match next_recurrence_date(&current_iso, freq, interval) {
+            Some(d) => d,
+            None => continue,
+        };
+
+        // 下一个日期 >= 明天 00:00（本地）→ 当期已存在或领先，本次无需生成
+        if next_iso.as_str() >= today_end_str.as_str() {
+            continue;
+        }
+
+        // 检查该日期是否已有实例（避免重复生成）
+        // 用 recurrence_origin_id 关联实例与模板
+        let exists = sqlx::query(
+            "SELECT id FROM tasks WHERE recurrence_origin_id = $1 AND due_end_at = $2 LIMIT 1",
+        )
+        .bind(&template.id)
+        .bind(&next_iso)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("检查实例存在失败: {}", e))?;
+
+        if exists.is_none() {
+            // 生成新实例
+            // 关键：parent_id = NULL（作为根任务进列表，不再被 parent_id IS NULL 过滤掉）
+            //       recurrence_origin_id = 模板 id（记录来源，parent_id 回归子任务语义）
+            let new_id = uuid();
+            let ts = format_local_naive(now);
+            let new_sort_order = chrono::Utc::now().timestamp_millis();
+            sqlx::query(
+                "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, recurrence_freq, recurrence_interval, recurrence_end_at, recurrence_count, recurrence_origin_id)
+                 VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, 0, $8, $9, $10, NULL, NULL, 1, NULL, NULL, $11)",
+            )
+            .bind(&new_id)
+            .bind(&template.title)
+            .bind(&template.note)
+            .bind(&template.list_id)
+            // parent_id 显式为 NULL（见上注释）
+            .bind(template.priority)
+            .bind(&template.due_start_at) // 保留模板的开始日期（可优化为相对计算）
+            .bind(&next_iso)
+            .bind(new_sort_order)
+            .bind(&ts)
+            .bind(&ts)
+            .bind(&template.id) // recurrence_origin_id 指向模板
+            .execute(pool)
+            .await
+            .map_err(|e| format!("生成实例失败: {}", e))?;
+            generated += 1;
+        }
+        // 注意：不在此手动推进 current_iso。下次扫描时 last_instance 查询会自动取刚生成的
+        // 这一期作为新基准，从而实现「每次扫描补一期」的逐步追上行为。
     }
 
     Ok(generated)
@@ -1480,7 +1582,10 @@ pub async fn task_check_reminders_inner(
 fn build_reminder_body(due_end_at: &str, offset_minutes: i32) -> String {
     let due_dt = parse_local_naive(due_end_at);
     let (time_str, date_str) = match due_dt {
-        Some(d) => (d.format("%H:%M").to_string(), format!("{}月{}日", d.format("%m"), d.format("%d"))),
+        Some(d) => (
+            d.format("%H:%M").to_string(),
+            format!("{}月{}日", d.format("%m"), d.format("%d")),
+        ),
         None => (String::new(), String::new()),
     };
 

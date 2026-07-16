@@ -1,7 +1,7 @@
 // 数据库管理 —— 使用 sqlx 直接操作 SQLite
 // 通过 tauri::State 持有连接池，所有操作封装为 #[tauri::command]
 
-use sqlx::sqlite::{SqlitePool, SqliteConnectOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
 use sqlx::Row;
 use std::str::FromStr;
 
@@ -18,12 +18,20 @@ async fn column_exists(pool: &SqlitePool, table: &str, column: &str) -> Result<b
 }
 
 /// 安全地添加列（仅在不存在时添加）
-async fn add_column_if_missing(pool: &SqlitePool, table: &str, column: &str, def: &str) -> Result<(), String> {
+async fn add_column_if_missing(
+    pool: &SqlitePool,
+    table: &str,
+    column: &str,
+    def: &str,
+) -> Result<(), String> {
     if !column_exists(pool, table, column).await? {
-        sqlx::query(&format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, def))
-            .execute(pool)
-            .await
-            .map_err(|e| format!("添加列 {}.{} 失败: {}", table, column, e))?;
+        sqlx::query(&format!(
+            "ALTER TABLE {} ADD COLUMN {} {}",
+            table, column, def
+        ))
+        .execute(pool)
+        .await
+        .map_err(|e| format!("添加列 {}.{} 失败: {}", table, column, e))?;
     }
     Ok(())
 }
@@ -34,12 +42,18 @@ async fn run_migration_003(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "tasks", "due_end_at", "TEXT").await?;
 
     // 迁移旧数据：把 due_at 的值复制到新列（仅当新列为空时）
-    sqlx::query("UPDATE tasks SET due_end_at = due_at WHERE due_at IS NOT NULL AND due_end_at IS NULL")
-        .execute(pool).await
-        .map_err(|e| format!("迁移 due_end_at 数据失败: {}", e))?;
-    sqlx::query("UPDATE tasks SET due_start_at = due_at WHERE due_at IS NOT NULL AND due_start_at IS NULL")
-        .execute(pool).await
-        .map_err(|e| format!("迁移 due_start_at 数据失败: {}", e))?;
+    sqlx::query(
+        "UPDATE tasks SET due_end_at = due_at WHERE due_at IS NOT NULL AND due_end_at IS NULL",
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("迁移 due_end_at 数据失败: {}", e))?;
+    sqlx::query(
+        "UPDATE tasks SET due_start_at = due_at WHERE due_at IS NOT NULL AND due_start_at IS NULL",
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("迁移 due_start_at 数据失败: {}", e))?;
 
     // 新索引（幂等）
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_due_end ON tasks(due_end_at) WHERE due_end_at IS NOT NULL")
@@ -60,10 +74,7 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
         .map_err(|e| format!("连接数据库失败: {}", e))?;
 
     // 依次执行迁移（001/002 用 SQL 文件，幂等）
-    for (name, sql) in [
-        ("001_init", MIGRATIONS_001),
-        ("002_habits", MIGRATIONS_002),
-    ] {
+    for (name, sql) in [("001_init", MIGRATIONS_001), ("002_habits", MIGRATIONS_002)] {
         sqlx::query(sql)
             .execute(&pool)
             .await
@@ -90,6 +101,9 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
 
     // 009: 任务检查项字段（checklist JSON 数组）
     run_migration_009(&pool).await?;
+
+    // 010: 重复任务实例来源标记（recurrence_origin_id）+ 存量数据回填
+    run_migration_010(&pool).await?;
 
     Ok(pool)
 }
@@ -129,7 +143,13 @@ async fn run_migration_005(pool: &SqlitePool) -> Result<(), String> {
 /// - recurrence_count: 剩余次数（null = 不限）
 async fn run_migration_006(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "tasks", "recurrence_freq", "TEXT").await?;
-    add_column_if_missing(pool, "tasks", "recurrence_interval", "INTEGER NOT NULL DEFAULT 1").await?;
+    add_column_if_missing(
+        pool,
+        "tasks",
+        "recurrence_interval",
+        "INTEGER NOT NULL DEFAULT 1",
+    )
+    .await?;
     add_column_if_missing(pool, "tasks", "recurrence_end_at", "TEXT").await?;
     add_column_if_missing(pool, "tasks", "recurrence_count", "INTEGER").await?;
     Ok(())
@@ -175,5 +195,33 @@ async fn run_migration_008(pool: &SqlitePool) -> Result<(), String> {
 ///   任务详情面板把"描述（富文本）"和"检查项（独立列表）"分开管理（滴答清单风格）
 async fn run_migration_009(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "tasks", "checklist", "TEXT NOT NULL DEFAULT '[]'").await?;
+    Ok(())
+}
+
+/// 迁移 010：重复任务实例来源标记
+/// - recurrence_origin_id: 标记实例来自哪个模板（null = 普通任务或自身即模板）
+///
+/// 背景：旧逻辑把重复实例的 parent_id 指向模板 id，导致实例被所有
+/// `parent_id IS NULL` 的列表/智能视图/计数/搜索查询过滤掉（用户看不见）。
+/// 新增独立列后，parent_id 回归「仅表示子任务嵌套」单一语义，
+/// 实例以 parent_id=NULL 作为根任务正常进列表，用 recurrence_origin_id 记录来源。
+async fn run_migration_010(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "tasks", "recurrence_origin_id", "TEXT").await?;
+
+    // 回填存量：把指向重复模板的实例从 parent_id 迁移到 recurrence_origin_id
+    // 启发式条件——parent_id 指向一个 recurrence_freq 非空的模板、且自身非模板。
+    // 当前代码中没有产生「普通子任务挂在重复模板下」的途径，故此条件安全。
+    // WHERE recurrence_origin_id IS NULL 保证幂等（可重复执行）。
+    sqlx::query(
+        "UPDATE tasks SET recurrence_origin_id = parent_id, parent_id = NULL
+         WHERE parent_id IS NOT NULL
+           AND recurrence_freq IS NULL
+           AND parent_id IN (SELECT id FROM tasks WHERE recurrence_freq IS NOT NULL)
+           AND recurrence_origin_id IS NULL",
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("回填重复实例来源失败: {}", e))?;
+
     Ok(())
 }

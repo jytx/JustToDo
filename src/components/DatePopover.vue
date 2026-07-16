@@ -141,9 +141,9 @@ function getRangeClass(d: Date): "in" | "start" | "end" | null {
 
 function selectDay(d: Date) {
   if (activeTab.value === "date") {
-    // 单点日期：保持原来的时分秒（缺省 9:00）
+    // 单点日期：保持原来的时分秒（缺省 00:00，与 picker 默认对齐）
     const cur = parseLocalIso(editDate.value);
-    const hh = cur?.getHours() ?? 9;
+    const hh = cur?.getHours() ?? 0;
     const mi = cur?.getMinutes() ?? 0;
     const next = new Date(d);
     next.setHours(hh, mi, 0, 0);
@@ -162,11 +162,11 @@ function selectDay(d: Date) {
   const hasFullRange = startD && endD;
 
   if (!editStart.value || hasFullRange) {
-    // 第一次选 / 重新开始：设 start，end 清空
+    // 第一次选 / 重新开始：设 start，end 清空（默认 00:00）
     const next = new Date(d);
-    next.setHours(9, 0, 0, 0);
+    next.setHours(0, 0, 0, 0);
     editStart.value = toLocalIso(
-      `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")} 09:00:00`,
+      `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")} 00:00:00`,
     );
     editEnd.value = null;
     return;
@@ -175,7 +175,7 @@ function selectDay(d: Date) {
   // 已选 start，未选 end：这次的点作为 end
   const startParsed = startD!;
   const next = new Date(d);
-  next.setHours(10, 0, 0, 0); // end 缺省 10:00（比 start 晚 1h）
+  next.setHours(1, 0, 0, 0); // end 缺省 01:00（比 start 00:00 晚 1h）
 
   // 如果用户点的日期早于 start，交换（让 start 是早的）
   let finalStart = startParsed;
@@ -183,7 +183,7 @@ function selectDay(d: Date) {
   if (next < startParsed) {
     // 这次点的更早：把这次的当 start，之前的 start 当 end
     const newStart = new Date(d);
-    newStart.setHours(9, 0, 0, 0);
+    newStart.setHours(0, 0, 0, 0);
     finalStart = newStart;
     finalEnd = startParsed;
   }
@@ -223,9 +223,9 @@ const monthLabel = computed(
 function quickDay(daysFromNow: number) {
   const d = new Date();
   d.setDate(d.getDate() + daysFromNow);
-  d.setHours(9, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
   const iso = toLocalIso(
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} 09:00:00`,
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} 00:00:00`,
   );
   if (activeTab.value === "date") {
     editDate.value = iso;
@@ -235,14 +235,24 @@ function quickDay(daysFromNow: number) {
   editStart.value = iso;
   const end = new Date(d);
   end.setDate(end.getDate() + 1);
-  end.setHours(10, 0, 0, 0);
+  end.setHours(1, 0, 0, 0);
   editEnd.value = toLocalIso(
     `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")} ${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}:00`,
   );
 }
 
 // ─── 时间选择（hh / mi 简易） ─────────────────────
-const showTimePicker = ref(false);
+// 默认展开 picker，用户进 DatePopover 第一眼就能看到时分选项，
+// 无需先点"时间行"展开
+// - date tab：只展开开始 picker
+// - range tab：开始 + 结束两个 picker 都展开
+// 用 activeTab 切换 showEndTimePicker 状态（保持开始 picker 总是展开）
+const showTimePicker = ref(true);
+const showEndTimePicker = ref(false);
+// tab 切换时同步 end picker：range tab 才展开
+watch(activeTab, (newTab) => {
+  showEndTimePicker.value = newTab === "range";
+});
 
 function getCurrentTargetIso(): string | null {
   if (activeTab.value === "date") return editDate.value;
@@ -297,7 +307,7 @@ function setMinute(mi: number) {
       );
     }
   }
-  showTimePicker.value = false;
+  // 不关 picker：让"确定"按钮统一关，用户可继续调整
 }
 
 /** 结束时间的 hour / minute —— 同上拆开 */
@@ -320,29 +330,27 @@ function setEndMinute(mi: number) {
   editEnd.value = toLocalIso(
     `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-${String(base.getDate()).padStart(2, "0")} ${String(hh).padStart(2, "0")}:${String(mi).padStart(2, "0")}:00`,
   );
-  showEndTimePicker.value = false;
+  // 不关 picker：让"确定"按钮统一关
 }
 
 const currentTimeLabel = computed(() => {
   const iso = activeTab.value === "date" ? editDate.value : editStart.value;
-  if (!iso) return "时间";
+  if (!iso) return "00:00";
   const d = parseLocalIso(iso);
-  if (!d) return "时间";
+  if (!d) return "00:00";
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 });
 
 const endTimeLabel = computed(() => {
-  if (!editEnd.value) return "结束时间";
+  if (!editEnd.value) return "00:00";
   const d = parseLocalIso(editEnd.value);
-  if (!d) return "结束时间";
+  if (!d) return "00:00";
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 });
 
-const showEndTimePicker = ref(false);
-
 // 拿当前 target 的小时/分钟（用于 setTime 时保留另一边）
 function getCurrentHours(): number {
-  return parseLocalIso(getCurrentTargetIso())?.getHours() ?? 9;
+  return parseLocalIso(getCurrentTargetIso())?.getHours() ?? 0;
 }
 function getCurrentMinutes(): number {
   return parseLocalIso(getCurrentTargetIso())?.getMinutes() ?? 0;
@@ -350,6 +358,9 @@ function getCurrentMinutes(): number {
 
 // ─── 确认 / 清除 ─────────────────────────────────
 function onConfirm() {
+  // 用户点"确定"时统一关 picker（setHour/setMinute 不再各自关）
+  showTimePicker.value = false;
+  showEndTimePicker.value = false;
   if (activeTab.value === "date") {
     emit("confirm", editDate.value, null);
   } else {

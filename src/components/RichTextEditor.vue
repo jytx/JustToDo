@@ -17,7 +17,7 @@ import HardBreak from "@tiptap/extension-hard-break";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Suggestion from "@tiptap/suggestion";
-import GlobalDragHandle from "tiptap-extension-global-drag-handle";
+import { DragHandlePlugin } from "tiptap-extension-global-drag-handle";
 import { Extension } from "@tiptap/core";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
@@ -266,6 +266,37 @@ function uninstallSlashPlugin(editorInstance: TiptapEditor) {
   }
 }
 
+/**
+ * Global Drag Handle —— hover block 时左侧浮出 ⋮⋮，可拖动重排。
+ *
+ * 为什么用 imperative 注册（registerPlugin）而非放进 extensions 数组：
+ * 本环境（Tiptap 3.27.4）下 extensions 数组里的 addProseMirrorPlugins
+ * 不会被收集进 ProseMirror state.plugins（实测，与 SlashCommand 同一坑）。
+ * 该插件同时导出了 DragHandlePlugin 工厂（直接返回 ProseMirror Plugin），
+ * 用它 + registerPlugin 即可绕过。
+ */
+function installDragHandlePlugin(editorInstance: TiptapEditor) {
+  editorInstance.registerPlugin(
+    DragHandlePlugin({
+      pluginKey: "globalDragHandle",
+      dragHandleWidth: 20,
+      // 注意：插件作者拼错为 scrollTreshold（非 scrollThreshold），
+      // 这是其公开 API，必须照它的拼写来
+      scrollTreshold: 100,
+      excludedTags: [],
+      customNodes: [],
+    }),
+  );
+}
+
+function uninstallDragHandlePlugin(editorInstance: TiptapEditor) {
+  try {
+    editorInstance.unregisterPlugin("globalDragHandle");
+  } catch {
+    /* ignore */
+  }
+}
+
 
 
 const previewSrc = computed(() => allImages.value[previewIndex.value] ?? null);
@@ -292,11 +323,6 @@ const editor = useEditor({
     CodeBlockLowlight.configure({ lowlight }),
     TaskList,
     TaskItem.configure({ nested: true }),
-    // Global Drag Handle —— hover block 时浮出 ⋮⋮，拖动重排
-    GlobalDragHandle.configure({
-      dragHandleWidth: 20,
-      scrollTreshold: 100,
-    }),
     // 注：故意不加 @tiptap/extension-placeholder。
     // 它默认给每个空段落都加提示文字，回车后每行都显示，体验差。
     // 改为依赖下方 CSS `.rich-text__content:empty::before { ... }`，仅在
@@ -380,7 +406,11 @@ watch(
   (ed, _old, onCleanup) => {
     if (!ed) return;
     installSlashPlugin(ed);
-    onCleanup(() => uninstallSlashPlugin(ed));
+    installDragHandlePlugin(ed);
+    onCleanup(() => {
+      uninstallSlashPlugin(ed);
+      uninstallDragHandlePlugin(ed);
+    });
   },
   { immediate: true },
 );

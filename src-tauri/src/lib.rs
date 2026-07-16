@@ -23,10 +23,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // 获取 app data 目录，在其中创建数据库
-            let app_data_dir = app
-                .path()
-                .app_data_dir()
-                .expect("无法获取 app data 目录");
+            let app_data_dir = app.path().app_data_dir().expect("无法获取 app data 目录");
             std::fs::create_dir_all(&app_data_dir).expect("无法创建 app data 目录");
 
             let db_path = app_data_dir.join("justtodo.db");
@@ -34,10 +31,8 @@ pub fn run() {
             println!("[JustToDo] 数据库路径: {}", db_path.display());
 
             // 初始化数据库连接池（同步阻塞，确保 setup 完成后 pool 就绪）
-            let pool = tauri::async_runtime::block_on(async {
-                db::init_pool(&db_url).await
-            })
-            .expect("数据库初始化失败");
+            let pool = tauri::async_runtime::block_on(async { db::init_pool(&db_url).await })
+                .expect("数据库初始化失败");
 
             // 后台定时检查重复任务实例
             // 间隔由 app_settings.recurrence_check_interval 控制（分钟），可在设置页修改

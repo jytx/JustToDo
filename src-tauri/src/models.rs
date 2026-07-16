@@ -34,6 +34,8 @@ pub struct Task {
     pub recurrence_interval: i32,
     pub recurrence_end_at: Option<String>,
     pub recurrence_count: Option<i32>,
+    /// 重复实例的来源模板 id（null = 普通任务或自身即模板）
+    pub recurrence_origin_id: Option<String>,
     /// 提前多少分钟提醒（null = 不提醒；0 = 准点；N = 提前 N 分钟）
     pub remind_offset_minutes: Option<i32>,
     /// 通知触发时间戳（null = 还没通知过）

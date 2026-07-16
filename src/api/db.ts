@@ -130,6 +130,7 @@ interface RustTask {
   recurrence_interval: number;
   recurrence_end_at: string | null;
   recurrence_count: number | null;
+  recurrence_origin_id: string | null;
   remind_offset_minutes: number | null;
   notified_at: string | null;
   checklist: ChecklistItem[];
@@ -154,6 +155,7 @@ function mapTask(r: RustTask): Task {
     recurrenceInterval: r.recurrence_interval,
     recurrenceEndAt: r.recurrence_end_at,
     recurrenceCount: r.recurrence_count,
+    recurrenceOriginId: r.recurrence_origin_id,
     remindOffsetMinutes: r.remind_offset_minutes,
     notifiedAt: r.notified_at,
     checklist: r.checklist,
