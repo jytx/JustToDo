@@ -756,7 +756,7 @@ function fileToBase64(file: File): Promise<string> {
 /* 图片 */
 .rich-text__editor :deep(.rich-text__content img) {
   border-radius: 6px;
-  margin: 8px 0;
+  //margin: 8px 0;
   cursor: zoom-in;
 }
 
@@ -774,22 +774,74 @@ function fileToBase64(file: File): Promise<string> {
   max-width: 100%;
 }
 
-/* 选中状态边框 */
-.rich-text__editor :deep([data-resize-container].ProseMirror-selectednode) {
-  outline: 2px solid var(--jt-primary);
-  outline-offset: 2px;
-  border-radius: 6px;
+/* 选中状态：线框紧贴图片（贴在图片本身外侧），不在 container 最外层。
+   - wrapper 收敛成 img 大小（display:block + font-size:0 消除行盒间隙）
+   - "线"画在 wrapper 上，恰好框住图片
+   - img 本身保持原样（不加 border-radius，不影响图片内容）
+   - 没有阴影、没有 halo、没有主题色贴边，参考「线框标注」范式
+   - 同时覆盖 tiptap 在未选中时强加的内联 visibility/pointer-events */
+.rich-text__editor :deep([data-resize-container].ProseMirror-selectednode),
+.rich-text__editor :deep([data-resize-container].ProseMirror-selectednode[style*="visibility"]) {
+  visibility: visible !important;
+  pointer-events: auto !important;
 }
 
-/* resize 手柄（四角） */
+/* 选中时 wrapper 收敛为 img 精确尺寸 + padding 让"线"在图片外、有 padding 撑出空间
+   矩形外框线 = wrapper 的 border；
+   手柄位于 wrapper 四角 absolute 0,0 = 圆点中心正好坐在矩形外侧角上 */
+.rich-text__editor :deep([data-resize-container].ProseMirror-selectednode [data-resize-wrapper]) {
+  display: block;
+  font-size: 0;
+  line-height: 0;
+  padding: 3px;          /* 撑大 wrapper，让边框离图片有 7px 间距（圆点半径） */
+  border: 1px solid #cbd5e1;
+  border-radius: 0;
+  background-clip: padding-box;
+}
+
+/* 选中时图片不加圆角（保持原始矩形）—— 圆角由外层 wrapper 的 border 接管 */
+
+/* resize 手柄（四角）—— 默认隐藏，仅在图片被选中时显示。
+   设计：白底包边 + 主题色实心圆，14px 直径（比图片线粗得多，醒目控制点）。
+   用 box-shadow 而不是 border 模拟"白圈"，避免 border-box 影响尺寸计算。 */
 .rich-text__editor :deep([data-resize-handle]) {
-  width: 12px !important;
-  height: 12px !important;
+  width: 14px !important;
+  height: 14px !important;
   background-color: var(--jt-primary) !important;
-  border: 2px solid #fff !important;
+  border: none !important;
   border-radius: 50% !important;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
-  z-index: 10;
+  box-shadow:
+    0 0 0 2px #fff,    /* 内层白圈，模拟"白色包边" */
+    0 1px 3px rgba(0, 0, 0, 0.2);
+  z-index: 20;
+  /* 默认隐藏 */
+  opacity: 0;
+  pointer-events: none;
+  /* 把圆点中心拉到 wrapper 角正中（即"骑在边框角上"）——
+     tiptap 在 positionHandle 时只写 top/left/right/bottom=0，
+     圆点 box 左上角 = 框角；这里反方向偏移自身一半（7px）让中心对齐框角。 */
+  margin: -7px;
+  transition: opacity 0.1s ease;
+}
+
+/* 选中图片时显示四角手柄 */
+.rich-text__editor :deep([data-resize-container].ProseMirror-selectednode [data-resize-handle]) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 四角对角线 cursor：按手柄在容器中的位置（top/bottom × left/right）匹配
+   tiptap 实际写入的内联样式是 `top: 0` / `left: 0` 等
+   （见 node_modules/@tiptap/core/src/lib/ResizableNodeView.ts:626-647）。 */
+/* 左上、右下：↖↘ */
+.rich-text__editor :deep([data-resize-handle][style*="top: 0"][style*="left: 0"]),
+.rich-text__editor :deep([data-resize-handle][style*="bottom: 0"][style*="right: 0"]) {
+  cursor: nwse-resize;
+}
+/* 右上、左下：↗↙ */
+.rich-text__editor :deep([data-resize-handle][style*="top: 0"][style*="right: 0"]),
+.rich-text__editor :deep([data-resize-handle][style*="bottom: 0"][style*="left: 0"]) {
+  cursor: nesw-resize;
 }
 
 /* 代码块（带语法高亮） */
