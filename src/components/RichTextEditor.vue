@@ -148,12 +148,19 @@ function buildSlashCommandPlugin(editorInstance: TiptapEditor) {
     command: ({
       editor,
       range,
-      props: item,
+      props: commandProps,
     }: {
       editor: import("@tiptap/core").Editor;
       range: { from: number; to: number };
-      props: SlashCommandItem;
+      /**
+       * utility 的 props.command(item) → 命令 prop 实际是
+       * {editor, range, props: item} 三层结构（utility 包装），
+       * 所以这里 `props` 就是 commandProps，要拿真正 item 用
+       * `commandProps.props`。
+       */
+      props: { editor: import("@tiptap/core").Editor; range: { from: number; to: number }; props: SlashCommandItem };
     }) => {
+      const item = commandProps.props;
       const c = editor.chain().focus().deleteRange(range as any);
       switch (item.key) {
         case "text":
