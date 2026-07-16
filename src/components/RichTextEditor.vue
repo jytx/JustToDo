@@ -140,19 +140,35 @@ function runSlashCommand(item: SlashCommandItem) {
       chain.toggleHeading({ level: 3 }).run();
       break;
     case "bullet":
-      chain.toggleBulletList().run();
+      // 不用 toggleBulletList：它在 bulletList 内会取消回 paragraph，
+      // 用户看到"什么都没出现"。先判断：若已在 bulletList 跳过；否则 wrap。
+      if (!editorInstance.isActive("bulletList")) {
+        chain.toggleBulletList().run();
+      }
       break;
     case "ordered":
-      chain.toggleOrderedList().run();
+      if (!editorInstance.isActive("orderedList")) {
+        chain.toggleOrderedList().run();
+      }
       break;
     case "todo":
-      chain.toggleTaskList().run();
+      // 关键点：toggleTaskList 行为 = "在则取消出、不在则包入"。
+      // slash 菜单的本意是"新增任务列表块"，所以只在没在 taskList 时才 toggle。
+      // 若已在 taskList 内，保留并把光标留在原地。
+      if (!editorInstance.isActive("taskList")) {
+        chain.toggleTaskList().run();
+      }
       break;
     case "quote":
-      chain.toggleBlockquote().run();
+      // 同理：toggleBlockquote 在 blockquote 内会取消
+      if (!editorInstance.isActive("blockquote")) {
+        chain.toggleBlockquote().run();
+      }
       break;
     case "code":
-      chain.toggleCodeBlock().run();
+      if (!editorInstance.isActive("codeBlock")) {
+        chain.toggleCodeBlock().run();
+      }
       break;
     case "hr":
       chain.setHorizontalRule().run();
