@@ -250,8 +250,11 @@ function getCurrentTargetIso(): string | null {
   return editStart.value ?? editEnd.value;
 }
 
-function setTime(hh: number, mi: number) {
-  // 拿到当前目标的 Date 副本（如果未设置就用 today）
+/** 应用小时到当前目标（不关 picker，让用户继续点分钟）
+ *  - date tab：写到 editDate
+ *  - range tab：写到 editStart；若 end 为空则默认 start+1h */
+function setHour(hh: number) {
+  const mi = getCurrentMinutes();
   const cur = parseLocalIso(getCurrentTargetIso());
   const base = cur ?? new Date();
   base.setHours(hh, mi, 0, 0);
@@ -261,10 +264,32 @@ function setTime(hh: number, mi: number) {
   if (activeTab.value === "date") {
     editDate.value = iso;
   } else {
-    // 时间段：先设 start；end 不动（如果之前有）或置空
     editStart.value = iso;
     if (!editEnd.value) {
-      // 默认 end = start + 1 小时
+      const end = new Date(base);
+      end.setHours(end.getHours() + 1);
+      editEnd.value = toLocalIso(
+        `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")} ${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}:00`,
+      );
+    }
+  }
+  // 不关 picker，让用户继续点分钟
+}
+
+/** 应用分钟到当前目标（点完分钟才关 picker，体验更顺） */
+function setMinute(mi: number) {
+  const hh = getCurrentHours();
+  const cur = parseLocalIso(getCurrentTargetIso());
+  const base = cur ?? new Date();
+  base.setHours(hh, mi, 0, 0);
+  const iso = toLocalIso(
+    `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-${String(base.getDate()).padStart(2, "0")} ${String(hh).padStart(2, "0")}:${String(mi).padStart(2, "0")}:00`,
+  );
+  if (activeTab.value === "date") {
+    editDate.value = iso;
+  } else {
+    editStart.value = iso;
+    if (!editEnd.value) {
       const end = new Date(base);
       end.setHours(end.getHours() + 1);
       editEnd.value = toLocalIso(
@@ -275,7 +300,20 @@ function setTime(hh: number, mi: number) {
   showTimePicker.value = false;
 }
 
-function setEndTime(hh: number, mi: number) {
+/** 结束时间的 hour / minute —— 同上拆开 */
+function setEndHour(hh: number) {
+  const mi = parseLocalIso(editEnd.value)?.getMinutes() ?? 0;
+  const cur = parseLocalIso(editEnd.value) ?? parseLocalIso(editStart.value) ?? new Date();
+  const base = new Date(cur);
+  base.setHours(hh, mi, 0, 0);
+  editEnd.value = toLocalIso(
+    `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-${String(base.getDate()).padStart(2, "0")} ${String(hh).padStart(2, "0")}:${String(mi).padStart(2, "0")}:00`,
+  );
+  // 不关 picker
+}
+
+function setEndMinute(mi: number) {
+  const hh = parseLocalIso(editEnd.value)?.getHours() ?? 0;
   const cur = parseLocalIso(editEnd.value) ?? parseLocalIso(editStart.value) ?? new Date();
   const base = new Date(cur);
   base.setHours(hh, mi, 0, 0);
@@ -431,24 +469,26 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 
     <!-- 时间选择（弹出） -->
     <div v-if="showTimePicker" class="date-popover__time">
-      <div class="date-popover__time-col">
+      <div class="date-popover__time-col date-popover__time-col--hour">
         <button
           v-for="h in hourOptions"
           :key="h"
           type="button"
           class="date-popover__time-cell"
-          @click="setTime(h, getCurrentMinutes())"
+          :class="{ 'date-popover__time-cell--selected': h === getCurrentHours() }"
+          @click="setHour(h)"
         >
           {{ String(h).padStart(2, "0") }}
         </button>
       </div>
-      <div class="date-popover__time-col">
+      <div class="date-popover__time-col date-popover__time-col--minute">
         <button
           v-for="m in minuteOptions"
           :key="m"
           type="button"
           class="date-popover__time-cell"
-          @click="setTime(getCurrentHours(), m)"
+          :class="{ 'date-popover__time-cell--selected': m === getCurrentMinutes() }"
+          @click="setMinute(m)"
         >
           {{ String(m).padStart(2, "0") }}
         </button>
@@ -457,24 +497,26 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 
     <!-- 结束时间选择（弹出） -->
     <div v-if="showEndTimePicker" class="date-popover__time">
-      <div class="date-popover__time-col">
+      <div class="date-popover__time-col date-popover__time-col--hour">
         <button
           v-for="h in hourOptions"
           :key="h"
           type="button"
           class="date-popover__time-cell"
-          @click="setEndTime(h, parseLocalIso(editEnd)?.getMinutes() ?? 0)"
+          :class="{ 'date-popover__time-cell--selected': h === (parseLocalIso(editEnd)?.getHours() ?? 0) }"
+          @click="setEndHour(h)"
         >
           {{ String(h).padStart(2, "0") }}
         </button>
       </div>
-      <div class="date-popover__time-col">
+      <div class="date-popover__time-col date-popover__time-col--minute">
         <button
           v-for="m in minuteOptions"
           :key="m"
           type="button"
           class="date-popover__time-cell"
-          @click="setEndTime(parseLocalIso(editEnd)?.getHours() ?? 0, m)"
+          :class="{ 'date-popover__time-cell--selected': m === (parseLocalIso(editEnd)?.getMinutes() ?? 0) }"
+          @click="setEndMinute(m)"
         >
           {{ String(m).padStart(2, "0") }}
         </button>
@@ -495,14 +537,14 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 
 <style scoped>
 .date-popover {
-  width: 280px;
+  width: 248px;
   background: var(--jt-surface);
   border-radius: 10px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
-  padding: 12px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .date-popover__tabs {
@@ -517,8 +559,8 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
   flex: 1;
   border: none;
   background: transparent;
-  padding: 5px 0;
-  font-size: 12px;
+  padding: 4px 0;
+  font-size: 11px;
   color: var(--jt-text-secondary);
   border-radius: 4px;
   cursor: pointer;
@@ -540,11 +582,11 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 }
 
 .date-popover__quick-btn {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border: none;
   background: transparent;
-  border-radius: 6px;
+  border-radius: 5px;
   color: var(--jt-text-secondary);
   cursor: pointer;
   transition: all 0.12s;
@@ -610,9 +652,9 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 .date-popover__day {
   border: none;
   background: transparent;
-  aspect-ratio: 1 / 0.92;
-  border-radius: 6px;
-  font-size: 12px;
+  aspect-ratio: 1 / 0.78;
+  border-radius: 5px;
+  font-size: 11px;
   color: var(--jt-text-primary);
   cursor: pointer;
   transition: all 0.1s;
@@ -675,12 +717,12 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 .date-popover__row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: 6px;
+  padding: 5px 8px;
   border: none;
   background: transparent;
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: 5px;
+  font-size: 11px;
   color: var(--jt-text-primary);
   cursor: pointer;
   text-align: left;
@@ -699,37 +741,76 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 .date-popover__time {
   display: flex;
   gap: 4px;
-  max-height: 120px;
+  max-height: 156px;
   overflow: hidden;
   border: 1px solid var(--jt-border);
   border-radius: 6px;
-  padding: 2px;
+  padding: 4px 2px;
 }
 
 .date-popover__time-col {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 1px;
-  overflow-y: auto;
-  max-height: 116px;
+  gap: 0 2px;
+  overflow: hidden;
+}
+
+/* 小时列：24 项 / 4 列 = 6 行，row 20px、gap 2px → 总 6*20 + 5*2 = 130px，
+   picker max-height 156px 内不滚动。button 18px 紧贴 row。 */
+.date-popover__time-col--hour {
+  grid-template-rows: repeat(6, 15px);
+}
+
+/* 分钟列：12 项 / 4 列 = 3 行，row 26px、gap 2px → 总 3*26 + 2*2 = 82px，
+   button 18px + flex 居中 + 上下各 4px 留白，色块"漂"在行中央。 */
+.date-popover__time-col--minute {
+  grid-template-rows: repeat(3, 30px);
 }
 
 .date-popover__time-cell {
   border: none;
-  background: transparent;
-  padding: 1px 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 3px;
   font-size: 10px;
   color: var(--jt-text-primary);
   cursor: pointer;
   font-family: var(--font-mono);
-  text-align: center;
-  line-height: 1.4;
+  background: transparent;
+  transition: background-color 0.1s, color 0.1s;
+}
+
+/* 小时列 cell：紧贴 row 20px（无上下留白，6 行紧凑一屏） */
+.date-popover__time-col--hour .date-popover__time-cell {
+  height: 12px;
+  align-self: stretch;
+  justify-self: stretch;
+}
+
+/* 分钟列 cell：button 18px 强制固定高度（不被 row 撑开），
+   align-self: center 让 button 在 row 26px 内垂直居中，
+   上下各 4px 留白让"色块"浮在 row 中央 */
+.date-popover__time-col--minute .date-popover__time-cell {
+  height: 18px;
+  align-self: center;
+  justify-self: stretch;
 }
 
 .date-popover__time-cell:hover {
   background: var(--jt-surface-sunken);
+}
+
+.date-popover__time-cell--selected {
+  background: var(--jt-primary);
+  color: #fff;
+  font-weight: 500;
+}
+.date-popover__time-cell--selected:hover {
+  background: var(--jt-primary);
+  color: #fff;
 }
 
 .date-popover__footer {
@@ -741,10 +822,10 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 
 .date-popover__btn {
   flex: 1;
-  height: 28px;
-  border-radius: 6px;
+  height: 26px;
+  border-radius: 5px;
   border: none;
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
   transition: all 0.12s;
   font-family: var(--font-body);
