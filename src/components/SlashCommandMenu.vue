@@ -7,6 +7,7 @@
 // 避免与编辑器外的点击关闭产生冲突。
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import type { Editor } from "@tiptap/vue-3";
+import { exitSuggestion, SuggestionPluginKey } from "@tiptap/suggestion";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
 
 export type SlashCommandItem = {
@@ -81,6 +82,24 @@ function selectItem(item: SlashCommandItem) {
 /** 全局键盘：↑↓ Enter Esc（捕获 suggestion 期间的按键） */
 function onKeyDown(e: KeyboardEvent) {
   if (!props.open) return;
+  // Backspace / Delete / 任何字符键：关弹窗 + exitSuggestion 让 Suggestion utility 退出，
+  // 让 Tiptap 自己处理字符输入/删除（用户可正常退格删除已输入的 "/xxx"）。
+  if (
+    e.key === "Backspace" ||
+    e.key === "Delete" ||
+    (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey)
+  ) {
+    if (props.editor) {
+      try {
+        // 让 Suggestion plugin 主动退出，下次 update 触发 onExit。
+        exitSuggestion(props.editor.view, SuggestionPluginKey);
+      } catch {
+        /* 无 view 时忽略 */
+      }
+    }
+    emit("close");
+    return; // 不要 preventDefault，让键走到 ProseMirror
+  }
   if (filteredItems.value.length === 0) {
     if (e.key === "Escape") {
       e.preventDefault();
