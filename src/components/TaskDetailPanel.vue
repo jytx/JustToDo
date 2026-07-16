@@ -12,14 +12,14 @@ import {
   type Task,
   type RecurrenceFreq,
 } from "@/types";
-import { formatDueDate, parseLocalIso } from "@/utils/date";
+// 日期工具不再直接使用 —— 详情面板的日期 chip 抽到 DueDateChip.vue 了
 import TaskCheckbox from "./TaskCheckbox.vue";
 import PriorityDot from "./PriorityDot.vue";
 import RichTextEditor from "./RichTextEditor.vue";
 import RichTextToolbar from "./RichTextToolbar.vue";
 import PropertyChip from "./PropertyChip.vue";
 import Popover from "./Popover.vue";
-import DatePopover from "./DatePopover.vue";
+import DueDateChip from "./DueDateChip.vue";
 import ReminderPopover from "./ReminderPopover.vue";
 import RecurrencePopover from "./RecurrencePopover.vue";
 import * as db from "@/api/db";
@@ -168,57 +168,7 @@ async function moveToList(listId: string) {
 }
 
 // ─── 日期 ─────────────────────────────────────────
-const dueInfo = computed(() => {
-  if (!task.value) return null;
-  return formatDueDate(task.value.dueStartAt, task.value.dueEndAt);
-});
-
-/** 顶部 chip 标签：支持范围 "今天 09:00 - 11:00" */
-const dueLabel = computed(() => {
-  if (!task.value) return "设置日期";
-  const start = task.value.dueStartAt;
-  const end = task.value.dueEndAt;
-  if (!start && !end) return "设置日期";
-
-  // 范围（有 start + end）
-  if (start && end) {
-    const s = parseLocalIso(start);
-    const e = parseLocalIso(end);
-    if (!s || !e) return dueInfo.value?.text ?? "设置日期";
-
-    // 同一天
-    const sameDay =
-      s.getFullYear() === e.getFullYear() &&
-      s.getMonth() === e.getMonth() &&
-      s.getDate() === e.getDate();
-
-    if (sameDay) {
-      // 用 dueInfo.text 作为日期部分（同一天 fallback）
-      const dayText = dueInfo.value?.text ?? "";
-      const sHasTime = !isMidnight(s);
-      const eHasTime = !isMidnight(e);
-      if (sHasTime || eHasTime) {
-        const sStr = sHasTime ? ` ${pad(s.getHours())}:${pad(s.getMinutes())}` : "";
-        const eStr = eHasTime ? ` - ${pad(e.getHours())}:${pad(e.getMinutes())}` : "";
-        return `${dayText}${sStr}${eStr}`;
-      }
-      return dayText;
-    }
-    // 跨天：保留 dueInfo.text（它会展示 "开始 ~ 结束"）
-    return dueInfo.value?.text ?? "设置日期";
-  }
-
-  // 单点（只有 end 或只有 start）
-  return dueInfo.value?.text ?? "设置日期";
-});
-
-function pad(n: number) {
-  return String(n).padStart(2, "0");
-}
-function isMidnight(d: Date) {
-  return d.getHours() === 0 && d.getMinutes() === 0;
-}
-
+// 详情面板的日期 chip + Popover 已抽到 DueDateChip，本文件只保留保存逻辑
 async function onDateConfirm(start: string | null, end: string | null) {
   if (!task.value) return;
   await taskStore.updateTask(task.value.id, {
@@ -227,7 +177,6 @@ async function onDateConfirm(start: string | null, end: string | null) {
   });
   // 重置 notified_at：Tiptap 任务列表提醒依赖 dueEndAt 变化时重新触发
   await db.updateTask(task.value.id, { notifiedAt: null } as any);
-  dateVisible.value = false;
 }
 
 async function onDateClear() {
@@ -236,7 +185,6 @@ async function onDateClear() {
     dueStartAt: null,
     dueEndAt: null,
   });
-  dateVisible.value = false;
 }
 
 // ─── 提醒 ─────────────────────────────────────────
@@ -323,7 +271,6 @@ async function removeTaskTag(tagId: string) {
 }
 
 // ─── 弹层显隐状态 ───────────────────────────────
-const dateVisible = ref(false);
 const reminderVisible = ref(false);
 const recurrenceVisible = ref(false);
 const priorityVisible = ref(false);
@@ -524,26 +471,12 @@ onBeforeUnmount(() => {
       <a-divider v-if="!narrow" direction="vertical" :margin="6" />
 
       <!-- 日期（关键属性，窄屏仍显示文字） -->
-      <Popover v-model:visible="dateVisible" placement="bottom-left">
-        <template #trigger>
-          <PropertyChip
-            :active="!!(task.dueStartAt || task.dueEndAt)"
-            :style="dueInfo ? (dueInfo.overdue ? { color: 'var(--jt-error)' } : (dueInfo.isToday ? { color: 'var(--jt-error)', fontWeight: '600' } : {})) : {}"
-            @click="dateVisible = !dateVisible"
-          >
-            <template #icon>
-              <icon-calendar :size="14" />
-            </template>
-            {{ dueLabel }}
-          </PropertyChip>
-        </template>
-        <DatePopover
-          :start-iso="task.dueStartAt"
-          :end-iso="task.dueEndAt"
-          @confirm="onDateConfirm"
-          @clear="onDateClear"
-        />
-      </Popover>
+      <DueDateChip
+        :start-iso="task.dueStartAt"
+        :end-iso="task.dueEndAt"
+        @confirm="onDateConfirm"
+        @clear="onDateClear"
+      />
 
       <!-- 提醒（默认只图标 + tooltip） -->
       <a-tooltip :content="remindLabel" position="bottom">

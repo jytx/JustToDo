@@ -118,16 +118,24 @@ const rangeHighlight = computed(() => {
   return { start: s, end: e };
 });
 
-/** 日历格子的范围状态：'in' 范围内 | 'start' 开始 | 'end' 结束 | null */
+/** 日历格子的范围状态：'in' 范围内 | 'start' 开始 | 'end' 结束 | null
+ * 判定规则（按优先级）：
+ *   1) 与 start 同天 → 'start'
+ *   2) 与 end 同天   → 'end'
+ *   3) 严格在 start 之后、end 之前（按整天比，避免 end 10:00 误伤 end 当天格子） → 'in'
+ *   4) 其他 → null
+ * 端点判定优先于 in，保证 1 号 / 4 号各自呈现闭合形态。 */
 function getRangeClass(d: Date): "in" | "start" | "end" | null {
   const r = rangeHighlight.value;
   if (!r) return null;
-  const time = d.getTime();
-  const s = r.start.getTime();
-  const e = r.end ? r.end.getTime() : null;
-  if (e && time > s && time < e) return "in";
   if (isSameDay(d, r.start)) return "start";
   if (r.end && isSameDay(d, r.end)) return "end";
+  if (r.end) {
+    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const s = new Date(r.start.getFullYear(), r.start.getMonth(), r.start.getDate()).getTime();
+    const e = new Date(r.end.getFullYear(), r.end.getMonth(), r.end.getDate()).getTime();
+    if (dayStart > s && dayStart < e) return "in";
+  }
   return null;
 }
 
@@ -487,20 +495,20 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 
 <style scoped>
 .date-popover {
-  width: 320px;
+  width: 280px;
   background: var(--jt-surface);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
-  padding: 16px;
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .date-popover__tabs {
   display: flex;
   background: var(--jt-surface-sunken);
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 2px;
   gap: 0;
 }
@@ -509,10 +517,10 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
   flex: 1;
   border: none;
   background: transparent;
-  padding: 6px 0;
-  font-size: 13px;
+  padding: 5px 0;
+  font-size: 12px;
   color: var(--jt-text-secondary);
-  border-radius: 6px;
+  border-radius: 4px;
   cursor: pointer;
   transition: all 0.12s;
 }
@@ -526,17 +534,17 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 
 .date-popover__quick {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   justify-content: space-around;
-  padding: 4px 0;
+  padding: 2px 0;
 }
 
 .date-popover__quick-btn {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border: none;
   background: transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--jt-text-secondary);
   cursor: pointer;
   transition: all 0.12s;
@@ -554,15 +562,15 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 4px;
+  padding: 0 2px;
 }
 
 .date-popover__nav {
   border: none;
   background: transparent;
   color: var(--jt-text-secondary);
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 4px;
   cursor: pointer;
   display: flex;
@@ -575,7 +583,7 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 }
 
 .date-popover__cal-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--jt-text-primary);
 }
@@ -588,23 +596,23 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 }
 
 .date-popover__weekday {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--jt-text-tertiary);
-  padding: 4px 0;
+  padding: 2px 0;
 }
 
 .date-popover__grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
+  gap: 1px;
 }
 
 .date-popover__day {
   border: none;
   background: transparent;
-  aspect-ratio: 1;
-  border-radius: 8px;
-  font-size: 13px;
+  aspect-ratio: 1 / 0.92;
+  border-radius: 6px;
+  font-size: 12px;
   color: var(--jt-text-primary);
   cursor: pointer;
   transition: all 0.1s;
@@ -634,25 +642,30 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
   color: #fff;
 }
 
-/* 时间段范围高亮 —— 端点优先级必须高于 in，所以写在前面 */
-.date-popover__day--range-start,
-.date-popover__day--range-end {
+/* 时间段范围高亮 —— 端点用主色 + 圆角，闭合形
+   端点（start/end）的特异度必须高于 in：通过拼接"格子基础类 + 端点类"提升到 2+1=3 级，
+   而 in 是 1+1=2 级，这样即使源码顺序在 in 之后，端点也总能赢。
+   加上 background 仍走 !important 兜底，双保险。 */
+.date-popover__day.date-popover__day--range-start,
+.date-popover__day.date-popover__day--range-end {
   background: var(--jt-primary) !important;
   color: #fff !important;
   font-weight: 500;
 }
 
-.date-popover__day--range-start {
+/* 开始端：左侧圆角闭合，右侧抹平贴合 in 区 */
+.date-popover__day.date-popover__day--range-start {
   border-top-right-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
 }
 
-.date-popover__day--range-end {
+/* 结束端：右侧圆角闭合，左侧抹平贴合 in 区 */
+.date-popover__day.date-popover__day--range-end {
   border-top-left-radius: 0 !important;
   border-bottom-left-radius: 0 !important;
 }
 
-/* 范围内格子：必须在端点之后，否则会因特异度相同被覆盖 */
+/* 范围内格子：浅紫底 + 抹平两侧（让 start/end 圆角"夹"住它） */
 .date-popover__day--range-in {
   background: var(--jt-accent-soft);
   color: var(--jt-text-primary);
@@ -662,12 +675,12 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 .date-popover__row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 6px 10px;
   border: none;
   background: transparent;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 6px;
+  font-size: 12px;
   color: var(--jt-text-primary);
   cursor: pointer;
   text-align: left;
@@ -685,8 +698,8 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 
 .date-popover__time {
   display: flex;
-  gap: 6px;
-  max-height: 144px;
+  gap: 4px;
+  max-height: 120px;
   overflow: hidden;
   border: 1px solid var(--jt-border);
   border-radius: 6px;
@@ -699,15 +712,15 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
   grid-template-columns: repeat(4, 1fr);
   gap: 1px;
   overflow-y: auto;
-  max-height: 140px;
+  max-height: 116px;
 }
 
 .date-popover__time-cell {
   border: none;
   background: transparent;
-  padding: 2px 0;
+  padding: 1px 0;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--jt-text-primary);
   cursor: pointer;
   font-family: var(--font-mono);
@@ -721,17 +734,17 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 
 .date-popover__footer {
   display: flex;
-  gap: 8px;
-  padding-top: 8px;
+  gap: 6px;
+  padding-top: 6px;
   border-top: 1px solid var(--jt-border);
 }
 
 .date-popover__btn {
   flex: 1;
-  height: 32px;
-  border-radius: 8px;
+  height: 28px;
+  border-radius: 6px;
   border: none;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   transition: all 0.12s;
   font-family: var(--font-body);

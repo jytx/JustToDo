@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // 添加任务栏 —— 底部常驻，聚焦后展开优先级/日期属性行
+// 日期入口已统一为 DueDateChip（与详情面板/快捷新建面板使用同一份 DatePopover）
 import { ref, computed, nextTick } from "vue";
 import { PRIORITY_LABELS, PRIORITY_COLORS, type Priority } from "@/types";
-import { toLocalIso, fromLocalIso } from "@/utils/date";
 import PriorityDot from "./PriorityDot.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
+import DueDateChip from "./DueDateChip.vue";
 
 defineProps<{
   listId: string;
@@ -24,33 +25,11 @@ const dueEndAt = ref<string | null>(null);
 
 const inputRef = ref<HTMLInputElement | null>(null);
 
-/** a-range-picker 的 v-model 桥接 —— 与本地时间字面量互转 */
-const dueRangeModel = computed({
-  get: (): [string, string] | undefined => {
-    if (!dueStartAt.value && !dueEndAt.value) return undefined;
-    return [
-      fromLocalIso(dueStartAt.value) ?? fromLocalIso(dueEndAt.value)!,
-      fromLocalIso(dueEndAt.value) ?? fromLocalIso(dueStartAt.value)!,
-    ];
-  },
-  set: (v: [string, string] | undefined) => {
-    if (!v) {
-      dueStartAt.value = null;
-      dueEndAt.value = null;
-    } else {
-      dueStartAt.value = toLocalIso(v[0]);
-      dueEndAt.value = toLocalIso(v[1]);
-    }
-  },
-});
+const priorityLabel = computed(() => PRIORITY_LABELS[priority.value] || "无");
 
-const priorityLabel = computed(
-  () => PRIORITY_LABELS[priority.value] || "无",
-);
-const priorityColor = computed(() => PRIORITY_COLORS[priority.value]);
-/** 将 PRIORITY_COLORS token 映射为可用于 inline style 的 CSS 变量值 */
+/** 把 PRIORITY_COLORS token 映射为可用于 inline style 的 CSS 变量值 */
 const priorityStyle = computed(() => {
-  const token = priorityColor.value;
+  const token = PRIORITY_COLORS[priority.value];
   if (token === "priority-none") return { color: "var(--jt-text-tertiary)" };
   if (token === "info") return { color: "#3B82F6" };
   if (token === "warning") return { color: "var(--jt-warning)" };
@@ -68,7 +47,12 @@ function selectPriority(p: Priority) {
 function submit() {
   const trimmed = title.value.trim();
   if (!trimmed) return;
-  emit("add", { title: trimmed, priority: priority.value, dueStartAt: dueStartAt.value, dueEndAt: dueEndAt.value });
+  emit("add", {
+    title: trimmed,
+    priority: priority.value,
+    dueStartAt: dueStartAt.value,
+    dueEndAt: dueEndAt.value,
+  });
   // 重置（保持面板打开便于连续录入）
   title.value = "";
   priority.value = 0;
@@ -106,6 +90,11 @@ function onAttrMousedown(e: MouseEvent) {
     focused.value = true;
     refocusInput();
   }
+}
+
+/** DueDateChip 关闭时把焦点拉回输入框 */
+function onDateClose() {
+  refocusInput();
 }
 </script>
 
@@ -150,14 +139,12 @@ function onAttrMousedown(e: MouseEvent) {
         </MenuPopoverItem>
       </MenuPopover>
 
-      <a-range-picker
-        v-model="dueRangeModel"
-        size="mini"
-        style="width: 250px"
-        format="YYYY-MM-DD HH:mm"
-        show-time
-        :allow-clear="true"
-        @popup-visible-change="(v: boolean) => { if (v) { focused = true; } else { refocusInput(); } }"
+      <DueDateChip
+        compact
+        :start-iso="dueStartAt"
+        :end-iso="dueEndAt"
+        @confirm="(s, e) => { dueStartAt = s; dueEndAt = e; onDateClose(); }"
+        @clear="() => { dueStartAt = null; dueEndAt = null; onDateClose(); }"
       />
 
       <span class="add-task-bar__hint font-mono">⏎</span>

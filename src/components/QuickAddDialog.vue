@@ -2,12 +2,13 @@
 // 全局快速添加 —— 顶部命令面板风格
 // 快捷键 Cmd+Shift+A / Ctrl+Shift+A 唤起
 // 设计参考 Linear / Things：单一焦点输入 + 紧凑属性 chip + 底部 hint
+// 日期入口已统一为 DueDateChip（与详情面板/主面板添加栏使用同一份 DatePopover）
 import { ref, watch, nextTick, computed } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { PRIORITY_LABELS, PRIORITY_COLORS, type Priority } from "@/types";
-import { toLocalIso, fromLocalIso } from "@/utils/date";
 import PriorityDot from "./PriorityDot.vue";
+import DueDateChip from "./DueDateChip.vue";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -87,25 +88,7 @@ watch(open, async (isOpen) => {
   }
 });
 
-/** a-range-picker 的 v-model 桥接 —— 与本地时间字面量互转 */
-const dueRangeModel = computed({
-  get: (): [string, string] | undefined => {
-    if (!dueStartAt.value && !dueEndAt.value) return undefined;
-    return [
-      fromLocalIso(dueStartAt.value) ?? fromLocalIso(dueEndAt.value)!,
-      fromLocalIso(dueEndAt.value) ?? fromLocalIso(dueStartAt.value)!,
-    ];
-  },
-  set: (v: [string, string] | undefined) => {
-    if (!v) {
-      dueStartAt.value = null;
-      dueEndAt.value = null;
-    } else {
-      dueStartAt.value = toLocalIso(v[0]);
-      dueEndAt.value = toLocalIso(v[1]);
-    }
-  },
-});
+/** a-range-picker 已退役 —— DueDateChip 直接 emit confirm/clear，这里只保留 state */
 
 const priorityLabel = computed(() => {
   if (priority.value === 0) return "优先级";
@@ -282,14 +265,15 @@ function onKeyDown(e: KeyboardEvent) {
           </template>
         </a-trigger>
 
-        <!-- 日期范围 —— a-range-picker，完整 yyyy-MM-dd HH:mm 格式 -->
-        <a-range-picker
-          v-model="dueRangeModel"
-          size="mini"
-          class="quick-add__range"
-          format="YYYY-MM-DD HH:mm"
-          show-time
-          :allow-clear="true"
+        <!-- 日期 —— 与详情面板一致的 DueDateChip
+   chip 在弹窗底部属性行，弹层朝上开避免超出窗口顶部 -->
+        <DueDateChip
+          compact
+          placement="top-left"
+          :start-iso="dueStartAt"
+          :end-iso="dueEndAt"
+          @confirm="(s, e) => { dueStartAt = s; dueEndAt = e; }"
+          @clear="() => { dueStartAt = null; dueEndAt = null; }"
         />
 
         <span class="quick-add__spacer" />
@@ -390,72 +374,6 @@ function onKeyDown(e: KeyboardEvent) {
   display: inline-block;
 }
 
-/* 日期范围 picker —— 强制压缩宽度，跟优先级/清单同行
-   Arco 的 .arco-picker-range 默认 min-width 很大，需要 !important 覆盖 */
-.quick-add__range.arco-picker,
-.quick-add-modal .arco-picker-range {
-  display: inline-flex !important;
-  align-items: center !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 10px !important;
-  height: 26px !important;
-  font-size: 12px !important;
-  color: var(--jt-text-secondary) !important;
-  border-radius: 6px !important;
-  white-space: nowrap !important;
-  flex-shrink: 0 !important;
-  width: 200px !important;
-  min-width: 200px !important;
-  max-width: 200px !important;
-  transition: background-color 0.15s ease, color 0.15s ease !important;
-}
-
-.quick-add__range.arco-picker:hover,
-.quick-add__range.arco-picker:focus-within,
-.quick-add__range.arco-picker.arco-picker-focused,
-.quick-add-modal .arco-picker-range:hover,
-.quick-add-modal .arco-picker-range.arco-picker-focused {
-  background-color: var(--jt-surface-sunken) !important;
-  color: var(--jt-text-primary) !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-/* 两个 input 各占一半，flex 共享空间 */
-.quick-add__range :deep(.arco-input-wrapper) {
-  flex: 1 1 0 !important;
-  min-width: 0 !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-.quick-add__range :deep(.arco-range-picker-input),
-.quick-add__range :deep(.arco-input) {
-  font-size: 12px !important;
-  height: 22px !important;
-  text-align: center !important;
-  width: 100% !important;
-  padding: 0 !important;
-}
-
-.quick-add__range :deep(.arco-range-picker-input)::placeholder {
-  color: var(--jt-text-tertiary) !important;
-}
-
-/* 隐藏右侧日历 icon（节省空间） */
-.quick-add__range :deep(.arco-picker-suffix) {
-  display: none !important;
-}
-
-/* 分隔符 ~ 紧凑 */
-.quick-add__range :deep(.arco-range-picker-separator) {
-  padding: 0 2px !important;
-  color: var(--jt-text-tertiary) !important;
-}
-
 /* 反馈条 */
 .quick-add__feedback {
   padding: 6px 16px;
@@ -482,16 +400,6 @@ function onKeyDown(e: KeyboardEvent) {
 }
 .quick-add-modal .arco-modal-body {
   padding: 0;
-}
-
-/* 日期 popup 内嵌 */
-.quick-add__date-popup {
-  padding: 8px;
-  background: var(--jt-surface);
-  border-radius: 8px;
-  box-shadow:
-    0 6px 20px rgba(0, 0, 0, 0.08),
-    0 2px 6px rgba(0, 0, 0, 0.05);
 }
 
 .quick-add__trigger--icon {
@@ -554,45 +462,5 @@ body[arco-theme="dark"] .quick-add__popup {
   box-shadow:
     0 6px 20px rgba(0, 0, 0, 0.4),
     0 2px 6px rgba(0, 0, 0, 0.3);
-}
-
-/* 强制压缩 range-picker 宽度 —— scoped 样式无法覆盖 Arco 内部样式，
-   这里用 modal 容器作为锚点 + !important 兜底 */
-.quick-add-modal .arco-picker-range.quick-add__range,
-.quick-add-modal .arco-picker-range {
-  width: 320px !important;
-  min-width: 320px !important;
-  max-width: 320px !important;
-  padding: 0 10px !important;
-  height: 26px !important;
-  border: none !important;
-  background: transparent !important;
-  font-size: 12px !important;
-}
-
-.quick-add-modal .arco-picker-range .arco-input-wrapper {
-  flex: 1 1 0 !important;
-  min-width: 0 !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-.quick-add-modal .arco-picker-range .arco-range-picker-input,
-.quick-add-modal .arco-picker-range .arco-input {
-  font-size: 12px !important;
-  height: 22px !important;
-  text-align: center !important;
-  width: 100% !important;
-  padding: 0 !important;
-}
-
-.quick-add-modal .arco-picker-range .arco-picker-suffix {
-  display: none !important;
-}
-
-.quick-add-modal .arco-picker-range .arco-range-picker-separator {
-  padding: 0 2px !important;
-  color: var(--jt-text-tertiary) !important;
 }
 </style>

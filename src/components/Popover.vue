@@ -88,6 +88,11 @@ function updatePosition() {
   if (top + pu.height > scrollY + viewportH - margin) {
     top = tr.top + scrollY - pu.height - props.offset;
   }
+  // 顶部 clip 保护：翻转后如果还在视口上方外，夹到 0（依赖 Tauri webview 的
+  // 滚动容器或弹层 max-height 自带滚动条，避免被裁的内容直接消失）
+  if (top < margin) {
+    top = margin;
+  }
 
   popupStyle.value = {
     position: "absolute",
