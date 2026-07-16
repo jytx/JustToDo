@@ -19,6 +19,7 @@ import TaskItem from "@tiptap/extension-task-item";
 import Suggestion from "@tiptap/suggestion";
 import GlobalDragHandle from "tiptap-extension-global-drag-handle";
 import { Extension } from "@tiptap/core";
+import type { Editor as TiptapEditor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { common, createLowlight } from "lowlight";
 import { watch, onBeforeUnmount, onMounted, ref, nextTick, computed, createApp } from "vue";
@@ -120,9 +121,8 @@ const slashItems: SlashCommandItem[] = [
 ];
 
 /**
- * Slash Command Tiptap Extension —— 把 Suggestion ProseMirror Plugin 包装成
- * Tiptap Extension，在 addProseMirrorPlugins 时拿到 this.editor。
- * 直接传 Suggestion 进 extensions 数组会被静默忽略（这是 3.x 设计）。
+ * Slash Command 工厂：返回一个 ProseMirror Plugin 实例，
+ * 用于在 editor 创建后用 editor.registerPlugin(imperative) 注册。
  *
  * 选 block 命令在 command 回调里：
  *  - editor.chain().focus().deleteRange(range) 删除 /xxx 范围
@@ -130,130 +130,135 @@ const slashItems: SlashCommandItem[] = [
  *  - 一次 .run() 让二者合并到同一个 ProseMirror transaction，
  *    避免双 transaction 之间 Suggestion utility 维护的 range 失效造成字符残留。
  */
-const SlashCommandExt = Extension.create({
-  name: "slashCommand",
-  addProseMirrorPlugins() {
-    const ed = this.editor;
-    return [
-      (Suggestion as any)({
-        editor: ed,
-        char: "/",
-        startOfLine: false,
-        allowSpaces: false,
-        items: ({ query }: { query: string }) =>
-          slashItems.filter((it) => {
-            const q = query.trim().toLowerCase();
-            if (!q) return true;
-            const hay = [it.title, it.description ?? "", ...(it.keywords ?? [])]
-              .join(" ")
-              .toLowerCase();
-            return hay.includes(q);
-          }),
-        command: ({
-          editor,
-          range,
-          props: item,
-        }: {
-          editor: import("@tiptap/core").Editor;
-          range: { from: number; to: number };
-          props: SlashCommandItem;
-        }) => {
-          // 一次 transaction 把"删除 /xxx 范围"和"切换 block 类型"合并，
-          // 避免两次 transaction 之间 Suggestion utility 的 range 引用失效
-          // 造成字符残留。
-          const c = editor.chain().focus().deleteRange(range as any);
-          switch (item.key) {
-            case "text":
-              c.setParagraph().run();
-              break;
-            case "h1":
-              c.toggleHeading({ level: 1 }).run();
-              break;
-            case "h2":
-              c.toggleHeading({ level: 2 }).run();
-              break;
-            case "h3":
-              c.toggleHeading({ level: 3 }).run();
-              break;
-            case "bullet":
-              if (!editor.isActive("bulletList")) c.toggleBulletList().run();
-              break;
-            case "ordered":
-              if (!editor.isActive("orderedList")) c.toggleOrderedList().run();
-              break;
-            case "todo":
-              if (!editor.isActive("taskList")) c.toggleTaskList().run();
-              break;
-            case "quote":
-              if (!editor.isActive("blockquote")) c.toggleBlockquote().run();
-              break;
-            case "code":
-              if (!editor.isActive("codeBlock")) c.toggleCodeBlock().run();
-              break;
-            case "hr":
-              c.setHorizontalRule().run();
-              break;
-          }
-        },
-        // Vue createApp 挂 SlashCommandMenu；由 Suggestion utility 提供 mount + 定位
-        render: () => {
-          let mountedApp: { unmount: () => void } | null = null;
-          let unmountSuggestion: (() => void) | null = null;
-
-          function buildComponentProps(props: any) {
-            const rect = props.clientRect?.();
-            // buildCommandFn: 让 SlashCommandMenu 选中某项时调用此函数，
-            // 它会调用 Suggestion utility 提供的 props.command，
-            // 由 utility 内部再去 dispatch 我们外层 Suggestion({command}) 里
-            // 的回调（在配置里已经把 range 从 doc 删掉 + 执行 block 切换）。
-            const buildCommandFn = (item: SlashCommandItem) => {
-              props.command({ editor: props.editor, range: props.range, props: item });
-            };
-            return {
-              items: (props.items as SlashCommandItem[]) ?? [],
-              query: (props.query as string) ?? "",
-              editor: props.editor,
-              open: true,
-              rect: rect
-                ? { left: rect.left, top: rect.top, bottom: rect.bottom }
-                : null,
-              onSelectCommand: buildCommandFn,
-            };
-          }
-
-          function teardown() {
-            if (unmountSuggestion) {
-              unmountSuggestion();
-              unmountSuggestion = null;
-            }
-            if (mountedApp) {
-              mountedApp.unmount();
-              mountedApp = null;
-            }
-          }
-
-          function setupWith(props: any) {
-            teardown();
-            const element = document.createElement("div");
-            element.setAttribute("data-slash-menu", "1");
-            const app = createApp(SlashCommandMenu, buildComponentProps(props));
-            app.mount(element);
-            unmountSuggestion = props.mount(element);
-            mountedApp = app;
-          }
-
-          return {
-            onStart: (props: any) => setupWith(props),
-            onUpdate: (props: any) => setupWith(props),
-            onExit: () => teardown(),
-            // 必须 return true 让 Tiptap 知道按键被拦截，避免继续插入字符
-            onKeyDown: () => true,
-          };
-        },
+function buildSlashCommandPlugin(editorInstance: TiptapEditor) {
+  return (Suggestion as any)({
+    editor: editorInstance,
+    char: "/",
+    startOfLine: false,
+    allowSpaces: false,
+    items: ({ query }: { query: string }) =>
+      slashItems.filter((it) => {
+        const q = query.trim().toLowerCase();
+        if (!q) return true;
+        const hay = [it.title, it.description ?? "", ...(it.keywords ?? [])]
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
       }),
-    ];
-  },
-});
+    command: ({
+      editor,
+      range,
+      props: item,
+    }: {
+      editor: import("@tiptap/core").Editor;
+      range: { from: number; to: number };
+      props: SlashCommandItem;
+    }) => {
+      const c = editor.chain().focus().deleteRange(range as any);
+      switch (item.key) {
+        case "text":
+          c.setParagraph().run();
+          break;
+        case "h1":
+          c.toggleHeading({ level: 1 }).run();
+          break;
+        case "h2":
+          c.toggleHeading({ level: 2 }).run();
+          break;
+        case "h3":
+          c.toggleHeading({ level: 3 }).run();
+          break;
+        case "bullet":
+          if (!editor.isActive("bulletList")) c.toggleBulletList().run();
+          break;
+        case "ordered":
+          if (!editor.isActive("orderedList")) c.toggleOrderedList().run();
+          break;
+        case "todo":
+          if (!editor.isActive("taskList")) c.toggleTaskList().run();
+          break;
+        case "quote":
+          if (!editor.isActive("blockquote")) c.toggleBlockquote().run();
+          break;
+        case "code":
+          if (!editor.isActive("codeBlock")) c.toggleCodeBlock().run();
+          break;
+        case "hr":
+          c.setHorizontalRule().run();
+          break;
+      }
+    },
+    // Vue createApp 挂 SlashCommandMenu；由 Suggestion utility 提供 mount + 定位
+    render: () => {
+      let mountedApp: { unmount: () => void } | null = null;
+      let unmountSuggestion: (() => void) | null = null;
+
+      function buildComponentProps(props: any) {
+        const rect = props.clientRect?.();
+        const buildCommandFn = (item: SlashCommandItem) => {
+          props.command({ editor: props.editor, range: props.range, props: item });
+        };
+        return {
+          items: (props.items as SlashCommandItem[]) ?? [],
+          query: (props.query as string) ?? "",
+          editor: props.editor,
+          open: true,
+          rect: rect
+            ? { left: rect.left, top: rect.top, bottom: rect.bottom }
+            : null,
+          onSelectCommand: buildCommandFn,
+        };
+      }
+
+      function teardown() {
+        if (unmountSuggestion) {
+          unmountSuggestion();
+          unmountSuggestion = null;
+        }
+        if (mountedApp) {
+          mountedApp.unmount();
+          mountedApp = null;
+        }
+      }
+
+      function setupWith(props: any) {
+        teardown();
+        const element = document.createElement("div");
+        element.setAttribute("data-slash-menu", "1");
+        const app = createApp(SlashCommandMenu, buildComponentProps(props));
+        app.mount(element);
+        unmountSuggestion = props.mount(element);
+        mountedApp = app;
+      }
+
+      return {
+        onStart: (props: any) => setupWith(props),
+        onUpdate: (props: any) => setupWith(props),
+        onExit: () => teardown(),
+        // 必须 return true 让 Tiptap 知道按键被拦截，避免继续插入字符
+        onKeyDown: () => true,
+      };
+    },
+  });
+}
+
+/** Imperative 注册：等 editor 创建完成（watch），调 registerPlugin。
+ * Extension.create 包装后 addProseMirrorPlugins 在本环境下没被 Tiptap 收集到
+ * ProseMirror state.plugins（实测），所以改回 imperative 路径。
+ */
+function installSlashPlugin(editorInstance: TiptapEditor) {
+  editorInstance.registerPlugin(buildSlashCommandPlugin(editorInstance));
+}
+
+function uninstallSlashPlugin(editorInstance: TiptapEditor) {
+  try {
+    // Suggestion 内置 pluginKey 是 "suggestion"，unregisterPlugin 用 string 即可
+    editorInstance.unregisterPlugin("suggestion");
+  } catch {
+    /* ignore */
+  }
+}
+
 
 
 const previewSrc = computed(() => allImages.value[previewIndex.value] ?? null);
@@ -300,10 +305,11 @@ const editor = useEditor({
         alwaysPreserveAspectRatio: true,
       },
     } as any),
-    // Slash Command —— 用顶层 SlashCommandExt（包装了 @tiptap/suggestion）。
-    // 直接放在这里会被 Tiptap 静默忽略——Suggestion 是 ProseMirror Plugin factory，
-    // 不是 Tiptap Extension，必须经 Extension.create 包装。
-    SlashCommandExt,
+    // Slash Command —— 不在 extensions 数组里，用 editor 准备好后
+    // editor.registerPlugin() imperative 注册（详见下方 watch）。
+    // Extension.create({ addProseMirrorPlugins() }) 路径在本环境下
+    // addProseMirrorPlugins 没被 Tiptap 收集到 ProseMirror plugins（实测确认），
+    // 所以改用 imperative 路径。
   ],
   onUpdate: ({ editor }) => {
     emit("update:modelValue", editor.getHTML());
@@ -358,6 +364,19 @@ const editor = useEditor({
 });
 
 // ─── 工具条相关状态已抽离到 RichTextToolbar 组件 ───
+
+// Slash Command plugin 注册：
+// useEditor 创建的 editor 是 ref；注册要等 editor 实例 ready。
+// 在 watch 中监测 editor.value 变化，第一次非 undefined 时 installSlashPlugin。
+watch(
+  editor,
+  (ed, _old, onCleanup) => {
+    if (!ed) return;
+    installSlashPlugin(ed);
+    onCleanup(() => uninstallSlashPlugin(ed));
+  },
+  { immediate: true },
+);
 
 watch(
   () => props.modelValue,
