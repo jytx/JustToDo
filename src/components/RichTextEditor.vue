@@ -203,6 +203,13 @@ const SlashCommandExt = Extension.create({
 
           function buildComponentProps(props: any) {
             const rect = props.clientRect?.();
+            // buildCommandFn: 让 SlashCommandMenu 选中某项时调用此函数，
+            // 它会调用 Suggestion utility 提供的 props.command，
+            // 由 utility 内部再去 dispatch 我们外层 Suggestion({command}) 里
+            // 的回调（在配置里已经把 range 从 doc 删掉 + 执行 block 切换）。
+            const buildCommandFn = (item: SlashCommandItem) => {
+              props.command({ editor: props.editor, range: props.range, props: item });
+            };
             return {
               items: (props.items as SlashCommandItem[]) ?? [],
               query: (props.query as string) ?? "",
@@ -211,6 +218,7 @@ const SlashCommandExt = Extension.create({
               rect: rect
                 ? { left: rect.left, top: rect.top, bottom: rect.bottom }
                 : null,
+              onSelectCommand: buildCommandFn,
             };
           }
 

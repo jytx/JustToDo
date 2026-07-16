@@ -30,10 +30,15 @@ const props = defineProps<{
   open: boolean;
   /** 弹层 anchor rect（来自 suggestion utility 的 clientRect） */
   rect?: { left: number; top: number; bottom: number } | null;
+  /**
+   * 选中某项时调用。由 RichTextEditor 注入，本质是
+   * `props.command({editor, range, props: item})`。
+   * 命令负责删除已输入的 "/xxx" 范围并切换 block 类型。
+   */
+  onSelectCommand?: (item: SlashCommandItem) => void;
 }>();
 
 const emit = defineEmits<{
-  select: [item: SlashCommandItem];
   close: [];
 }>();
 
@@ -66,7 +71,10 @@ watch(
 );
 
 function selectItem(item: SlashCommandItem) {
-  emit("select", item);
+  // 由 RichTextEditor 注入：内含 props.command(item) 调用，
+  // Suggestion utility 会 dispatch 我们在外层 Suggestion({command}) 配置里
+  // 给出的回调（deleteRange + runSlashCommand）。
+  props.onSelectCommand?.(item);
   emit("close");
 }
 
