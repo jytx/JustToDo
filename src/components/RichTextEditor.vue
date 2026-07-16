@@ -534,13 +534,12 @@ function fileToBase64(file: File): Promise<string> {
     <!-- 编辑区 -->
     <div ref="editorContainerRef" class="rich-text__editor-wrapper">
       <EditorContent :editor="editor" class="rich-text__editor" />
+      <!-- 块拖拽手柄 + 落点横线（放在 wrapper 内、absolute 定位，hover 链不断） -->
+      <BlockDragHandle :editor="editor" />
     </div>
 
     <!-- 空段落浮 + 按钮（Notion-like 入口之一） -->
     <RichTextFloatingMenu :editor="editor" />
-
-    <!-- 块拖拽手柄 + 落点横线（自定义鼠标事件实现） -->
-    <BlockDragHandle :editor="editor" />
 
     <!-- 图片预览 lightbox -->
     <teleport to="body">
@@ -614,8 +613,11 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 .rich-text--borderless .rich-text__editor-wrapper {
-  padding: 0;
+  /* 左侧留 24px 给块拖拽手柄（absolute 定位落在 padding 内） */
+  padding: 0 0 0 24px;
   min-height: 0;
+  /* 手柄 absolute 定位需锚定 */
+  position: relative;
 }
 
 .rich-text__editor :deep(.rich-text__content) {

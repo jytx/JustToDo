@@ -2,7 +2,10 @@
 // 块拖拽手柄 + 落点横线（自定义鼠标事件实现，非 HTML5 drag）
 // 通过 useBlockDrag 状态机驱动；本组件只负责渲染 + 绑定 mousedown。
 //
-// 两个元素都 Teleport 到 body + position:fixed，避免祖先 overflow/transform 干扰。
+// 位置：手柄和横线都 absolute 定位，渲染在父级 editor wrapper 内
+// （不 teleport 到 body），坐标相对 wrapper 左/上边缘计算。
+// 这样鼠标从 editor 内容区移到手柄不会触发 editor 的 mouseleave，
+// 避免手柄一碰就消失、必须来回挪动才能按下的体验问题。
 import { computed, toRef } from "vue";
 import type { Editor } from "@tiptap/vue-3";
 import { useBlockDrag } from "@/composables/useBlockDrag";
@@ -18,7 +21,7 @@ const editorRef = toRef(props, "editor");
 const { handlePos, indicatorPos, isDragging, onHandleMouseDown, onHandleMouseEnter, onHandleMouseLeave } =
   useBlockDrag(editorRef);
 
-/** 手柄样式（fixed 定位 + 显隐） */
+/** 手柄样式（absolute 定位，坐标相对父级 editor wrapper） */
 const handleStyle = computed(() => ({
   left: `${handlePos.value.left}px`,
   top: `${handlePos.value.top}px`,
@@ -27,7 +30,7 @@ const handleStyle = computed(() => ({
   cursor: isDragging.value ? "grabbing" : "grab",
 }));
 
-/** 横线样式（fixed 定位 + 显隐） */
+/** 横线样式（absolute 定位，坐标相对父级 editor wrapper） */
 const indicatorStyle = computed(() => ({
   left: `${indicatorPos.value.left}px`,
   top: `${indicatorPos.value.top}px`,
@@ -37,29 +40,18 @@ const indicatorStyle = computed(() => ({
 </script>
 
 <template>
-  <teleport to="body">
-    <!-- 拖拽手柄：⋮⋮ 六点图标 -->
-    <div
-      class="block-drag-handle"
-      :class="{ 'block-drag-handle--dragging': isDragging }"
-      :style="handleStyle"
-      @mousedown="onHandleMouseDown"
-      @mouseenter="onHandleMouseEnter"
-      @mouseleave="onHandleMouseLeave"
-    ></div>
-
-    <!-- 落点横线：拖拽时显示在哪两个块之间 -->
-    <div class="block-drag-indicator" :style="indicatorStyle"></div>
-  </teleport>
+  <!-- 不 teleport：手柄和横线渲染在父级 editor wrapper 内，
+       absolute 定位，hover 链不断。 -->
+  <div class="block-drag-handle" :class="{ 'block-drag-handle--dragging': isDragging }" :style="handleStyle" @mousedown="onHandleMouseDown" @mouseenter="onHandleMouseEnter" @mouseleave="onHandleMouseLeave"></div>
+  <div class="block-drag-indicator" :style="indicatorStyle"></div>
 </template>
 
 <style scoped>
 /* 拖拽手柄 —— 18×22 的可点击区，⋮⋮ 六点用 ::before/::after 画 */
 .block-drag-handle {
-  position: fixed;
-  /* z-index 必须 > 详情面板（.detail-panel 是 fixed z-index:1000），
-     否则手柄被面板完全遮盖、永远看不见。2001 留出余量。 */
-  z-index: 2001;
+  position: absolute;
+  /* z-index 仅需 > editor 内容（默认 auto=0）即可；不需抗详情面板遮盖（手柄在面板 DOM 内） */
+  z-index: 1;
   width: 18px;
   height: 22px;
   display: flex;
@@ -102,11 +94,10 @@ const indicatorStyle = computed(() => ({
   color: var(--jt-primary);
 }
 
-/* 落点横线 —— 2px 主题色横线，对齐编辑器内容宽度。
-   z-index 略低于手柄（2000 < 2001），且同样 > 详情面板的 1000。 */
+/* 落点横线 —— 2px 主题色横线，对齐 editor 内容区宽度 */
 .block-drag-indicator {
-  position: fixed;
-  z-index: 2000;
+  position: absolute;
+  z-index: 1;
   height: 2px;
   background-color: var(--jt-primary);
   border-radius: 1px;

@@ -15,14 +15,14 @@ import {
   type DropTarget,
 } from "@/utils/blockDrag";
 
-/** 手柄在屏幕上的定位（fixed 坐标系，跟随 hover 的块） */
+/** 手柄在屏幕上的定位（absolute 坐标系，相对 editor wrapper 容器） */
 export interface HandlePosition {
   left: number;
   top: number;
   visible: boolean;
 }
 
-/** 落点横线的定位（fixed 坐标系，跟着鼠标 y 走） */
+/** 落点横线的定位（absolute 坐标系，相对 editor wrapper 容器） */
 export interface IndicatorPosition {
   left: number;
   top: number;
@@ -30,11 +30,8 @@ export interface IndicatorPosition {
   visible: boolean;
 }
 
-/** 手柄距编辑器内容区左边缘的偏移（px）。
- *  手柄宽 18px，往左偏移 20px 让它落在内容区左侧、紧贴文本（间隙 2px）。
- *  注意：偏移不能过大——任务详情面板左 padding 仅约 20px，超过会把
- *  手柄推出面板左边界，视觉上撞到面板的调宽分隔线。 */
-const HANDLE_OFFSET = -20;
+/** 手柄距 wrapper 左边缘的内边距（px），手柄左缘 = wrapper 左 + 此值 */
+const HANDLE_PADDING = 4;
 /** 手柄高度（px），用于在块内垂直居中定位 */
 const HANDLE_HEIGHT = 22;
 
@@ -59,8 +56,6 @@ export function useBlockDrag(editor: Ref<Editor | undefined>) {
   // 拖拽过程中的内部状态（非响应式，避免无谓渲染）
   let dragFromIndex = -1;
   let currentTarget: DropTarget | null = null;
-  /** 编辑器内容区的水平范围（横线宽度对齐用） */
-  let editorRect: DOMRect | null = null;
 
   /** 当前 hover 到的顶层块索引（idle 态用） */
   let hoverIndex = -1;
@@ -90,6 +85,8 @@ export function useBlockDrag(editor: Ref<Editor | undefined>) {
 
   /**
    * 根据鼠标坐标更新手柄位置（idle 态：定位到 hover 块的左侧）。
+   * 手柄使用 absolute 定位，坐标相对 editor wrapper（而非视口），
+   * 这样手柄就在 editor DOM 内，鼠标从 editor 移到手柄不会触发 mouseleave。
    */
   function updateHandleOnHover(view: Editor["view"], clientX: number, clientY: number): void {
     const doc = view.state.doc;
@@ -112,11 +109,13 @@ export function useBlockDrag(editor: Ref<Editor | undefined>) {
       handlePos.value.visible = false;
       return;
     }
-    const rect = dom.getBoundingClientRect();
+    const blockRect = dom.getBoundingClientRect();
+    // 用 view DOM（editor 容器）作为定位基准；手柄和内容共享同一坐标系。
+    // 手柄固定在 wrapper 左缘 + 4px（绝对定位），垂直跟随 hover 块居中。
+    const wrapperRect = view.dom.getBoundingClientRect();
     handlePos.value = {
-      left: rect.left + HANDLE_OFFSET,
-      // 垂直居中于该块（块中线 - 手柄半高）
-      top: rect.top + (rect.height - HANDLE_HEIGHT) / 2,
+      left: HANDLE_PADDING,
+      top: blockRect.top - wrapperRect.top + (blockRect.height - HANDLE_HEIGHT) / 2,
       visible: true,
     };
   }
@@ -166,14 +165,47 @@ export function useBlockDrag(editor: Ref<Editor | undefined>) {
     isDragging.value = true;
     currentTarget = null;
 
-    const view = ed.view;
-    editorRect = view.dom.getBoundingClientRect();
+    // mousedown 时立刻把手柄重置到 idle 态位置（hover 块所在行居中），
+    // 避免上一次 dragging 末尾鼠标 Y 偏出导致手柄从"野位置"开始。
+    // dragging 态下 X 锁在 HANDLE_PADDING、Y 跟鼠标；Y 会在第一次 mousemove
+    // 立即被 followMouse 覆盖到鼠标位置，所以这里设的 Y 是"瞬态过渡值"，
+    // 视觉上几乎看不到（一个 frame 内就被覆盖）。
+    resetHandleToHoverBlock(ed.view);
 
-    // 锁定全局面板 cursor，并在 document 上监听 move/up
+    // 锁定全局面板 cursor + 防文字选中，并在 document 上监听 move/up
     document.body.style.cursor = "grabbing";
     document.body.style.userSelect = "none";
     document.addEventListener("mousemove", onDragMouseMove);
     document.addEventListener("mouseup", onDragMouseUp);
+  }
+
+  /**
+   * 把 handlePos 复位到 idle 态（hover 块所在行居中）。
+   * 提取出来供 mousedown（开始拖拽前重置）和 mouseup 后的下一次 idle 用。
+   */
+  function resetHandleToHoverBlock(view: Editor["view"]): void {
+    const doc = view.state.doc;
+    if (hoverIndex < 0 || hoverIndex >= doc.childCount) {
+      handlePos.value.visible = false;
+      return;
+    }
+    const blockStart = posOfTopChild(doc, hoverIndex);
+    const dom = view.nodeDOM(blockStart);
+    if (!(dom instanceof HTMLElement)) {
+      handlePos.value.visible = false;
+      return;
+    }
+    const blockRect = dom.getBoundingClientRect();
+    const wrapperRect = view.dom.getBoundingClientRect();
+    const rawTop = blockRect.top - wrapperRect.top + (blockRect.height - HANDLE_HEIGHT) / 2;
+    // 钳制在 wrapper 合法范围内（极端情况：hover 在 wrapper 顶部最后一行）
+    const maxHandleTop = Math.max(0, wrapperRect.height - HANDLE_HEIGHT);
+    const top = Math.max(0, Math.min(rawTop, maxHandleTop));
+    handlePos.value = {
+      left: HANDLE_PADDING,
+      top,
+      visible: true,
+    };
   }
 
   /**
@@ -186,15 +218,37 @@ export function useBlockDrag(editor: Ref<Editor | undefined>) {
   }
 
   /**
+   * 手柄跟随鼠标（拖拽态用）。
+   * X 锁在原列（idle 态位置 HANDLE_PADDING），仅 Y 跟鼠标走——
+   * 拖拽时手柄只在源块那一列上下滑动，视觉上"原地拖动"，
+   * 不会因鼠标水平抖动而满世界跑（Notion 风格）。
+   * @param handleTop 手柄 top 的绝对值（相对 wrapper 顶），调用方已钳制在合理范围
+   */
+  function followMouse(handleTop: number): void {
+    handlePos.value = {
+      left: HANDLE_PADDING,
+      top: handleTop,
+      visible: true,
+    };
+  }
+
+  /**
    * 更新拖拽中的落点横线和手柄位置。
    */
   function updateDragState(view: Editor["view"], clientX: number, clientY: number): void {
     const target = findDropTarget(view, clientX, clientY);
     currentTarget = target;
-    if (!target || !editorRect) {
+    const wrapperRect = view.dom.getBoundingClientRect();
+    // 钳制手柄 top 在 wrapper 内容区内。手柄 top 的合法范围是
+    // [0, wrapper.height - HANDLE_HEIGHT]：底部不能超过 wrapper 底。
+    // 鼠标拖到 wrapper 外（document 监听）就让手柄停在边界。
+    const maxHandleTop = Math.max(0, wrapperRect.height - HANDLE_HEIGHT);
+    const rawRelY = clientY - wrapperRect.top;
+    // 让鼠标"拖动手柄中心"对齐视觉：手柄 top = 鼠标 - 半高
+    const handleTop = Math.max(0, Math.min(rawRelY - HANDLE_HEIGHT / 2, maxHandleTop));
+    if (!target) {
       indicatorPos.value.visible = false;
-      // 手柄居中跟随鼠标（dragging 态）
-      followMouse(clientX, clientY);
+      followMouse(handleTop);
       return;
     }
 
@@ -207,35 +261,25 @@ export function useBlockDrag(editor: Ref<Editor | undefined>) {
       const rect = dom.getBoundingClientRect();
       const lineY = target.insertBefore ? rect.top : rect.bottom;
       indicatorPos.value = {
-        left: editorRect.left,
-        top: lineY - 1,
-        width: editorRect.width,
+        // 横线对齐 wrapper 内的内容区（24px 左 padding 是给手柄的，横线跳过 padding 紧贴内容）
+        left: 24,
+        top: lineY - wrapperRect.top - 1,
+        width: wrapperRect.width - 24,
         visible: true,
       };
     }
 
-    // 手柄居中跟随鼠标（dragging 态）
-    followMouse(clientX, clientY);
+    followMouse(handleTop);
   }
-
-  /** 手柄居中跟随鼠标（拖拽态用，避免相对块左缘的 offset 把手柄往左推） */
-  function followMouse(clientX: number, clientY: number): void {
-    // 手柄尺寸 18×22，居中于鼠标
-    handlePos.value = {
-      left: clientX - 9,
-      top: clientY - 11,
-      visible: true,
-    };
-  }
-
-  /**
-   * dragging 态 document mouseup：执行移动事务，回到 idle。
-   */
   function onDragMouseUp(): void {
     const ed = editor.value;
+    // 先快照源/目标，cleanupDrag() 会重置它们
+    const fromIdx = dragFromIndex;
+    const target = currentTarget;
+
     cleanupDrag();
 
-    if (!ed || dragFromIndex < 0 || !currentTarget) return;
+    if (!ed || fromIdx < 0 || !target) return;
 
     // 判断目标是否等于源的当前位置（无效移动，跳过避免无意义事务）。
     // 块 i 的"自身位置"等价于四种 target 表达：
@@ -243,15 +287,15 @@ export function useBlockDrag(editor: Ref<Editor | undefined>) {
     //   - 插到 i 后面：            blockIndex===i && !insertBefore
     //   - 插到 i+1 前面(=i 后面)： blockIndex===i+1 && insertBefore
     //   - 插到 i-1 后面(=i 前面)： blockIndex===i-1 && !insertBefore
-    const t = currentTarget;
-    const i = dragFromIndex;
+    const t = target;
+    const i = fromIdx;
     const isNoOp =
       (t.blockIndex === i) ||
       (t.blockIndex === i + 1 && t.insertBefore) ||
       (t.blockIndex === i - 1 && !t.insertBefore);
     if (isNoOp) return;
 
-    const tr = buildMoveTransaction(ed.state, dragFromIndex, currentTarget);
+    const tr = buildMoveTransaction(ed.state, fromIdx, target);
     ed.view.dispatch(tr);
   }
 
