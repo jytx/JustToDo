@@ -4,10 +4,11 @@
 // 支持两种模式：
 //   - inline（默认）：作为面板内联工具条使用
 //   - compact：详情面板 footer popover 浮窗里的小尺寸版
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import type { Editor } from "@tiptap/vue-3";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
+import { uploadAndInsertImage } from "@/utils/imageUpload";
 
 const props = withDefaults(
   defineProps<{
@@ -74,20 +75,68 @@ function onHeadingSelect(key: string) {
 /** 标题级别菜单开关（仅非 compact 模式使用） */
 const headingMenuOpen = ref(false);
 
-/** 缩进：仅对 listItem 节点生效（任务列表 / 无序 / 有序列表的项） */
+/**
+ * 缩进：支持普通列表项（listItem）和待办列表项（taskItem）。
+ * 优先尝试 listItem，不行再试 taskItem（待办列表 nested=true 才能缩进）。
+ */
 function sinkIndent() {
-  if (!props.editor) return;
-  if (props.editor.can().sinkListItem("listItem")) {
-    props.editor.chain().focus().sinkListItem("listItem").run();
+  const ed = props.editor;
+  if (!ed) return;
+  if (ed.can().sinkListItem("listItem")) {
+    ed.chain().focus().sinkListItem("listItem").run();
+  } else if (ed.can().sinkListItem("taskItem")) {
+    ed.chain().focus().sinkListItem("taskItem").run();
   }
 }
 
-/** 反向缩进：仅对 listItem 节点生效 */
+/** 反向缩进：同上，两种 listItem 类型都支持 */
 function liftIndent() {
-  if (!props.editor) return;
-  if (props.editor.can().liftListItem("listItem")) {
-    props.editor.chain().focus().liftListItem("listItem").run();
+  const ed = props.editor;
+  if (!ed) return;
+  if (ed.can().liftListItem("listItem")) {
+    ed.chain().focus().liftListItem("listItem").run();
+  } else if (ed.can().liftListItem("taskItem")) {
+    ed.chain().focus().liftListItem("taskItem").run();
   }
+}
+
+/** 缩进按钮是否可用：任一 listItem 类型可缩进即可 */
+const canSink = computed(() => {
+  const ed = props.editor;
+  return !!ed && (ed.can().sinkListItem("listItem") || ed.can().sinkListItem("taskItem"));
+});
+/** 反向缩进按钮是否可用 */
+const canLift = computed(() => {
+  const ed = props.editor;
+  return !!ed && (ed.can().liftListItem("listItem") || ed.can().liftListItem("taskItem"));
+});
+
+/** 隐藏的文件选择 input（插入图片用） */
+const fileInputRef = ref<HTMLInputElement | null>(null);
+
+/**
+ * 点击"插入图片"按钮 → 先 focus editor（保证有有效选区）再触发文件选择。
+ * 不先 focus 的话，上传完成后 editor.chain().focus() 可能因选区丢失而插入失败。
+ */
+function triggerImagePicker() {
+  if (!props.editor) return;
+  props.editor.commands.focus();
+  fileInputRef.value?.click();
+}
+
+/** 选好图片文件后上传并插入到 editor */
+async function onImagePicked(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  // 重置 value 让同一文件能再次选择
+  input.value = "";
+  const ed = props.editor;
+  if (!file || !ed) return;
+  // 上传是异步的，期间用户可能切任务导致 editor 失效；用 isDestroyed 兜底
+  if (ed.isDestroyed) return;
+  // 用 editor 视图宽度作为最大宽度参考
+  const viewDom = ed.view.dom as HTMLElement;
+  await uploadAndInsertImage(file, ed, viewDom.clientWidth || 400);
 }
 </script>
 
@@ -135,24 +184,22 @@ function liftIndent() {
       <icon-strikethrough :size="compact ? 14 : 16" />
     </a-button>
     <a-button
-      v-if="!compact"
       size="mini"
       shape="circle"
       :type="editor.isActive('code') ? 'primary' : 'text'"
       @click="editor.chain().focus().toggleCode().run()"
       title="行内代码"
     >
-      <icon-code :size="14" />
+      <icon-code :size="compact ? 14 : 16" />
     </a-button>
     <a-button
-      v-if="!compact"
       size="mini"
       shape="circle"
       type="text"
       @click="editor.chain().focus().clearNodes().unsetAllMarks().run()"
       title="清除格式"
     >
-      <icon-eraser :size="16" />
+      <icon-eraser :size="compact ? 14 : 16" />
     </a-button>
     <span v-if="!compact" class="rich-text-toolbar__divider" />
     <a-divider v-else direction="vertical" :margin="2" />
@@ -228,36 +275,34 @@ function liftIndent() {
     </template>
 
     <a-button
-      v-if="!compact"
       size="mini"
       shape="circle"
       :type="editor.isActive('blockquote') ? 'primary' : 'text'"
       @click="editor.chain().focus().toggleBlockquote().run()"
       title="引用"
     >
-      <icon-quote :size="16" />
+      <icon-quote :size="compact ? 14 : 16" />
     </a-button>
     <a-button
-      v-if="!compact"
       size="mini"
       shape="circle"
       type="text"
       @click="editor.chain().focus().setHorizontalRule().run()"
       title="分隔线"
     >
-      <icon-minus :size="16" />
+      <icon-minus :size="compact ? 14 : 16" />
     </a-button>
     <a-button
-      v-if="!compact"
       size="mini"
       shape="circle"
       type="text"
       @click="editor.chain().focus().setHardBreak().run()"
       title="硬换行 (Shift+Enter)"
     >
-      <icon-refresh :size="14" />
+      <icon-refresh :size="compact ? 14 : 16" />
     </a-button>
     <span v-if="!compact" class="rich-text-toolbar__divider" />
+    <a-divider v-else direction="vertical" :margin="2" />
 
     <!-- 列表组 -->
     <a-button
@@ -293,7 +338,7 @@ function liftIndent() {
       size="mini"
       shape="circle"
       type="text"
-      :disabled="!editor.can().sinkListItem('listItem')"
+      :disabled="!canSink"
       title="缩进 (Tab)"
       @click="sinkIndent"
     >
@@ -313,7 +358,7 @@ function liftIndent() {
       size="mini"
       shape="circle"
       type="text"
-      :disabled="!editor.can().liftListItem('listItem')"
+      :disabled="!canLift"
       title="反向缩进 (Shift+Tab)"
       @click="liftIndent"
     >
@@ -331,17 +376,17 @@ function liftIndent() {
     </a-button>
 
     <span v-if="!compact" class="rich-text-toolbar__divider" />
+    <a-divider v-else direction="vertical" :margin="2" />
 
     <!-- 代码块 + 链接 + 图片 -->
     <a-button
-      v-if="!compact"
       size="mini"
       shape="circle"
       :type="editor.isActive('codeBlock') ? 'primary' : 'text'"
       @click="editor.chain().focus().toggleCodeBlock().run()"
       title="代码块"
     >
-      <icon-code-square :size="16" />
+      <icon-code-square :size="compact ? 14 : 16" />
     </a-button>
     <a-button
       size="mini"
@@ -353,14 +398,13 @@ function liftIndent() {
       <icon-link :size="compact ? 14 : 16" />
     </a-button>
     <a-button
-      v-if="!compact"
       type="text"
       size="mini"
       shape="circle"
-      @click="editor.chain().focus().setImage({ src: '' }).run()"
+      @click="triggerImagePicker"
       title="插入图片"
     >
-      <icon-image :size="16" />
+      <icon-image :size="compact ? 14 : 16" />
     </a-button>
   </div>
 
@@ -392,9 +436,26 @@ function liftIndent() {
       </a-button>
     </template>
   </a-modal>
+
+  <!-- 隐藏的文件选择 input（插入图片） -->
+  <input
+    ref="fileInputRef"
+    type="file"
+    accept="image/*"
+    class="rich-text-toolbar__file-input"
+    @change="onImagePicked"
+  />
 </template>
 
 <style scoped>
+.rich-text-toolbar__file-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .rich-text-toolbar {
   display: flex;
   align-items: center;

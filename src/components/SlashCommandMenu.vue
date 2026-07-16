@@ -45,6 +45,41 @@ const emit = defineEmits<{
 
 const selectedIndex = ref(0);
 
+/** 菜单最大高度（px）—— 与 CSS .slash-menu__container 的 max-height 保持一致 */
+const MENU_MAX_HEIGHT = 320;
+/** 菜单与光标的垂直间距 */
+const MENU_GAP = 6;
+
+/**
+ * 计算菜单位置：
+ * - 默认在光标下方（top = rect.bottom + gap）
+ * - 当下方空间不足（rect.bottom + gap + MENU_MAX_HEIGHT > 视口高度），
+ *   且上方空间更大时，改到光标上方（bottom = 视口高度 - rect.top + gap）
+ * - left 对齐光标左缘
+ */
+const menuStyle = computed(() => {
+  const base: Record<string, string> = {
+    position: "fixed",
+    zIndex: "9999",
+  };
+  const r = props.rect;
+  if (!r) {
+    base.opacity = "0";
+    return base;
+  }
+  base.left = `${r.left}px`;
+  const vh = window.innerHeight;
+  const spaceBelow = vh - r.bottom - MENU_GAP;
+  const spaceAbove = r.top - MENU_GAP;
+  // 下方放不下且上方更宽裕 → 上方弹出
+  if (spaceBelow < MENU_MAX_HEIGHT && spaceAbove > spaceBelow) {
+    base.bottom = `${vh - r.top + MENU_GAP}px`;
+  } else {
+    base.top = `${r.bottom + MENU_GAP}px`;
+  }
+  return base;
+});
+
 /** 过滤 + 大小写不敏感的匹配 */
 const filteredItems = computed(() => {
   const q = props.query.trim().toLowerCase();
@@ -138,12 +173,7 @@ onBeforeUnmount(() => {
     <div
       v-if="open && rect"
       class="slash-menu"
-      :style="{
-        position: 'fixed',
-        left: rect.left + 'px',
-        top: rect.bottom + 6 + 'px',
-        zIndex: 9999,
-      }"
+      :style="menuStyle"
     >
       <div class="slash-menu__container">
         <div
@@ -171,6 +201,9 @@ onBeforeUnmount(() => {
   width: max-content;
   min-width: 200px;
   max-width: 280px;
+  /* 限制最大高度，超出滚动（与 JS MENU_MAX_HEIGHT 一致） */
+  max-height: 320px;
+  overflow-y: auto;
   background: var(--jt-surface);
   border-radius: 12px;
   box-shadow:
