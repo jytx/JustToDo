@@ -17,7 +17,6 @@ import HardBreak from "@tiptap/extension-hard-break";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Suggestion from "@tiptap/suggestion";
-import { DragHandlePlugin } from "tiptap-extension-global-drag-handle";
 import { Extension } from "@tiptap/core";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
@@ -26,6 +25,7 @@ import { watch, onBeforeUnmount, onMounted, ref, nextTick, computed, createApp }
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import SlashCommandMenu, { type SlashCommandItem } from "./SlashCommandMenu.vue";
 import RichTextFloatingMenu from "./RichTextFloatingMenu.vue";
+import BlockDragHandle from "./BlockDragHandle.vue";
 
 const lowlight = createLowlight(common);
 
@@ -266,36 +266,6 @@ function uninstallSlashPlugin(editorInstance: TiptapEditor) {
   }
 }
 
-/**
- * Global Drag Handle —— hover block 时左侧浮出 ⋮⋮，可拖动重排。
- *
- * 为什么用 imperative 注册（registerPlugin）而非放进 extensions 数组：
- * 本环境（Tiptap 3.27.4）下 extensions 数组里的 addProseMirrorPlugins
- * 不会被收集进 ProseMirror state.plugins（实测，与 SlashCommand 同一坑）。
- * 该插件同时导出了 DragHandlePlugin 工厂（直接返回 ProseMirror Plugin），
- * 用它 + registerPlugin 即可绕过。
- */
-function installDragHandlePlugin(editorInstance: TiptapEditor) {
-  editorInstance.registerPlugin(
-    DragHandlePlugin({
-      pluginKey: "globalDragHandle",
-      dragHandleWidth: 20,
-      // 注意：插件作者拼错为 scrollTreshold（非 scrollThreshold），
-      // 这是其公开 API，必须照它的拼写来
-      scrollTreshold: 100,
-      excludedTags: [],
-      customNodes: [],
-    }),
-  );
-}
-
-function uninstallDragHandlePlugin(editorInstance: TiptapEditor) {
-  try {
-    editorInstance.unregisterPlugin("globalDragHandle");
-  } catch {
-    /* ignore */
-  }
-}
 
 
 
@@ -309,6 +279,9 @@ const editor = useEditor({
       codeBlock: false,
       // HardBreak 已单独加载并禁用 StarterKit 自带的，避免冲突
       hardBreak: false,
+      // dropcursor（拖拽时显示的横线）：默认 1px currentColor 太细不醒目，
+      // 加粗到 2px 并用主题强调色，配合 drag handle 拖拽时更易判断落点
+      dropcursor: { width: 2, color: "#4F46E5" },
     }),
     Underline,
     Link.configure({
@@ -406,10 +379,8 @@ watch(
   (ed, _old, onCleanup) => {
     if (!ed) return;
     installSlashPlugin(ed);
-    installDragHandlePlugin(ed);
     onCleanup(() => {
       uninstallSlashPlugin(ed);
-      uninstallDragHandlePlugin(ed);
     });
   },
   { immediate: true },
@@ -568,6 +539,9 @@ function fileToBase64(file: File): Promise<string> {
     <!-- 空段落浮 + 按钮（Notion-like 入口之一） -->
     <RichTextFloatingMenu :editor="editor" />
 
+    <!-- 块拖拽手柄 + 落点横线（自定义鼠标事件实现） -->
+    <BlockDragHandle :editor="editor" />
+
     <!-- 图片预览 lightbox -->
     <teleport to="body">
       <div
@@ -661,56 +635,7 @@ function fileToBase64(file: File): Promise<string> {
   pointer-events: none;
 }
 
-/* Drag Handle —— tiptap-extension-global-drag-handle 插件只创建空 div，
-   这里给它一个 ⋮⋮ (vertical 6-dot) 的 SVG 视觉（CSS background 模拟）。*/
-.rich-text__editor :deep(.drag-handle) {
-  position: relative;
-  width: 18px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--jt-text-tertiary);
-  cursor: grab;
-  border-radius: 4px;
-  transition: background-color 0.12s, color 0.12s;
-  user-select: none;
-  flex-shrink: 0;
-}
-
-/* SVG 6-dot 图标（两个竖列、3 个圆点）—— 用 ::before + ::after 画两个列 */
-.rich-text__editor :deep(.drag-handle)::before,
-.rich-text__editor :deep(.drag-handle)::after {
-  content: "";
-  position: absolute;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background-color: currentColor;
-  box-shadow:
-    0 -5px 0 0 currentColor,
-    0 5px 0 0 currentColor;
-}
-.rich-text__editor :deep(.drag-handle)::before {
-  left: 5px;
-}
-.rich-text__editor :deep(.drag-handle)::after {
-  left: 10px;
-}
-
-.rich-text__editor :deep(.drag-handle:hover) {
-  background-color: var(--jt-surface-hover);
-  color: var(--jt-text-primary);
-}
-
-.rich-text__editor :deep(.drag-handle.hide) {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.rich-text__editor :deep(.drag-handle:active) {
-  cursor: grabbing;
-}
+/* 拖拽手柄样式已迁移到 BlockDragHandle.vue（自定义鼠标事件实现） */
 
 .rich-text__editor :deep(.rich-text__content p) {
   margin: 0;

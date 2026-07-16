@@ -44,7 +44,6 @@
     "lowlight": "^3.3.0",
     "pinia": "^3.0.4",
     "tauri-plugin-mcp": "file:../../../.cargo/git/checkouts/tauri-plugin-mcp-2fd5dc058bb53a96/d5e0b80",
-    "tiptap-extension-global-drag-handle": "^0.1.18",
     "vue": "^3.5.13",
     "vue-router": "^4.6.4"
   },
