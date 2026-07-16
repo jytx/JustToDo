@@ -408,7 +408,7 @@ export const useTaskStore = defineStore("task", () => {
     const task = findTaskById(taskId);
     if (!task) return;
     const maxOrder = task.checklist.reduce((m, it) => Math.max(m, it.order), -1);
-    const newItem = {
+    const newItem: ChecklistItem = {
       id: crypto.randomUUID(),
       title: title.trim(),
       done: false,
@@ -416,6 +416,62 @@ export const useTaskStore = defineStore("task", () => {
     };
     const next = [...task.checklist, newItem];
     await updateTask(taskId, { checklist: next });
+    return newItem.id;
+  }
+
+  /**
+   * 在指定检查项之后插入一个新空项（用于"回车新建下一行"）。
+   * order 策略：优先取前后相邻项的整数中点（step=10 留出空间，避免频繁重排）；
+   * 当相邻项之间没有整数空位时（间距 ≤1），对整张表按 step=10 重新分配整数 order。
+   * 返回新项 id，便于调用方聚焦输入框。
+   * 注意：后端 ChecklistItem.order 是 i32，这里必须产出整数，否则 task_update 会被 serde 拒绝。
+   */
+  const CHECKLIST_ORDER_STEP = 10;
+
+  /** 给一组检查项按当前顺序重新分配整数 order（0, 10, 20…），返回新数组 */
+  function reassignChecklistOrders(items: ChecklistItem[]): ChecklistItem[] {
+    return items.map((it, i) => ({ ...it, order: i * CHECKLIST_ORDER_STEP }));
+  }
+
+  async function insertChecklistItemAfter(
+    taskId: string,
+    afterItemId: string,
+    title: string,
+  ): Promise<string | null> {
+    const task = findTaskById(taskId);
+    if (!task) return null;
+    const sorted = [...task.checklist].sort((a, b) => a.order - b.order);
+    const idx = sorted.findIndex((it) => it.id === afterItemId);
+    if (idx === -1) return null;
+    const prevOrder = sorted[idx].order;
+    const nextNeighbor = sorted[idx + 1];
+    const newItem: ChecklistItem = {
+      id: crypto.randomUUID(),
+      title: title.trim(),
+      done: false,
+      order: 0, // 占位，下面按情况赋值
+    };
+    // 把新项插入到正确位置
+    const inserted = [...sorted.slice(0, idx + 1), newItem, ...sorted.slice(idx + 1)];
+    let finalList: ChecklistItem[];
+    if (!nextNeighbor) {
+      // 末项后追加：直接取末项 order + step
+      newItem.order = prevOrder + CHECKLIST_ORDER_STEP;
+      finalList = inserted;
+    } else {
+      const gap = nextNeighbor.order - prevOrder;
+      if (gap > 1) {
+        // 有整数空位：取中点（向下取整）
+        newItem.order = prevOrder + Math.floor(gap / 2);
+        finalList = inserted;
+      } else {
+        // 间距耗尽：全表重排整数 order
+        newItem.order = (idx + 1) * CHECKLIST_ORDER_STEP;
+        finalList = reassignChecklistOrders(inserted);
+      }
+    }
+    await updateTask(taskId, { checklist: finalList });
+    return newItem.id;
   }
 
   /** 更新一个检查项的 title / done / order */
@@ -696,6 +752,7 @@ export const useTaskStore = defineStore("task", () => {
     getSubtasks,
     // 检查项操作
     addChecklistItem,
+    insertChecklistItemAfter,
     updateChecklistItem,
     toggleChecklistItem,
     removeChecklistItem,

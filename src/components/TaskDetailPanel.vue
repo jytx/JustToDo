@@ -7,7 +7,7 @@ import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
 import {
   PRIORITY_LABELS,
-  RECURRENCE_FREQS,
+  formatRecurrence,
   type Priority,
   type Task,
   type RecurrenceFreq,
@@ -217,13 +217,7 @@ async function onReminderClear() {
 // ─── 重复 ─────────────────────────────────────────
 const recurrenceLabel = computed(() => {
   if (!task.value?.recurrenceFreq) return "重复";
-  const unit = RECURRENCE_FREQS.find(
-    (f) => f.value === task.value!.recurrenceFreq,
-  )?.label ?? "";
-  // 去掉 label 自带的"每"前缀，避免"每每天"
-  const cleanUnit = unit.replace(/^每/, "");
-  if (task.value.recurrenceInterval === 1) return `每${cleanUnit}`;
-  return `每 ${task.value.recurrenceInterval} ${cleanUnit}`;
+  return formatRecurrence(task.value.recurrenceFreq, task.value.recurrenceInterval);
 });
 
 async function onRecurrenceConfirm(freq: RecurrenceFreq | null, interval: number) {
@@ -342,19 +336,120 @@ async function removeChecklistItem(itemId: string) {
 }
 
 /** 失焦保存检查项的 title 改动 */
-async function saveChecklistItem(itemId: string) {
+async function saveChecklistItem(itemId: string, blurEvent?: FocusEvent) {
   if (!task.value) return;
   const item = task.value.checklist.find((it) => it.id === itemId);
   if (!item) return;
   const trimmed = item.title.trim();
   if (!trimmed) {
-    // 空标题 = 删除该项
-    await removeChecklistItem(itemId);
+    // 空标题处理：
+    // - 若焦点转移到了另一个检查项 input（回车新建/上下导航），保留当前空项
+    // - 否则（用户点别处离开）删除空项
+    const wentToChecklist = blurEvent?.relatedTarget instanceof HTMLInputElement
+      && blurEvent.relatedTarget.classList.contains("detail-panel__checklist-input");
+    if (!wentToChecklist) {
+      await removeChecklistItem(itemId);
+    }
     return;
   }
   if (trimmed !== item.title) {
     await taskStore.updateChecklistItem(task.value.id, itemId, { title: trimmed });
   }
+}
+
+/**
+ * 检查项回车处理（Notion 风格）：
+ * 回车 → 在当前项下方新建一个空检查项，并把焦点移过去。
+ * - 有内容时先保存规范化当前项；
+ * - 空项回车同样新建下一行（空项的清理交给"点别处失焦"路径）。
+ */
+async function onChecklistEnter(itemId: string) {
+  if (!task.value) return;
+  const item = task.value.checklist.find((it) => it.id === itemId);
+  const hasText = !!(item?.title ?? "").trim();
+  // 有内容：先保存当前项（trim 规范化）
+  if (hasText) {
+    await saveChecklistItem(itemId);
+  }
+  // 在当前项后插入新空项
+  const newId = await taskStore.insertChecklistItemAfter(task.value.id, itemId, "");
+  if (!newId) return;
+  // 聚焦新项（DOM 更新后通过 data-item-id 精确定位）
+  await nextTick();
+  focusChecklistInput(newId);
+}
+
+/**
+ * 把焦点移到指定检查项 input（DOM 更新后通过 data-item-id 精确定位）。
+ * 切换焦点时，光标默认置于行尾，符合"继续编辑上一行"的直觉。
+ */
+function focusChecklistInput(itemId: string) {
+  const input = document.querySelector<HTMLInputElement>(
+    `.detail-panel__checklist-input[data-item-id="${itemId}"]`,
+  );
+  if (!input) return;
+  input.focus();
+  // 光标置于行尾
+  const len = input.value.length;
+  input.setSelectionRange(len, len);
+}
+
+/**
+ * 检查项键盘操作统一入口：
+ * - Enter：新建下一行（onChecklistEnter）
+ * - Backspace：当前项为空且光标在行首 → 删除该项，焦点上移到上一项
+ * - ArrowUp / ArrowDown：在检查项之间切换焦点（不改变内容）
+ * 其余按键交给浏览器默认行为。
+ */
+async function onChecklistKeydown(itemId: string, e: KeyboardEvent) {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    await onChecklistEnter(itemId);
+    return;
+  }
+  if (e.key === "Backspace") {
+    await onChecklistBackspace(itemId, e);
+    return;
+  }
+  if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+    e.preventDefault();
+    focusChecklistSibling(itemId, e.key === "ArrowUp" ? "up" : "down");
+  }
+}
+
+/**
+ * Backspace 处理：仅当当前项内容为空、且光标在行首时，删除该项并把焦点移到上一项。
+ * 若当前项有内容，或光标不在行首（用户正在编辑中间的文字），交给浏览器默认删除。
+ */
+async function onChecklistBackspace(itemId: string, e: KeyboardEvent) {
+  const input = e.target as HTMLInputElement;
+  if (!task.value) return;
+  const item = task.value.checklist.find((it) => it.id === itemId);
+  const isEmpty = !(item?.title ?? "").length;
+  const atStart = input.selectionStart === 0 && input.selectionEnd === 0;
+  if (!isEmpty || !atStart) return; // 有内容或选区不在行首 → 默认删除
+  e.preventDefault();
+  // 删除前先算出目标项（删除后 sortedChecklist 会变，之后取不到原索引）
+  const sortedIds = sortedChecklist.value.map((it) => it.id);
+  const removedIdx = sortedIds.indexOf(itemId);
+  const prevId = removedIdx > 0 ? sortedIds[removedIdx - 1] : (sortedIds[1] ?? null);
+  // 删除当前空项
+  await removeChecklistItem(itemId);
+  // 焦点上移到上一项；若被删的是首项，则移到新的首项
+  if (prevId) {
+    await nextTick();
+    focusChecklistInput(prevId);
+  }
+}
+
+/** 在检查项之间切换焦点（上下方向键）。direction: up = 上一项, down = 下一项 */
+function focusChecklistSibling(itemId: string, direction: "up" | "down") {
+  const ids = sortedChecklist.value.map((it) => it.id);
+  const idx = ids.indexOf(itemId);
+  if (idx === -1) return;
+  const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (targetIdx < 0 || targetIdx >= ids.length) return; // 已到边界
+  focusChecklistInput(ids[targetIdx]);
 }
 
 /** 按 order 排序的检查项 */
@@ -691,9 +786,10 @@ onBeforeUnmount(() => {
             v-model="item.title"
             class="detail-panel__checklist-input"
             :class="{ 'detail-panel__checklist-input--done': item.done }"
-            placeholder="检查项"
-            @blur="saveChecklistItem(item.id)"
-            @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+            :data-item-id="item.id"
+            placeholder="请输入检查信息"
+            @blur="saveChecklistItem(item.id, $event)"
+            @keydown="onChecklistKeydown(item.id, $event)"
           />
           <button
             class="detail-panel__checklist-remove"
@@ -1082,14 +1178,10 @@ function formatMeta(iso: string): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
+  opacity: 1;
   transition: all 0.12s;
   flex-shrink: 0;
   padding: 0;
-}
-
-.detail-panel__checklist-item:hover .detail-panel__checklist-remove {
-  opacity: 1;
 }
 
 .detail-panel__checklist-remove:hover {
