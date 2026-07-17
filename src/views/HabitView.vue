@@ -290,13 +290,6 @@ function selectHabit(id: string) {
           v-show="groupedHabits[key].length > 0"
           class="habit-view__group"
         >
-          <!-- 组标题 -->
-          <div class="habit-view__group-header">
-            <icon-down :size="12" class="habit-view__group-caret" />
-            <span class="habit-view__group-name">{{ GROUP_LABELS[key] }}</span>
-            <span class="habit-view__group-count">{{ groupedHabits[key].length }}</span>
-          </div>
-
           <!-- 习惯项 -->
           <div
             v-for="h in groupedHabits[key]"
