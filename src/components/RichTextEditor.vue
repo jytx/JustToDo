@@ -308,7 +308,19 @@ const editor = useEditor({
         enabled: true,
         minWidth: 80,
         minHeight: 80,
-        alwaysPreserveAspectRatio: true,
+        /* 允许自由拉伸（不再保持纵横比）—— 用户可以单独改宽 / 高 */
+        alwaysPreserveAspectRatio: false,
+        /* 8 个方向：4 角 + 4 边 */
+        directions: [
+          "top",
+          "right",
+          "bottom",
+          "left",
+          "top-left",
+          "top-right",
+          "bottom-left",
+          "bottom-right",
+        ],
       },
     } as any),
     // Slash Command —— 不在 extensions 数组里，用 editor 准备好后
@@ -405,33 +417,201 @@ defineExpose({
   focus: () => editor.value?.commands.focus(),
 });
 
-onMounted(() => {
-  // 监听编辑器内图片点击 → 预览
-  const handler = (e: Event) => {
-    const target = e.target as HTMLElement;
-    if (target.tagName === "IMG") {
-      e.preventDefault();
-      e.stopPropagation();
-      collectImages();
-      const clickedSrc = (target as HTMLImageElement).src;
-      const idx = allImages.value.indexOf(clickedSrc);
-      previewIndex.value = idx >= 0 ? idx : 0;
-      previewScale.value = 1;
+/* === 图片 hover 放大镜状态 ===
+   鼠标悬浮在 [data-resize-container] 上时，右上角浮现按钮；
+   点击按钮才打开 lightbox（直接点图片进入 ProseMirror 选中态，不再触发预览）。
+   性能关键点：
+   ① 按钮 DOM 始终存在，仅切 opacity/visibility，避免显隐切换时 v-if 重建节点卡顿；
+   ② 拖拽放大/缩小图片时按钮要跟随 —— 用 ResizeObserver + 容器 Resize 监听。 */
+const hoveredContainer = ref<HTMLElement | null>(null);
+const hoverBtnPos = ref<{ top: number; right: number } | null>(null);
+/** 按钮 DOM 始终存在；visibility 控制是否显示（透明时不点击） */
+const zoomBtnMounted = ref(false);
+const zoomBtnVisible = ref(false);
+/** 拖拽 resize 把手期间 —— 按钮隐藏，避免误触 */
+const isResizing = ref(false);
+let hideTimer: ReturnType<typeof setTimeout> | null = null;
+let containerResizeObs: ResizeObserver | null = null;
+let contentScrollEl: HTMLElement | null = null;
+let contentScrollHandler: (() => void) | null = null;
+
+function scheduleHide() {
+  if (hideTimer) clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => {
+    zoomBtnVisible.value = false;
+    hoveredContainer.value = null;
+    hoverBtnPos.value = null;
+    hideTimer = null;
+  }, 150);
+}
+function cancelHide() {
+  if (hideTimer) {
+    clearTimeout(hideTimer);
+    hideTimer = null;
+  }
+}
+
+/** 重算按钮位置（hover 进入 / 滚动 / 拖拽改变图片尺寸时调用） */
+function updateBtnPos() {
+  const c = hoveredContainer.value;
+  if (!c) return;
+  const r = c.getBoundingClientRect();
+  if (r.width === 0 && r.height === 0) return; // 图像不可见
+  hoverBtnPos.value = {
+    top: r.top + 8,
+    right: window.innerWidth - r.right + 8,
+  };
+}
+
+/** 释放所有跟随监听（在 hover 真正结束时调用） */
+function detachContainerTracking() {
+  if (containerResizeObs) {
+    containerResizeObs.disconnect();
+    containerResizeObs = null;
+  }
+  if (contentScrollEl && contentScrollHandler) {
+    contentScrollEl.removeEventListener("scroll", contentScrollHandler, true);
+    contentScrollEl = null;
+    contentScrollHandler = null;
+  }
+}
+
+/** 在 hover 进入时挂上"图片尺寸变化时同步按钮位置"的监听
+   —— 拖拽 resize 手柄时图片大小持续变，按钮要跟随 */
+function attachContainerTracking(c: HTMLElement) {
+  detachContainerTracking();
+  if (typeof ResizeObserver !== "undefined") {
+    containerResizeObs = new ResizeObserver(() => updateBtnPos());
+    containerResizeObs.observe(c);
+  }
+  // 编辑器可能在滚动容器里（详情面板）；监听滚动容器的滚动
+  let scrollParent: HTMLElement | null = c.parentElement;
+  while (scrollParent && scrollParent !== document.body) {
+    const cs = getComputedStyle(scrollParent);
+    if (cs.overflowY === "auto" || cs.overflowY === "scroll") {
+      contentScrollEl = scrollParent;
+      contentScrollHandler = () => updateBtnPos();
+      contentScrollEl.addEventListener("scroll", contentScrollHandler, true);
+      break;
+    }
+    scrollParent = scrollParent.parentElement;
+  }
+}
+
+/** handle 的 mousedown/touchstart —— 标记开始拖拽
+   （用 capture 阶段抢先，让 tiptap 也能收到事件不会被我们吞掉）*/
+function onResizeHandlePointerDown(e: PointerEvent | TouchEvent | MouseEvent) {
+  const target = (e.target as HTMLElement) || null;
+  if (!target || !target.closest("[data-resize-handle]")) return;
+  isResizing.value = true;
+  // 立即隐藏放大镜（不依赖 mouseover 重新评估）
+  zoomBtnVisible.value = false;
+  // mouseup 时恢复：监听一次 window
+  const restore = () => {
+    isResizing.value = false;
+    window.removeEventListener("mouseup", restore, true);
+    window.removeEventListener("touchend", restore, true);
+    window.removeEventListener("touchcancel", restore, true);
+    // 如果鼠标还在图片上，恢复按钮显示
+    if (hoveredContainer.value && zoomBtnMounted.value) {
+      zoomBtnVisible.value = true;
     }
   };
-  nextTick(() => {
-    editorContainerRef.value?.addEventListener("click", handler);
-  });
-  (window as any).__richTextClickHandler = handler;
+  window.addEventListener("mouseup", restore, true);
+  window.addEventListener("touchend", restore, true);
+  window.addEventListener("touchcancel", restore, true);
+}
 
-  // ESC 关闭预览 + 方向键切换
-  window.addEventListener("keydown", onPreviewKeydown);
+function onEditorMouseOver(e: MouseEvent) {
+  const t = e.target as HTMLElement | null;
+  const c = t?.closest("[data-resize-container]");
+  if (!c) return;
+  cancelHide();
+  hoveredContainer.value = c;
+  updateBtnPos();
+  zoomBtnMounted.value = true;
+  // 正在拖拽 resize 手柄时不显示（避免误点）
+  zoomBtnVisible.value = !isResizing.value;
+  attachContainerTracking(c);
+}
+
+function onEditorMouseOut(e: MouseEvent) {
+  const next = e.relatedTarget as HTMLElement | null;
+  // 鼠标在容器内不同子元素间移动：不处理
+  if (next && next.closest("[data-resize-container]") === hoveredContainer.value) return;
+  // 鼠标进入放大镜按钮本身：保持显示
+  if (next && next.closest(".rich-text__image-zoom-btn")) {
+    cancelHide();
+    return;
+  }
+  scheduleHide();
+}
+
+function onZoomBtnMouseEnter() {
+  cancelHide();
+}
+function onZoomBtnMouseLeave(e: MouseEvent) {
+  const next = e.relatedTarget as HTMLElement | null;
+  if (next && next.closest(".rich-text__image-zoom-btn")) return;
+  // 离开按钮且没回到 image 容器，延迟隐藏
+  if (next && next.closest("[data-resize-container]") === hoveredContainer.value) {
+    // 鼠标很快回到图片则保持显示
+    cancelHide();
+    return;
+  }
+  scheduleHide();
+}
+
+function onZoomBtnClick(e: MouseEvent) {
+  e.stopPropagation();
+  e.preventDefault();
+  const c = hoveredContainer.value;
+  if (!c) return;
+  const img = c.querySelector("img");
+  if (!img) return;
+  const src = (img as HTMLImageElement).src;
+  collectImages();
+  const idx = allImages.value.indexOf(src);
+  openPreview(idx >= 0 ? idx : 0);
+  cancelHide();
+  zoomBtnVisible.value = false;
+}
+
+onMounted(() => {
+  // ESC / 方向键：用 capture 阶段抢在 AppLayout 之前处理，
+  // 防止 lightbox 关闭时顺带把详情面板也关了
+  window.addEventListener("keydown", onPreviewKeydown, { capture: true });
+  // 滚动 / 缩放窗口时同步按钮位置（按钮用了 position: fixed）
+  window.addEventListener("scroll", updateBtnPos, true);
+  window.addEventListener("resize", updateBtnPos);
+  // 拖拽手柄的 pointerdown/touchstart —— 标记开始拖拽，按钮隐藏
+  const container = editorContainerRef.value;
+  if (container) {
+    container.addEventListener("pointerdown", onResizeHandlePointerDown, true);
+    container.addEventListener("touchstart", onResizeHandlePointerDown, true);
+  }
+  // 拖拽手柄 resize 期间，鼠标位置不变不触发 mouseover；
+  // 用 requestAnimationFrame 持续跟随：仅在按钮可见时跑
+  const tick = () => {
+    if (zoomBtnVisible.value && hoveredContainer.value) {
+      updateBtnPos();
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 });
 
 onBeforeUnmount(() => {
-  const handler = (window as any).__richTextClickHandler;
-  if (handler) editorContainerRef.value?.removeEventListener("click", handler);
-  window.removeEventListener("keydown", onPreviewKeydown);
+  cancelHide();
+  detachContainerTracking();
+  window.removeEventListener("keydown", onPreviewKeydown, { capture: true } as any);
+  window.removeEventListener("scroll", updateBtnPos, true);
+  window.removeEventListener("resize", updateBtnPos);
+  const container = editorContainerRef.value;
+  if (container) {
+    container.removeEventListener("pointerdown", onResizeHandlePointerDown, true);
+    container.removeEventListener("touchstart", onResizeHandlePointerDown, true);
+  }
   editor.value?.destroy();
 });
 
@@ -439,6 +619,13 @@ onBeforeUnmount(() => {
 function collectImages() {
   const imgs = editorContainerRef.value?.querySelectorAll("img");
   allImages.value = imgs ? Array.from(imgs).map((img) => (img as HTMLImageElement).src) : [];
+}
+
+/** 打开 lightbox 预览第 idx 张（先收集所有图片定位下标） */
+function openPreview(idx: number) {
+  collectImages();
+  previewIndex.value = idx;
+  previewScale.value = 1;
 }
 
 function closePreview() {
@@ -459,9 +646,21 @@ function nextImage() {
 
 function onPreviewKeydown(e: KeyboardEvent) {
   if (!previewSrc.value) return;
-  if (e.key === "Escape") closePreview();
-  else if (e.key === "ArrowLeft") prevImage();
-  else if (e.key === "ArrowRight") nextImage();
+  /* Lightbox 打开时，在 capture 阶段（详见 onMounted）抢在 AppLayout 之前处理，
+     阻止它"关闭详情面板"。stopImmediatePropagation 让后续同阶段监听器也拿不到事件。 */
+  if (e.key === "Escape") {
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    closePreview();
+  } else if (e.key === "ArrowLeft") {
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    prevImage();
+  } else if (e.key === "ArrowRight") {
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    nextImage();
+  }
 }
 
 /** 滚轮缩放 */
@@ -532,7 +731,13 @@ function fileToBase64(file: File): Promise<string> {
     v-if="editor"
   >
     <!-- 编辑区 -->
-    <div ref="editorContainerRef" class="rich-text__editor-wrapper">
+    <div
+      ref="editorContainerRef"
+      class="rich-text__editor-wrapper"
+      @mouseover="onEditorMouseOver"
+      @mouseout="onEditorMouseOut"
+      @scroll="updateBtnPos"
+    >
       <EditorContent :editor="editor" class="rich-text__editor" />
       <!-- 块拖拽手柄 + 落点横线（放在 wrapper 内、absolute 定位，hover 链不断） -->
       <BlockDragHandle :editor="editor" />
@@ -540,6 +745,29 @@ function fileToBase64(file: File): Promise<string> {
 
     <!-- 空段落浮 + 按钮（Notion-like 入口之一） -->
     <RichTextFloatingMenu :editor="editor" />
+
+    <!-- 图片 hover 放大镜按钮（fixed 定位，teleport 到 body 脱离 Tiptap 生命周期）
+         节点始终挂载（避免 v-if 显隐切换重建卡顿），用 visibility + opacity 过渡控制可见性。 -->
+    <teleport to="body">
+      <button
+        v-show="zoomBtnMounted && hoverBtnPos"
+        class="rich-text__image-zoom-btn"
+        :class="{ 'is-visible': zoomBtnVisible && !isResizing }"
+        :style="{
+          position: 'fixed',
+          top: (hoverBtnPos?.top ?? -9999) + 'px',
+          right: (hoverBtnPos?.right ?? 0) + 'px',
+        }"
+        @mouseenter="onZoomBtnMouseEnter"
+        @mouseleave="onZoomBtnMouseLeave"
+        @click="onZoomBtnClick"
+        title="预览图片"
+        aria-label="预览图片"
+        tabindex="-1"
+      >
+        <icon-search :size="16" />
+      </button>
+    </teleport>
 
     <!-- 图片预览 lightbox -->
     <teleport to="body">
@@ -753,11 +981,9 @@ function fileToBase64(file: File): Promise<string> {
   text-decoration: line-through;
 }
 
-/* 图片 */
+/* 图片 —— 直接点图片不再预览，所以不再用 zoom-in 光标 */
 .rich-text__editor :deep(.rich-text__content img) {
   border-radius: 6px;
-  //margin: 8px 0;
-  cursor: zoom-in;
 }
 
 /* resize 容器（data-resize-container）—— inline-flex 让宽度跟随图片 */
@@ -844,6 +1070,16 @@ function fileToBase64(file: File): Promise<string> {
   cursor: nesw-resize;
 }
 
+/* 边手柄 = 横 / 竖光标（用属性相等 + !important 压过角 cursor 选择器） */
+.rich-text__editor :deep([data-resize-handle="top"]),
+.rich-text__editor :deep([data-resize-handle="bottom"]) {
+  cursor: ns-resize !important;
+}
+.rich-text__editor :deep([data-resize-handle="left"]),
+.rich-text__editor :deep([data-resize-handle="right"]) {
+  cursor: ew-resize !important;
+}
+
 /* 代码块（带语法高亮） */
 .rich-text__editor :deep(.rich-text__content pre) {
   background: var(--jt-surface-sunken);
@@ -914,6 +1150,49 @@ function fileToBase64(file: File): Promise<string> {
   padding: 1px 4px;
   font-family: var(--font-mono);
   font-size: 12px;
+}
+
+/* 图片 hover 放大镜按钮 —— teleport 到 body，fixed 定位 + 圆角胶囊
+   节点默认隐藏（visibility:hidden + opacity:0），不占用 GPU ；
+   加 .is-visible 后开启过渡显示。 */
+.rich-text__image-zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--jt-border, #e5e7eb);
+  border-radius: 9999px;     /* 胶囊圆角 */
+  background: #fff !important;
+  color: var(--jt-primary);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  z-index: 9999;
+  /* 默认隐藏（透明 + 不可点击，避免拖拽时按钮"跳出来"误触发） */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  will-change: opacity, transform, top, right;
+  transition:
+    opacity 0.12s ease,
+    visibility 0.12s ease,
+    background 0.12s ease,
+    box-shadow 0.12s ease,
+    transform 0.12s ease;
+}
+.rich-text__image-zoom-btn.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+.rich-text__image-zoom-btn.is-visible:hover {
+  background: #fafafa !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+  transform: scale(1.05);
+}
+.rich-text__image-zoom-btn.is-visible:active {
+  transform: scale(0.96);
 }
 
 /* 图片预览 lightbox */
