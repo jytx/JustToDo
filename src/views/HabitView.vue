@@ -725,7 +725,7 @@ function selectHabit(id: string) {
     <TeleportPopper
       v-model:visible="iconPickerOpen"
       :anchor="iconTriggerEl"
-      placement="bottom-left"
+      placement="bottom-right"
     >
       <div class="habit-form__icon-grid">
         <button
@@ -744,7 +744,7 @@ function selectHabit(id: string) {
     <TeleportPopper
       v-model:visible="colorPickerOpen"
       :anchor="colorTriggerEl"
-      placement="bottom-left"
+      placement="bottom-right"
     >
       <div class="sidebar-create__color-picker">
         <button
@@ -762,7 +762,7 @@ function selectHabit(id: string) {
     <TeleportPopper
       v-model:visible="timeOfDayPickerOpen"
       :anchor="timeOfDayTriggerEl"
-      placement="bottom-left"
+      placement="bottom-right"
     >
       <div class="sidebar-create__color-picker sidebar-create__timeofday">
         <button
@@ -781,7 +781,7 @@ function selectHabit(id: string) {
     <TeleportPopper
       v-model:visible="repeatPickerOpen"
       :anchor="repeatTriggerEl"
-      placement="bottom-left"
+      placement="bottom-right"
     >
       <div class="sidebar-create__color-picker sidebar-create__timeofday">
         <button
