@@ -237,6 +237,46 @@ function startNewList() {
   showCreateDialog.value = true;
 }
 
+/** 新建标签弹窗状态 */
+const showCreateTagDialog = ref(false);
+const newTagName = ref("");
+
+function startNewTag() {
+  newTagName.value = "";
+  showCreateTagDialog.value = true;
+}
+
+async function confirmNewTag() {
+  const name = newTagName.value.trim();
+  if (!name) {
+    showCreateTagDialog.value = false;
+    return;
+  }
+  await tagStore.createTag(name);
+  showCreateTagDialog.value = false;
+}
+
+/** 新建习惯弹窗状态 */
+const showCreateHabitDialog = ref(false);
+const newHabitName = ref("");
+const newHabitColor = ref("#059669");
+
+function startNewHabit() {
+  newHabitName.value = "";
+  newHabitColor.value = "#059669";
+  showCreateHabitDialog.value = true;
+}
+
+async function confirmNewHabit() {
+  const name = newHabitName.value.trim();
+  if (!name) {
+    showCreateHabitDialog.value = false;
+    return;
+  }
+  await habitStore.createHabit({ name, color: newHabitColor.value });
+  showCreateHabitDialog.value = false;
+}
+
 /** 输入提示：把已有的目录拼成完整路径，作为自动补全的数据源 */
 const folderSuggestions = computed(() => {
   const folders = listStore.sortedLists.filter((l) => l.isFolder);
@@ -408,6 +448,9 @@ onMounted(async () => {
           <icon-right v-else :size="12" class="sidebar__toggle-icon" />
           <span>标签</span>
         </div>
+        <a-button size="mini" type="text" title="新建标签" @click.stop="startNewTag">
+          <template #icon><icon-plus :size="16" /></template>
+        </a-button>
       </div>
       <router-link
         v-for="tag in tagStore.tags"
@@ -464,6 +507,9 @@ onMounted(async () => {
           <icon-right v-else :size="12" class="sidebar__toggle-icon" />
           <span>习惯</span>
         </div>
+        <a-button size="mini" type="text" title="新建习惯" @click.stop="startNewHabit">
+          <template #icon><icon-plus :size="16" /></template>
+        </a-button>
       </div>
       <router-link
         v-for="h in habitStore.habits"
@@ -624,6 +670,59 @@ onMounted(async () => {
     <template #footer>
       <a-button type="text" @click="showEditDialog = false">取消</a-button>
       <a-button type="primary" @click="saveListEdit">保存</a-button>
+    </template>
+  </a-modal>
+
+  <!-- 新建标签弹窗 -->
+  <a-modal
+    v-model:visible="showCreateTagDialog"
+    :width="400"
+    title="新建标签"
+  >
+    <div class="create-list-dialog__field">
+      <label class="create-list-dialog__label">标签名称</label>
+      <a-input
+        v-model="newTagName"
+        placeholder="标签名称"
+        @keydown.enter="confirmNewTag"
+      />
+    </div>
+    <template #footer>
+      <a-button type="text" @click="showCreateTagDialog = false">取消</a-button>
+      <a-button type="primary" @click="confirmNewTag">创建</a-button>
+    </template>
+  </a-modal>
+
+  <!-- 新建习惯弹窗 -->
+  <a-modal
+    v-model:visible="showCreateHabitDialog"
+    :width="400"
+    title="新建习惯"
+  >
+    <div class="create-list-dialog__field">
+      <label class="create-list-dialog__label">习惯名称</label>
+      <a-input
+        v-model="newHabitName"
+        placeholder="习惯名称"
+        @keydown.enter="confirmNewHabit"
+      />
+    </div>
+    <div class="create-list-dialog__colors">
+      <span class="create-list-dialog__label">颜色</span>
+      <div class="create-list-dialog__color-row">
+        <button
+          v-for="c in LIST_COLORS"
+          :key="c"
+          class="create-list-dialog__color"
+          :class="{ 'create-list-dialog__color--active': newHabitColor === c }"
+          :style="{ backgroundColor: c }"
+          @click="newHabitColor = c"
+        />
+      </div>
+    </div>
+    <template #footer>
+      <a-button type="text" @click="showCreateHabitDialog = false">取消</a-button>
+      <a-button type="primary" @click="confirmNewHabit">创建</a-button>
     </template>
   </a-modal>
 </template>
