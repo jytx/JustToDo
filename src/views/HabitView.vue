@@ -419,24 +419,24 @@ function selectHabit(id: string) {
       </a-button>
     </header>
 
-    <!-- 顶部 7 圆圈：本周日期（不可点击，仅作装饰） -->
-    <div class="habit-view__week-strip">
-      <div
-        v-for="d in thisWeek"
-        :key="d.date"
-        class="habit-view__week-cell"
-        :class="{ 'habit-view__week-cell--today': d.isToday }"
-      >
-        <span class="habit-view__week-label">{{ d.label }}</span>
-        <span class="habit-view__week-day">{{ d.day }}</span>
-        <span class="habit-view__week-dot" />
-      </div>
-    </div>
-
-    <!-- 主区两栏：左侧习惯列表 + 右侧详情面板 -->
+    <!-- 主区两栏：左侧习惯列表（顶部含本周日期）+ 右侧详情面板 -->
     <div class="habit-view__main">
       <!-- 左侧：习惯列表（按时段分组） -->
       <div class="habit-view__list">
+        <!-- 顶部 7 圆圈：本周日期（不可点击，仅作装饰） -->
+        <div class="habit-view__week-strip">
+          <div
+            v-for="d in thisWeek"
+            :key="d.date"
+            class="habit-view__week-cell"
+            :class="{ 'habit-view__week-cell--today': d.isToday }"
+          >
+            <span class="habit-view__week-label">{{ d.label }}</span>
+            <span class="habit-view__week-day">{{ d.day }}</span>
+            <span class="habit-view__week-dot" />
+          </div>
+        </div>
+
         <div
           v-for="key in GROUP_ORDER"
           :key="key"
@@ -872,12 +872,12 @@ function selectHabit(id: string) {
   margin: 0;
 }
 
-/* 顶部本周日期横排 */
+/* 顶部本周日期横排（位于左侧列表内，占左半屏宽） */
 .habit-view__week-strip {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
-  flex-shrink: 0;
+  flex-shrink:0;
   padding: 12px 4px;
   border-radius: 12px;
   background-color: var(--jt-surface-sunken);
@@ -920,7 +920,7 @@ function selectHabit(id: string) {
   background: transparent;
 }
 
-/* 列表 + 分组 */
+/* 列表 + 分组（左半屏） */
 .habit-view__list {
   flex: 1;
   min-width: 0;
@@ -1090,8 +1090,10 @@ function selectHabit(id: string) {
 }
 
 /* 右侧详情面板 */
+/* 右侧详情面板（半屏宽，与左侧等宽） */
 .habit-detail {
-  flex: 0 0 640px;
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
