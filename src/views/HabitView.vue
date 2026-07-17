@@ -71,6 +71,10 @@ async function loadData() {
   } catch (e) {
     console.error("[HabitView] loadLogs 失败:", e);
   }
+  // 默认选中第一个习惯，让右侧详情面板有内容
+  if (!selectedHabitId.value && habitStore.habits.length > 0) {
+    selectedHabitId.value = habitStore.habits[0].habit.id;
+  }
 }
 
 onMounted(loadData);
