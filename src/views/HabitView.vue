@@ -711,9 +711,12 @@ function selectHabit(id: string) {
           </button>
         </div>
 
-        <!-- 底部提示 -->
+        <!-- 底部：左提示 + 右保存按钮 -->
         <div class="habit-form__foot">
           <span class="habit-form__hint">{{ editingHabitId ? "回车保存" : "回车创建" }}</span>
+          <a-button type="primary" size="small" @click="createOrUpdateHabit">
+            {{ editingHabitId ? "保存" : "创建" }}
+          </a-button>
         </div>
       </div>
     </a-modal>
@@ -1541,8 +1544,11 @@ function selectHabit(id: string) {
 
 /* 底部提示 */
 .habit-form__foot {
-  padding: 0 20px 14px;
-  text-align: right;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 20px 16px;
 }
 .habit-form__hint {
   font-size: 11px;
