@@ -505,6 +505,21 @@ export const useTaskStore = defineStore("task", () => {
     await updateTask(taskId, { checklist: next });
   }
 
+  /** 拖拽重排 checklist：从 fromIndex 移到 toIndex
+   *  —— 取现有 checklist 数组 → 数组 splice → 重新按 10 步长分配 order → 整体写库 */
+  async function reorderChecklist(taskId: string, fromIndex: number, toIndex: number) {
+    const task = findTaskById(taskId);
+    if (!task) return;
+    const list = [...task.checklist];
+    if (fromIndex < 0 || fromIndex >= list.length) return;
+    const clampedTo = Math.max(0, Math.min(toIndex, list.length));
+    if (fromIndex === clampedTo) return;
+    const [moved] = list.splice(fromIndex, 1);
+    list.splice(clampedTo, 0, moved);
+    const reordered = reassignChecklistOrders(list);
+    await updateTask(taskId, { checklist: reordered });
+  }
+
   /** 在任务的所有数据副本中找 task（currentTasks / subtasks / subtaskCache / selectedTaskObj） */
   function findTaskById(id: string): Task | null {
     if (selectedTaskObj.value?.id === id) return selectedTaskObj.value;
@@ -756,5 +771,6 @@ export const useTaskStore = defineStore("task", () => {
     updateChecklistItem,
     toggleChecklistItem,
     removeChecklistItem,
+    reorderChecklist,
   };
 });

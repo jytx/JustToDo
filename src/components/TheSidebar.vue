@@ -21,6 +21,7 @@ import {
 // IconEdit 移到 SidebarListNode 中使用
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
+import { useHabitStore } from "@/stores/habit";
 import { useTaskStore } from "@/stores/task";
 import SidebarListNode from "./SidebarListNode.vue";
 import MenuPopover from "./MenuPopover.vue";
@@ -43,6 +44,7 @@ const route = useRoute();
 const router = useRouter();
 const listStore = useListStore();
 const tagStore = useTagStore();
+const habitStore = useHabitStore();
 const taskStore = useTaskStore();
 
 /** 各区块展开/收起状态 */

@@ -381,6 +381,7 @@ interface RustHabit {
   target_count: number;
   remind_at: string | null;
   created_at: string;
+  position: number;
 }
 
 interface RustHabitWithStats {

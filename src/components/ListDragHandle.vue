@@ -5,21 +5,36 @@
 // 位置：手柄和横线都 absolute 定位在父级容器内（不 teleport 到 body），
 // 这样手柄就在列表 DOM 中，鼠标从列表项移到手柄不会触发 mouseleave。
 
-import { computed, type Ref } from "vue";
-import { useListDrag, type HandlePosition, type IndicatorPosition } from "@/composables/useListDrag";
+import { computed, ref, watch, onBeforeUnmount } from "vue";
+import { useListDrag } from "@/composables/useListDrag";
 
 const props = defineProps<{
-  /** 列表容器 ref（容器内子元素由 itemSelector 匹配） */
-  containerRef: Ref<HTMLElement | null>;
+  /** 列表容器 DOM ref（元素 ref 被自动 unwrap —— 这里用 toRef 重新包成 Ref 传给 hook） */
+  containerRef: HTMLElement | null;
   /** 可拖项 CSS 选择器 */
   itemSelector: string;
   /** 拖动结束回调 */
   onMove: (fromIndex: number, toIndex: number) => void | Promise<void>;
 }>();
 
+/* props.containerRef 在模板里 Vue 会自动 unwrap 后变成 HTMLElement | null；
+   useListDrag 需要的是 Ref<HTMLElement | null>，所以这里手动建一个容器 ref
+   + watch 同步 props 变化 */
+const containerRefInternal = ref<HTMLElement | null>(null);
+watch(
+  () => props.containerRef,
+  (el) => {
+    containerRefInternal.value = el;
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  containerRefInternal.value = null;
+});
+
 const { handlePos, indicatorPos, isDragging, onHandleMouseDown, onHandleMouseEnter, onHandleMouseLeave } =
   useListDrag({
-    containerRef: props.containerRef,
+    containerRef: containerRefInternal,
     itemSelector: props.itemSelector,
     onMove: props.onMove,
   });

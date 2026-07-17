@@ -22,6 +22,7 @@ import Popover from "./Popover.vue";
 import DueDateChip from "./DueDateChip.vue";
 import ReminderPopover from "./ReminderPopover.vue";
 import RecurrencePopover from "./RecurrencePopover.vue";
+import ListDragHandle from "./ListDragHandle.vue";
 import * as db from "@/api/db";
 
 const taskStore = useTaskStore();
@@ -522,6 +523,16 @@ const narrow = ref(false);
 let resizeObserver: ResizeObserver | null = null;
 let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
+/* === checklist 拖拽排序容器 ref（供 ListDragHandle 使用） === */
+const checklistContainerRef = ref<HTMLElement | null>(null);
+
+/** 拖动 checklist：把 fromIdx 的项移到 toIdx 位置
+ *  —— store 调 updateChecklistItem 把整条 checklist 重排 + 重写 order */
+async function onChecklistReorder(fromIndex: number, toIndex: number) {
+  if (!task.value) return;
+  await taskStore.reorderChecklist(task.value.id, fromIndex, toIndex);
+}
+
 onMounted(() => {
   if (!panelEl.value || typeof ResizeObserver === "undefined") return;
   resizeObserver = new ResizeObserver(() => {
@@ -768,7 +779,10 @@ onBeforeUnmount(() => {
       />
 
       <!-- 检查项区（独立于描述） -->
-      <div class="detail-panel__checklist">
+      <div
+        ref="checklistContainerRef"
+        class="detail-panel__checklist"
+      >
         <div
           v-for="item in sortedChecklist"
           :key="item.id"
@@ -799,6 +813,12 @@ onBeforeUnmount(() => {
             <icon-close :size="12" />
           </button>
         </div>
+        <!-- 拖拽手柄 + 落点横线（绝对定位在容器内，不抢 input 焦点） -->
+        <ListDragHandle
+          :container-ref="checklistContainerRef"
+          item-selector=".detail-panel__checklist-item"
+          :on-move="onChecklistReorder"
+        />
       </div>
     </div>
 
@@ -1111,6 +1131,9 @@ function formatMeta(iso: string): string {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* 容器 relative，让 ListDragHandle 的手柄 + 落点横线（absolute 定位）
+     以本容器为定位基准，不会溢出到别的区域 */
+  position: relative;
 }
 
 .detail-panel__checklist-item {
@@ -1119,6 +1142,8 @@ function formatMeta(iso: string): string {
   gap: 8px;
   padding: 4px 0;
   transition: opacity 0.12s;
+  /* item 自身 relative，让手柄绝对定位时不会跑到相邻 item 上去 */
+  position: relative;
 }
 
 .detail-panel__checklist-item--done {
