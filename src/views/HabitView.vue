@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 习惯打卡视图 —— 滴答清单风格：
 // 顶部 7 圆圈（本周日期）+ 习惯按时段分组（上午/下午/晚上）+ 每项右侧 7 圆圈（本周打卡）
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { useHabitStore } from "@/stores/habit";
 import TeleportPopper from "@/components/TeleportPopper.vue";
 import type { HabitWithStats } from "@/api/db";
@@ -57,11 +57,23 @@ function openCreateDialog() {
   });
 }
 
-// 顶层 await：组件 mount 完成前先拿到数据，避免首次进入看到空骨架
-await habitStore.loadHabits();
-await Promise.all(
-  habitStore.habits.map((h) => habitStore.loadLogs(h.habit.id)),
-);
+/** 异步加载习惯 + 打卡日志。错误兜底不抛到 console */
+async function loadData() {
+  try {
+    await habitStore.loadHabits();
+  } catch (e) {
+    console.error("[HabitView] loadHabits 失败:", e);
+  }
+  try {
+    await Promise.all(
+      habitStore.habits.map((h) => habitStore.loadLogs(h.habit.id)),
+    );
+  } catch (e) {
+    console.error("[HabitView] loadLogs 失败:", e);
+  }
+}
+
+onMounted(loadData);
 
 async function createHabit() {
   const name = newName.value.trim();
