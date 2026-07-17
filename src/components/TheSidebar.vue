@@ -1498,7 +1498,10 @@ onMounted(async () => {
 }
 
 .sidebar-create__folder-input {
+  box-sizing: border-box;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   border: none;
   outline: none;
   background: transparent;

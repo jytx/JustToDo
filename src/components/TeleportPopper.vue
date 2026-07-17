@@ -113,6 +113,8 @@ const popperStyle = computed(() => ({
 <style scoped>
 .tp-popper {
   pointer-events: auto;
+  /* 限制子元素的 100% width 不会无限撑开 */
+  max-width: 90vw;
 }
 </style>
 
