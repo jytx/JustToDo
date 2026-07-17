@@ -38,6 +38,11 @@ const showSortButton = computed(() => {
   );
 });
 
+/** 是否显示搜索 + 新建任务按钮（习惯/设置视图不显示） */
+const showGlobalActions = computed(() => {
+  return route.name !== "habits" && route.name !== "settings";
+});
+
 /** 详情面板打开时，主区域右侧留出面板宽度的空间 */
 const mainStyle = computed(() => {
   if (!taskStore.detailOpen) return { paddingRight: "0px" };
@@ -168,6 +173,7 @@ useShortcuts({
     <main class="app-layout__main" :style="mainStyle">
       <div class="app-layout__topbar" :style="topbarStyle">
         <a-button
+          v-if="showGlobalActions"
           type="text"
           size="small"
           @click="searchStore.show()"
@@ -175,6 +181,7 @@ useShortcuts({
           <template #icon><icon-search :size="18" /></template>
         </a-button>
         <a-button
+          v-if="showGlobalActions"
           type="text"
           size="small"
           @click="quickAdd.open()"
