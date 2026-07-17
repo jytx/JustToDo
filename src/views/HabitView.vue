@@ -30,14 +30,13 @@ function onClickMore(e: MouseEvent) {
 /** 删除确认弹窗 */
 const confirmDelete = ref(false);
 async function confirmDeleteHabit() {
-  if (!editingHabitId.value) return;
-  await habitStore.deleteHabit(editingHabitId.value);
+  if (!selectedHabitId.value) return;
+  await habitStore.deleteHabit(selectedHabitId.value);
   confirmDelete.value = false;
-  selectedHabitId.value = null;
-  // 关闭弹窗
   showCreateDialog.value = false;
   editingHabitId.value = null;
   newName.value = "";
+  selectedHabitId.value = null;
 }
 
 const colors = [
