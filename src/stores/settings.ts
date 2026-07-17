@@ -19,6 +19,7 @@ export const SETTINGS_KEYS = {
   newTasksDueToday: "new_tasks_due_today",
   recurrenceCheckInterval: "recurrence_check_interval",
   startupView: "startup_view",
+  zoomLevel: "zoom_level",
 } as const;
 
 /** 启动时打开的目标视图 */
@@ -31,6 +32,11 @@ const DEFAULT_ACCENT_COLOR = "#4F46E5";
 const DEFAULT_NEW_TASKS_DUE_TODAY = true;
 const DEFAULT_RECURRENCE_CHECK_INTERVAL = 60;
 const DEFAULT_STARTUP_VIEW: StartupView = "today";
+
+/** 窗口缩放级别上下限（与 Rust 端 menu.rs 保持一致） */
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 2.0;
+const DEFAULT_ZOOM_LEVEL = 1.0;
 
 /** 16 进制颜色 #RRGGBB 校验 */
 function isValidHexColor(v: string): boolean {
@@ -68,6 +74,15 @@ function parseStartupView(v: string | null): StartupView {
   return DEFAULT_STARTUP_VIEW;
 }
 
+/** 解析并钳制缩放级别（保留两位小数，与 Rust 端 clamp_zoom 一致） */
+function parseZoomLevel(v: string | null): number {
+  if (!v) return DEFAULT_ZOOM_LEVEL;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return DEFAULT_ZOOM_LEVEL;
+  const clamped = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n));
+  return Math.round(clamped * 100) / 100;
+}
+
 export const useSettingsStore = defineStore("settings", () => {
   // 主题：复用 composable 的 mode ref（与 useTheme 共享状态）
   const theme = useTheme();
@@ -78,6 +93,7 @@ export const useSettingsStore = defineStore("settings", () => {
   const newTasksDueToday = ref<boolean>(DEFAULT_NEW_TASKS_DUE_TODAY);
   const recurrenceCheckInterval = ref<number>(DEFAULT_RECURRENCE_CHECK_INTERVAL);
   const startupView = ref<StartupView>(DEFAULT_STARTUP_VIEW);
+  const zoomLevel = ref<number>(DEFAULT_ZOOM_LEVEL);
 
   const initialized = ref(false);
   const loading = ref(false);
@@ -120,12 +136,13 @@ export const useSettingsStore = defineStore("settings", () => {
     if (initialized.value || loading.value) return;
     loading.value = true;
     try {
-      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw] = await Promise.all([
+      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw] = await Promise.all([
         db.getSetting(SETTINGS_KEYS.themeMode).catch(() => null),
         db.getSetting(SETTINGS_KEYS.accentColor).catch(() => null),
         db.getSetting(SETTINGS_KEYS.newTasksDueToday).catch(() => null),
         db.getSetting(SETTINGS_KEYS.recurrenceCheckInterval).catch(() => null),
         db.getSetting(SETTINGS_KEYS.startupView).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.zoomLevel).catch(() => null),
       ]);
 
       const mode = parseThemeMode(themeRaw);
@@ -133,16 +150,22 @@ export const useSettingsStore = defineStore("settings", () => {
       const dueToday = parseBoolean(dueTodayRaw, DEFAULT_NEW_TASKS_DUE_TODAY);
       const interval = parseIntervalMinutes(intervalRaw);
       const startup = parseStartupView(startupRaw);
+      const zoom = parseZoomLevel(zoomRaw);
 
       themeMode.value = mode;
       accentColor.value = accent;
       newTasksDueToday.value = dueToday;
       recurrenceCheckInterval.value = interval;
       startupView.value = startup;
+      zoomLevel.value = zoom;
 
       // 先应用强调色（不依赖模式），再应用主题
       theme.setAccentColor(accent);
       theme.setMode(mode);
+
+      // 监听 Rust 端菜单触发的 zoom 变化事件，同步本地 ref
+      // 实际窗口缩放由 Rust 端 set_zoom 完成，前端仅维护状态用于 UI 显示
+      listenZoomChanged();
 
       initialized.value = true;
     } catch (e) {
@@ -220,6 +243,62 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   /**
+   * 监听 Rust 端 zoom-changed 事件
+   *
+   * Rust 端原生菜单（菜单栏「视图」）触发缩放时会 emit 此事件，
+   * 前端接收后同步本地 ref，保证按钮 UI 与原生菜单状态一致。
+   * 监听只挂载一次（幂等）。
+   */
+  let zoomListenRegistered = false;
+  async function listenZoomChanged(): Promise<void> {
+    if (zoomListenRegistered) return;
+    zoomListenRegistered = true;
+    try {
+      const { listen } = await import("@tauri-apps/api/event");
+      await listen<number>("zoom-changed", (event) => {
+        zoomLevel.value = parseZoomLevel(String(event.payload));
+      });
+    } catch (e) {
+      // 非 Tauri 环境（如纯浏览器开发）下 listen 不存在，静默忽略
+      console.warn("[SettingsStore] 监听 zoom-changed 失败:", e);
+    }
+  }
+
+  /**
+   * 实际驱动窗口缩放并持久化
+   *
+   * 通过 invoke 调用 Rust 命令执行 —— 走 Rust 端 window.set_zoom 可靠路径
+   * （前端 JS 的 webview.setZoom 在部分 webview 上不生效）。
+   * Rust 端会完成：set_zoom + 持久化 + emit zoom-changed 事件，
+   * 前端通过 listenZoomChanged 同步本地 ref。
+   */
+  async function invokeZoom(cmd: "zoom_in" | "zoom_out" | "zoom_reset"): Promise<void> {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke<number>(cmd);
+      // Rust 端会 emit zoom-changed，listenZoomChanged 会更新 zoomLevel
+      // 这里不主动改 ref，避免与事件回调竞争
+    } catch (e) {
+      console.warn(`[SettingsStore] ${cmd} 调用失败:`, e);
+    }
+  }
+
+  /** 放大（步长 1.2x，上限 2.0x） */
+  async function zoomIn(): Promise<void> {
+    await invokeZoom("zoom_in");
+  }
+
+  /** 缩小（步长 1.2x，下限 0.5x） */
+  async function zoomOut(): Promise<void> {
+    await invokeZoom("zoom_out");
+  }
+
+  /** 恢复 100% */
+  async function zoomReset(): Promise<void> {
+    await invokeZoom("zoom_reset");
+  }
+
+  /**
    * 主题"toggle"语义：用于顶部按钮 / Cmd+Shift+L
    * - 当前是 system：切到 light
    * - 当前是 light：切到 dark
@@ -239,6 +318,7 @@ export const useSettingsStore = defineStore("settings", () => {
     newTasksDueToday,
     recurrenceCheckInterval,
     startupView,
+    zoomLevel,
     initialized,
     loading,
     error,
@@ -250,6 +330,9 @@ export const useSettingsStore = defineStore("settings", () => {
     setRecurrenceCheckInterval,
     setStartupView,
     cycleTheme,
+    zoomIn,
+    zoomOut,
+    zoomReset,
     isSaving,
   };
 });

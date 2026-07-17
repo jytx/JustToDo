@@ -3,6 +3,7 @@
 
 mod commands;
 mod db;
+mod menu;
 mod models;
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -111,18 +112,109 @@ pub fn run() {
                 });
             }
 
-            app.manage(pool);
+            app.manage(pool.clone());
+
+            // 当前 zoom 级别的内存缓存（WebviewWindow 无 zoom getter，用 State 记录）
+            let current_zoom = Arc::new(std::sync::Mutex::new(1.0_f64));
 
             // 清空窗口标题，避免 macOS Overlay 模式下显示 "JustToDo" 文字
             // （titleBarStyle: Overlay 下，标题文字依然会浮在左上角）
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_title("");
+
+                // 修正最大化窗口偏右问题：把窗口左上角钉到 (0, 0)
+                use tauri::PhysicalPosition;
+                let _ = window.set_position(PhysicalPosition::new(0, 0));
+
+                // 挂载原生菜单（视图 → 放大/缩小/实际大小）
+                // macOS：显示在屏幕顶端系统菜单栏（需 app 级菜单）
+                // Windows：显示在窗口标题栏下方（window 级菜单）
+                // 两边都设置，确保跨平台都能显示
+                match menu::build_main_menu(app.handle()) {
+                    Ok(main_menu) => {
+                        // macOS 关键：设为 app 级菜单才会出现在系统菜单栏
+                        let app_handle = app.handle();
+                        match app_handle.set_menu(main_menu) {
+                            Ok(_) => println!("[JustToDo] app 级菜单挂载成功"),
+                            Err(e) => eprintln!("[JustToDo] app set_menu 失败: {}", e),
+                        }
+                        // Windows：再给窗口单独设一份（app 级在 Windows 上不自动应用到窗口）
+                        match menu::build_main_menu(app.handle()) {
+                            Ok(win_menu) => {
+                                if let Err(e) = window.set_menu(win_menu) {
+                                    eprintln!("[JustToDo] window set_menu 失败: {}", e);
+                                } else {
+                                    println!("[JustToDo] window 级菜单挂载成功");
+                                }
+                            }
+                            Err(e) => eprintln!("[JustToDo] 构造窗口菜单失败: {}", e),
+                        }
+                    }
+                    Err(e) => eprintln!("[JustToDo] 构造菜单失败: {}", e),
+                }
+
+                // 启动时恢复持久化的缩放级别
+                let restored_zoom = tauri::async_runtime::block_on(async {
+                    commands::get_setting_inner(&pool, "zoom_level".to_string())
+                        .await
+                        .ok()
+                        .flatten()
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .map(menu::clamp_zoom)
+                        .unwrap_or(1.0)
+                });
+                let _ = window.set_zoom(restored_zoom);
+                *current_zoom.lock().unwrap() = restored_zoom;
             }
+
+            app.manage(current_zoom.clone());
 
             Ok(())
         })
+        .on_menu_event(|app, event| {
+            // 自定义窗口居中
+            if menu::is_window_op_event(&event) {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.center();
+                }
+                return;
+            }
+
+            // 帮助 → 切换控制台（DevTools）
+            if menu::is_help_event(&event) {
+                if let Some(window) = app.get_webview_window("main") {
+                    if window.is_devtools_open() {
+                        window.close_devtools();
+                    } else {
+                        window.open_devtools();
+                    }
+                }
+                return;
+            }
+
+            // 仅处理缩放菜单项，其他（PredefinedMenuItem）由系统自行处理
+            if !menu::is_zoom_event(&event) {
+                return;
+            }
+            let current = app
+                .try_state::<std::sync::Arc<std::sync::Mutex<f64>>>()
+                .map(|s| *s.lock().unwrap())
+                .unwrap_or(1.0);
+            let next = match event.id().as_ref() {
+                menu::ZOOM_IN_ID => current * menu::ZOOM_STEP,
+                menu::ZOOM_OUT_ID => current / menu::ZOOM_STEP,
+                menu::ZOOM_RESET_ID => 1.0,
+                _ => return,
+            };
+            if let Err(e) = menu::apply_zoom(app, next) {
+                eprintln!("[JustToDo] 应用 zoom 失败: {}", e);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             ping,
+            menu::zoom_in,
+            menu::zoom_out,
+            menu::zoom_reset,
             commands::list_get_all,
             commands::list_create,
             commands::list_delete,

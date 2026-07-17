@@ -153,6 +153,9 @@ useShortcuts({
   onToggleTheme: () => {
     settingsStore.cycleTheme();
   },
+  onZoomIn: () => settingsStore.zoomIn(),
+  onZoomOut: () => settingsStore.zoomOut(),
+  onZoomReset: () => settingsStore.zoomReset(),
 });
 </script>
 
