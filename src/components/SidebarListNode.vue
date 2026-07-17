@@ -179,8 +179,7 @@ function onDrop(e: DragEvent) {
       v-if="node.isFolder"
       class="list-node__row list-node__folder"
       :class="{
-        'list-node--drag-before': dragOver === 'before',
-        'list-node--drag-after': dragOver === 'after',
+        'list-node--drag-over': dragOver === 'before' || dragOver === 'after',
         'list-node--drag-inside': dragOver === 'inside',
       }"
       :style="{ paddingLeft: depth * 16 + 'px' }"
@@ -232,8 +231,7 @@ function onDrop(e: DragEvent) {
       class="list-node__row list-node__list-item"
       :class="{
         'list-node--active': isActive,
-        'list-node--drag-before': dragOver === 'before',
-        'list-node--drag-after': dragOver === 'after',
+        'list-node--drag-over': dragOver === 'before' || dragOver === 'after',
       }"
       :style="{ paddingLeft: depth * 16 + 'px' }"
       :draggable="canDrag ? 'true' : 'false'"
@@ -321,53 +319,28 @@ function onDrop(e: DragEvent) {
   background-color: color-mix(in srgb, var(--jt-primary) 15%, var(--jt-accent-soft)) !important;
 }
 
-/* 拖拽中：隐藏原始行（用透明占位，不显示难看的幽灵截图） */
-.list-node--dragging {
-  opacity: 0.3;
+/* 拖拽中：原行不变透明度（与标签行为一致，仅高亮落点行；半透明视觉由拖动浏览器提供） */
+
+/* drag-over：整行 outline 高亮（与标签 --drag-over 视觉一致） */
+.list-node--drag-over {
+  outline: 1.5px solid var(--jt-primary);
+  outline-offset: -1.5px;
+  background-color: var(--jt-accent-soft);
 }
 
-/* drag-before：顶部插入线 + 淡背景（表示排序） */
-.list-node--drag-before {
-  background-color: color-mix(in srgb, var(--jt-primary) 5%, transparent) !important;
+/* dragable 行：grab cursor（与标签一致） */
+.list-node__row[draggable="true"] {
+  cursor: grab;
 }
-.list-node--drag-before::before {
-  content: "";
-  position: absolute;
-  top: -1px;
-  left: 8px;
-  right: 8px;
-  height: 2px;
-  background: var(--jt-primary);
-  border-radius: 1px;
-  z-index: 10;
+.list-node__row[draggable="true"]:active {
+  cursor: grabbing;
 }
 
-/* drag-after：底部插入线 + 淡背景（表示排序） */
-.list-node--drag-after {
-  background-color: color-mix(in srgb, var(--jt-primary) 5%, transparent) !important;
-}
-.list-node--drag-after::after {
-  content: "";
-  position: absolute;
-  bottom: -1px;
-  left: 8px;
-  right: 8px;
-  height: 2px;
-  background: var(--jt-primary);
-  border-radius: 1px;
-  z-index: 10;
-}
-
-/* drag-inside：放入目录 — 整行高亮（区别于排序的淡背景） */
+/* drag-inside：放入目录 —— 用更深的 inset 阴影区别于排序提示 */
 .list-node--drag-inside {
   background-color: color-mix(in srgb, var(--jt-primary) 12%, transparent) !important;
   box-shadow: inset 0 0 0 1.5px var(--jt-primary);
   border-radius: 8px;
-}
-
-/* 拖拽时所有行的 hover 效果禁用，避免干扰 */
-.list-node__row:active {
-  cursor: grabbing;
 }
 
 /* 展开箭头 */
