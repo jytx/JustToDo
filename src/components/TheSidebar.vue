@@ -312,8 +312,14 @@ function onClickColorTrigger(which: "list" | "habit", e: MouseEvent) {
   colorPickerOpen[which] = !colorPickerOpen[which];
 }
 
-/** 清单目录 trigger 弹层状态 */
+/** 目录 trigger 元素 + 弹层状态 */
+const folderTriggerEl = ref<HTMLElement | null>(null);
 const newListFolderPopupVisible = ref(false);
+
+function onClickFolderTrigger(e: MouseEvent) {
+  folderTriggerEl.value = e.currentTarget as HTMLElement;
+  newListFolderPopupVisible.value = !newListFolderPopupVisible.value;
+}
 
 /** 输入提示：把已有的目录拼成完整路径，作为自动补全的数据源 */
 const folderSuggestions = computed(() => {
@@ -657,36 +663,17 @@ onMounted(async () => {
       <div class="sidebar-create__divider" />
       <!-- 属性行：目录 + 颜色 trigger（hover/focus 展示色板） -->
       <div class="sidebar-create__attrs">
-        <!-- 目录 trigger：点击切换展开/收起，输入框 inline 展示 -->
-        <div class="sidebar-create__folder-host">
-          <button
-            type="button"
-            class="sidebar-create__trigger"
-            :class="{ 'sidebar-create__trigger--active': newListFolderPopupVisible }"
-            @click="newListFolderPopupVisible = !newListFolderPopupVisible"
-          >
-            <icon-folder :size="14" />
-            <span>{{ newListFolder || "目录" }}</span>
-          </button>
-          <div v-if="newListFolderPopupVisible" class="sidebar-create__folder-popup">
-            <a-auto-complete
-              v-model="newListFolder"
-              :data="folderSuggestions"
-              :filter-option="folderFilterOption"
-              placeholder="如：工作/项目A"
-              allow-clear
-              @select="onFolderSelect"
-              @keydown.escape.stop="newListFolderPopupVisible = false"
-            >
-              <template #option="{ data }">
-                <span class="create-list-dialog__folder-suggestion">
-                  <icon-folder :size="13" />
-                  <span>{{ data.raw?.name ?? data.value }}</span>
-                </span>
-              </template>
-            </a-auto-complete>
-          </div>
-        </div>
+        <!-- 目录 trigger：点击切换 TeleportPopper，popup 浮到 body 避开 modal overflow 裁剪 -->
+        <button
+          data-folder-trigger
+          type="button"
+          class="sidebar-create__trigger"
+          :class="{ 'sidebar-create__trigger--active': newListFolderPopupVisible }"
+          @click="onClickFolderTrigger($event)"
+        >
+          <icon-folder :size="14" />
+          <span>{{ newListFolder || "目录" }}</span>
+        </button>
 
         <!-- 颜色 trigger：TeleportPopper 下拉弹框（popup 浮在 modal 外，避开 stacking context） -->
         <button
@@ -822,6 +809,32 @@ onMounted(async () => {
       </div>
     </div>
   </a-modal>
+
+  <!-- 目录输入弹层（Teleport 到 body，避开 modal overflow 裁剪） -->
+  <TeleportPopper
+    v-model:visible="newListFolderPopupVisible"
+    :anchor="folderTriggerEl"
+    placement="bottom-left"
+  >
+    <div class="sidebar-create__folder-popup">
+      <a-auto-complete
+        v-model="newListFolder"
+        :data="folderSuggestions"
+        :filter-option="folderFilterOption"
+        placeholder="如：工作/项目A"
+        allow-clear
+        @select="onFolderSelect"
+        @keydown.escape.stop="newListFolderPopupVisible = false"
+      >
+        <template #option="{ data }">
+          <span class="create-list-dialog__folder-suggestion">
+            <icon-folder :size="13" />
+            <span>{{ data.raw?.name ?? data.value }}</span>
+          </span>
+        </template>
+      </a-auto-complete>
+    </div>
+  </TeleportPopper>
 
   <!-- 颜色 picker 弹层（Teleport 到 body，避开 modal stacking-context） -->
   <TeleportPopper
@@ -1403,18 +1416,16 @@ onMounted(async () => {
   transform: translateY(-4px);
 }
 
-/* 目录 trigger 容器：展开后下方 inline 展示 a-auto-complete 输入 */
+/* 目录 trigger 容器：展开后下方 inline 展示 a-auto-complete 输入（已改为 TeleportPopper，
+   这里只保留 host 位置设置，popup 在 TeleportPopper 内部渲染） */
 .sidebar-create__folder-host {
   position: relative;
   display: inline-flex;
   align-items: center;
 }
 
+/* 目录输入弹层：TeleportPopper 内部卡片（不再 absolute，popper 已 fixed 定位） */
 .sidebar-create__folder-popup {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 10;
   min-width: 240px;
   padding: 8px;
   background: var(--jt-surface);
