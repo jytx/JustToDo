@@ -67,8 +67,8 @@ function goToList() {
 const dragOver = ref<"before" | "after" | "inside" | null>(null);
 const isDragging = ref(false);
 
-/** 是否可拖动（inbox 也可以拖，位置跟其他清单一样） */
-const canDrag = computed(() => true);
+/** 是否可拖动（inbox 不可拖） */
+const canDrag = computed(() => props.node.id !== "inbox");
 
 function onDragStart(e: DragEvent) {
   if (!canDrag.value) {
