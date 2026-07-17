@@ -930,8 +930,8 @@ function selectHabit(id: string) {
 }
 
 .habit-detail__cal-day {
-  width: 26px;
-  height: 26px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   border: 1.5px solid var(--jt-border);
   background: transparent;
