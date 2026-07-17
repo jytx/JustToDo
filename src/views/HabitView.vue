@@ -40,12 +40,12 @@ async function toggle(habitId: string) {
         <p class="habit-view__subtitle">{{ formatPageDate() }}</p>
       </div>
       <a-button
-        type="primary"
+        type="text"
         size="small"
+        title="新建习惯"
         @click="showCreateDialog = true"
       >
-        <template #icon><icon-plus /></template>
-        新建习惯
+        <template #icon><icon-plus :size="20" /></template>
       </a-button>
     </header>
 
