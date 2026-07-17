@@ -554,7 +554,9 @@ onMounted(async () => {
         :to="`/habits#${h.habit.id}`"
         class="sidebar__item"
         :class="{
-          'sidebar__item--active': activeRouteName === 'habits',
+          // 只有当前 hash 等于这个 habit.id 时才高亮，避免所有 habit 同时显示 active
+          'sidebar__item--active':
+            activeRouteName === 'habits' && route.hash === '#' + h.habit.id,
           'sidebar__item--drag-over': habitDragOverId === h.habit.id,
         }"
         :data-habit-id="h.habit.id"
