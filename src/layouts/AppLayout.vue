@@ -5,6 +5,7 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { useSettingsStore } from "@/stores/settings";
 import { useTaskStore } from "@/stores/task";
+import { useHabitStore } from "@/stores/habit";
 import { useRoute } from "vue-router";
 import { SORT_FIELDS, SORT_FIELD_LABELS, type SortField } from "@/types";
 import TheSidebar from "@/components/TheSidebar.vue";
@@ -23,6 +24,7 @@ const settingsStore = useSettingsStore();
 const searchStore = useSearchStore();
 const listStore = useListStore();
 const taskStore = useTaskStore();
+const habitStore = useHabitStore();
 const route = useRoute();
 const quickAdd = useQuickAdd();
 
@@ -138,7 +140,14 @@ function onNavigationKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => window.addEventListener("keydown", onNavigationKeydown));
+onMounted(() => {
+  window.addEventListener("keydown", onNavigationKeydown);
+  // 应用启动时预加载习惯列表（避免进入 /habits 时空骨架）
+  // HabitView 自身 mount 时会再 load 一次（重复但幂等，后端 getHabits 成本低）
+  habitStore.loadHabits().catch((e) => {
+    console.error("[AppLayout] 预加载 habits 失败:", e);
+  });
+});
 onUnmounted(() => window.removeEventListener("keydown", onNavigationKeydown));
 
 // 全局快捷键
