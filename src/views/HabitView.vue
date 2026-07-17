@@ -800,7 +800,7 @@ function selectHabit(id: string) {
 
 /* 右侧详情面板 */
 .habit-detail {
-  flex: 0 0 380px;
+  flex: 0 0 460px;
   display: flex;
   flex-direction: column;
   gap: 14px;
