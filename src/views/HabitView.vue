@@ -59,8 +59,10 @@ function openCreateDialog() {
 
 /** 异步加载习惯 + 打卡日志。错误兜底不抛到 console */
 async function loadData() {
+  console.log("[HabitView] loadData START");
   try {
     await habitStore.loadHabits();
+    console.log("[HabitView] loadHabits OK, count=", habitStore.habits.length);
   } catch (e) {
     console.error("[HabitView] loadHabits 失败:", e);
   }
@@ -68,9 +70,11 @@ async function loadData() {
     await Promise.all(
       habitStore.habits.map((h) => habitStore.loadLogs(h.habit.id)),
     );
+    console.log("[HabitView] loadLogs OK");
   } catch (e) {
     console.error("[HabitView] loadLogs 失败:", e);
   }
+  console.log("[HabitView] loadData DONE");
 }
 
 onMounted(loadData);
