@@ -942,7 +942,7 @@ function selectHabit(id: string) {
 .habit-detail__cal-day {
   width: 100%;
   aspect-ratio: 1;
-  max-width: 36px;
+  max-width: 50px;
   border-radius: 50%;
   border: 1.5px solid var(--jt-border);
   background: transparent;
