@@ -744,10 +744,12 @@ pub async fn task_get_subtasks(
 
 #[tauri::command]
 pub async fn tag_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<Tag>> {
-    let rows = sqlx::query("SELECT id, name, created_at FROM tags ORDER BY name ASC")
-        .fetch_all(pool.inner())
-        .await
-        .map_err(|e| format!("查询标签失败: {}", e))?;
+    let rows = sqlx::query(
+        "SELECT id, name, created_at, position FROM tags ORDER BY position ASC, created_at ASC",
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("查询标签失败: {}", e))?;
 
     Ok(rows
         .iter()
@@ -755,8 +757,26 @@ pub async fn tag_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<Tag
             id: r.get("id"),
             name: r.get("name"),
             created_at: r.get("created_at"),
+            position: r.get("position"),
         })
         .collect())
+}
+
+/// 批量更新标签位置（侧边栏拖拽排序后）
+#[tauri::command]
+pub async fn tag_reorder(
+    pool: State<'_, sqlx::SqlitePool>,
+    items: Vec<(String, i64)>,
+) -> CmdResult<()> {
+    for (id, position) in &items {
+        sqlx::query("UPDATE tags SET position = $1 WHERE id = $2")
+            .bind(position)
+            .bind(id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新标签位置失败: {}", e))?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -776,6 +796,7 @@ pub async fn tag_create(pool: State<'_, sqlx::SqlitePool>, name: String) -> CmdR
         id,
         name,
         created_at: ts,
+        position: 0,
     })
 }
 
@@ -926,6 +947,8 @@ pub struct Habit {
     pub target_count: i32,
     pub remind_at: Option<String>,
     pub created_at: String,
+    /// 侧边栏手动排序 key（整数间隔）
+    pub position: i64,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -947,7 +970,7 @@ pub struct CreateHabitInput {
 
 #[tauri::command]
 pub async fn habit_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<HabitWithStats>> {
-    let rows = sqlx::query("SELECT id, name, color, repeat_rule, target_count, remind_at, created_at FROM habits ORDER BY created_at ASC")
+    let rows = sqlx::query("SELECT id, name, color, repeat_rule, target_count, remind_at, created_at, position FROM habits ORDER BY position ASC, created_at ASC")
         .fetch_all(pool.inner())
         .await
         .map_err(|e| format!("查询习惯失败: {}", e))?;
@@ -968,6 +991,7 @@ pub async fn habit_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<H
             target_count: r.get("target_count"),
             remind_at: r.get("remind_at"),
             created_at: r.get("created_at"),
+            position: r.get("position"),
         };
 
         let today_count: i64 = sqlx::query_scalar(
@@ -1059,7 +1083,25 @@ pub async fn habit_create(
         target_count,
         remind_at: input.remind_at,
         created_at: ts,
+        position: 0,
     })
+}
+
+/// 批量更新习惯位置（侧边栏拖拽排序后）
+#[tauri::command]
+pub async fn habit_reorder(
+    pool: State<'_, sqlx::SqlitePool>,
+    items: Vec<(String, i64)>,
+) -> CmdResult<()> {
+    for (id, position) in &items {
+        sqlx::query("UPDATE habits SET position = $1 WHERE id = $2")
+            .bind(position)
+            .bind(id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新习惯位置失败: {}", e))?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1245,9 +1287,9 @@ pub async fn task_get_tags(
     task_id: String,
 ) -> CmdResult<Vec<crate::models::Tag>> {
     let rows = sqlx::query(
-        "SELECT t.id, t.name, t.created_at FROM tags t
+        "SELECT t.id, t.name, t.created_at, t.position FROM tags t
          JOIN task_tags tt ON t.id = tt.tag_id
-         WHERE tt.task_id = $1 ORDER BY t.name ASC",
+         WHERE tt.task_id = $1 ORDER BY t.position ASC, t.created_at ASC",
     )
     .bind(task_id)
     .fetch_all(pool.inner())
@@ -1260,6 +1302,7 @@ pub async fn task_get_tags(
             id: r.get("id"),
             name: r.get("name"),
             created_at: r.get("created_at"),
+            position: r.get("position"),
         })
         .collect())
 }

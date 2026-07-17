@@ -105,6 +105,9 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
     // 010: 重复任务实例来源标记（recurrence_origin_id）+ 存量数据回填
     run_migration_010(&pool).await?;
 
+    // 011: tags / habits 加 position 字段（侧边栏拖拽排序）
+    run_migration_011(&pool).await?;
+
     Ok(pool)
 }
 
@@ -223,5 +226,23 @@ async fn run_migration_010(pool: &SqlitePool) -> Result<(), String> {
     .await
     .map_err(|e| format!("回填重复实例来源失败: {}", e))?;
 
+    Ok(())
+}
+
+/// 迁移 011：tags / habits 加 position 字段
+/// - tags: 侧边栏标签拖拽排序的 sort key
+/// - habits: 侧边栏习惯快捷入口拖拽排序的 sort key
+/// 旧数据全部 position=0，会聚拢在列表最前；用户首次拖拽后即分散开。
+async fn run_migration_011(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "tags", "position", "INTEGER NOT NULL DEFAULT 0").await?;
+    add_column_if_missing(pool, "habits", "position", "INTEGER NOT NULL DEFAULT 0").await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_tags_position ON tags(position)")
+        .execute(pool)
+        .await
+        .map_err(|e| format!("创建 idx_tags_position 失败: {}", e))?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_habits_position ON habits(position)")
+        .execute(pool)
+        .await
+        .map_err(|e| format!("创建 idx_habits_position 失败: {}", e))?;
     Ok(())
 }

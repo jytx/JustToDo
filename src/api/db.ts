@@ -11,6 +11,8 @@ export interface Tag {
   id: string;
   name: string;
   createdAt: string;
+  /** 侧边栏手动排序 key（整数间隔；旧数据 = 0） */
+  position: number;
 }
 
 interface TaskList {
@@ -338,6 +340,11 @@ export async function renameTag(id: string, name: string): Promise<void> {
   await invoke<void>("tag_rename", { id, name });
 }
 
+/** 批量更新标签位置（侧边栏拖拽排序后调用） */
+export async function reorderTags(items: [string, number][]): Promise<void> {
+  await invoke<void>("tag_reorder", { items });
+}
+
 // ─── 搜索 ────────────────────────────────────────────────
 
 export async function searchTasks(query: string): Promise<Task[]> {
@@ -355,6 +362,8 @@ export interface Habit {
   targetCount: number;
   remindAt: string | null;
   createdAt: string;
+  /** 侧边栏手动排序 key */
+  position: number;
 }
 
 export interface HabitWithStats {
@@ -386,6 +395,7 @@ function mapHabit(r: RustHabit): Habit {
     id: r.id, name: r.name, color: r.color,
     repeatRule: r.repeat_rule, targetCount: r.target_count,
     remindAt: r.remind_at, createdAt: r.created_at,
+    position: r.position,
   };
 }
 
@@ -428,6 +438,11 @@ export async function toggleHabitCheck(habitId: string, date?: string): Promise<
 
 export async function getHabitLogs(habitId: string): Promise<Array<[string, number]>> {
   return await invoke<Array<[string, number]>>("habit_get_logs", { habitId });
+}
+
+/** 批量更新习惯位置（侧边栏拖拽排序后调用） */
+export async function reorderHabits(items: [string, number][]): Promise<void> {
+  await invoke<void>("habit_reorder", { items });
 }
 
 // ─── 任务-标签关联 ────────────────────────────────────────────

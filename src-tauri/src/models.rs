@@ -60,6 +60,8 @@ pub struct Tag {
     pub id: String,
     pub name: String,
     pub created_at: String,
+    /// 侧边栏手动排序 key（整数间隔，新增/拖动时取相邻中点）
+    pub position: i64,
 }
 
 /// 创建任务的参数
