@@ -59,10 +59,8 @@ function openCreateDialog() {
 
 /** 异步加载习惯 + 打卡日志。错误兜底不抛到 console */
 async function loadData() {
-  console.log("[HabitView] loadData START");
   try {
     await habitStore.loadHabits();
-    console.log("[HabitView] loadHabits OK, count=", habitStore.habits.length);
   } catch (e) {
     console.error("[HabitView] loadHabits 失败:", e);
   }
@@ -70,11 +68,9 @@ async function loadData() {
     await Promise.all(
       habitStore.habits.map((h) => habitStore.loadLogs(h.habit.id)),
     );
-    console.log("[HabitView] loadLogs OK");
   } catch (e) {
     console.error("[HabitView] loadLogs 失败:", e);
   }
-  console.log("[HabitView] loadData DONE");
 }
 
 onMounted(loadData);
@@ -162,6 +158,94 @@ const GROUP_ORDER: Array<"morning" | "afternoon" | "evening"> = [
 function isLogged(habitId: string, date: string): boolean {
   return habitStore.logs[habitId]?.has(date) ?? false;
 }
+
+// ─── 右侧详情面板 ──────────────────────────────────────
+
+/** 当前选中的 habit（左侧点击切换） */
+const selectedHabitId = ref<string | null>(null);
+
+/** 选中 habit 的完整数据（响应式） */
+const selectedHabit = computed<HabitWithStats | null>(() => {
+  if (!selectedHabitId.value) return null;
+  return habitStore.habits.find((h) => h.habit.id === selectedHabitId.value) ?? null;
+});
+
+/** 详情面板显示的月份（YYYY-MM，1 = 当前月） */
+const detailMonth = ref<string>(ymd(new Date()).slice(0, 7));
+
+/** 月历网格：6 周 × 7 天，含上月末/下月头的补位 */
+const detailMonthGrid = computed<{ date: string; day: number; inMonth: boolean; isToday: boolean }[]>(() => {
+  const [yStr, mStr] = detailMonth.value.split("-");
+  const y = Number(yStr);
+  const m = Number(mStr);
+  const first = new Date(y, m - 1, 1);
+  const offset = (first.getDay() + 6) % 7; // 周一=0 的偏移
+  const start = new Date(first);
+  start.setDate(first.getDate() - offset);
+  const todayStr = ymd(new Date());
+  const cells: { date: string; day: number; inMonth: boolean; isToday: boolean }[] = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const date = ymd(d);
+    cells.push({
+      date,
+      day: d.getDate(),
+      inMonth: d.getMonth() === m - 1,
+      isToday: date === todayStr,
+    });
+  }
+  return cells;
+});
+
+/** 月份名称（如「七月」） */
+const detailMonthLabel = computed(() => {
+  const [, m] = detailMonth.value.split("-").map(Number);
+  return `${m}月`;
+});
+
+function prevMonth() {
+  const [y, m] = detailMonth.value.split("-").map(Number);
+  const d = new Date(y, m - 2, 1);
+  detailMonth.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function nextMonth() {
+  const [y, m] = detailMonth.value.split("-").map(Number);
+  const d = new Date(y, m, 1);
+  detailMonth.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** 当月已打卡天数 */
+const detailMonthLoggedCount = computed(() => {
+  if (!selectedHabit.value) return 0;
+  const prefix = detailMonth.value;
+  let n = 0;
+  const set = habitStore.logs[selectedHabit.value.habit.id];
+  if (!set) return 0;
+  for (const date of set) {
+    if (date.startsWith(prefix)) n += 1;
+  }
+  return n;
+});
+
+/** 当月天数 */
+const detailMonthDays = computed(() => {
+  const [y, m] = detailMonth.value.split("-").map(Number);
+  return new Date(y, m, 0).getDate();
+});
+
+/** 月完成率（百分比） */
+const detailMonthRate = computed(() => {
+  if (!selectedHabit.value) return 0;
+  if (detailMonthDays.value === 0) return 0;
+  return Math.round((detailMonthLoggedCount.value / detailMonthDays.value) * 100);
+});
+
+function selectHabit(id: string) {
+  selectedHabitId.value = id;
+  // 切到当前月
+  detailMonth.value = ymd(new Date()).slice(0, 7);
+}
 </script>
 
 <template>
@@ -192,76 +276,177 @@ function isLogged(habitId: string, date: string): boolean {
       </div>
     </div>
 
-    <!-- 习惯列表（按时段分组） -->
-    <div class="habit-view__list">
-      <div
-        v-for="key in GROUP_ORDER"
-        :key="key"
-        v-show="groupedHabits[key].length > 0"
-        class="habit-view__group"
-      >
-        <!-- 组标题 -->
-        <div class="habit-view__group-header">
-          <icon-down :size="12" class="habit-view__group-caret" />
-          <span class="habit-view__group-name">{{ GROUP_LABELS[key] }}</span>
-          <span class="habit-view__group-count">{{ groupedHabits[key].length }}</span>
-        </div>
-
-        <!-- 习惯项 -->
+    <!-- 主区两栏：左侧习惯列表 + 右侧详情面板 -->
+    <div class="habit-view__main">
+      <!-- 左侧：习惯列表（按时段分组） -->
+      <div class="habit-view__list">
         <div
-          v-for="h in groupedHabits[key]"
-          :key="h.habit.id"
-          class="habit-card"
+          v-for="key in GROUP_ORDER"
+          :key="key"
+          v-show="groupedHabits[key].length > 0"
+          class="habit-view__group"
         >
-          <div class="habit-card__left">
-            <div
-              class="habit-card__avatar"
-              :style="{ backgroundColor: h.habit.color }"
-            >
-              <icon-trophy :size="14" style="color: #fff" />
-            </div>
-            <div class="habit-card__info">
-              <span class="habit-card__name">{{ h.habit.name }}</span>
-              <div class="habit-card__stats">
-                <span class="habit-card__streak">
-                  <icon-fire :size="12" :style="{ color: h.streak > 0 ? 'var(--jt-error)' : 'currentColor' }" />
-                  {{ h.streak }} 天
-                </span>
-                <span class="habit-card__total">
-                  <icon-calendar :size="12" />
-                  累计 {{ h.totalDays }} 天
-                </span>
+          <!-- 组标题 -->
+          <div class="habit-view__group-header">
+            <icon-down :size="12" class="habit-view__group-caret" />
+            <span class="habit-view__group-name">{{ GROUP_LABELS[key] }}</span>
+            <span class="habit-view__group-count">{{ groupedHabits[key].length }}</span>
+          </div>
+
+          <!-- 习惯项 -->
+          <div
+            v-for="h in groupedHabits[key]"
+            :key="h.habit.id"
+            class="habit-card"
+            :class="{ 'habit-card--selected': selectedHabitId === h.habit.id }"
+            @click="selectHabit(h.habit.id)"
+          >
+            <div class="habit-card__left">
+              <div
+                class="habit-card__avatar"
+                :style="{ backgroundColor: h.habit.color }"
+              >
+                <icon-trophy :size="14" style="color: #fff" />
+              </div>
+              <div class="habit-card__info">
+                <span class="habit-card__name">{{ h.habit.name }}</span>
+                <div class="habit-card__stats">
+                  <span class="habit-card__streak">
+                    <icon-fire :size="12" :style="{ color: h.streak > 0 ? 'var(--jt-error)' : 'currentColor' }" />
+                    {{ h.streak }} 天
+                  </span>
+                  <span class="habit-card__total">
+                    <icon-calendar :size="12" />
+                    累计 {{ h.totalDays }} 天
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- 本周 7 圆圈 -->
-          <div class="habit-card__week">
-            <button
-              v-for="d in thisWeek"
-              :key="d.date"
-              class="habit-card__day-dot"
-              :class="{
-                'habit-card__day-dot--done': isLogged(h.habit.id, d.date),
-                'habit-card__day-dot--today': d.isToday,
-              }"
-              :style="isLogged(h.habit.id, d.date) ? { backgroundColor: h.habit.color, borderColor: h.habit.color } : {}"
-              :title="`${d.label} ${d.day} — ${isLogged(h.habit.id, d.date) ? '已打卡' : '未打卡'}`"
-              @click="toggleDay(h.habit.id, d.date)"
-            />
+            <!-- 本周 7 圆圈（点击不冒泡到 card） -->
+            <div class="habit-card__week" @click.stop>
+              <button
+                v-for="d in thisWeek"
+                :key="d.date"
+                class="habit-card__day-dot"
+                :class="{
+                  'habit-card__day-dot--done': isLogged(h.habit.id, d.date),
+                  'habit-card__day-dot--today': d.isToday,
+                }"
+                :style="isLogged(h.habit.id, d.date) ? { backgroundColor: h.habit.color, borderColor: h.habit.color } : {}"
+                :title="`${d.label} ${d.day} — ${isLogged(h.habit.id, d.date) ? '已打卡' : '未打卡'}`"
+                @click="toggleDay(h.habit.id, d.date)"
+              />
+            </div>
           </div>
+        </div>
+
+        <!-- 空状态 -->
+        <div
+          v-if="!habitStore.loading && habitStore.habits.length === 0"
+          class="habit-view__empty"
+        >
+          <span class="habit-view__empty-icon">🌱</span>
+          <p class="habit-view__empty-title">还没有习惯</p>
+          <p class="habit-view__empty-hint">点击右上角 + 创建一个习惯开始打卡吧</p>
         </div>
       </div>
 
-      <!-- 空状态 -->
-      <div
-        v-if="!habitStore.loading && habitStore.habits.length === 0"
-        class="habit-view__empty"
-      >
-        <span class="habit-view__empty-icon">🌱</span>
-        <p class="habit-view__empty-title">还没有习惯</p>
-        <p class="habit-view__empty-hint">点击右上角 + 创建一个习惯开始打卡吧</p>
-      </div>
+      <!-- 右侧：选中 habit 的详情面板 -->
+      <aside v-if="selectedHabit" class="habit-detail">
+        <!-- 顶部：图标 + 名称 + 更多 -->
+        <div class="habit-detail__header">
+          <div class="habit-detail__title">
+            <div
+              class="habit-detail__avatar"
+              :style="{ backgroundColor: selectedHabit.habit.color }"
+            >
+              <icon-trophy :size="16" style="color: #fff" />
+            </div>
+            <span class="habit-detail__name">{{ selectedHabit.habit.name }}</span>
+          </div>
+          <a-button type="text" size="mini" title="更多">
+            <template #icon><icon-more :size="16" /></template>
+          </a-button>
+        </div>
+
+        <!-- 4 个统计卡片 -->
+        <div class="habit-detail__stats">
+          <div class="habit-detail__stat">
+            <div class="habit-detail__stat-label">
+              <icon-check-circle :size="12" style="color: var(--jt-success)" />
+              <span>月打卡</span>
+            </div>
+            <div class="habit-detail__stat-value">
+              <span class="habit-detail__stat-num">{{ detailMonthLoggedCount }}</span>
+              <span class="habit-detail__stat-unit">天</span>
+            </div>
+          </div>
+          <div class="habit-detail__stat">
+            <div class="habit-detail__stat-label">
+              <icon-bolt :size="12" style="color: var(--jt-primary)" />
+              <span>总打卡</span>
+            </div>
+            <div class="habit-detail__stat-value">
+              <span class="habit-detail__stat-num">{{ selectedHabit.totalDays }}</span>
+              <span class="habit-detail__stat-unit">天</span>
+            </div>
+          </div>
+          <div class="habit-detail__stat">
+            <div class="habit-detail__stat-label">
+              <icon-percentage :size="12" style="color: var(--jt-warning)" />
+              <span>月完成率</span>
+            </div>
+            <div class="habit-detail__stat-value">
+              <span class="habit-detail__stat-num">{{ detailMonthRate }}</span>
+              <span class="habit-detail__stat-unit">%</span>
+            </div>
+          </div>
+          <div class="habit-detail__stat">
+            <div class="habit-detail__stat-label">
+              <icon-fire :size="12" style="color: var(--jt-error)" />
+              <span>当前连续</span>
+            </div>
+            <div class="habit-detail__stat-value">
+              <span class="habit-detail__stat-num">{{ selectedHabit.streak }}</span>
+              <span class="habit-detail__stat-unit">天</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 月历 -->
+        <div class="habit-detail__calendar">
+          <div class="habit-detail__cal-header">
+            <a-button type="text" size="mini" @click="prevMonth">
+              <template #icon><icon-left :size="14" /></template>
+            </a-button>
+            <span class="habit-detail__cal-title">{{ detailMonthLabel }}</span>
+            <a-button type="text" size="mini" @click="nextMonth">
+              <template #icon><icon-right :size="14" /></template>
+            </a-button>
+          </div>
+          <div class="habit-detail__cal-weekdays">
+            <span v-for="(w, i) in WEEKDAY_LABELS" :key="i">{{ w.slice(1) }}</span>
+          </div>
+          <div class="habit-detail__cal-grid">
+            <button
+              v-for="c in detailMonthGrid"
+              :key="c.date"
+              class="habit-detail__cal-day"
+              :class="{
+                'habit-detail__cal-day--off': !c.inMonth,
+                'habit-detail__cal-day--today': c.isToday,
+                'habit-detail__cal-day--done': isLogged(selectedHabit.habit.id, c.date),
+              }"
+              :style="isLogged(selectedHabit.habit.id, c.date) ? { backgroundColor: selectedHabit.habit.color, borderColor: selectedHabit.habit.color } : {}"
+              :title="`${c.date} — ${isLogged(selectedHabit.habit.id, c.date) ? '已打卡' : '未打卡'}`"
+              @click="toggleDay(selectedHabit.habit.id, c.date)"
+            >
+              <span v-if="c.inMonth" class="habit-detail__cal-day-num">{{ c.day }}</span>
+            </button>
+          </div>
+        </div>
+      </aside>
     </div>
 
     <!-- 新建习惯弹窗（与侧栏同风格：QuickAdd + TeleportPopper） -->
@@ -369,7 +554,15 @@ function isLogged(habitId: string, date: string): boolean {
   flex-direction: column;
   padding: 16px 24px;
   gap: 16px;
-  overflow-y: auto;
+  overflow: hidden;
+}
+
+/* 双栏容器：左侧列表 + 右侧详情 */
+.habit-view__main {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
 }
 
 .habit-view__header {
@@ -438,6 +631,9 @@ function isLogged(habitId: string, date: string): boolean {
 
 /* 列表 + 分组 */
 .habit-view__list {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -485,6 +681,14 @@ function isLogged(habitId: string, date: string): boolean {
 }
 .habit-card:hover {
   border-color: var(--jt-border);
+}
+
+.habit-card--selected {
+  border-color: var(--jt-primary);
+  background-color: var(--jt-accent-soft);
+}
+.habit-card--selected .habit-card__name {
+  color: var(--jt-primary);
 }
 
 .habit-card__left {
@@ -592,6 +796,180 @@ function isLogged(habitId: string, date: string): boolean {
   font-size: 13px;
   color: var(--jt-text-tertiary);
   margin: 0;
+}
+
+/* 右侧详情面板 */
+.habit-detail {
+  flex: 0 0 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  background-color: var(--jt-surface-sunken);
+  border-radius: 12px;
+  overflow-y: auto;
+}
+
+.habit-detail__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.habit-detail__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.habit-detail__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.habit-detail__name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--jt-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 4 个统计卡片：2 × 2 网格 */
+.habit-detail__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.habit-detail__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background-color: var(--jt-surface);
+  border-radius: 8px;
+}
+
+.habit-detail__stat-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--jt-text-tertiary);
+}
+
+.habit-detail__stat-value {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.habit-detail__stat-num {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--jt-text-primary);
+  line-height: 1;
+}
+
+.habit-detail__stat-unit {
+  font-size: 11px;
+  color: var(--jt-text-tertiary);
+}
+
+/* 月历 */
+.habit-detail__calendar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background-color: var(--jt-surface);
+  border-radius: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+.habit-detail__cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.habit-detail__cal-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--jt-text-primary);
+}
+
+.habit-detail__cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 11px;
+  color: var(--jt-text-tertiary);
+  padding: 0 4px;
+}
+
+.habit-detail__cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.habit-detail__cal-day {
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1.5px solid var(--jt-border);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+.habit-detail__cal-day:hover:not(.habit-detail__cal-day--off) {
+  transform: scale(1.1);
+}
+
+.habit-detail__cal-day--off {
+  border-color: transparent;
+  cursor: default;
+  pointer-events: none;
+}
+
+.habit-detail__cal-day--today:not(.habit-detail__cal-day--done) {
+  border-color: var(--jt-primary);
+  border-width: 2px;
+}
+
+.habit-detail__cal-day--done {
+  border-color: transparent;
+}
+
+.habit-detail__cal-day-num {
+  font-size: 11px;
+  color: var(--jt-text-primary);
+}
+.habit-detail__cal-day--off .habit-detail__cal-day-num {
+  color: transparent;
+}
+.habit-detail__cal-day--done .habit-detail__cal-day-num {
+  color: #fff;
+  font-weight: 500;
 }
 </style>
 
