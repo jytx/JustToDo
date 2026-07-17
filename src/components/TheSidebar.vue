@@ -119,6 +119,39 @@ async function askDeleteTag(tag: { id: string; name: string }) {
 /** 每个标签对应一个菜单开关（key 为 tag.id） */
 const tagMenuOpen = reactive<Record<string, boolean>>({});
 
+/* === 标签拖拽排序（HTML5 drag，同列表内重排） === */
+const tagDragOverId = ref<string | null>(null);
+
+function onTagDragStart(e: DragEvent, tagId: string) {
+  if (!e.dataTransfer) return;
+  e.dataTransfer.setData("text/plain", tagId);
+  e.dataTransfer.effectAllowed = "move";
+}
+function onTagDragOver(e: DragEvent, tagId: string) {
+  if (!e.dataTransfer) return;
+  e.dataTransfer.dropEffect = "move";
+  tagDragOverId.value = tagId;
+}
+function onTagDragLeave(_e: DragEvent) {
+  // 不在这里清空 —— 避免拖到子元素闪烁；dragend/drop 时统一清
+}
+function onTagDragEnd() {
+  tagDragOverId.value = null;
+}
+async function onTagDrop(e: DragEvent, targetId: string) {
+  e.preventDefault();
+  tagDragOverId.value = null;
+  const draggedId = e.dataTransfer?.getData("text/plain");
+  if (!draggedId || draggedId === targetId) return;
+  const ids = tagStore.tags.map((t) => t.id);
+  const fromIdx = ids.indexOf(draggedId);
+  const toIdx = ids.indexOf(targetId);
+  if (fromIdx < 0 || toIdx < 0) return;
+  ids.splice(fromIdx, 1);
+  ids.splice(toIdx, 0, draggedId);
+  await tagStore.reorderTags(ids);
+}
+
 async function confirmDeleteAction() {
   if (!confirmDelete.value) return;
   const { type, id, name } = confirmDelete.value;
@@ -347,7 +380,17 @@ onMounted(async () => {
         :key="tag.id"
         :to="`/tag/${tag.id}`"
         class="sidebar__item"
-        :class="{ 'sidebar__item--active': activeRouteName === 'tag' && activeListId === tag.id }"
+        :class="{
+          'sidebar__item--active': activeRouteName === 'tag' && activeListId === tag.id,
+          'sidebar__item--drag-over': tagDragOverId === tag.id,
+        }"
+        :data-tag-id="tag.id"
+        :draggable="!sectionCollapsed.tags"
+        @dragstart="onTagDragStart($event, tag.id)"
+        @dragover.prevent="onTagDragOver($event, tag.id)"
+        @dragleave="onTagDragLeave"
+        @drop="onTagDrop($event, tag.id)"
+        @dragend="onTagDragEnd"
       >
         <icon-tag :size="16" class="sidebar__item-icon" />
         <span class="sidebar__item-title">{{ tag.name }}</span>
@@ -637,6 +680,22 @@ onMounted(async () => {
 .sidebar__item--active {
   background-color: var(--jt-accent-soft);
   color: var(--jt-primary);
+}
+
+/* 标签拖拽悬停时显示蓝色描边（视觉提示落点） */
+.sidebar__item--drag-over {
+  outline: 1.5px solid var(--jt-primary);
+  outline-offset: -1.5px;
+  background-color: var(--jt-accent-soft);
+}
+.sidebar__item {
+  cursor: default;
+}
+.sidebar__item[draggable="true"] {
+  cursor: grab;
+}
+.sidebar__item[draggable="true"]:active {
+  cursor: grabbing;
 }
 
 .sidebar__item--disabled {
