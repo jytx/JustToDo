@@ -3,11 +3,12 @@
 
 mod commands;
 mod db;
+mod menu;
 mod models;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 /// IPC 连通性测试命令
 #[tauri::command]
@@ -111,15 +112,94 @@ pub fn run() {
                 });
             }
 
-            app.manage(pool);
+            app.manage(pool.clone());
+
+            // 当前 zoom 级别的内存缓存（与持久化值保持同步）
+            // WebviewWindow 没有读取当前 zoom 的 getter，因此用 State 记录
+            let current_zoom = Arc::new(std::sync::Mutex::new(1.0_f64));
 
             // 清空窗口标题，避免 macOS Overlay 模式下显示 "JustToDo" 文字
             // （titleBarStyle: Overlay 下，标题文字依然会浮在左上角）
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_title("");
+
+                // 修正最大化窗口偏移问题：
+                // tauri.conf.json 同时配置 maximized + 初始尺寸时，macOS 会先按
+                // 初始尺寸 1200×800 居中（得出偏右的 x），再执行最大化把宽度撑满，
+                // 但 x 坐标不会重算，导致整个窗口整体向右偏出屏幕。
+                // 这里在启动时显式把窗口左上角钉到 (0, 0)，保证位置正确。
+                use tauri::PhysicalPosition;
+                let _ = window.set_position(PhysicalPosition::new(0, 0));
+
+                // 挂载原生菜单（视图 → 放大/缩小/实际大小）
+                match menu::build_main_menu(app.handle()) {
+                    Ok(main_menu) => {
+                        let _ = window.set_menu(main_menu);
+                    }
+                    Err(e) => eprintln!("[JustToDo] 构造菜单失败: {}", e),
+                }
+
+                // 启动时恢复持久化的缩放级别，避免每次打开都是 100%
+                // 读 zoom_level 失败或解析失败都安全回退到 1.0
+                let restored_zoom = tauri::async_runtime::block_on(async {
+                    commands::get_setting_inner(&pool, "zoom_level".to_string())
+                        .await
+                        .ok()
+                        .flatten()
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .map(menu::clamp_zoom)
+                        .unwrap_or(1.0)
+                });
+                let _ = window.set_zoom(restored_zoom);
+                *current_zoom.lock().unwrap() = restored_zoom;
             }
 
+            app.manage(current_zoom.clone());
+
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            // 仅处理缩放相关菜单项，其他项（PredefinedMenuItem）由系统自行处理
+            if !menu::is_zoom_event(&event) {
+                return;
+            }
+
+            let Some(window) = app.get_webview_window("main") else {
+                return;
+            };
+
+            // 从内存缓存读当前 zoom（WebviewWindow 无 getter）
+            let zoom_state = app.state::<std::sync::Arc<std::sync::Mutex<f64>>>();
+            let current = *zoom_state.lock().unwrap();
+
+            let new_zoom = match event.id().as_ref() {
+                menu::ZOOM_IN_ID => menu::clamp_zoom(current * menu::ZOOM_STEP),
+                menu::ZOOM_OUT_ID => menu::clamp_zoom(current / menu::ZOOM_STEP),
+                menu::ZOOM_RESET_ID => 1.0,
+                _ => return,
+            };
+
+            let _ = window.set_zoom(new_zoom);
+            *zoom_state.lock().unwrap() = new_zoom;
+
+            // 持久化到 app_settings（KV 表，与前端 set_setting 共用同一份数据）
+            let pool = app.state::<sqlx::SqlitePool>().inner().clone();
+            let value_str = new_zoom.to_string();
+            tauri::async_runtime::spawn(async move {
+                let sql = "INSERT INTO app_settings (key, value) VALUES ($1, $2)
+                           ON CONFLICT(key) DO UPDATE SET value = $2";
+                if let Err(e) = sqlx::query(sql)
+                    .bind("zoom_level")
+                    .bind(&value_str)
+                    .execute(&pool)
+                    .await
+                {
+                    eprintln!("[JustToDo] 持久化 zoom_level 失败: {}", e);
+                }
+            });
+
+            // 通知前端 zoom 变化（未来可在状态栏显示百分比）
+            let _ = app.emit("zoom-changed", new_zoom);
         })
         .invoke_handler(tauri::generate_handler![
             ping,
