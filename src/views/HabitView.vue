@@ -444,9 +444,10 @@ function selectHabit(id: string) {
               }"
               :style="isLogged(selectedHabit.habit.id, c.date) ? { backgroundColor: selectedHabit.habit.color, borderColor: selectedHabit.habit.color } : {}"
               :title="`${c.date} — ${isLogged(selectedHabit.habit.id, c.date) ? '已打卡' : '未打卡'}`"
+              :disabled="!c.inMonth"
               @click="toggleDay(selectedHabit.habit.id, c.date)"
             >
-              <span v-if="c.inMonth" class="habit-detail__cal-day-num">{{ c.day }}</span>
+              <span class="habit-detail__cal-day-num">{{ c.day }}</span>
             </button>
           </div>
         </div>
@@ -928,16 +929,20 @@ function selectHabit(id: string) {
 .habit-detail__cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 10px 16px;
+  /* 6 行（部分月跨 6 周）等高填满容器，配合行间 gap 留呼吸 */
+  grid-template-rows: repeat(6, 1fr);
+  gap: 14px 16px;
   padding: 4px 8px;
   justify-items: center;
-  align-content: start;
+  align-content: stretch;
   flex: 1;
+  min-height: 0;
 }
 
 .habit-detail__cal-day {
-  width: 42px;
-  height: 42px;
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 56px;
   border-radius: 50%;
   border: 1.5px solid var(--jt-border);
   background: transparent;
@@ -947,16 +952,17 @@ function selectHabit(id: string) {
   cursor: pointer;
   padding: 0;
   transition: transform 0.1s ease, background-color 0.1s ease;
+  font-family: inherit;
 }
 
-.habit-detail__cal-day:hover:not(.habit-detail__cal-day--off) {
+.habit-detail__cal-day:hover:not(:disabled) {
   transform: scale(1.1);
 }
 
 .habit-detail__cal-day--off {
   border-color: transparent;
-  cursor: default;
-  pointer-events: none;
+  cursor: not-allowed;
+  opacity: 0.35;
 }
 
 .habit-detail__cal-day--today:not(.habit-detail__cal-day--done) {
@@ -973,7 +979,7 @@ function selectHabit(id: string) {
   color: var(--jt-text-primary);
 }
 .habit-detail__cal-day--off .habit-detail__cal-day-num {
-  color: transparent;
+  color: var(--jt-text-tertiary);
 }
 .habit-detail__cal-day--done .habit-detail__cal-day-num {
   color: #fff;
