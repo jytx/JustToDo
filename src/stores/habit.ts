@@ -8,6 +8,13 @@ export const useHabitStore = defineStore("habit", () => {
   const habits = ref<HabitWithStats[]>([]);
   const loading = ref(false);
 
+  /** 「打开新建习惯弹窗」信号：每次 +1 表示触发一次。
+   *  用于跨组件（侧栏 → HabitView）通信，不通过 URL query 避免 reload 副作用。 */
+  const createDialogSignal = ref(0);
+  function fireCreateDialog() {
+    createDialogSignal.value += 1;
+  }
+
   /** 每个 habit 的打卡日志缓存（YYYY-MM-DD 集合）—— 避免每周渲染都打 IPC */
   const logs = reactive<Record<string, Set<string>>>({});
 
@@ -123,6 +130,8 @@ export const useHabitStore = defineStore("habit", () => {
     habits,
     logs,
     loading,
+    createDialogSignal,
+    fireCreateDialog,
     loadHabits,
     loadLogs,
     createHabit,

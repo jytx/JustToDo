@@ -267,9 +267,13 @@ async function confirmNewTag() {
   showCreateTagDialog.value = false;
 }
 
-/** 跳到 /habits 并通过 query 触发 HabitView 自动打开新建弹窗 */
+/** 跳到 /habits 并通过 store signal 触发 HabitView 自动打开新建弹窗 */
 function goToHabitsAndCreate() {
-  router.push({ path: "/habits", query: { action: "create" } });
+  habitStore.fireCreateDialog();
+  // 已在 /habits 路由时 push 同路径不会重新 mount，但 watch signal 仍会触发
+  if (route.path !== "/habits") {
+    router.push("/habits");
+  }
 }
 
 /** 颜色选择器 hover 状态（list / habit 各自独立） */

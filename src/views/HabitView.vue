@@ -1,15 +1,12 @@
 <script setup lang="ts">
 // 习惯打卡视图 —— 滴答清单风格：
 // 顶部 7 圆圈（本周日期）+ 习惯按时段分组（上午/下午/晚上）+ 每项右侧 7 圆圈（本周打卡）
-import { computed, nextTick, onMounted, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useHabitStore } from "@/stores/habit";
 import TeleportPopper from "@/components/TeleportPopper.vue";
 import type { HabitWithStats } from "@/api/db";
 
 const habitStore = useHabitStore();
-const route = useRoute();
-const router = useRouter();
 const showCreateDialog = ref(false);
 const newName = ref("");
 const newNameInputRef = ref<HTMLInputElement | null>(null);
@@ -198,15 +195,20 @@ async function loadData() {
   if (!selectedHabitId.value && habitStore.habits.length > 0) {
     selectedHabitId.value = habitStore.habits[0].habit.id;
   }
-  // 侧栏「+」按钮跳过来时 query 带 action=create，自动打开新建弹窗
-  if (route.query.action === "create") {
-    openCreateDialog();
-    // 清掉 query 防止 reload 重复触发
-    router.replace({ path: "/habits", query: {} });
-  }
 }
 
 onMounted(loadData);
+
+// 监听 store 信号：侧栏「+」按钮 fireCreateDialog → 打开新建弹窗
+// 初始值 > 0 时不触发（避免 mount 时误开）
+watch(
+  () => habitStore.createDialogSignal,
+  (n, old) => {
+    if (n > 0 && n !== old) {
+      openCreateDialog();
+    }
+  },
+);
 
 async function createOrUpdateHabit() {
   const name = newName.value.trim();
