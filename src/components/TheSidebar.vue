@@ -321,6 +321,13 @@ function onClickFolderTrigger(e: MouseEvent) {
   newListFolderPopupVisible.value = !newListFolderPopupVisible.value;
 }
 
+/** 「查看全部习惯」：强制清掉当前 hash 跳到 /habits 默认视图
+ *  因为从 /habits#xxx 跳到 /habits 时 Vue Router 不会自动清 hash */
+function onClickViewAllHabits(e: MouseEvent) {
+  e.preventDefault();
+  router.replace({ path: "/habits", hash: "" });
+}
+
 /** 输入提示：把已有的目录拼成完整路径，作为自动补全的数据源 */
 const folderSuggestions = computed(() => {
   const folders = listStore.sortedLists.filter((l) => l.isFolder);
@@ -571,14 +578,15 @@ onMounted(async () => {
         <span class="sidebar__item-title">{{ h.habit.name }}</span>
         <span v-if="h.streak" class="sidebar__count">🔥{{ h.streak }}</span>
       </router-link>
-      <router-link
+      <a
         v-show="!sectionCollapsed.habits && habitStore.habits.length > 0"
-        to="/habits"
+        href="#/habits"
         class="sidebar__item sidebar__item--minor"
+        @click="onClickViewAllHabits($event)"
       >
         <icon-more :size="14" class="sidebar__item-icon" />
         <span class="sidebar__item-title">查看全部习惯</span>
-      </router-link>
+      </a>
       <div
         v-if="habitStore.habits.length === 0"
         v-show="!sectionCollapsed.habits"
