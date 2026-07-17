@@ -267,49 +267,27 @@ async function confirmNewTag() {
   showCreateTagDialog.value = false;
 }
 
-/** 新建习惯弹窗状态 */
-const showCreateHabitDialog = ref(false);
-const newHabitName = ref("");
-const newHabitNameInputRef = ref<HTMLInputElement | null>(null);
-const newHabitColor = ref("#059669");
-
-function startNewHabit() {
-  newHabitName.value = "";
-  newHabitColor.value = "#059669";
-  showCreateHabitDialog.value = true;
-  nextTick(() => {
-    newHabitNameInputRef.value?.focus();
-  });
-}
-
-async function confirmNewHabit() {
-  const name = newHabitName.value.trim();
-  if (!name) {
-    showCreateHabitDialog.value = false;
-    return;
-  }
-  await habitStore.createHabit({ name, color: newHabitColor.value });
-  showCreateHabitDialog.value = false;
+/** 跳到 /habits 并通过 query 触发 HabitView 自动打开新建弹窗 */
+function goToHabitsAndCreate() {
+  router.push({ path: "/habits", query: { action: "create" } });
 }
 
 /** 颜色选择器 hover 状态（list / habit 各自独立） */
-const colorPickerOpen = reactive<{ list: boolean; habit: boolean }>({
+const colorPickerOpen = reactive<{ list: boolean }>({
   list: false,
-  habit: false,
 });
 
 /** 颜色 trigger 元素缓存（用 data-color-trigger 标识，click 时通过 querySelector 找） */
-const colorTriggerEls = reactive<{ list: HTMLElement | null; habit: HTMLElement | null }>({
+const colorTriggerEls = reactive<{ list: HTMLElement | null }>({
   list: null,
-  habit: null,
 });
 
 /** 点击颜色 trigger —— 切换 popper + 缓存 trigger 元素 */
-function onClickColorTrigger(which: "list" | "habit", e: MouseEvent) {
+function onClickColorTrigger(e: MouseEvent) {
   // e.currentTarget 是当前 button（与原生 target 一致但不受子元素干扰）
   const el = e.currentTarget as HTMLElement;
-  colorTriggerEls[which] = el;
-  colorPickerOpen[which] = !colorPickerOpen[which];
+  colorTriggerEls.list = el;
+  colorPickerOpen.list = !colorPickerOpen.list;
 }
 
 /** 目录 trigger 元素 + 弹层状态 */
@@ -550,7 +528,7 @@ onMounted(async () => {
           <icon-right v-else :size="12" class="sidebar__toggle-icon" />
           <span>习惯</span>
         </div>
-        <a-button size="mini" type="text" title="新建习惯" @click.stop="startNewHabit">
+        <a-button size="mini" type="text" title="新建习惯" @click.stop="goToHabitsAndCreate">
           <template #icon><icon-plus :size="16" /></template>
         </a-button>
       </div>
@@ -574,7 +552,7 @@ onMounted(async () => {
         @drop="onHabitDrop($event, h.habit.id)"
         @dragend="onHabitDragEnd"
       >
-        <span class="sidebar__item-icon sidebar__habit-icon" :style="{ color: h.habit.color }">{{ h.habit.icon || "🏆" }}</span>
+        <icon-trophy :size="16" class="sidebar__item-icon" :style="{ color: h.habit.color }" />
         <span class="sidebar__item-title">{{ h.habit.name }}</span>
         <span v-if="h.streak" class="sidebar__count">🔥{{ h.streak }}</span>
       </router-link>
@@ -682,7 +660,7 @@ onMounted(async () => {
           data-color-trigger="list"
           type="button"
           class="sidebar-create__trigger"
-          @click="onClickColorTrigger('list', $event)"
+          @click="onClickColorTrigger($event)"
         >
           <span
             class="sidebar-create__color-dot"
@@ -764,54 +742,6 @@ onMounted(async () => {
     </div>
   </a-modal>
 
-  <!-- 新建习惯弹窗（QuickAdd 风格） -->
-  <a-modal
-    v-model:visible="showCreateHabitDialog"
-    :width="440"
-    :footer="false"
-    :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
-    modal-class="sidebar-create-modal"
-  >
-    <div class="sidebar-create">
-      <div class="sidebar-create__input-row">
-        <input
-          ref="newHabitNameInputRef"
-          v-model="newHabitName"
-          class="sidebar-create__input"
-          placeholder="习惯名称"
-          @keydown.enter="confirmNewHabit"
-          @keydown.escape.stop="showCreateHabitDialog = false"
-        />
-        <button
-          class="sidebar-create__close"
-          title="关闭"
-          @click="showCreateHabitDialog = false"
-        >
-          <icon-close :size="14" />
-        </button>
-      </div>
-      <div class="sidebar-create__divider" />
-      <div class="sidebar-create__attrs">
-        <!-- 颜色 trigger：TeleportPopper 下拉弹框 -->
-        <button
-          data-color-trigger="habit"
-          type="button"
-          class="sidebar-create__trigger"
-          @click="onClickColorTrigger('habit', $event)"
-        >
-          <span
-            class="sidebar-create__color-dot"
-            :style="{ backgroundColor: newHabitColor }"
-          />
-          <span>颜色</span>
-        </button>
-
-        <span class="sidebar-create__spacer" />
-        <span class="sidebar-create__hint">回车保存</span>
-      </div>
-    </div>
-  </a-modal>
-
   <!-- 目录输入弹层（Teleport 到 body，避开 modal overflow 裁剪） -->
   <TeleportPopper
     v-model:visible="newListFolderPopupVisible"
@@ -862,22 +792,6 @@ onMounted(async () => {
         :class="{ 'sidebar-create__color-swatch--active': selectedColor === c }"
         :style="{ backgroundColor: c }"
         @click="selectedColor = c; colorPickerOpen.list = false"
-      />
-    </div>
-  </TeleportPopper>
-  <TeleportPopper
-    v-model:visible="colorPickerOpen.habit"
-    :anchor="colorTriggerEls.habit"
-    placement="bottom-left"
-  >
-    <div class="sidebar-create__color-picker">
-      <button
-        v-for="c in LIST_COLORS"
-        :key="c"
-        class="sidebar-create__color-swatch"
-        :class="{ 'sidebar-create__color-swatch--active': newHabitColor === c }"
-        :style="{ backgroundColor: c }"
-        @click="newHabitColor = c; colorPickerOpen.habit = false"
       />
     </div>
   </TeleportPopper>
@@ -1033,14 +947,6 @@ onMounted(async () => {
 
 .sidebar__item-icon {
   flex-shrink: 0;
-}
-
-/* 习惯 emoji 图标：与 arco svg 视觉对齐（16px 字号 + 行高 1） */
-.sidebar__habit-icon {
-  font-size: 16px;
-  line-height: 1;
-  width: 16px;
-  text-align: center;
 }
 
 .sidebar__item-title {
