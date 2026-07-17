@@ -27,6 +27,7 @@ import { useTaskStore } from "@/stores/task";
 import SidebarListNode from "./SidebarListNode.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
+import TeleportPopper from "./TeleportPopper.vue";
 import * as db from "@/api/db";
 
 const props = defineProps<{
@@ -296,6 +297,20 @@ const colorPickerOpen = reactive<{ list: boolean; habit: boolean }>({
   list: false,
   habit: false,
 });
+
+/** 颜色 trigger 元素缓存（用 data-color-trigger 标识，click 时通过 querySelector 找） */
+const colorTriggerEls = reactive<{ list: HTMLElement | null; habit: HTMLElement | null }>({
+  list: null,
+  habit: null,
+});
+
+/** 点击颜色 trigger —— 切换 popper + 缓存 trigger 元素 */
+function onClickColorTrigger(which: "list" | "habit", e: MouseEvent) {
+  // e.currentTarget 是当前 button（与原生 target 一致但不受子元素干扰）
+  const el = e.currentTarget as HTMLElement;
+  colorTriggerEls[which] = el;
+  colorPickerOpen[which] = !colorPickerOpen[which];
+}
 
 /** 清单目录 trigger 弹层状态 */
 const newListFolderPopupVisible = ref(false);
@@ -673,32 +688,19 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- 颜色 trigger：hover/focus 浮出色板（在 modal 内部 inline，避免 stacking-context 遮挡） -->
-        <div
-          class="sidebar-create__color-host"
-          @mouseenter="colorPickerOpen.list = true"
-          @mouseleave="colorPickerOpen.list = false"
+        <!-- 颜色 trigger：TeleportPopper 下拉弹框（popup 浮在 modal 外，避开 stacking context） -->
+        <button
+          data-color-trigger="list"
+          type="button"
+          class="sidebar-create__trigger"
+          @click="onClickColorTrigger('list', $event)"
         >
-          <button type="button" class="sidebar-create__trigger">
-            <span
-              class="sidebar-create__color-dot"
-              :style="{ backgroundColor: selectedColor }"
-            />
-            <span>颜色</span>
-          </button>
-          <Transition name="color-pop">
-            <div v-show="colorPickerOpen.list" class="sidebar-create__color-picker">
-              <button
-                v-for="c in LIST_COLORS"
-                :key="c"
-                class="sidebar-create__color-swatch"
-                :class="{ 'sidebar-create__color-swatch--active': selectedColor === c }"
-                :style="{ backgroundColor: c }"
-                @click="selectedColor = c"
-              />
-            </div>
-          </Transition>
-        </div>
+          <span
+            class="sidebar-create__color-dot"
+            :style="{ backgroundColor: selectedColor }"
+          />
+          <span>颜色</span>
+        </button>
 
         <span class="sidebar-create__spacer" />
 
@@ -801,38 +803,59 @@ onMounted(async () => {
       </div>
       <div class="sidebar-create__divider" />
       <div class="sidebar-create__attrs">
-        <!-- 颜色 trigger：hover 浮出色板 -->
-        <div
-          class="sidebar-create__color-host"
-          @mouseenter="colorPickerOpen.habit = true"
-          @mouseleave="colorPickerOpen.habit = false"
+        <!-- 颜色 trigger：TeleportPopper 下拉弹框 -->
+        <button
+          data-color-trigger="habit"
+          type="button"
+          class="sidebar-create__trigger"
+          @click="onClickColorTrigger('habit', $event)"
         >
-          <button type="button" class="sidebar-create__trigger">
-            <span
-              class="sidebar-create__color-dot"
-              :style="{ backgroundColor: newHabitColor }"
-            />
-            <span>颜色</span>
-          </button>
-          <Transition name="color-pop">
-            <div v-show="colorPickerOpen.habit" class="sidebar-create__color-picker">
-              <button
-                v-for="c in LIST_COLORS"
-                :key="c"
-                class="sidebar-create__color-swatch"
-                :class="{ 'sidebar-create__color-swatch--active': newHabitColor === c }"
-                :style="{ backgroundColor: c }"
-                @click="newHabitColor = c"
-              />
-            </div>
-          </Transition>
-        </div>
+          <span
+            class="sidebar-create__color-dot"
+            :style="{ backgroundColor: newHabitColor }"
+          />
+          <span>颜色</span>
+        </button>
 
         <span class="sidebar-create__spacer" />
         <span class="sidebar-create__hint">回车保存</span>
       </div>
     </div>
   </a-modal>
+
+  <!-- 颜色 picker 弹层（Teleport 到 body，避开 modal stacking-context） -->
+  <TeleportPopper
+    v-model:visible="colorPickerOpen.list"
+    :anchor="colorTriggerEls.list"
+    placement="bottom-left"
+  >
+    <div class="sidebar-create__color-picker">
+      <button
+        v-for="c in LIST_COLORS"
+        :key="c"
+        class="sidebar-create__color-swatch"
+        :class="{ 'sidebar-create__color-swatch--active': selectedColor === c }"
+        :style="{ backgroundColor: c }"
+        @click="selectedColor = c; colorPickerOpen.list = false"
+      />
+    </div>
+  </TeleportPopper>
+  <TeleportPopper
+    v-model:visible="colorPickerOpen.habit"
+    :anchor="colorTriggerEls.habit"
+    placement="bottom-left"
+  >
+    <div class="sidebar-create__color-picker">
+      <button
+        v-for="c in LIST_COLORS"
+        :key="c"
+        class="sidebar-create__color-swatch"
+        :class="{ 'sidebar-create__color-swatch--active': newHabitColor === c }"
+        :style="{ backgroundColor: c }"
+        @click="newHabitColor = c; colorPickerOpen.habit = false"
+      />
+    </div>
+  </TeleportPopper>
 </template>
 
 <style scoped>
@@ -1335,18 +1358,19 @@ onMounted(async () => {
   align-items: center;
 }
 
-/* 色板浮层：modal 内 inline 渲染（避开 stacking-context 遮挡问题） */
+/* 色板浮层：在 popper 内（fixed + z 9999）渲染，自身是有 shadow 的小卡片 */
 .sidebar-create__color-picker {
   display: flex;
   gap: 6px;
-  padding: 0 8px;
-  background: transparent;
+  padding: 8px 10px;
+  background: var(--jt-surface);
+  border: 1px solid var(--jt-border);
   border-radius: 10px;
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.08),
+    0 2px 6px rgba(0, 0, 0, 0.05);
   white-space: nowrap;
   align-items: center;
-  height: 26px;
-  /* 与 trigger 同一行展开，不溢出 */
-  flex-shrink: 0;
 }
 
 .sidebar-create__color-swatch {
