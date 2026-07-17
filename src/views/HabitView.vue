@@ -1,33 +1,56 @@
 <script setup lang="ts">
-// 习惯打卡视图 —— 展示所有习惯 + 今日打卡 + 统计
-import { nextTick, onMounted, ref } from "vue";
+// 习惯打卡视图 —— 滴答清单风格：
+// 顶部 7 圆圈（本周日期）+ 习惯按时段分组（上午/下午/晚上）+ 每项右侧 7 圆圈（本周打卡）
+import { computed, nextTick, onMounted, ref } from "vue";
 import { useHabitStore } from "@/stores/habit";
-import { formatPageDate } from "@/utils/date";
 import TeleportPopper from "@/components/TeleportPopper.vue";
+import type { HabitWithStats } from "@/api/db";
 
 const habitStore = useHabitStore();
 const showCreateDialog = ref(false);
 const newName = ref("");
 const newNameInputRef = ref<HTMLInputElement | null>(null);
-const newColor = ref("#059669");
+const newColor = ref("#10B981");
+/** 新建习惯的时段（morning/afternoon/evening） */
+const newTimeOfDay = ref<"morning" | "afternoon" | "evening">("evening");
 
 const colors = [
   "#EF4444", "#F59E0B", "#EAB308", "#10B981",
   "#3B82F6", "#8B5CF6", "#EC4899", "#6B7280",
 ];
 
-/** 颜色 trigger 元素 + 弹层状态（与 TheSidebar 一致） */
+const TIME_OF_DAY_OPTIONS: Array<{
+  value: "morning" | "afternoon" | "evening";
+  label: string;
+}> = [
+  { value: "morning", label: "上午" },
+  { value: "afternoon", label: "下午" },
+  { value: "evening", label: "晚上" },
+];
+
+/** 颜色 trigger 元素 + 弹层状态 */
 const colorTriggerEl = ref<HTMLElement | null>(null);
 const colorPickerOpen = ref(false);
+
+/** 时段 trigger 元素 + 弹层状态 */
+const timeOfDayTriggerEl = ref<HTMLElement | null>(null);
+const timeOfDayPickerOpen = ref(false);
 
 function onClickColorTrigger(e: MouseEvent) {
   colorTriggerEl.value = e.currentTarget as HTMLElement;
   colorPickerOpen.value = !colorPickerOpen.value;
+  timeOfDayPickerOpen.value = false;
+}
+function onClickTimeOfDayTrigger(e: MouseEvent) {
+  timeOfDayTriggerEl.value = e.currentTarget as HTMLElement;
+  timeOfDayPickerOpen.value = !timeOfDayPickerOpen.value;
+  colorPickerOpen.value = false;
 }
 
 function openCreateDialog() {
   newName.value = "";
   newColor.value = "#10B981";
+  newTimeOfDay.value = "evening";
   showCreateDialog.value = true;
   nextTick(() => {
     newNameInputRef.value?.focus();
@@ -36,6 +59,10 @@ function openCreateDialog() {
 
 onMounted(async () => {
   await habitStore.loadHabits();
+  // 预加载所有 habit 的本周打卡（仅加载这周）
+  await Promise.all(
+    habitStore.habits.map((h) => habitStore.loadLogs(h.habit.id)),
+  );
 });
 
 async function createHabit() {
@@ -44,22 +71,89 @@ async function createHabit() {
     showCreateDialog.value = false;
     return;
   }
-  await habitStore.createHabit({ name, color: newColor.value });
+  await habitStore.createHabit({
+    name,
+    color: newColor.value,
+    timeOfDay: newTimeOfDay.value,
+  });
   showCreateDialog.value = false;
 }
 
-async function toggle(habitId: string) {
-  await habitStore.toggleCheck(habitId);
+async function toggleDay(habitId: string, date: string) {
+  await habitStore.toggleCheck(habitId, date);
+}
+
+// ─── 本周日期计算 ──────────────────────────────────────
+
+/** 周一到周日的标签 */
+const WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+
+/** 取本周一 ~ 周日的 7 个日期（YYYY-MM-DD） */
+const thisWeek = computed<{ date: string; day: number; label: string; isToday: boolean }[]>(() => {
+  const out: { date: string; day: number; label: string; isToday: boolean }[] = [];
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // JS getDay(): 0=Sun, 1=Mon ... 6=Sat —— 转成"距周一多少天"
+  const offset = (today.getDay() + 6) % 7;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - offset);
+  const todayStr = ymd(today);
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const date = ymd(d);
+    out.push({
+      date,
+      day: d.getDate(),
+      label: WEEKDAY_LABELS[i],
+      isToday: date === todayStr,
+    });
+  }
+  return out;
+});
+
+function ymd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// ─── 时段分组 ──────────────────────────────────────────
+
+/** 按时段分组的习惯列表（保留 store 内的相对顺序） */
+const groupedHabits = computed(() => {
+  const groups: Record<"morning" | "afternoon" | "evening", HabitWithStats[]> = {
+    morning: [],
+    afternoon: [],
+    evening: [],
+  };
+  for (const h of habitStore.habits) {
+    groups[h.habit.timeOfDay].push(h);
+  }
+  return groups;
+});
+
+const GROUP_LABELS: Record<"morning" | "afternoon" | "evening", string> = {
+  morning: "上午",
+  afternoon: "下午",
+  evening: "晚上",
+};
+const GROUP_ORDER: Array<"morning" | "afternoon" | "evening"> = [
+  "morning",
+  "afternoon",
+  "evening",
+];
+
+function isLogged(habitId: string, date: string): boolean {
+  return habitStore.logs[habitId]?.has(date) ?? false;
 }
 </script>
 
 <template>
   <div class="habit-view">
     <header class="habit-view__header">
-      <div>
-        <h1 class="habit-view__title">习惯</h1>
-        <p class="habit-view__subtitle">{{ formatPageDate() }}</p>
-      </div>
+      <h1 class="habit-view__title">习惯</h1>
       <a-button
         type="text"
         size="small"
@@ -70,59 +164,93 @@ async function toggle(habitId: string) {
       </a-button>
     </header>
 
-    <a-divider class="mb-4" />
-
-    <!-- 习惯列表 -->
-    <div class="habit-view__list">
+    <!-- 顶部 7 圆圈：本周日期（不可点击，仅作装饰） -->
+    <div class="habit-view__week-strip">
       <div
-        v-for="h in habitStore.habits"
-        :key="h.habit.id"
-        class="habit-card"
-        :class="{ 'habit-card--done': h.todayDone }"
+        v-for="d in thisWeek"
+        :key="d.date"
+        class="habit-view__week-cell"
+        :class="{ 'habit-view__week-cell--today': d.isToday }"
       >
-        <div class="habit-card__left">
-          <button
-            class="habit-card__check"
-            :class="{ 'habit-card__check--done': h.todayDone }"
-            :style="{ backgroundColor: h.todayDone ? h.habit.color : 'transparent', borderColor: h.habit.color }"
-            @click="toggle(h.habit.id)"
-          >
-            <icon-check v-if="h.todayDone" :size="16" style="color: white" />
-          </button>
-          <div class="habit-card__info">
-            <span class="habit-card__name" :class="{ 'habit-card__name--done': h.todayDone }">
-              {{ h.habit.name }}
-            </span>
-            <div class="habit-card__stats">
-              <span class="habit-card__streak">
-                <icon-fire
-                  :size="14"
-                  :style="{ color: h.streak > 0 ? 'var(--jt-error)' : 'currentColor' }"
-                />
-                {{ h.streak }} 天
-              </span>
-              <span>累计 {{ h.totalDays }} 天</span>
-            </div>
-          </div>
-        </div>
-        <a-button
-          type="text"
-          size="mini"
-          @click="habitStore.deleteHabit(h.habit.id)"
-        >
-          <icon-delete :size="16" />
-        </a-button>
-      </div>
-
-      <!-- 空状态 -->
-      <div v-if="!habitStore.loading && habitStore.habits.length === 0" class="habit-view__empty">
-        <span class="habit-view__empty-icon">🌱</span>
-        <p class="habit-view__empty-title">还没有习惯</p>
-        <p class="habit-view__empty-hint">创建一个习惯开始打卡吧</p>
+        <span class="habit-view__week-label">{{ d.label }}</span>
+        <span class="habit-view__week-day">{{ d.day }}</span>
+        <span class="habit-view__week-dot" />
       </div>
     </div>
 
-    <!-- 新建习惯对话框（与侧栏 QuickAdd 风格一致） -->
+    <!-- 习惯列表（按时段分组） -->
+    <div class="habit-view__list">
+      <div
+        v-for="key in GROUP_ORDER"
+        :key="key"
+        v-show="groupedHabits[key].length > 0"
+        class="habit-view__group"
+      >
+        <!-- 组标题 -->
+        <div class="habit-view__group-header">
+          <icon-down :size="12" class="habit-view__group-caret" />
+          <span class="habit-view__group-name">{{ GROUP_LABELS[key] }}</span>
+          <span class="habit-view__group-count">{{ groupedHabits[key].length }}</span>
+        </div>
+
+        <!-- 习惯项 -->
+        <div
+          v-for="h in groupedHabits[key]"
+          :key="h.habit.id"
+          class="habit-card"
+        >
+          <div class="habit-card__left">
+            <div
+              class="habit-card__avatar"
+              :style="{ backgroundColor: h.habit.color }"
+            >
+              <icon-trophy :size="14" style="color: #fff" />
+            </div>
+            <div class="habit-card__info">
+              <span class="habit-card__name">{{ h.habit.name }}</span>
+              <div class="habit-card__stats">
+                <span class="habit-card__streak">
+                  <icon-fire :size="12" :style="{ color: h.streak > 0 ? 'var(--jt-error)' : 'currentColor' }" />
+                  {{ h.streak }} 天
+                </span>
+                <span class="habit-card__total">
+                  <icon-calendar :size="12" />
+                  累计 {{ h.totalDays }} 天
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 本周 7 圆圈 -->
+          <div class="habit-card__week">
+            <button
+              v-for="d in thisWeek"
+              :key="d.date"
+              class="habit-card__day-dot"
+              :class="{
+                'habit-card__day-dot--done': isLogged(h.habit.id, d.date),
+                'habit-card__day-dot--today': d.isToday,
+              }"
+              :style="isLogged(h.habit.id, d.date) ? { backgroundColor: h.habit.color, borderColor: h.habit.color } : {}"
+              :title="`${d.label} ${d.day} — ${isLogged(h.habit.id, d.date) ? '已打卡' : '未打卡'}`"
+              @click="toggleDay(h.habit.id, d.date)"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- 空状态 -->
+      <div
+        v-if="!habitStore.loading && habitStore.habits.length === 0"
+        class="habit-view__empty"
+      >
+        <span class="habit-view__empty-icon">🌱</span>
+        <p class="habit-view__empty-title">还没有习惯</p>
+        <p class="habit-view__empty-hint">点击右上角 + 创建一个习惯开始打卡吧</p>
+      </div>
+    </div>
+
+    <!-- 新建习惯弹窗（与侧栏同风格：QuickAdd + TeleportPopper） -->
     <a-modal
       v-model:visible="showCreateDialog"
       :width="440"
@@ -150,6 +278,18 @@ async function toggle(habitId: string) {
         </div>
         <div class="sidebar-create__divider" />
         <div class="sidebar-create__attrs">
+          <!-- 时段 trigger -->
+          <button
+            data-time-of-day-trigger
+            type="button"
+            class="sidebar-create__trigger"
+            @click="onClickTimeOfDayTrigger($event)"
+          >
+            <icon-clock :size="13" />
+            <span>{{ GROUP_LABELS[newTimeOfDay] }}</span>
+          </button>
+
+          <!-- 颜色 trigger -->
           <button
             data-color-trigger="habit"
             type="button"
@@ -169,7 +309,26 @@ async function toggle(habitId: string) {
       </div>
     </a-modal>
 
-    <!-- 颜色 picker 弹层（Teleport 到 body，避开 modal stacking-context） -->
+    <!-- 时段 picker 弹层（Teleport 到 body） -->
+    <TeleportPopper
+      v-model:visible="timeOfDayPickerOpen"
+      :anchor="timeOfDayTriggerEl"
+      placement="bottom-left"
+    >
+      <div class="sidebar-create__color-picker sidebar-create__timeofday">
+        <button
+          v-for="opt in TIME_OF_DAY_OPTIONS"
+          :key="opt.value"
+          class="sidebar-create__timeofday-item"
+          :class="{ 'sidebar-create__timeofday-item--active': newTimeOfDay === opt.value }"
+          @click="newTimeOfDay = opt.value; timeOfDayPickerOpen = false"
+        >
+          {{ opt.label }}
+        </button>
+      </div>
+    </TeleportPopper>
+
+    <!-- 颜色 picker 弹层（Teleport 到 body） -->
     <TeleportPopper
       v-model:visible="colorPickerOpen"
       :anchor="colorTriggerEl"
@@ -194,133 +353,225 @@ async function toggle(habitId: string) {
   height: 100%;
   display: flex;
   flex-direction: column;
+  padding: 16px 24px;
+  gap: 16px;
+  overflow-y: auto;
 }
 
 .habit-view__header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  padding: 24px 24px 12px;
+  flex-shrink: 0;
 }
 
 .habit-view__title {
   font-family: var(--font-display);
-  font-size: 22px;
   font-weight: 600;
+  font-size: 24px;
   letter-spacing: -0.02em;
+  color: var(--jt-text-primary);
   margin: 0;
-  line-height: 1.3;
 }
 
-.habit-view__subtitle {
-  font-size: 12px;
-  color: var(--jt-text-secondary);
-  margin: 4px 0 0;
-  font-weight: 400;
-  letter-spacing: 0;
+/* 顶部本周日期横排 */
+.habit-view__week-strip {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 12px 4px;
+  border-radius: 12px;
+  background-color: var(--jt-surface-sunken);
 }
 
-.habit-view__list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 24px;
+.habit-view__week-cell {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  position: relative;
 }
 
+.habit-view__week-label {
+  font-size: 11px;
+  color: var(--jt-text-tertiary);
+}
+
+.habit-view__week-day {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--jt-text-primary);
+}
+
+.habit-view__week-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid var(--jt-border);
+  background: transparent;
+}
+
+.habit-view__week-cell--today .habit-view__week-day {
+  color: var(--jt-primary);
+  font-weight: 600;
+}
+.habit-view__week-cell--today .habit-view__week-dot {
+  border-color: var(--jt-primary);
+  background: transparent;
+}
+
+/* 列表 + 分组 */
+.habit-view__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.habit-view__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.habit-view__group-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--jt-text-tertiary);
+}
+
+.habit-view__group-caret {
+  color: var(--jt-text-tertiary);
+}
+
+.habit-view__group-name {
+  font-weight: 500;
+}
+
+.habit-view__group-count {
+  color: var(--jt-text-tertiary);
+  font-size: 11px;
+  margin-left: 2px;
+}
+
+/* 习惯项 */
 .habit-card {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-radius: 12px;
-  background-color: var(--jt-surface);
-  border: 1px solid var(--jt-border);
-  transition: all 0.2s;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background-color: var(--jt-surface-sunken);
+  border: 1px solid transparent;
+  transition: border-color 0.15s;
 }
-
-.habit-card--done {
-  background-color: color-mix(in srgb, var(--jt-accent-soft) 40%, transparent);
+.habit-card:hover {
+  border-color: var(--jt-border);
 }
 
 .habit-card__left {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
 }
 
-.habit-card__check {
+.habit-card__avatar {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  border: 2px solid;
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
-  background: transparent;
-}
-
-.habit-card__check--done {
-  animation: pop 0.2s ease;
-}
-
-@keyframes pop {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.15); }
-  100% { transform: scale(1); }
+  flex-shrink: 0;
 }
 
 .habit-card__info {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .habit-card__name {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
-}
-
-.habit-card__name--done {
-  text-decoration: line-through;
-  color: var(--jt-text-tertiary);
+  color: var(--jt-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .habit-card__stats {
   display: flex;
-  gap: 12px;
-  font-size: 12px;
-  color: var(--jt-text-secondary);
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--jt-text-tertiary);
 }
 
-.habit-card__streak {
+.habit-card__streak,
+.habit-card__total {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* 本周 7 圆圈 */
+.habit-card__week {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
+.habit-card__day-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--jt-border);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s ease;
+}
+.habit-card__day-dot:hover {
+  transform: scale(1.15);
+}
+.habit-card__day-dot--done {
+  border-color: transparent;
+}
+.habit-card__day-dot--today:not(.habit-card__day-dot--done) {
+  border-color: var(--jt-primary);
+  border-width: 2px;
+}
+
+/* 空状态 */
 .habit-view__empty {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 80px 20px;
+  padding: 60px 0;
+  gap: 8px;
   text-align: center;
 }
 
 .habit-view__empty-icon {
   font-size: 48px;
-  margin-bottom: 16px;
+  opacity: 0.6;
 }
 
 .habit-view__empty-title {
-  font-family: var(--font-display);
-  font-size: 16px;
-  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--jt-text-secondary);
+  margin: 0;
 }
 
 .habit-view__empty-hint {
@@ -328,37 +579,37 @@ async function toggle(habitId: string) {
   color: var(--jt-text-tertiary);
   margin: 0;
 }
+</style>
 
-.habit-dialog__field {
-  margin-bottom: 4px;
-}
-
-.habit-dialog__colors {
-  margin-top: 12px;
-}
-
-.habit-dialog__label {
-  display: block;
-  font-size: 12px;
-  color: var(--jt-text-secondary);
-  margin-bottom: 8px;
-}
-
-.habit-dialog__color-row {
+<style scoped>
+/* 时段 picker 浮层内的选项（3 个文字按钮） */
+.sidebar-create__timeofday {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  min-width: 80px;
 }
 
-.habit-dialog__color {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2px solid transparent;
+.sidebar-create__timeofday-item {
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--jt-text-primary);
+  padding: 6px 14px;
+  border-radius: 5px;
   cursor: pointer;
-  transition: border-color 0.15s;
+  text-align: left;
+  transition: background-color 0.1s ease;
 }
 
-.habit-dialog__color--active {
-  border-color: color-mix(in srgb, var(--jt-text-primary) 60%, transparent);
+.sidebar-create__timeofday-item:hover {
+  background-color: var(--jt-surface-hover);
+}
+
+.sidebar-create__timeofday-item--active {
+  background-color: var(--jt-accent-soft);
+  color: var(--jt-primary);
 }
 </style>

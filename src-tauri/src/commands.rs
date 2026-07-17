@@ -949,6 +949,8 @@ pub struct Habit {
     pub created_at: String,
     /// 侧边栏手动排序 key（整数间隔）
     pub position: i64,
+    /// 时段分组："morning" | "afternoon" | "evening"（默认 evening）
+    pub time_of_day: String,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -966,11 +968,13 @@ pub struct CreateHabitInput {
     pub repeat_rule: Option<String>,
     pub target_count: Option<i32>,
     pub remind_at: Option<String>,
+    /// 时段分组："morning" | "afternoon" | "evening"（默认 evening）
+    pub time_of_day: Option<String>,
 }
 
 #[tauri::command]
 pub async fn habit_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<HabitWithStats>> {
-    let rows = sqlx::query("SELECT id, name, color, repeat_rule, target_count, remind_at, created_at, position FROM habits ORDER BY position ASC, created_at ASC")
+    let rows = sqlx::query("SELECT id, name, color, repeat_rule, target_count, remind_at, created_at, position, time_of_day FROM habits ORDER BY position ASC, created_at ASC")
         .fetch_all(pool.inner())
         .await
         .map_err(|e| format!("查询习惯失败: {}", e))?;
@@ -992,6 +996,7 @@ pub async fn habit_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<H
             remind_at: r.get("remind_at"),
             created_at: r.get("created_at"),
             position: r.get("position"),
+            time_of_day: r.get("time_of_day"),
         };
 
         let today_count: i64 = sqlx::query_scalar(
@@ -1066,12 +1071,17 @@ pub async fn habit_create(
     let color = input.color.unwrap_or_else(|| "#059669".to_string());
     let repeat_rule = input.repeat_rule.unwrap_or_else(|| "daily".to_string());
     let target_count = input.target_count.unwrap_or(1);
+    // 时段：仅接受 morning/afternoon/evening，其他值统一回退到 evening
+    let time_of_day = match input.time_of_day.as_deref() {
+        Some("morning") | Some("afternoon") | Some("evening") => input.time_of_day.unwrap(),
+        _ => "evening".to_string(),
+    };
 
     sqlx::query(
-        "INSERT INTO habits (id, name, color, repeat_rule, target_count, remind_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)"
+        "INSERT INTO habits (id, name, color, repeat_rule, target_count, remind_at, created_at, time_of_day) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
     )
     .bind(&id).bind(&input.name).bind(&color).bind(&repeat_rule)
-    .bind(target_count).bind(&input.remind_at).bind(&ts)
+    .bind(target_count).bind(&input.remind_at).bind(&ts).bind(&time_of_day)
     .execute(pool.inner()).await
     .map_err(|e| format!("创建习惯失败: {}", e))?;
 
@@ -1084,6 +1094,7 @@ pub async fn habit_create(
         remind_at: input.remind_at,
         created_at: ts,
         position: 0,
+        time_of_day,
     })
 }
 

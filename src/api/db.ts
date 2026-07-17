@@ -364,6 +364,8 @@ export interface Habit {
   createdAt: string;
   /** 侧边栏手动排序 key */
   position: number;
+  /** 时段分组："morning" | "afternoon" | "evening" */
+  timeOfDay: "morning" | "afternoon" | "evening";
 }
 
 export interface HabitWithStats {
@@ -382,6 +384,7 @@ interface RustHabit {
   remind_at: string | null;
   created_at: string;
   position: number;
+  time_of_day: string;
 }
 
 interface RustHabitWithStats {
@@ -392,11 +395,13 @@ interface RustHabitWithStats {
 }
 
 function mapHabit(r: RustHabit): Habit {
+  const tod = r.time_of_day as Habit["timeOfDay"];
   return {
     id: r.id, name: r.name, color: r.color,
     repeatRule: r.repeat_rule, targetCount: r.target_count,
     remindAt: r.remind_at, createdAt: r.created_at,
     position: r.position,
+    timeOfDay: (tod === "morning" || tod === "afternoon") ? tod : "evening",
   };
 }
 
@@ -416,6 +421,8 @@ export async function createHabit(params: {
   repeatRule?: string;
   targetCount?: number;
   remindAt?: string | null;
+  /** 时段：morning | afternoon | evening（默认 evening） */
+  timeOfDay?: "morning" | "afternoon" | "evening";
 }): Promise<Habit> {
   const r = await invoke<RustHabit>("habit_create", {
     input: {
@@ -424,6 +431,7 @@ export async function createHabit(params: {
       repeat_rule: params.repeatRule,
       target_count: params.targetCount,
       remind_at: params.remindAt,
+      time_of_day: params.timeOfDay,
     },
   });
   return mapHabit(r);

@@ -108,6 +108,9 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
     // 011: tags / habits 加 position 字段（侧边栏拖拽排序）
     run_migration_011(&pool).await?;
 
+    // 012: habits 加 time_of_day（上午/下午/晚上 分组）
+    run_migration_012(&pool).await?;
+
     Ok(pool)
 }
 
@@ -244,5 +247,18 @@ async fn run_migration_011(pool: &SqlitePool) -> Result<(), String> {
         .execute(pool)
         .await
         .map_err(|e| format!("创建 idx_habits_position 失败: {}", e))?;
+    Ok(())
+}
+
+/// 迁移 012：habits 加 time_of_day 字段（上午/下午/晚上，默认 evening）
+/// 存量数据自动回填为 evening，行为等价于"全部归到晚上"
+async fn run_migration_012(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(
+        pool,
+        "habits",
+        "time_of_day",
+        "TEXT NOT NULL DEFAULT 'evening'",
+    )
+    .await?;
     Ok(())
 }
