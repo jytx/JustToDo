@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 侧边栏 —— 四区块导航（智能视图 / 清单 / 标签 / 习惯）
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   IconStar,
@@ -17,6 +17,7 @@ import {
   IconRight,
   IconDown,
   IconFolder,
+  IconClose,
 } from "@arco-design/web-vue/es/icon";
 // IconEdit 移到 SidebarListNode 中使用
 import { useListStore } from "@/stores/list";
@@ -220,6 +221,7 @@ function cancelDelete() {
 /** 新建清单弹窗 */
 const showCreateDialog = ref(false);
 const newListName = ref("");
+const newListNameInputRef = ref<HTMLInputElement | null>(null);
 /** 目录路径字符串，支持 "A/B" 多级（可输入已有目录路径名以提示筛选） */
 const newListFolder = ref("");
 const selectedColor = ref('#10B981');
@@ -235,15 +237,23 @@ function startNewList() {
   newListFolder.value = "";
   selectedColor.value = '#10B981';
   showCreateDialog.value = true;
+  // 等 modal 渲染完后自动 focus
+  nextTick(() => {
+    newListNameInputRef.value?.focus();
+  });
 }
 
 /** 新建标签弹窗状态 */
 const showCreateTagDialog = ref(false);
 const newTagName = ref("");
+const newTagNameInputRef = ref<HTMLInputElement | null>(null);
 
 function startNewTag() {
   newTagName.value = "";
   showCreateTagDialog.value = true;
+  nextTick(() => {
+    newTagNameInputRef.value?.focus();
+  });
 }
 
 async function confirmNewTag() {
@@ -259,12 +269,16 @@ async function confirmNewTag() {
 /** 新建习惯弹窗状态 */
 const showCreateHabitDialog = ref(false);
 const newHabitName = ref("");
+const newHabitNameInputRef = ref<HTMLInputElement | null>(null);
 const newHabitColor = ref("#059669");
 
 function startNewHabit() {
   newHabitName.value = "";
   newHabitColor.value = "#059669";
   showCreateHabitDialog.value = true;
+  nextTick(() => {
+    newHabitNameInputRef.value?.focus();
+  });
 }
 
 async function confirmNewHabit() {
@@ -276,6 +290,15 @@ async function confirmNewHabit() {
   await habitStore.createHabit({ name, color: newHabitColor.value });
   showCreateHabitDialog.value = false;
 }
+
+/** 颜色选择器 hover 状态（list / habit 各自独立） */
+const colorPickerOpen = reactive<{ list: boolean; habit: boolean }>({
+  list: false,
+  habit: false,
+});
+
+/** 清单目录 trigger 弹层状态 */
+const newListFolderPopupVisible = ref(false);
 
 /** 输入提示：把已有的目录拼成完整路径，作为自动补全的数据源 */
 const folderSuggestions = computed(() => {
@@ -589,55 +612,99 @@ onMounted(async () => {
     </template>
   </a-modal>
 
-  <!-- 新建清单弹窗 -->
+  <!-- 新建清单弹窗（QuickAdd 风格：裸 input + 属性 trigger + 回车提交） -->
   <a-modal
     v-model:visible="showCreateDialog"
-    :width="400"
-    title="新建清单"
+    :width="440"
+    :footer="false"
+    :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
+    modal-class="sidebar-create-modal"
   >
-    <div class="create-list-dialog__field">
-      <label class="create-list-dialog__label">清单名称</label>
-      <a-input
-        v-model="newListName"
-        placeholder="清单名称"
-        @keydown.enter="confirmNewList"
-      />
-    </div>
-    <div class="create-list-dialog__field">
-      <label class="create-list-dialog__label">目录（可选，支持 A/B 多级）</label>
-      <a-auto-complete
-        v-model="newListFolder"
-        :data="folderSuggestions"
-        :filter-option="folderFilterOption"
-        placeholder="如：工作/项目A"
-        allow-clear
-        @select="onFolderSelect"
-      >
-        <template #option="{ data }">
-          <span class="create-list-dialog__folder-suggestion">
-            <icon-folder :size="13" />
-            <span>{{ data.raw?.name ?? data.value }}</span>
-          </span>
-        </template>
-      </a-auto-complete>
-    </div>
-    <div class="create-list-dialog__colors">
-      <span class="create-list-dialog__label">颜色</span>
-      <div class="create-list-dialog__color-row">
-        <button
-          v-for="c in LIST_COLORS"
-          :key="c"
-          class="create-list-dialog__color"
-          :class="{ 'create-list-dialog__color--active': selectedColor === c }"
-          :style="{ backgroundColor: c }"
-          @click="selectedColor = c"
+    <div class="sidebar-create">
+      <!-- 主输入行 -->
+      <div class="sidebar-create__input-row">
+        <input
+          ref="newListNameInputRef"
+          v-model="newListName"
+          class="sidebar-create__input"
+          placeholder="清单名称"
+          @keydown.enter="confirmNewList"
+          @keydown.escape.stop="showCreateDialog = false"
         />
+        <button
+          class="sidebar-create__close"
+          title="关闭"
+          @click="showCreateDialog = false"
+        >
+          <icon-close :size="14" />
+        </button>
+      </div>
+      <div class="sidebar-create__divider" />
+      <!-- 属性行：目录 + 颜色 trigger（hover/focus 展示色板） -->
+      <div class="sidebar-create__attrs">
+        <!-- 目录 trigger：点击切换展开/收起，输入框 inline 展示 -->
+        <div class="sidebar-create__folder-host">
+          <button
+            type="button"
+            class="sidebar-create__trigger"
+            :class="{ 'sidebar-create__trigger--active': newListFolderPopupVisible }"
+            @click="newListFolderPopupVisible = !newListFolderPopupVisible"
+          >
+            <icon-folder :size="14" />
+            <span>{{ newListFolder || "目录" }}</span>
+          </button>
+          <div v-if="newListFolderPopupVisible" class="sidebar-create__folder-popup">
+            <a-auto-complete
+              v-model="newListFolder"
+              :data="folderSuggestions"
+              :filter-option="folderFilterOption"
+              placeholder="如：工作/项目A"
+              allow-clear
+              @select="onFolderSelect"
+              @keydown.escape.stop="newListFolderPopupVisible = false"
+            >
+              <template #option="{ data }">
+                <span class="create-list-dialog__folder-suggestion">
+                  <icon-folder :size="13" />
+                  <span>{{ data.raw?.name ?? data.value }}</span>
+                </span>
+              </template>
+            </a-auto-complete>
+          </div>
+        </div>
+
+        <!-- 颜色 trigger：hover/focus 浮出色板（在 modal 内部 inline，避免 stacking-context 遮挡） -->
+        <div
+          class="sidebar-create__color-host"
+          @mouseenter="colorPickerOpen.list = true"
+          @mouseleave="colorPickerOpen.list = false"
+        >
+          <button type="button" class="sidebar-create__trigger">
+            <span
+              class="sidebar-create__color-dot"
+              :style="{ backgroundColor: selectedColor }"
+            />
+            <span>颜色</span>
+          </button>
+          <Transition name="color-pop">
+            <div v-show="colorPickerOpen.list" class="sidebar-create__color-picker">
+              <button
+                v-for="c in LIST_COLORS"
+                :key="c"
+                class="sidebar-create__color-swatch"
+                :class="{ 'sidebar-create__color-swatch--active': selectedColor === c }"
+                :style="{ backgroundColor: c }"
+                @click="selectedColor = c"
+              />
+            </div>
+          </Transition>
+        </div>
+
+        <span class="sidebar-create__spacer" />
+
+        <span class="sidebar-create__hint">回车保存</span>
       </div>
     </div>
-    <template #footer>
-      <a-button type="text" @click="showCreateDialog = false">取消</a-button>
-      <a-button type="primary" @click="confirmNewList">创建</a-button>
-    </template>
   </a-modal>
 
   <!-- 编辑清单/目录弹窗 -->
@@ -673,57 +740,98 @@ onMounted(async () => {
     </template>
   </a-modal>
 
-  <!-- 新建标签弹窗 -->
+  <!-- 新建标签弹窗（QuickAdd 风格） -->
   <a-modal
     v-model:visible="showCreateTagDialog"
-    :width="400"
-    title="新建标签"
+    :width="440"
+    :footer="false"
+    :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
+    modal-class="sidebar-create-modal"
   >
-    <div class="create-list-dialog__field">
-      <label class="create-list-dialog__label">标签名称</label>
-      <a-input
-        v-model="newTagName"
-        placeholder="标签名称"
-        @keydown.enter="confirmNewTag"
-      />
-    </div>
-    <template #footer>
-      <a-button type="text" @click="showCreateTagDialog = false">取消</a-button>
-      <a-button type="primary" @click="confirmNewTag">创建</a-button>
-    </template>
-  </a-modal>
-
-  <!-- 新建习惯弹窗 -->
-  <a-modal
-    v-model:visible="showCreateHabitDialog"
-    :width="400"
-    title="新建习惯"
-  >
-    <div class="create-list-dialog__field">
-      <label class="create-list-dialog__label">习惯名称</label>
-      <a-input
-        v-model="newHabitName"
-        placeholder="习惯名称"
-        @keydown.enter="confirmNewHabit"
-      />
-    </div>
-    <div class="create-list-dialog__colors">
-      <span class="create-list-dialog__label">颜色</span>
-      <div class="create-list-dialog__color-row">
-        <button
-          v-for="c in LIST_COLORS"
-          :key="c"
-          class="create-list-dialog__color"
-          :class="{ 'create-list-dialog__color--active': newHabitColor === c }"
-          :style="{ backgroundColor: c }"
-          @click="newHabitColor = c"
+    <div class="sidebar-create">
+      <div class="sidebar-create__input-row">
+        <input
+          ref="newTagNameInputRef"
+          v-model="newTagName"
+          class="sidebar-create__input"
+          placeholder="标签名称"
+          @keydown.enter="confirmNewTag"
+          @keydown.escape.stop="showCreateTagDialog = false"
         />
+        <button
+          class="sidebar-create__close"
+          title="关闭"
+          @click="showCreateTagDialog = false"
+        >
+          <icon-close :size="14" />
+        </button>
+      </div>
+      <div class="sidebar-create__attrs">
+        <span class="sidebar-create__spacer" />
+        <span class="sidebar-create__hint">回车保存</span>
       </div>
     </div>
-    <template #footer>
-      <a-button type="text" @click="showCreateHabitDialog = false">取消</a-button>
-      <a-button type="primary" @click="confirmNewHabit">创建</a-button>
-    </template>
+  </a-modal>
+
+  <!-- 新建习惯弹窗（QuickAdd 风格） -->
+  <a-modal
+    v-model:visible="showCreateHabitDialog"
+    :width="440"
+    :footer="false"
+    :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
+    modal-class="sidebar-create-modal"
+  >
+    <div class="sidebar-create">
+      <div class="sidebar-create__input-row">
+        <input
+          ref="newHabitNameInputRef"
+          v-model="newHabitName"
+          class="sidebar-create__input"
+          placeholder="习惯名称"
+          @keydown.enter="confirmNewHabit"
+          @keydown.escape.stop="showCreateHabitDialog = false"
+        />
+        <button
+          class="sidebar-create__close"
+          title="关闭"
+          @click="showCreateHabitDialog = false"
+        >
+          <icon-close :size="14" />
+        </button>
+      </div>
+      <div class="sidebar-create__divider" />
+      <div class="sidebar-create__attrs">
+        <!-- 颜色 trigger：hover 浮出色板 -->
+        <div
+          class="sidebar-create__color-host"
+          @mouseenter="colorPickerOpen.habit = true"
+          @mouseleave="colorPickerOpen.habit = false"
+        >
+          <button type="button" class="sidebar-create__trigger">
+            <span
+              class="sidebar-create__color-dot"
+              :style="{ backgroundColor: newHabitColor }"
+            />
+            <span>颜色</span>
+          </button>
+          <Transition name="color-pop">
+            <div v-show="colorPickerOpen.habit" class="sidebar-create__color-picker">
+              <button
+                v-for="c in LIST_COLORS"
+                :key="c"
+                class="sidebar-create__color-swatch"
+                :class="{ 'sidebar-create__color-swatch--active': newHabitColor === c }"
+                :style="{ backgroundColor: c }"
+                @click="newHabitColor = c"
+              />
+            </div>
+          </Transition>
+        </div>
+
+        <span class="sidebar-create__spacer" />
+        <span class="sidebar-create__hint">回车保存</span>
+      </div>
+    </div>
   </a-modal>
 </template>
 
@@ -1111,5 +1219,206 @@ onMounted(async () => {
 
 .create-list-dialog__folder-suggestion :deep(.arco-icon) {
   color: var(--jt-text-tertiary);
+}
+</style>
+
+<!-- 侧栏快速创建弹窗样式（与 QuickAddDialog 同源视觉） -->
+<style scoped>
+.sidebar-create {
+  overflow: hidden;
+}
+
+/* 顶部输入行：裸 input，无边框，右侧 × 关闭按钮 */
+.sidebar-create__input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 12px;
+}
+
+.sidebar-create__input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 15px;
+  font-family: var(--font-body);
+  color: var(--jt-text-primary);
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.sidebar-create__input::placeholder {
+  color: var(--jt-text-tertiary);
+}
+
+.sidebar-create__close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.sidebar-create__close:hover {
+  background-color: var(--jt-surface-hover);
+  color: var(--jt-text-primary);
+}
+
+/* 分割线 */
+.sidebar-create__divider {
+  height: 1px;
+  background: var(--jt-border);
+  margin: 0 16px;
+}
+
+/* 属性行：trigger + 右侧提示 */
+.sidebar-create__attrs {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 10px 16px 12px;
+}
+
+.sidebar-create__spacer {
+  flex: 1;
+}
+
+/* 通用 trigger —— 与 QuickAdd 一致：hover 才显背景 */
+.sidebar-create__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--jt-text-secondary);
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-create__trigger:hover,
+.sidebar-create__trigger[aria-expanded="true"] {
+  background-color: var(--jt-surface-sunken);
+  color: var(--jt-text-primary);
+}
+
+/* 颜色 trigger 内的色点 */
+.sidebar-create__color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+/* 颜色 trigger 容器：hover 整个区域浮出色板 */
+.sidebar-create__color-host {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* 色板浮层：modal 内 inline 渲染（避开 stacking-context 遮挡问题） */
+.sidebar-create__color-picker {
+  display: flex;
+  gap: 6px;
+  padding: 0 8px;
+  background: transparent;
+  border-radius: 10px;
+  white-space: nowrap;
+  align-items: center;
+  height: 26px;
+  /* 与 trigger 同一行展开，不溢出 */
+  flex-shrink: 0;
+}
+
+.sidebar-create__color-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+  flex-shrink: 0;
+}
+
+.sidebar-create__color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.sidebar-create__color-swatch--active {
+  border-color: var(--jt-text-primary);
+  transform: scale(1.15);
+}
+
+/* 色板淡入淡出 */
+.color-pop-enter-active,
+.color-pop-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.color-pop-enter-from,
+.color-pop-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* 目录 trigger 容器：展开后下方 inline 展示 a-auto-complete 输入 */
+.sidebar-create__folder-host {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sidebar-create__folder-popup {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 10;
+  min-width: 240px;
+  padding: 8px;
+  background: var(--jt-surface);
+  border: 1px solid var(--jt-border);
+  border-radius: 8px;
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.08),
+    0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+/* 右侧提示文字 */
+.sidebar-create__hint {
+  font-size: 11px;
+  color: var(--jt-text-tertiary);
+  flex-shrink: 0;
+}
+</style>
+
+<!-- 弹窗全局：去掉 arco 默认标题栏 + 圆角 + 内边距 -->
+<style>
+.sidebar-create-modal .arco-modal-header {
+  display: none;
+}
+.sidebar-create-modal .arco-modal-body {
+  padding: 0;
+}
+.sidebar-create-modal .arco-modal {
+  border-radius: 12px;
+  overflow: hidden;
 }
 </style>
