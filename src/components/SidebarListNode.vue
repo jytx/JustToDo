@@ -111,6 +111,8 @@ function onDragEnd() {
 }
 
 function onDragOver(e: DragEvent) {
+  // 收件箱位置固定，不接受其他清单的 before/after drop
+  if (props.node.id === "inbox") return;
   e.preventDefault();
   e.dataTransfer!.dropEffect = "move";
 
@@ -138,6 +140,12 @@ function onDragLeave(e: DragEvent) {
 }
 
 function onDrop(e: DragEvent) {
+  // 收件箱位置固定，不接受其他清单的 drop
+  if (props.node.id === "inbox") {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
   e.preventDefault();
   e.stopPropagation();
 
