@@ -1,18 +1,38 @@
 <script setup lang="ts">
 // 习惯打卡视图 —— 展示所有习惯 + 今日打卡 + 统计
-import { onMounted, ref } from "vue";
+import { nextTick, onMounted, ref } from "vue";
 import { useHabitStore } from "@/stores/habit";
 import { formatPageDate } from "@/utils/date";
+import TeleportPopper from "@/components/TeleportPopper.vue";
 
 const habitStore = useHabitStore();
 const showCreateDialog = ref(false);
 const newName = ref("");
+const newNameInputRef = ref<HTMLInputElement | null>(null);
 const newColor = ref("#059669");
 
 const colors = [
-  "#EF4444", "#F59E0B", "#EAB308", "#059669",
+  "#EF4444", "#F59E0B", "#EAB308", "#10B981",
   "#3B82F6", "#8B5CF6", "#EC4899", "#6B7280",
 ];
+
+/** 颜色 trigger 元素 + 弹层状态（与 TheSidebar 一致） */
+const colorTriggerEl = ref<HTMLElement | null>(null);
+const colorPickerOpen = ref(false);
+
+function onClickColorTrigger(e: MouseEvent) {
+  colorTriggerEl.value = e.currentTarget as HTMLElement;
+  colorPickerOpen.value = !colorPickerOpen.value;
+}
+
+function openCreateDialog() {
+  newName.value = "";
+  newColor.value = "#10B981";
+  showCreateDialog.value = true;
+  nextTick(() => {
+    newNameInputRef.value?.focus();
+  });
+}
 
 onMounted(async () => {
   await habitStore.loadHabits();
@@ -20,10 +40,11 @@ onMounted(async () => {
 
 async function createHabit() {
   const name = newName.value.trim();
-  if (!name) return;
+  if (!name) {
+    showCreateDialog.value = false;
+    return;
+  }
   await habitStore.createHabit({ name, color: newColor.value });
-  newName.value = "";
-  newColor.value = "#059669";
   showCreateDialog.value = false;
 }
 
@@ -43,7 +64,7 @@ async function toggle(habitId: string) {
         type="text"
         size="small"
         title="新建习惯"
-        @click="showCreateDialog = true"
+        @click="openCreateDialog"
       >
         <template #icon><icon-plus :size="20" /></template>
       </a-button>
@@ -101,38 +122,70 @@ async function toggle(habitId: string) {
       </div>
     </div>
 
-    <!-- 新建习惯对话框 -->
+    <!-- 新建习惯对话框（与侧栏 QuickAdd 风格一致） -->
     <a-modal
       v-model:visible="showCreateDialog"
-      :width="400"
-      title="新建习惯"
+      :width="440"
+      :footer="false"
+      :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
+      modal-class="sidebar-create-modal"
     >
-      <div class="habit-dialog__field">
-        <label class="habit-dialog__label">习惯名称</label>
-        <a-input
-          v-model="newName"
-          placeholder="习惯名称"
-          @keydown.enter="createHabit"
-        />
-      </div>
-      <div class="habit-dialog__colors">
-        <span class="habit-dialog__label">颜色</span>
-        <div class="habit-dialog__color-row">
-          <button
-            v-for="c in colors"
-            :key="c"
-            class="habit-dialog__color"
-            :class="{ 'habit-dialog__color--active': newColor === c }"
-            :style="{ backgroundColor: c }"
-            @click="newColor = c"
+      <div class="sidebar-create">
+        <div class="sidebar-create__input-row">
+          <input
+            ref="newNameInputRef"
+            v-model="newName"
+            class="sidebar-create__input"
+            placeholder="习惯名称"
+            @keydown.enter="createHabit"
+            @keydown.escape.stop="showCreateDialog = false"
           />
+          <button
+            class="sidebar-create__close"
+            title="关闭"
+            @click="showCreateDialog = false"
+          >
+            <icon-close :size="14" />
+          </button>
+        </div>
+        <div class="sidebar-create__divider" />
+        <div class="sidebar-create__attrs">
+          <button
+            data-color-trigger="habit"
+            type="button"
+            class="sidebar-create__trigger"
+            @click="onClickColorTrigger($event)"
+          >
+            <span
+              class="sidebar-create__color-dot"
+              :style="{ backgroundColor: newColor }"
+            />
+            <span>颜色</span>
+          </button>
+
+          <span class="sidebar-create__spacer" />
+          <span class="sidebar-create__hint">回车保存</span>
         </div>
       </div>
-      <template #footer>
-        <a-button type="text" @click="showCreateDialog = false">取消</a-button>
-        <a-button type="primary" @click="createHabit">创建</a-button>
-      </template>
     </a-modal>
+
+    <!-- 颜色 picker 弹层（Teleport 到 body，避开 modal stacking-context） -->
+    <TeleportPopper
+      v-model:visible="colorPickerOpen"
+      :anchor="colorTriggerEl"
+      placement="bottom-left"
+    >
+      <div class="sidebar-create__color-picker">
+        <button
+          v-for="c in colors"
+          :key="c"
+          class="sidebar-create__color-swatch"
+          :class="{ 'sidebar-create__color-swatch--active': newColor === c }"
+          :style="{ backgroundColor: c }"
+          @click="newColor = c; colorPickerOpen = false"
+        />
+      </div>
+    </TeleportPopper>
   </div>
 </template>
 

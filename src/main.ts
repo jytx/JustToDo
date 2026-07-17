@@ -16,6 +16,7 @@ import "@fontsource/jetbrains-mono";
 // 全局样式
 import "./styles/theme.css";
 import "./styles/typography.css";
+import "./styles/sidebar-create.css";
 
 const app = createApp(App);
 const pinia = createPinia();
