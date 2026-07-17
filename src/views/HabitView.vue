@@ -800,7 +800,7 @@ function selectHabit(id: string) {
 
 /* 右侧详情面板 */
 .habit-detail {
-  flex: 0 0 560px;
+  flex: 0 0 640px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -924,12 +924,14 @@ function selectHabit(id: string) {
 .habit-detail__cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
-  padding: 0 4px;
+  gap: 8px 12px;
+  padding: 4px 8px;
+  justify-items: center;
 }
 
 .habit-detail__cal-day {
-  aspect-ratio: 1;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   border: 1.5px solid var(--jt-border);
   background: transparent;
