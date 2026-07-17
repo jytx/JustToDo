@@ -348,15 +348,7 @@ const folderSuggestions = computed(() => {
   });
 });
 
-/** 自定义过滤：输入值是完整路径的前缀或片段时命中 */
-function folderFilterOption(inputValue: string, option: any) {
-  if (!inputValue) return true;
-  const v = String(option.value ?? "").toLowerCase();
-  const i = inputValue.toLowerCase();
-  return v.includes(i) || i.includes(v);
-}
-
-/** 选中自动补全项时回填到输入框 */
+/** 选中目录项时回填到输入框（v-model 双向绑定的体现） */
 function onFolderSelect(value: string) {
   newListFolder.value = value;
 }
@@ -817,22 +809,32 @@ onMounted(async () => {
     placement="bottom-left"
   >
     <div class="sidebar-create__folder-popup">
-      <a-auto-complete
+      <!-- 列表：已有目录，点击直接选中 -->
+      <div v-if="folderSuggestions.length > 0" class="sidebar-create__folder-list">
+        <button
+          v-for="f in folderSuggestions"
+          :key="f.value"
+          type="button"
+          class="sidebar-create__folder-item"
+          :class="{ 'sidebar-create__folder-item--active': newListFolder === f.value }"
+          @click="onFolderSelect(f.value); newListFolderPopupVisible = false"
+        >
+          <icon-folder :size="13" />
+          <span>{{ f.value }}</span>
+        </button>
+      </div>
+      <div v-else class="sidebar-create__folder-empty">
+        暂无目录
+      </div>
+      <!-- 分隔线 + 新建输入框（始终在底部，输入即新建） -->
+      <div class="sidebar-create__folder-divider" />
+      <input
         v-model="newListFolder"
-        :data="folderSuggestions"
-        :filter-option="folderFilterOption"
-        placeholder="如：工作/项目A"
-        allow-clear
-        @select="onFolderSelect"
+        class="sidebar-create__folder-input"
+        placeholder="新建目录（如：工作/项目A）"
+        @keydown.enter="newListFolderPopupVisible = false"
         @keydown.escape.stop="newListFolderPopupVisible = false"
-      >
-        <template #option="{ data }">
-          <span class="create-list-dialog__folder-suggestion">
-            <icon-folder :size="13" />
-            <span>{{ data.raw?.name ?? data.value }}</span>
-          </span>
-        </template>
-      </a-auto-complete>
+      />
     </div>
   </TeleportPopper>
 
@@ -1427,13 +1429,92 @@ onMounted(async () => {
 /* 目录输入弹层：TeleportPopper 内部卡片（不再 absolute，popper 已 fixed 定位） */
 .sidebar-create__folder-popup {
   min-width: 240px;
-  padding: 8px;
+  padding: 6px;
   background: var(--jt-surface);
   border: 1px solid var(--jt-border);
   border-radius: 8px;
   box-shadow:
     0 6px 20px rgba(0, 0, 0, 0.08),
     0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+/* 已有目录列表 */
+.sidebar-create__folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.sidebar-create__folder-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--jt-text-primary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.sidebar-create__folder-item :deep(.arco-icon) {
+  color: var(--jt-text-tertiary);
+  flex-shrink: 0;
+}
+
+.sidebar-create__folder-item:hover {
+  background-color: var(--jt-surface-hover);
+}
+
+.sidebar-create__folder-item--active {
+  background-color: var(--jt-accent-soft);
+  color: var(--jt-primary);
+}
+
+.sidebar-create__folder-item--active :deep(.arco-icon) {
+  color: var(--jt-primary);
+}
+
+.sidebar-create__folder-empty {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--jt-text-tertiary);
+  text-align: center;
+}
+
+/* 分隔线 + 新建输入 */
+.sidebar-create__folder-divider {
+  height: 1px;
+  background: var(--jt-border);
+  margin: 4px 2px;
+}
+
+.sidebar-create__folder-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--jt-text-primary);
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.sidebar-create__folder-input::placeholder {
+  color: var(--jt-text-tertiary);
+}
+
+.sidebar-create__folder-input:focus {
+  background-color: var(--jt-surface-hover);
 }
 
 /* 右侧提示文字 */
