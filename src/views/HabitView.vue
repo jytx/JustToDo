@@ -852,42 +852,42 @@ function selectHabit(id: string) {
 .habit-detail__stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 12px;
   flex-shrink: 0;
 }
 
 .habit-detail__stat {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 18px 16px;
   background-color: var(--jt-surface);
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 .habit-detail__stat-label {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  gap: 5px;
+  font-size: 13px;
   color: var(--jt-text-tertiary);
 }
 
 .habit-detail__stat-value {
   display: flex;
   align-items: baseline;
-  gap: 2px;
+  gap: 3px;
 }
 
 .habit-detail__stat-num {
-  font-size: 20px;
+  font-size: 30px;
   font-weight: 600;
   color: var(--jt-text-primary);
   line-height: 1;
 }
 
 .habit-detail__stat-unit {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--jt-text-tertiary);
 }
 
@@ -895,8 +895,8 @@ function selectHabit(id: string) {
 .habit-detail__calendar {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  gap: 14px;
+  padding: 18px;
   background-color: var(--jt-surface);
   border-radius: 10px;
   flex: 1;
@@ -911,8 +911,8 @@ function selectHabit(id: string) {
 }
 
 .habit-detail__cal-title {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--jt-text-primary);
 }
 
@@ -920,7 +920,7 @@ function selectHabit(id: string) {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   text-align: center;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--jt-text-tertiary);
   padding: 0 4px;
 }
@@ -928,14 +928,16 @@ function selectHabit(id: string) {
 .habit-detail__cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 8px 12px;
+  gap: 10px 16px;
   padding: 4px 8px;
   justify-items: center;
+  align-content: start;
+  flex: 1;
 }
 
 .habit-detail__cal-day {
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   border: 1.5px solid var(--jt-border);
   background: transparent;
@@ -967,7 +969,7 @@ function selectHabit(id: string) {
 }
 
 .habit-detail__cal-day-num {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--jt-text-primary);
 }
 .habit-detail__cal-day--off .habit-detail__cal-day-num {
