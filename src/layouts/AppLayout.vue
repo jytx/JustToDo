@@ -190,6 +190,7 @@ useShortcuts({
         </a-button>
         <div style="flex: 1"></div>
         <a-button
+          v-if="showGlobalActions"
           type="text"
           size="small"
           @click="settingsStore.cycleTheme()"
