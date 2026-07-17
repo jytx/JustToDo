@@ -265,11 +265,14 @@ export function useListDrag(options: UseListDragOptions) {
     const safeIdx = Math.min(target.itemIndex, items.length - 1);
     const rect = items[safeIdx].getBoundingClientRect();
     const lineY = target.insertBefore ? rect.top : rect.bottom;
+    /* 横线起点 = 容器 padding-left 后（绕开 ⋮⋮ 手柄占据的 padding 区域），
+       这样落点横线只画在 item 内容区，不画到 ⋮⋮ 手柄正下方造成视觉干扰 */
+    const containerCS = getComputedStyle(containerRef.value);
+    const containerPaddingLeft = parseFloat(containerCS.paddingLeft) || 0;
     indicatorPos.value = {
-      // 容器内可见位置即可；若容器有 padding 可改成更准的算法
-      left: 0,
+      left: containerPaddingLeft,
       top: lineY - wrapperRect.top - 1,
-      width: wrapperRect.width,
+      width: wrapperRect.width - containerPaddingLeft,
       visible: true,
     };
 

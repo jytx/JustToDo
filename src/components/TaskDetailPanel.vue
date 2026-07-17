@@ -1134,6 +1134,8 @@ function formatMeta(iso: string): string {
   /* 容器 relative，让 ListDragHandle 的手柄 + 落点横线（absolute 定位）
      以本容器为定位基准，不会溢出到别的区域 */
   position: relative;
+  /* 左 padding 给 ⋮⋮ 拖拽手柄让位：4 (handle padding) + 18 (handle width) + 8 (gap) = 30 */
+  padding-left: 30px;
 }
 
 .detail-panel__checklist-item {
