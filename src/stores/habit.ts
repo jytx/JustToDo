@@ -46,6 +46,23 @@ export const useHabitStore = defineStore("habit", () => {
     delete logs[id];
   }
 
+  async function updateHabit(params: {
+    id: string;
+    name?: string;
+    color?: string;
+    timeOfDay?: "morning" | "afternoon" | "evening";
+  }) {
+    const updated = await db.updateHabit(params);
+    // 找到本地对应项，更新字段（保持引用稳定，computed 会响应）
+    const h = habits.value.find((x) => x.habit.id === params.id);
+    if (h) {
+      h.habit.name = updated.name;
+      h.habit.color = updated.color;
+      h.habit.timeOfDay = updated.timeOfDay;
+    }
+    return updated;
+  }
+
   async function toggleCheck(habitId: string, date?: string) {
     const checked = await db.toggleHabitCheck(habitId, date);
     // 更新本地状态（仅当 toggle 的是今天时，刷新 todayDone 字段）
@@ -98,6 +115,7 @@ export const useHabitStore = defineStore("habit", () => {
     loadHabits,
     loadLogs,
     createHabit,
+    updateHabit,
     deleteHabit,
     toggleCheck,
     reorderHabits,

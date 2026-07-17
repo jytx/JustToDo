@@ -1098,6 +1098,44 @@ pub async fn habit_create(
     })
 }
 
+/// 更新习惯（编辑名称/颜色/时段）
+#[tauri::command]
+pub async fn habit_update(
+    pool: State<'_, sqlx::SqlitePool>,
+    id: String,
+    name: Option<String>,
+    color: Option<String>,
+    time_of_day: Option<String>,
+) -> CmdResult<Habit> {
+    let new_name = name.unwrap_or_default();
+    let new_color = color.unwrap_or_else(|| "#059669".to_string());
+    let new_tod = match time_of_day.as_deref() {
+        Some("morning") | Some("afternoon") | Some("evening") => time_of_day.unwrap(),
+        _ => "evening".to_string(),
+    };
+    sqlx::query("UPDATE habits SET name = $1, color = $2, time_of_day = $3 WHERE id = $4")
+        .bind(&new_name).bind(&new_color).bind(&new_tod).bind(&id)
+        .execute(pool.inner()).await
+        .map_err(|e| format!("更新习惯失败: {}", e))?;
+
+    let r = sqlx::query("SELECT id, name, color, repeat_rule, target_count, remind_at, created_at, position, time_of_day FROM habits WHERE id = $1")
+        .bind(&id)
+        .fetch_one(pool.inner()).await
+        .map_err(|e| format!("读取更新后的习惯失败: {}", e))?;
+
+    Ok(Habit {
+        id: r.get("id"),
+        name: r.get("name"),
+        color: r.get("color"),
+        repeat_rule: r.get("repeat_rule"),
+        target_count: r.get("target_count"),
+        remind_at: r.get("remind_at"),
+        created_at: r.get("created_at"),
+        position: r.get("position"),
+        time_of_day: r.get("time_of_day"),
+    })
+}
+
 /// 批量更新习惯位置（侧边栏拖拽排序后）
 #[tauri::command]
 pub async fn habit_reorder(

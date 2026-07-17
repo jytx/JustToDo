@@ -249,6 +249,7 @@ pub fn run() {
             commands::search_tasks,
             commands::habit_get_all,
             commands::habit_create,
+            commands::habit_update,
             commands::habit_delete,
             commands::habit_toggle_check,
             commands::habit_get_logs,

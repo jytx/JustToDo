@@ -11,8 +11,34 @@ const showCreateDialog = ref(false);
 const newName = ref("");
 const newNameInputRef = ref<HTMLInputElement | null>(null);
 const newColor = ref("#10B981");
-/** 新建习惯的时段（morning/afternoon/evening） */
+/** 新建/编辑共用时段字段（morning/afternoon/evening） */
 const newTimeOfDay = ref<"morning" | "afternoon" | "evening">("evening");
+
+/** 「编辑」模式：当前正在编辑的 habit id（null = 新建模式） */
+const editingHabitId = ref<string | null>(null);
+
+/** 「更多」菜单：显示 + trigger 元素 */
+const moreMenuOpen = ref(false);
+const moreTriggerEl = ref<HTMLElement | null>(null);
+function onClickMore(e: MouseEvent) {
+  moreTriggerEl.value = e.currentTarget as HTMLElement;
+  moreMenuOpen.value = !moreMenuOpen.value;
+  colorPickerOpen.value = false;
+  timeOfDayPickerOpen.value = false;
+}
+
+/** 删除确认弹窗 */
+const confirmDelete = ref(false);
+async function confirmDeleteHabit() {
+  if (!editingHabitId.value) return;
+  await habitStore.deleteHabit(editingHabitId.value);
+  confirmDelete.value = false;
+  selectedHabitId.value = null;
+  // 关闭弹窗
+  showCreateDialog.value = false;
+  editingHabitId.value = null;
+  newName.value = "";
+}
 
 const colors = [
   "#EF4444", "#F59E0B", "#EAB308", "#10B981",
@@ -51,10 +77,32 @@ function openCreateDialog() {
   newName.value = "";
   newColor.value = "#10B981";
   newTimeOfDay.value = "evening";
+  editingHabitId.value = null;
   showCreateDialog.value = true;
   nextTick(() => {
     newNameInputRef.value?.focus();
   });
+}
+
+/** 「更多」菜单 → 编辑 */
+function startEditHabit() {
+  moreMenuOpen.value = false;
+  if (!selectedHabit.value) return;
+  const h = selectedHabit.value.habit;
+  editingHabitId.value = h.id;
+  newName.value = h.name;
+  newColor.value = h.color;
+  newTimeOfDay.value = h.timeOfDay;
+  showCreateDialog.value = true;
+  nextTick(() => {
+    newNameInputRef.value?.focus();
+  });
+}
+
+/** 「更多」菜单 → 删除（弹确认框） */
+function askDeleteHabit() {
+  moreMenuOpen.value = false;
+  confirmDelete.value = true;
 }
 
 /** 异步加载习惯 + 打卡日志。错误兜底不抛到 console */
@@ -79,18 +127,30 @@ async function loadData() {
 
 onMounted(loadData);
 
-async function createHabit() {
+async function createOrUpdateHabit() {
   const name = newName.value.trim();
   if (!name) {
     showCreateDialog.value = false;
     return;
   }
-  await habitStore.createHabit({
-    name,
-    color: newColor.value,
-    timeOfDay: newTimeOfDay.value,
-  });
+  if (editingHabitId.value) {
+    // 编辑模式：调 updateHabit
+    await habitStore.updateHabit({
+      id: editingHabitId.value,
+      name,
+      color: newColor.value,
+      timeOfDay: newTimeOfDay.value,
+    });
+  } else {
+    // 新建模式
+    await habitStore.createHabit({
+      name,
+      color: newColor.value,
+      timeOfDay: newTimeOfDay.value,
+    });
+  }
   showCreateDialog.value = false;
+  editingHabitId.value = null;
 }
 
 async function toggleDay(habitId: string, date: string) {
@@ -362,7 +422,12 @@ function selectHabit(id: string) {
             </div>
             <span class="habit-detail__name">{{ selectedHabit.habit.name }}</span>
           </div>
-          <a-button type="text" size="mini" title="更多">
+          <a-button
+            type="text"
+            size="mini"
+            title="更多"
+            @click="onClickMore($event)"
+          >
             <template #icon><icon-more :size="16" /></template>
           </a-button>
         </div>
@@ -462,7 +527,7 @@ function selectHabit(id: string) {
             v-model="newName"
             class="sidebar-create__input"
             placeholder="习惯名称"
-            @keydown.enter="createHabit"
+            @keydown.enter="createOrUpdateHabit"
             @keydown.escape.stop="showCreateDialog = false"
           />
           <button
@@ -542,6 +607,46 @@ function selectHabit(id: string) {
         />
       </div>
     </TeleportPopper>
+
+    <!-- 「更多」菜单：编辑 / 删除 -->
+    <TeleportPopper
+      v-model:visible="moreMenuOpen"
+      :anchor="moreTriggerEl"
+      placement="bottom-right"
+    >
+      <div class="habit-more-menu">
+        <button class="habit-more-menu__item" @click="startEditHabit">
+          <icon-edit :size="14" />
+          <span>编辑</span>
+        </button>
+        <button class="habit-more-menu__item habit-more-menu__item--danger" @click="askDeleteHabit">
+          <icon-delete :size="14" />
+          <span>删除</span>
+        </button>
+      </div>
+    </TeleportPopper>
+
+    <!-- 删除确认弹窗 -->
+    <a-modal
+      :visible="confirmDelete"
+      :width="380"
+      title="确认删除"
+      @cancel="confirmDelete = false"
+      @ok="confirmDeleteHabit"
+    >
+      <p>
+        确定要删除习惯
+        <strong>「{{ selectedHabit?.habit.name }}」</strong>
+        吗？
+      </p>
+      <p class="habit-delete-warn">
+        ⚠️ 该习惯的 {{ selectedHabit?.totalDays ?? 0 }} 条打卡记录将一并删除，且不可恢复。
+      </p>
+      <template #footer>
+        <a-button @click="confirmDelete = false">取消</a-button>
+        <a-button status="danger" type="primary" @click="confirmDeleteHabit">删除</a-button>
+      </template>
+    </a-modal>
   </div>
 </template>
 
@@ -1010,5 +1115,56 @@ function selectHabit(id: string) {
 .sidebar-create__timeofday-item--active {
   background-color: var(--jt-accent-soft);
   color: var(--jt-primary);
+}
+
+/* 「更多」菜单（编辑/删除） */
+.habit-more-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+  padding: 4px;
+  background: var(--jt-surface);
+  border: 1px solid var(--jt-border);
+  border-radius: 8px;
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.08),
+    0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.habit-more-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--jt-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.habit-more-menu__item:hover {
+  background-color: var(--jt-surface-hover);
+}
+
+.habit-more-menu__item--danger {
+  color: var(--jt-error);
+}
+
+.habit-more-menu__item--danger:hover {
+  background-color: rgba(245, 34, 45, 0.08);
+}
+
+/* 删除确认弹窗内的提示文字 */
+.habit-delete-warn {
+  font-size: 12px;
+  color: var(--jt-text-secondary);
+  margin: 8px 0 0;
 }
 </style>

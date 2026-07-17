@@ -441,6 +441,22 @@ export async function deleteHabit(id: string): Promise<void> {
   await invoke<void>("habit_delete", { id });
 }
 
+/** 更新习惯（名称/颜色/时段） */
+export async function updateHabit(params: {
+  id: string;
+  name?: string;
+  color?: string;
+  timeOfDay?: "morning" | "afternoon" | "evening";
+}): Promise<Habit> {
+  const r = await invoke<RustHabit>("habit_update", {
+    id: params.id,
+    name: params.name,
+    color: params.color,
+    timeOfDay: params.timeOfDay,
+  });
+  return mapHabit(r);
+}
+
 export async function toggleHabitCheck(habitId: string, date?: string): Promise<boolean> {
   return await invoke<boolean>("habit_toggle_check", { habitId, date });
 }
