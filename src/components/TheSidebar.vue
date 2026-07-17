@@ -152,6 +152,39 @@ async function onTagDrop(e: DragEvent, targetId: string) {
   await tagStore.reorderTags(ids);
 }
 
+/* === 习惯拖拽排序（HTML5 drag，同列表内重排） === */
+const habitDragOverId = ref<string | null>(null);
+
+function onHabitDragStart(e: DragEvent, habitId: string) {
+  if (!e.dataTransfer) return;
+  e.dataTransfer.setData("text/plain", habitId);
+  e.dataTransfer.effectAllowed = "move";
+}
+function onHabitDragOver(e: DragEvent, habitId: string) {
+  if (!e.dataTransfer) return;
+  e.dataTransfer.dropEffect = "move";
+  habitDragOverId.value = habitId;
+}
+function onHabitDragLeave(_e: DragEvent) {
+  /* 不立即清 —— dragend/drop 时统一清，避免子元素闪烁 */
+}
+function onHabitDragEnd() {
+  habitDragOverId.value = null;
+}
+async function onHabitDrop(e: DragEvent, targetId: string) {
+  e.preventDefault();
+  habitDragOverId.value = null;
+  const draggedId = e.dataTransfer?.getData("text/plain");
+  if (!draggedId || draggedId === targetId) return;
+  const ids = habitStore.habits.map((h) => h.habit.id);
+  const fromIdx = ids.indexOf(draggedId);
+  const toIdx = ids.indexOf(targetId);
+  if (fromIdx < 0 || toIdx < 0) return;
+  ids.splice(fromIdx, 1);
+  ids.splice(toIdx, 0, draggedId);
+  await habitStore.reorderHabits(ids);
+}
+
 async function confirmDeleteAction() {
   if (!confirmDelete.value) return;
   const { type, id, name } = confirmDelete.value;
@@ -431,14 +464,43 @@ onMounted(async () => {
         </div>
       </div>
       <router-link
+        v-for="h in habitStore.habits"
         v-show="!sectionCollapsed.habits"
-        to="/habits"
+        :key="h.habit.id"
+        :to="`/habits#${h.habit.id}`"
         class="sidebar__item"
-        :class="{ 'sidebar__item--active': activeRouteName === 'habits' }"
+        :class="{
+          'sidebar__item--active': activeRouteName === 'habits',
+          'sidebar__item--drag-over': habitDragOverId === h.habit.id,
+        }"
+        :data-habit-id="h.habit.id"
+        :draggable="!sectionCollapsed.habits"
+        @dragstart="onHabitDragStart($event, h.habit.id)"
+        @dragover.prevent="onHabitDragOver($event, h.habit.id)"
+        @dragleave="onHabitDragLeave"
+        @drop="onHabitDrop($event, h.habit.id)"
+        @dragend="onHabitDragEnd"
+      >
+        <icon-trophy :size="16" class="sidebar__item-icon" :style="{ color: h.habit.color }" />
+        <span class="sidebar__item-title">{{ h.habit.name }}</span>
+        <span v-if="h.streak" class="sidebar__count">🔥{{ h.streak }}</span>
+      </router-link>
+      <router-link
+        v-show="!sectionCollapsed.habits && habitStore.habits.length > 0"
+        to="/habits"
+        class="sidebar__item sidebar__item--minor"
+      >
+        <icon-more :size="14" class="sidebar__item-icon" />
+        <span class="sidebar__item-title">查看全部习惯</span>
+      </router-link>
+      <div
+        v-if="habitStore.habits.length === 0"
+        v-show="!sectionCollapsed.habits"
+        class="sidebar__item sidebar__item--disabled"
       >
         <icon-trophy :size="16" class="sidebar__item-icon" />
-        <span class="sidebar__item-title">习惯打卡</span>
-      </router-link>
+        <span class="sidebar__item-title">暂无习惯</span>
+      </div>
     </nav>
 
     <div class="sidebar__append">
@@ -682,7 +744,7 @@ onMounted(async () => {
   color: var(--jt-primary);
 }
 
-/* 标签拖拽悬停时显示蓝色描边（视觉提示落点） */
+/* 标签 / 习惯拖拽悬停时显示蓝色描边（视觉提示落点） */
 .sidebar__item--drag-over {
   outline: 1.5px solid var(--jt-primary);
   outline-offset: -1.5px;
@@ -696,6 +758,15 @@ onMounted(async () => {
 }
 .sidebar__item[draggable="true"]:active {
   cursor: grabbing;
+}
+
+/* "查看全部习惯" 二级入口 —— 视觉降权（比主行小、灰度） */
+.sidebar__item--minor {
+  font-size: 12px;
+  color: var(--jt-text-secondary);
+}
+.sidebar__item--minor .sidebar__item-icon {
+  opacity: 0.7;
 }
 
 .sidebar__item--disabled {

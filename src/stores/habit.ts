@@ -49,5 +49,23 @@ export const useHabitStore = defineStore("habit", () => {
     return checked;
   }
 
-  return { habits, loading, loadHabits, createHabit, deleteHabit, toggleCheck };
+  /**
+   * 拖拽重排习惯：按 orderedIds 重新计算 position（1000 步长）
+   * 并批量写库
+   */
+  async function reorderHabits(orderedIds: string[]) {
+    const idSet = new Set(orderedIds);
+    const reordered = orderedIds
+      .map((id) => habits.value.find((h) => h.habit.id === id))
+      .filter((h): h is HabitWithStats => !!h);
+    const others = habits.value.filter((h) => !idSet.has(h.habit.id));
+    const merged = [...reordered, ...others];
+    merged.forEach((h, i) => {
+      h.habit.position = (i + 1) * 1000;
+    });
+    habits.value = merged;
+    await db.reorderHabits(merged.map((h) => [h.habit.id, h.habit.position]));
+  }
+
+  return { habits, loading, loadHabits, createHabit, deleteHabit, toggleCheck, reorderHabits };
 });
