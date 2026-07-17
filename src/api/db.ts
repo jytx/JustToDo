@@ -366,6 +366,8 @@ export interface Habit {
   position: number;
   /** 时段分组："morning" | "afternoon" | "evening" */
   timeOfDay: "morning" | "afternoon" | "evening";
+  /** emoji 图标字符 */
+  icon: string;
 }
 
 export interface HabitWithStats {
@@ -385,6 +387,7 @@ interface RustHabit {
   created_at: string;
   position: number;
   time_of_day: string;
+  icon: string;
 }
 
 interface RustHabitWithStats {
@@ -402,6 +405,7 @@ function mapHabit(r: RustHabit): Habit {
     remindAt: r.remind_at, createdAt: r.created_at,
     position: r.position,
     timeOfDay: (tod === "morning" || tod === "afternoon") ? tod : "evening",
+    icon: r.icon || "🏆",
   };
 }
 
@@ -423,6 +427,8 @@ export async function createHabit(params: {
   remindAt?: string | null;
   /** 时段：morning | afternoon | evening（默认 evening） */
   timeOfDay?: "morning" | "afternoon" | "evening";
+  /** emoji 图标 */
+  icon?: string;
 }): Promise<Habit> {
   const r = await invoke<RustHabit>("habit_create", {
     input: {
@@ -432,6 +438,7 @@ export async function createHabit(params: {
       target_count: params.targetCount,
       remind_at: params.remindAt,
       time_of_day: params.timeOfDay,
+      icon: params.icon,
     },
   });
   return mapHabit(r);
@@ -441,18 +448,26 @@ export async function deleteHabit(id: string): Promise<void> {
   await invoke<void>("habit_delete", { id });
 }
 
-/** 更新习惯（名称/颜色/时段） */
+/** 更新习惯（名称/颜色/时段/图标/重复/目标/提醒） */
 export async function updateHabit(params: {
   id: string;
   name?: string;
   color?: string;
   timeOfDay?: "morning" | "afternoon" | "evening";
+  icon?: string;
+  repeatRule?: string;
+  targetCount?: number;
+  remindAt?: string | null;
 }): Promise<Habit> {
   const r = await invoke<RustHabit>("habit_update", {
     id: params.id,
     name: params.name,
     color: params.color,
     timeOfDay: params.timeOfDay,
+    icon: params.icon,
+    repeatRule: params.repeatRule,
+    targetCount: params.targetCount,
+    remindAt: params.remindAt,
   });
   return mapHabit(r);
 }

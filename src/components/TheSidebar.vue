@@ -574,7 +574,7 @@ onMounted(async () => {
         @drop="onHabitDrop($event, h.habit.id)"
         @dragend="onHabitDragEnd"
       >
-        <icon-trophy :size="16" class="sidebar__item-icon" :style="{ color: h.habit.color }" />
+        <span class="sidebar__item-icon sidebar__habit-icon" :style="{ color: h.habit.color }">{{ h.habit.icon || "🏆" }}</span>
         <span class="sidebar__item-title">{{ h.habit.name }}</span>
         <span v-if="h.streak" class="sidebar__count">🔥{{ h.streak }}</span>
       </router-link>
@@ -1033,6 +1033,14 @@ onMounted(async () => {
 
 .sidebar__item-icon {
   flex-shrink: 0;
+}
+
+/* 习惯 emoji 图标：与 arco svg 视觉对齐（16px 字号 + 行高 1） */
+.sidebar__habit-icon {
+  font-size: 16px;
+  line-height: 1;
+  width: 16px;
+  text-align: center;
 }
 
 .sidebar__item-title {

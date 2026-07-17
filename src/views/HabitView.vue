@@ -13,6 +13,14 @@ const newNameInputRef = ref<HTMLInputElement | null>(null);
 const newColor = ref("#10B981");
 /** 新建/编辑共用时段字段（morning/afternoon/evening） */
 const newTimeOfDay = ref<"morning" | "afternoon" | "evening">("evening");
+/** emoji 图标 */
+const newIcon = ref("📚");
+/** 目标顿次（每天打卡次数，默认 1） */
+const newTargetCount = ref(1);
+/** 提醒时间 HH:MM（空 = 不提醒） */
+const newRemindAt = ref("");
+/** 重复规则字符串 */
+const newRepeatRule = ref<string>("daily");
 
 /** 「编辑」模式：当前正在编辑的 habit id（null = 新建模式） */
 const editingHabitId = ref<string | null>(null);
@@ -23,8 +31,11 @@ const moreTriggerEl = ref<HTMLElement | null>(null);
 function onClickMore(e: MouseEvent) {
   moreTriggerEl.value = e.currentTarget as HTMLElement;
   moreMenuOpen.value = !moreMenuOpen.value;
+  // 关闭其他 picker
   colorPickerOpen.value = false;
   timeOfDayPickerOpen.value = false;
+  iconPickerOpen.value = false;
+  repeatPickerOpen.value = false;
 }
 
 /** 删除确认弹窗 */
@@ -44,6 +55,14 @@ const colors = [
   "#3B82F6", "#8B5CF6", "#EC4899", "#6B7280",
 ];
 
+/** 预设 emoji 图标 */
+const ICON_OPTIONS = [
+  "📚", "🏃", "💪", "🧘", "🍎", "💧",
+  "😴", "✍️", "🎯", "🎨", "🎵", "📱",
+  "💻", "🚶", "🥗", "☕", "📖", "🏆",
+  "❤️", "🌱", "🔥", "⭐", "💡", "🎁",
+];
+
 const TIME_OF_DAY_OPTIONS: Array<{
   value: "morning" | "afternoon" | "evening";
   label: string;
@@ -53,6 +72,25 @@ const TIME_OF_DAY_OPTIONS: Array<{
   { value: "evening", label: "晚上" },
 ];
 
+const REPEAT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "daily", label: "每天" },
+  { value: "weekdays", label: "工作日" },
+  { value: "mon_wed_fri", label: "每周一三五" },
+  { value: "tue_thu", label: "每周二四" },
+];
+
+function repeatLabel(value: string): string {
+  return REPEAT_OPTIONS.find((o) => o.value === value)?.label ?? "每天";
+}
+
+/** 关闭所有 picker（互斥） */
+function closeAllPickers(except?: "color" | "timeOfDay" | "icon" | "repeat") {
+  if (except !== "color") colorPickerOpen.value = false;
+  if (except !== "timeOfDay") timeOfDayPickerOpen.value = false;
+  if (except !== "icon") iconPickerOpen.value = false;
+  if (except !== "repeat") repeatPickerOpen.value = false;
+}
+
 /** 颜色 trigger 元素 + 弹层状态 */
 const colorTriggerEl = ref<HTMLElement | null>(null);
 const colorPickerOpen = ref(false);
@@ -61,21 +99,52 @@ const colorPickerOpen = ref(false);
 const timeOfDayTriggerEl = ref<HTMLElement | null>(null);
 const timeOfDayPickerOpen = ref(false);
 
+/** 图标 trigger 元素 + 弹层状态 */
+const iconTriggerEl = ref<HTMLElement | null>(null);
+const iconPickerOpen = ref(false);
+
+/** 重复 trigger 元素 + 弹层状态 */
+const repeatTriggerEl = ref<HTMLElement | null>(null);
+const repeatPickerOpen = ref(false);
+
 function onClickColorTrigger(e: MouseEvent) {
   colorTriggerEl.value = e.currentTarget as HTMLElement;
-  colorPickerOpen.value = !colorPickerOpen.value;
-  timeOfDayPickerOpen.value = false;
+  const willOpen = !colorPickerOpen.value;
+  closeAllPickers();
+  colorPickerOpen.value = willOpen;
 }
 function onClickTimeOfDayTrigger(e: MouseEvent) {
   timeOfDayTriggerEl.value = e.currentTarget as HTMLElement;
-  timeOfDayPickerOpen.value = !timeOfDayPickerOpen.value;
-  colorPickerOpen.value = false;
+  const willOpen = !timeOfDayPickerOpen.value;
+  closeAllPickers();
+  timeOfDayPickerOpen.value = willOpen;
+}
+function onClickIconTrigger(e: MouseEvent) {
+  iconTriggerEl.value = e.currentTarget as HTMLElement;
+  const willOpen = !iconPickerOpen.value;
+  closeAllPickers();
+  iconPickerOpen.value = willOpen;
+}
+function onClickRepeatTrigger(e: MouseEvent) {
+  repeatTriggerEl.value = e.currentTarget as HTMLElement;
+  const willOpen = !repeatPickerOpen.value;
+  closeAllPickers();
+  repeatPickerOpen.value = willOpen;
 }
 
-function openCreateDialog() {
+/** 重置表单到默认值 */
+function resetForm() {
   newName.value = "";
   newColor.value = "#10B981";
   newTimeOfDay.value = "evening";
+  newIcon.value = "📚";
+  newTargetCount.value = 1;
+  newRemindAt.value = "";
+  newRepeatRule.value = "daily";
+}
+
+function openCreateDialog() {
+  resetForm();
   editingHabitId.value = null;
   showCreateDialog.value = true;
   nextTick(() => {
@@ -92,6 +161,10 @@ function startEditHabit() {
   newName.value = h.name;
   newColor.value = h.color;
   newTimeOfDay.value = h.timeOfDay;
+  newIcon.value = h.icon || "📚";
+  newTargetCount.value = h.targetCount || 1;
+  newRemindAt.value = h.remindAt ?? "";
+  newRepeatRule.value = h.repeatRule || "daily";
   showCreateDialog.value = true;
   nextTick(() => {
     newNameInputRef.value?.focus();
@@ -132,6 +205,8 @@ async function createOrUpdateHabit() {
     showCreateDialog.value = false;
     return;
   }
+  // 提醒时间：空字符串 → null（不提醒）
+  const remindAt = newRemindAt.value.trim() || null;
   if (editingHabitId.value) {
     // 编辑模式：调 updateHabit
     await habitStore.updateHabit({
@@ -139,6 +214,10 @@ async function createOrUpdateHabit() {
       name,
       color: newColor.value,
       timeOfDay: newTimeOfDay.value,
+      icon: newIcon.value,
+      repeatRule: newRepeatRule.value,
+      targetCount: newTargetCount.value,
+      remindAt,
     });
   } else {
     // 新建模式
@@ -146,6 +225,10 @@ async function createOrUpdateHabit() {
       name,
       color: newColor.value,
       timeOfDay: newTimeOfDay.value,
+      icon: newIcon.value,
+      repeatRule: newRepeatRule.value,
+      targetCount: newTargetCount.value,
+      remindAt,
     });
   }
   showCreateDialog.value = false;
@@ -362,7 +445,7 @@ function selectHabit(id: string) {
                 class="habit-card__avatar"
                 :style="{ backgroundColor: h.habit.color }"
               >
-                <icon-trophy :size="14" style="color: #fff" />
+                <span class="habit-card__avatar-icon">{{ h.habit.icon || "🏆" }}</span>
               </div>
               <div class="habit-card__info">
                 <span class="habit-card__name">{{ h.habit.name }}</span>
@@ -417,7 +500,7 @@ function selectHabit(id: string) {
               class="habit-detail__avatar"
               :style="{ backgroundColor: selectedHabit.habit.color }"
             >
-              <icon-trophy :size="16" style="color: #fff" />
+              <span class="habit-detail__avatar-icon">{{ selectedHabit.habit.icon || "🏆" }}</span>
             </div>
             <span class="habit-detail__name">{{ selectedHabit.habit.name }}</span>
           </div>
@@ -511,66 +594,157 @@ function selectHabit(id: string) {
       </aside>
     </div>
 
-    <!-- 新建习惯弹窗（与侧栏同风格：QuickAdd + TeleportPopper） -->
+    <!-- 新建/编辑习惯弹窗（完整表单：图标 + 名称 + 5 个属性行） -->
     <a-modal
       v-model:visible="showCreateDialog"
-      :width="440"
+      :width="480"
       :footer="false"
       :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
-      modal-class="sidebar-create-modal"
+      modal-class="habit-form-modal"
     >
-      <div class="sidebar-create">
-        <div class="sidebar-create__input-row">
+      <div class="habit-form">
+        <!-- 顶部：大图标 + 名称 + 关闭 -->
+        <div class="habit-form__head">
+          <div
+            class="habit-form__avatar"
+            :style="{ backgroundColor: newColor }"
+            @click="onClickIconTrigger($event)"
+          >
+            <span class="habit-form__avatar-icon">{{ newIcon }}</span>
+          </div>
           <input
             ref="newNameInputRef"
             v-model="newName"
-            class="sidebar-create__input"
+            class="habit-form__name"
             placeholder="习惯名称"
             @keydown.enter="createOrUpdateHabit"
             @keydown.escape.stop="showCreateDialog = false"
           />
           <button
-            class="sidebar-create__close"
+            class="habit-form__close"
             title="关闭"
             @click="showCreateDialog = false"
           >
             <icon-close :size="14" />
           </button>
         </div>
-        <div class="sidebar-create__divider" />
-        <div class="sidebar-create__attrs">
-          <!-- 时段 trigger -->
+
+        <!-- 属性行：图标 / 颜色 / 时段 / 目标 / 提醒 / 重复 -->
+        <div class="habit-form__attrs">
           <button
-            data-time-of-day-trigger
+            data-icon-trigger
             type="button"
-            class="sidebar-create__trigger"
-            @click="onClickTimeOfDayTrigger($event)"
+            class="habit-form__row"
+            @click="onClickIconTrigger($event)"
           >
-            <icon-clock :size="13" />
-            <span>{{ GROUP_LABELS[newTimeOfDay] }}</span>
+            <span class="habit-form__row-label">图标</span>
+            <span class="habit-form__row-value">{{ newIcon }}</span>
           </button>
 
-          <!-- 颜色 trigger -->
           <button
             data-color-trigger="habit"
             type="button"
-            class="sidebar-create__trigger"
+            class="habit-form__row"
             @click="onClickColorTrigger($event)"
           >
-            <span
-              class="sidebar-create__color-dot"
-              :style="{ backgroundColor: newColor }"
-            />
-            <span>颜色</span>
+            <span class="habit-form__row-label">颜色</span>
+            <span class="habit-form__row-value">
+              <span class="habit-form__color-dot" :style="{ backgroundColor: newColor }" />
+            </span>
           </button>
 
-          <span class="sidebar-create__spacer" />
-          <span class="sidebar-create__hint">回车保存</span>
+          <button
+            data-time-of-day-trigger
+            type="button"
+            class="habit-form__row"
+            @click="onClickTimeOfDayTrigger($event)"
+          >
+            <span class="habit-form__row-label">时段</span>
+            <span class="habit-form__row-value">{{ GROUP_LABELS[newTimeOfDay] }}</span>
+          </button>
+
+          <div class="habit-form__row habit-form__row--static">
+            <span class="habit-form__row-label">目标</span>
+            <span class="habit-form__row-value">
+              <input
+                v-model.number="newTargetCount"
+                type="number"
+                min="1"
+                max="99"
+                class="habit-form__number"
+              />
+              <span class="habit-form__unit">次 / 天</span>
+            </span>
+          </div>
+
+          <div class="habit-form__row habit-form__row--static">
+            <span class="habit-form__row-label">提醒</span>
+            <span class="habit-form__row-value">
+              <input
+                v-model="newRemindAt"
+                type="time"
+                class="habit-form__time"
+              />
+              <span v-if="!newRemindAt" class="habit-form__placeholder">不提醒</span>
+            </span>
+          </div>
+
+          <button
+            data-repeat-trigger
+            type="button"
+            class="habit-form__row"
+            @click="onClickRepeatTrigger($event)"
+          >
+            <span class="habit-form__row-label">重复</span>
+            <span class="habit-form__row-value">{{ repeatLabel(newRepeatRule) }}</span>
+          </button>
+        </div>
+
+        <!-- 底部提示 -->
+        <div class="habit-form__foot">
+          <span class="habit-form__hint">{{ editingHabitId ? "回车保存" : "回车创建" }}</span>
         </div>
       </div>
     </a-modal>
 
-    <!-- 时段 picker 弹层（Teleport 到 body） -->
+    <!-- 图标 picker 弹层 -->
+    <TeleportPopper
+      v-model:visible="iconPickerOpen"
+      :anchor="iconTriggerEl"
+      placement="bottom-left"
+    >
+      <div class="habit-form__icon-grid">
+        <button
+          v-for="ic in ICON_OPTIONS"
+          :key="ic"
+          class="habit-form__icon-cell"
+          :class="{ 'habit-form__icon-cell--active': newIcon === ic }"
+          @click="newIcon = ic; iconPickerOpen = false"
+        >
+          {{ ic }}
+        </button>
+      </div>
+    </TeleportPopper>
+
+    <!-- 颜色 picker 弹层 -->
+    <TeleportPopper
+      v-model:visible="colorPickerOpen"
+      :anchor="colorTriggerEl"
+      placement="bottom-left"
+    >
+      <div class="sidebar-create__color-picker">
+        <button
+          v-for="c in colors"
+          :key="c"
+          class="sidebar-create__color-swatch"
+          :class="{ 'sidebar-create__color-swatch--active': newColor === c }"
+          :style="{ backgroundColor: c }"
+          @click="newColor = c; colorPickerOpen = false"
+        />
+      </div>
+    </TeleportPopper>
+
+    <!-- 时段 picker 弹层 -->
     <TeleportPopper
       v-model:visible="timeOfDayPickerOpen"
       :anchor="timeOfDayTriggerEl"
@@ -589,21 +763,22 @@ function selectHabit(id: string) {
       </div>
     </TeleportPopper>
 
-    <!-- 颜色 picker 弹层（Teleport 到 body） -->
+    <!-- 重复 picker 弹层 -->
     <TeleportPopper
-      v-model:visible="colorPickerOpen"
-      :anchor="colorTriggerEl"
+      v-model:visible="repeatPickerOpen"
+      :anchor="repeatTriggerEl"
       placement="bottom-left"
     >
-      <div class="sidebar-create__color-picker">
+      <div class="sidebar-create__color-picker sidebar-create__timeofday">
         <button
-          v-for="c in colors"
-          :key="c"
-          class="sidebar-create__color-swatch"
-          :class="{ 'sidebar-create__color-swatch--active': newColor === c }"
-          :style="{ backgroundColor: c }"
-          @click="newColor = c; colorPickerOpen = false"
-        />
+          v-for="opt in REPEAT_OPTIONS"
+          :key="opt.value"
+          class="sidebar-create__timeofday-item"
+          :class="{ 'sidebar-create__timeofday-item--active': newRepeatRule === opt.value }"
+          @click="newRepeatRule = opt.value; repeatPickerOpen = false"
+        >
+          {{ opt.label }}
+        </button>
       </div>
     </TeleportPopper>
 
@@ -1165,5 +1340,239 @@ function selectHabit(id: string) {
   font-size: 12px;
   color: var(--jt-text-secondary);
   margin: 8px 0 0;
+}
+
+/* === 习惯卡片/详情的 avatar emoji 文字 === */
+.habit-card__avatar-icon,
+.habit-detail__avatar-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+.habit-detail__avatar-icon {
+  font-size: 18px;
+}
+
+/* === 新建/编辑习惯弹窗（完整表单） === */
+.habit-form-modal .arco-modal-header {
+  display: none;
+}
+.habit-form-modal .arco-modal-body {
+  padding: 0;
+}
+.habit-form-modal .arco-modal {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.habit-form {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 顶部：大图标 + 名称 + 关闭 */
+.habit-form__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px 14px;
+}
+
+.habit-form__avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+.habit-form__avatar:hover {
+  transform: scale(1.05);
+}
+
+.habit-form__avatar-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.habit-form__name {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 16px;
+  font-family: var(--font-body);
+  color: var(--jt-text-primary);
+  line-height: 1.4;
+}
+.habit-form__name::placeholder {
+  color: var(--jt-text-tertiary);
+}
+
+.habit-form__close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+.habit-form__close:hover {
+  background-color: var(--jt-surface-hover);
+  color: var(--jt-text-primary);
+}
+
+/* 属性行：垂直堆叠 */
+.habit-form__attrs {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 12px 12px;
+  gap: 2px;
+}
+
+.habit-form__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-body);
+  transition: background-color 0.1s ease;
+}
+.habit-form__row:hover {
+  background-color: var(--jt-surface-hover);
+}
+
+.habit-form__row-label {
+  font-size: 13px;
+  color: var(--jt-text-secondary);
+  flex-shrink: 0;
+}
+
+.habit-form__row-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--jt-text-primary);
+}
+
+.habit-form__color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+/* 静态行（直接嵌入 input）：number / time */
+.habit-form__row--static {
+  cursor: default;
+}
+.habit-form__row--static:hover {
+  background-color: var(--jt-surface-hover);
+}
+
+.habit-form__number {
+  width: 48px;
+  border: 1px solid var(--jt-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--jt-text-primary);
+  background-color: var(--jt-surface);
+  outline: none;
+  text-align: center;
+}
+.habit-form__number:focus {
+  border-color: var(--jt-primary);
+}
+
+.habit-form__unit {
+  font-size: 12px;
+  color: var(--jt-text-tertiary);
+}
+
+.habit-form__time {
+  border: 1px solid var(--jt-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--jt-text-primary);
+  background-color: var(--jt-surface);
+  outline: none;
+}
+.habit-form__time:focus {
+  border-color: var(--jt-primary);
+}
+
+.habit-form__placeholder {
+  font-size: 12px;
+  color: var(--jt-text-tertiary);
+}
+
+/* 底部提示 */
+.habit-form__foot {
+  padding: 0 20px 14px;
+  text-align: right;
+}
+.habit-form__hint {
+  font-size: 11px;
+  color: var(--jt-text-tertiary);
+}
+
+/* === Icon picker grid === */
+.habit-form__icon-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  padding: 8px;
+  background: var(--jt-surface);
+  border: 1px solid var(--jt-border);
+  border-radius: 10px;
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.08),
+    0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.habit-form__icon-cell {
+  width: 36px;
+  height: 36px;
+  border: 1.5px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.1s ease, transform 0.1s ease;
+}
+.habit-form__icon-cell:hover {
+  background-color: var(--jt-surface-hover);
+  transform: scale(1.1);
+}
+.habit-form__icon-cell--active {
+  background-color: var(--jt-accent-soft);
+  border-color: var(--jt-primary);
 }
 </style>

@@ -33,7 +33,10 @@ export const useHabitStore = defineStore("habit", () => {
     name: string;
     color?: string;
     repeatRule?: string;
+    targetCount?: number;
+    remindAt?: string | null;
     timeOfDay?: "morning" | "afternoon" | "evening";
+    icon?: string;
   }) {
     const habit = await db.createHabit(params);
     await loadHabits(); // 重新加载获取统计
@@ -51,6 +54,10 @@ export const useHabitStore = defineStore("habit", () => {
     name?: string;
     color?: string;
     timeOfDay?: "morning" | "afternoon" | "evening";
+    icon?: string;
+    repeatRule?: string;
+    targetCount?: number;
+    remindAt?: string | null;
   }) {
     const updated = await db.updateHabit(params);
     // 找到本地对应项，更新字段（保持引用稳定，computed 会响应）
@@ -59,6 +66,10 @@ export const useHabitStore = defineStore("habit", () => {
       h.habit.name = updated.name;
       h.habit.color = updated.color;
       h.habit.timeOfDay = updated.timeOfDay;
+      h.habit.icon = updated.icon;
+      h.habit.repeatRule = updated.repeatRule;
+      h.habit.targetCount = updated.targetCount;
+      h.habit.remindAt = updated.remindAt;
     }
     return updated;
   }

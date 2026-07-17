@@ -111,6 +111,9 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
     // 012: habits 加 time_of_day（上午/下午/晚上 分组）
     run_migration_012(&pool).await?;
 
+    // 013: habits 加 icon（emoji 图标，默认 🏆）
+    run_migration_013(&pool).await?;
+
     Ok(pool)
 }
 
@@ -258,6 +261,18 @@ async fn run_migration_012(pool: &SqlitePool) -> Result<(), String> {
         "habits",
         "time_of_day",
         "TEXT NOT NULL DEFAULT 'evening'",
+    )
+    .await?;
+    Ok(())
+}
+
+/// 迁移 013：habits 加 icon 字段（emoji 字符，默认 🏆）
+async fn run_migration_013(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(
+        pool,
+        "habits",
+        "icon",
+        "TEXT NOT NULL DEFAULT '🏆'",
     )
     .await?;
     Ok(())

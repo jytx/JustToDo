@@ -951,6 +951,8 @@ pub struct Habit {
     pub position: i64,
     /// 时段分组："morning" | "afternoon" | "evening"（默认 evening）
     pub time_of_day: String,
+    /// emoji 图标字符（默认 🏆）
+    pub icon: String,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -970,11 +972,13 @@ pub struct CreateHabitInput {
     pub remind_at: Option<String>,
     /// 时段分组："morning" | "afternoon" | "evening"（默认 evening）
     pub time_of_day: Option<String>,
+    /// emoji 图标字符（默认 🏆）
+    pub icon: Option<String>,
 }
 
 #[tauri::command]
 pub async fn habit_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<HabitWithStats>> {
-    let rows = sqlx::query("SELECT id, name, color, repeat_rule, target_count, remind_at, created_at, position, time_of_day FROM habits ORDER BY position ASC, created_at ASC")
+    let rows = sqlx::query("SELECT id, name, color, repeat_rule, target_count, remind_at, created_at, position, time_of_day, icon FROM habits ORDER BY position ASC, created_at ASC")
         .fetch_all(pool.inner())
         .await
         .map_err(|e| format!("查询习惯失败: {}", e))?;
@@ -997,6 +1001,7 @@ pub async fn habit_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<H
             created_at: r.get("created_at"),
             position: r.get("position"),
             time_of_day: r.get("time_of_day"),
+            icon: r.get("icon"),
         };
 
         let today_count: i64 = sqlx::query_scalar(
@@ -1076,12 +1081,13 @@ pub async fn habit_create(
         Some("morning") | Some("afternoon") | Some("evening") => input.time_of_day.unwrap(),
         _ => "evening".to_string(),
     };
+    let icon = input.icon.unwrap_or_else(|| "🏆".to_string());
 
     sqlx::query(
-        "INSERT INTO habits (id, name, color, repeat_rule, target_count, remind_at, created_at, time_of_day) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
+        "INSERT INTO habits (id, name, color, repeat_rule, target_count, remind_at, created_at, time_of_day, icon) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
     )
     .bind(&id).bind(&input.name).bind(&color).bind(&repeat_rule)
-    .bind(target_count).bind(&input.remind_at).bind(&ts).bind(&time_of_day)
+    .bind(target_count).bind(&input.remind_at).bind(&ts).bind(&time_of_day).bind(&icon)
     .execute(pool.inner()).await
     .map_err(|e| format!("创建习惯失败: {}", e))?;
 
@@ -1095,10 +1101,11 @@ pub async fn habit_create(
         created_at: ts,
         position: 0,
         time_of_day,
+        icon,
     })
 }
 
-/// 更新习惯（编辑名称/颜色/时段）
+/// 更新习惯（编辑名称/颜色/时段/图标/重复规则/目标/提醒）
 #[tauri::command]
 pub async fn habit_update(
     pool: State<'_, sqlx::SqlitePool>,
@@ -1106,6 +1113,10 @@ pub async fn habit_update(
     name: Option<String>,
     color: Option<String>,
     time_of_day: Option<String>,
+    icon: Option<String>,
+    repeat_rule: Option<String>,
+    target_count: Option<i32>,
+    remind_at: Option<Option<String>>,
 ) -> CmdResult<Habit> {
     let new_name = name.unwrap_or_default();
     let new_color = color.unwrap_or_else(|| "#059669".to_string());
@@ -1113,12 +1124,25 @@ pub async fn habit_update(
         Some("morning") | Some("afternoon") | Some("evening") => time_of_day.unwrap(),
         _ => "evening".to_string(),
     };
-    sqlx::query("UPDATE habits SET name = $1, color = $2, time_of_day = $3 WHERE id = $4")
-        .bind(&new_name).bind(&new_color).bind(&new_tod).bind(&id)
-        .execute(pool.inner()).await
-        .map_err(|e| format!("更新习惯失败: {}", e))?;
+    let new_icon = icon.unwrap_or_else(|| "🏆".to_string());
+    let new_repeat = repeat_rule.unwrap_or_else(|| "daily".to_string());
+    let new_target = target_count.unwrap_or(1);
+    // remind_at 是 Option<Option<String>>：外层 Some = 调用方传了字段，
+    // 内层 None = 显式清空提醒，Some(s) = 设为 s
+    let new_remind: Option<String> = match remind_at {
+        Some(inner) => inner,
+        None => None, // 调用方未传该字段时保持现状（下方 SELECT 会拿到现状值，但 UPDATE 不动）
+    };
 
-    let r = sqlx::query("SELECT id, name, color, repeat_rule, target_count, remind_at, created_at, position, time_of_day FROM habits WHERE id = $1")
+    sqlx::query(
+        "UPDATE habits SET name = $1, color = $2, time_of_day = $3, icon = $4, repeat_rule = $5, target_count = $6, remind_at = $7 WHERE id = $8",
+    )
+    .bind(&new_name).bind(&new_color).bind(&new_tod).bind(&new_icon)
+    .bind(&new_repeat).bind(new_target).bind(&new_remind).bind(&id)
+    .execute(pool.inner()).await
+    .map_err(|e| format!("更新习惯失败: {}", e))?;
+
+    let r = sqlx::query("SELECT id, name, color, repeat_rule, target_count, remind_at, created_at, position, time_of_day, icon FROM habits WHERE id = $1")
         .bind(&id)
         .fetch_one(pool.inner()).await
         .map_err(|e| format!("读取更新后的习惯失败: {}", e))?;
@@ -1133,6 +1157,7 @@ pub async fn habit_update(
         created_at: r.get("created_at"),
         position: r.get("position"),
         time_of_day: r.get("time_of_day"),
+        icon: r.get("icon"),
     })
 }
 
