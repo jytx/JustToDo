@@ -1,6 +1,8 @@
-// 日历视图共享 composable —— FullCalendar 接入 + 假数据
+// 日历视图共享 composable —— FullCalendar 接入 + 假数据 + 公共 actions
 // 本期先用假数据评估视觉，后续接入真实任务数据
-import type { CalendarOptions, EventInput } from "@fullcalendar/core";
+import type { CalendarOptions, EventInput, CalendarApi } from "@fullcalendar/core";
+import { useQuickAdd } from "@/composables/useQuickAdd";
+import { useListStore } from "@/stores/list";
 
 /** 演示用假数据 —— 覆盖全天/时间段/跨天/已完成 等场景 */
 export const SAMPLE_EVENTS: EventInput[] = [
@@ -60,5 +62,38 @@ export function createCalendarOptions(
     expandRows: true,
     nowIndicator: true,
     dayMaxEventRows: 3,
+  };
+}
+
+/**
+ * 把 Date 转成本地时区的 YYYY-MM-DD（避免 toISOString 带来的 UTC 偏移问题）
+ */
+export function toIsoDate(d: Date | string): string {
+  const date = typeof d === "string" ? new Date(d) : d;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * 返回一个 `onCreate` 处理函数：取当前 FullCalendar 视图区间起点，作为预填日期
+ * 然后直接调用模块级 `useQuickAdd().open(null, date)` 唤起 QuickAddDialog
+ *
+ * 走模块级共享状态而非 provide/inject，避免组件树深度+router-view 节点之间的传递坑。
+ *
+ * @param getApi 父组件暴露的 `() => CalendarApi | null`（用于取 view.currentStart）
+ */
+export function useCalendarCreateAction(
+  getApi: () => CalendarApi | null,
+): () => void {
+  return () => {
+    // 月视图：currentStart = 当月 1 号；周视图：本周第一天；年视图：1 月 1 日
+    const api = getApi();
+    const anchor = api?.view.currentStart ?? new Date();
+    const iso = toIsoDate(anchor);
+    // 提前加载清单（QuickAddDialog 依赖清单数据决定默认选中项）
+    useListStore().loadLists();
+    useQuickAdd().open(null, iso);
   };
 }

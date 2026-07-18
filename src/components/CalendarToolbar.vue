@@ -5,7 +5,7 @@
 //   右侧：+ 新建  视图下拉（周/月/年）  ‹ 今天 ›  ⋯ 更多
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { IconCalendar, IconPlus, IconLeft, IconRight, IconMore } from "@arco-design/web-vue/es/icon";
+import { IconPlus, IconLeft, IconRight } from "@arco-design/web-vue/es/icon";
 import type { CalendarApi } from "@fullcalendar/core";
 
 defineProps<{
@@ -53,24 +53,13 @@ const viewMenuItems: Array<{ view: CalendarView; label: string; shortcut: string
   { view: "dayGridMonth", label: "月", shortcut: "M" },
   { view: "dayGridYear", label: "年", shortcut: "Y" },
 ];
-
-/** ⋯ 更多菜单 */
-const moreMenuOpen = ref(false);
-const moreMenuItems = [
-  { key: "show-completed", label: "显示已完成任务" },
-  { key: "print", label: "打印" },
-];
 </script>
 
 <template>
   <div class="cal-toolbar">
-    <!-- 左侧：日期切换器 -->
+    <!-- 左侧：标题（纯展示，不可点击） -->
     <div class="cal-toolbar__date">
-      <a-button class="cal-toolbar__date-btn">
-        <template #icon><icon-calendar :size="16" /></template>
-        <span class="cal-toolbar__date-title">{{ title }}</span>
-        <span class="cal-toolbar__chevron">▾</span>
-      </a-button>
+      <h1 class="cal-toolbar__date-title">{{ title }}</h1>
     </div>
 
     <!-- 右侧：新建 / 视图下拉 / 今天 / 更多 -->
@@ -126,21 +115,6 @@ const moreMenuItems = [
       >
         <template #icon><icon-right :size="16" /></template>
       </a-button>
-
-      <a-dropdown v-model:popup-visible="moreMenuOpen" trigger="click">
-        <a-button type="text" size="small" :title="'更多'">
-          <template #icon><icon-more :size="16" /></template>
-        </a-button>
-        <template #content>
-          <a-doption
-            v-for="item in moreMenuItems"
-            :key="item.key"
-            :value="item.key"
-          >
-            {{ item.label }}
-          </a-doption>
-        </template>
-      </a-dropdown>
     </div>
   </div>
 </template>
@@ -165,22 +139,13 @@ const moreMenuItems = [
   gap: 4px;
 }
 
-.cal-toolbar__date-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .cal-toolbar__date-title {
-  font-size: 14px;
-  font-weight: 600;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--jt-text-primary);
-}
-
-.cal-toolbar__chevron {
-  font-size: 10px;
-  color: var(--jt-text-tertiary);
-  margin-left: 2px;
+  letter-spacing: 0.2px;
+  line-height: 1.2;
 }
 
 .cal-toolbar__view-btn {

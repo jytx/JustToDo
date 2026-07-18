@@ -5,7 +5,10 @@ import { ref } from "vue";
 import FullCalendar from "@fullcalendar/vue3";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import { createCalendarOptions } from "@/composables/useCalendarView";
+import {
+  createCalendarOptions,
+  useCalendarCreateAction,
+} from "@/composables/useCalendarView";
 import CalendarToolbar from "@/components/CalendarToolbar.vue";
 
 const calendarRef = ref<InstanceType<typeof FullCalendar> | null>(null);
@@ -27,9 +30,9 @@ function onPrev(): void {
 function onNext(): void {
   getApi()?.next();
 }
-function onCreate(): void {
-  console.log("[WeekView] 新建任务");
-}
+
+/** + 新建：取当前视图区间起点（本周第一天）作为预填日期，打开 QuickAddDialog */
+const onCreate = useCalendarCreateAction(getApi);
 </script>
 
 <template>
