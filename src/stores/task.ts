@@ -8,6 +8,7 @@ import * as db from "@/api/db";
 import type { SmartViewId } from "@/api/db";
 import { useSettingsStore } from "@/stores/settings";
 import { nowLocalIso } from "@/utils/date";
+import { notifyTaskChanged } from "@/composables/useCalendarView";
 
 /**
  * 在非 setup 上下文（如 createTask 的内部调用）安全获取 settings store。
@@ -319,6 +320,8 @@ export const useTaskStore = defineStore("task", () => {
       subtasks.value.push(task);
     }
     refreshCounts();
+    // 通知日历视图刷新（create 不区分是否带日期，全通知；视图自己按当前 range 决定是否可见）
+    notifyTaskChanged();
     return task;
   }
 
@@ -370,6 +373,7 @@ export const useTaskStore = defineStore("task", () => {
       }
     }
     refreshCounts();
+    notifyTaskChanged();
   }
 
   async function updateTask(
@@ -399,6 +403,7 @@ export const useTaskStore = defineStore("task", () => {
     }
     subtaskCache.value = newCache;
     refreshCounts();
+    notifyTaskChanged();
   }
 
   // ─── 检查项操作（独立于 note 富文本）────────────────────
@@ -549,6 +554,7 @@ export const useTaskStore = defineStore("task", () => {
       selectedTaskObj.value = null; // 同步清空选中对象，关闭详情面板
     }
     refreshCounts();
+    notifyTaskChanged();
   }
 
   /** 请求删除任务（弹出确认对话框） */
@@ -655,6 +661,7 @@ export const useTaskStore = defineStore("task", () => {
       ...subtaskCache.value,
       [parentTask.id]: [...(subtaskCache.value[parentTask.id] ?? []), sub],
     };
+    notifyTaskChanged();
     return sub;
   }
 

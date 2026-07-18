@@ -4,7 +4,7 @@
 //   taskToEvent(Task) → 单个任务 → FullCalendar event
 //   useCalendarCreateAction(getApi) → + 按钮：取 view.currentStart 作为默认日期，唤起 QuickAddDialog
 
-import { ref } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import type { CalendarOptions, EventInput, CalendarApi } from "@fullcalendar/core";
 import type { Task } from "@/types";
 import { getTasksByDueRange } from "@/api/db";
@@ -55,6 +55,17 @@ export function toIsoDate(d: Date | string): string {
   const date = typeof d === "string" ? new Date(d) : d;
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * 本地日期 -> "YYYY-MM-DDT00:00:00"（当天零点的完整本地时间字面量）
+ *
+ * 用途：日历视图把"那天全天"喂给 QuickAddDialog 时需要完整字面量，
+ * 因为 DueDateChip 内部的 formatDueDate / parseLocalIso 依赖 [T ] 分隔的时分秒，
+ * 纯 "YYYY-MM-DD" 字符串无法被 parseLocalIso 正则匹配，会导致 chip 退回占位。
+ */
+export function toIsoDateAtStartOfDay(d: Date | string): string {
+  return `${toIsoDate(d)}T00:00:00`;
 }
 
 // ─── 任务 → FullCalendar 事件 转换（纯函数）───────────────
@@ -153,6 +164,32 @@ export function createCalendarOptions(
   };
 }
 
+// ─── 模块级事件总线：任务变更通知 ─────────────────────────
+// 任意位置（QuickAddDialog / TaskDetailPanel / SearchPalette 等）新建 / 更新 / 删除 / 勾选
+// 任务后，调用 `notifyTaskChanged()`，所有挂载中的日历视图会自动 reload。
+
+type TaskChangedListener = () => void;
+const taskChangedListeners = new Set<TaskChangedListener>();
+
+/** 通知所有日历视图"任务已变更"，请重新拉取当前可视范围 */
+export function notifyTaskChanged(): void {
+  for (const fn of taskChangedListeners) {
+    try {
+      fn();
+    } catch (e) {
+      console.error("[useCalendarView] task:changed listener failed:", e);
+    }
+  }
+}
+
+/** 内部：日历视图挂载时订阅任务变更，卸载时取消订阅 */
+function subscribeTaskChanged(fn: TaskChangedListener): () => void {
+  taskChangedListeners.add(fn);
+  return () => {
+    taskChangedListeners.delete(fn);
+  };
+}
+
 // ─── 数据加载 composable ─────────────────────────────────
 
 /**
@@ -202,6 +239,15 @@ export function useCalendarEvents() {
     void loadRange(arg.start, arg.end);
   }
 
+  // 自动订阅任务变更：新建 / 更新 / 删除 / 勾选后，日历当前可视范围自动重拉
+  // 这样 QuickAddDialog 创建带日期任务后无需手动刷新就能看到
+  onMounted(() => {
+    const unsubscribe = subscribeTaskChanged(() => {
+      void reload();
+    });
+    onUnmounted(unsubscribe);
+  });
+
   return { events, status, error, currentRange, loadRange, reload, handleDatesSet };
 }
 
@@ -217,7 +263,7 @@ export function useCalendarCreateAction(
   return () => {
     const api = getApi();
     const anchor = api?.view.currentStart ?? new Date();
-    const iso = toIsoDate(anchor);
+    const iso = toIsoDateAtStartOfDay(anchor);
     useListStore().loadLists();
     useQuickAdd().open(null, iso);
   };
@@ -238,7 +284,7 @@ export function onCalendarEventClick(
  */
 export function onCalendarDateClick(info: { date: Date }): void {
   useListStore().loadLists();
-  const iso = toIsoDate(info.date);
+  const iso = toIsoDateAtStartOfDay(info.date);
   useQuickAdd().open(null, iso, iso);
 }
 
@@ -251,11 +297,11 @@ export function onCalendarDateClick(info: { date: Date }): void {
  */
 export function onCalendarSelect(info: { start: Date; end: Date }): void {
   useListStore().loadLists();
-  const startIso = toIsoDate(info.start);
+  const startIso = toIsoDateAtStartOfDay(info.start);
   // end 是 FC 排他 end（= 拖选最后一天 +1）；转回"含端点"
   const endRaw = new Date(info.end);
   endRaw.setDate(endRaw.getDate() - 1);
-  const endIso = toIsoDate(endRaw);
+  const endIso = toIsoDateAtStartOfDay(endRaw);
   // 全天任务：start/end 都给了
   useQuickAdd().open(null, startIso, endIso);
 }
