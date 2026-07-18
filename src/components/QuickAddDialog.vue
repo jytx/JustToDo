@@ -14,8 +14,10 @@ const props = defineProps<{
   modelValue: boolean;
   /** 可选：默认选中的清单 ID（外部指定时优先） */
   defaultListId?: string;
-  /** 可选：默认日期（YYYY-MM-DD），会同时作为开始和结束日期（同一天全天） */
-  defaultDate?: string | null;
+  /** 可选：默认开始日期（YYYY-MM-DD） */
+  defaultStart?: string | null;
+  /** 可选：默认结束日期（YYYY-MM-DD）；与 start 相等 = 当天全天 */
+  defaultEnd?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -82,14 +84,9 @@ watch(open, async (isOpen) => {
       }
     }
     selectedListId.value = defaultId ?? firstActualListId();
-    // 外部传入默认日期时，作为当天全天任务（start=end=date）；否则无日期
-    if (props.defaultDate) {
-      dueStartAt.value = props.defaultDate;
-      dueEndAt.value = props.defaultDate;
-    } else {
-      dueStartAt.value = null;
-      dueEndAt.value = null;
-    }
+    // 外部传入默认日期时，按 start/end 回填（空 = 无日期）
+    dueStartAt.value = props.defaultStart ?? null;
+    dueEndAt.value = props.defaultEnd ?? null;
     feedback.value = null;
     await nextTick();
     inputRef.value?.focus();

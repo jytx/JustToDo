@@ -272,7 +272,8 @@ useShortcuts({
     <QuickAddDialog
       :model-value="quickAdd.visible.value"
       :default-list-id="quickAdd.defaultListId.value ?? undefined"
-      :default-date="quickAdd.defaultDate.value"
+      :default-start="quickAdd.defaultStart.value"
+      :default-end="quickAdd.defaultEnd.value"
       @update:model-value="quickAdd.close()"
     />
 

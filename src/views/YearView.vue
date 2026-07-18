@@ -10,6 +10,8 @@ import {
   useCalendarCreateAction,
   useCalendarEvents,
   onCalendarEventClick,
+  onCalendarDateClick,
+  onCalendarSelect,
 } from "@/composables/useCalendarView";
 import CalendarToolbar from "@/components/CalendarToolbar.vue";
 
@@ -28,6 +30,9 @@ const options = computed(() => ({
   plugins: [dayGridPlugin, interactionPlugin],
   datesSet: handleDatesSet,
   eventClick: onCalendarEventClick,
+  dateClick: onCalendarDateClick,
+  select: onCalendarSelect,
+  selectable: true,
 }));
 
 const title = ref<string>(`${initialDate.slice(0, 4)}年`);

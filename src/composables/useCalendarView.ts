@@ -231,3 +231,31 @@ export function onCalendarEventClick(
 ): void {
   useTaskStore().selectTask(clickInfo.event.id);
 }
+
+/**
+ * 处理 FullCalendar dateClick —— 点击日历空白处唤起 QuickAddDialog，
+ * 预填点击的那天作为全天任务（start = end = 那天）
+ */
+export function onCalendarDateClick(info: { date: Date }): void {
+  useListStore().loadLists();
+  const iso = toIsoDate(info.date);
+  useQuickAdd().open(null, iso, iso);
+}
+
+/**
+ * 处理 FullCalendar select —— 用户拖选一段时间后唤起 QuickAddDialog。
+ * 跨天拖选：start ~ end 范围；单格点击拖选：start === end。
+ *
+ * 注意：FullCalendar 的 selectInfo.end 是**排他的**（即"下一天"），
+ * 我们在传给任务前回退一天，对齐任务区间"含端点"的语义。
+ */
+export function onCalendarSelect(info: { start: Date; end: Date }): void {
+  useListStore().loadLists();
+  const startIso = toIsoDate(info.start);
+  // end 是 FC 排他 end（= 拖选最后一天 +1）；转回"含端点"
+  const endRaw = new Date(info.end);
+  endRaw.setDate(endRaw.getDate() - 1);
+  const endIso = toIsoDate(endRaw);
+  // 全天任务：start/end 都给了
+  useQuickAdd().open(null, startIso, endIso);
+}
