@@ -127,6 +127,13 @@ export function taskToEvent(task: Task, selectedId: string | null = null): Calen
     start: startLiteral,
     end: fcEnd,
     allDay,
+    // 强制 'block' 渲染：FC v6 dayGridMonth 对非全天的"单格内"事件
+    // (如时间段单天任务) 默认走 .fc-daygrid-dot-event 路径（圆点形式），
+    // 那个组件不带 .fc-h-event class，drag detection 走的是 .fc-h-event，
+    // 所以 dot 形式的事件**根本不能拖**。
+    // 强制 'block' 让所有事件统一走 .fc-daygrid-block-event 路径，
+    // 都能正常拖动改日期。
+    display: "block",
     priority: task.priority,
     done: task.done,
     parentId: task.parentId,
