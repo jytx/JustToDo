@@ -10,10 +10,12 @@ import {
   IconSettings,
 } from "@arco-design/web-vue/es/icon";
 import { useTaskStore } from "@/stores/task";
+import { useTheme } from "@/composables/useTheme";
 
 const route = useRoute();
 const router = useRouter();
 const taskStore = useTaskStore();
+const { isDark } = useTheme();
 
 /** 全局未完成任务总数 = 各清单未完成根任务之和 */
 const globalOpenCount = computed(() =>
@@ -41,7 +43,7 @@ function go(path: string): void {
 </script>
 
 <template>
-  <nav class="app-rail">
+  <nav class="app-rail" :class="{ 'app-rail--dark': isDark }">
     <!-- 顶部 32px 留给原生窗口按钮（红黄绿），同时作为可拖动区域 -->
     <div class="app-rail__drag-spacer" />
 
@@ -116,8 +118,14 @@ function go(path: string): void {
 }
 
 .app-rail__btn:hover {
-  background-color: var(--jt-surface-hover);
+  /* 比 --jt-surface-hover 更明显的 hover 反馈 */
+  background-color: var(--color-fill-2, var(--jt-surface-hover));
   color: var(--jt-text-primary);
+}
+
+.app-rail--dark .app-rail__btn:hover {
+  /* 深色模式下用更深一档的填充色，避免与背景融合 */
+  background-color: var(--color-fill-3, var(--jt-surface-hover));
 }
 
 .app-rail__btn--active {
