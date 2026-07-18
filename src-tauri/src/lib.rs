@@ -227,6 +227,7 @@ pub fn run() {
             commands::task_count_by_tag,
             commands::task_count_smart_view,
             commands::task_get_by_list,
+            commands::task_get_by_due_range,
             commands::task_get_smart_view,
             commands::task_create,
             commands::task_update,

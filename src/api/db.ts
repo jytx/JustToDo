@@ -252,6 +252,25 @@ export async function getSubtasks(parentId: string): Promise<Task[]> {
   return rows.map(mapTask);
 }
 
+/** 按 due 日期范围拉取任务（用于日历视图）
+ * 命中条件：任务区间与 [start, end] 相交；包含根任务与子任务
+ * @param start 范围起始（本地字面量 "YYYY-MM-DDTHH:mm:ss"）
+ * @param end 范围结束（本地字面量）
+ * @param includeDone 是否包含已完成（默认 false）
+ */
+export async function getTasksByDueRange(
+  start: string,
+  end: string,
+  includeDone = false,
+): Promise<Task[]> {
+  const rows = await invoke<RustTask[]>("task_get_by_due_range", {
+    start,
+    end,
+    includeDone,
+  });
+  return rows.map(mapTask);
+}
+
 /** 按 ID 获取单个任务（用于详情面板解析父任务链） */
 export async function getTaskById(id: string): Promise<Task | null> {
   const r = await invoke<RustTask | null>("task_get_by_id", { id });

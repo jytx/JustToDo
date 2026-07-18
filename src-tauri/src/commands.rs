@@ -406,6 +406,41 @@ async fn resolve_sort_pref(
     Ok(("manual".to_string(), "asc".to_string()))
 }
 
+/// 查询与某个日期范围相交的"已完成 or 未完成"任务（前端用于日历视图）
+///
+/// 命中条件：任务的开始时刻 ≤ rangeEnd 且结束时刻 ≥ rangeStart
+/// 这样跨天任务 / 部分在窗口内的任务都能出现；不区分根/子任务。
+///
+/// 参数：
+/// - `start` / `end`：本地时间字面量 "YYYY-MM-DDTHH:mm:ss"，含端点
+/// - `include_done`：是否包含已完成任务；true 时含 done=1，false 时仅 done=0
+#[tauri::command]
+pub async fn task_get_by_due_range(
+    pool: State<'_, sqlx::SqlitePool>,
+    start: String,
+    end: String,
+    include_done: bool,
+) -> CmdResult<Vec<Task>> {
+    let done_clause = if include_done { "" } else { "AND done = 0" };
+    let sql = format!(
+        "SELECT * FROM tasks
+         WHERE due_start_at IS NOT NULL
+           AND due_end_at IS NOT NULL
+           AND due_start_at <= $2
+           AND due_end_at   >= $1
+           {}
+         ORDER BY done ASC, due_start_at ASC, sort_order ASC",
+        done_clause
+    );
+    let rows = sqlx::query(&sql)
+        .bind(&start)
+        .bind(&end)
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| format!("按日期范围查询任务失败: {}", e))?;
+    Ok(rows.iter().map(row_to_task).collect())
+}
+
 #[tauri::command]
 pub async fn task_get_smart_view(
     pool: State<'_, sqlx::SqlitePool>,
