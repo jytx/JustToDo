@@ -358,12 +358,20 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
   background-color: transparent !important;
 }
 
-/* FC 内部 .fc-event-main 默认 padding + 圆角会让左右两侧露出一条"原背景色"，
-   选中态铺满：去掉内层 padding / border-radius，并把外层圆角也压成 0
-   （保留全事件通用的 4px 圆角，避免点击视觉怪异）。 */
+/* FC 内部 .fc-event-main / .fc-daygrid-event 都有默认 padding + 圆角，
+   选中态下需要让底色铺满到事件左右边界：
+   - 抹掉 .fc-event-main 的内层 padding（让 main 与 fc-event 同宽）
+   - 把外层 .fc-event 和内层 main 的圆角统一成 4px
+   - box-sizing 用 border-box 避免 padding 把内容推开 */
 .jt-task-event--selected,
 .jt-task-event--selected .fc-event-main {
   border-radius: 4px;
+  box-sizing: border-box;
+  padding: 0;
+}
+
+.jt-task-event--selected .fc-event-main {
+  padding: 1px 4px; /* 恢复通用事件的留白 */
 }
 
 body[arco-theme="dark"] .jt-task-event--selected,
