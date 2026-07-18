@@ -78,11 +78,31 @@ const PRIORITY_EVENT_COLOR: Record<number, string> = {
   3: "#EF4444",                  // 红
 };
 
+/** 提取字面量的 HH:mm:ss 部分（无则返回 null） */
+function timePartOf(literal: string): string | null {
+  const m = literal.match(/[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return null;
+  return `${m[1]}:${m[2]}:${m[3] ?? "00"}`;
+}
+
 /** 把本地字面量判别成"全天"还是"时间段"
  *  - 长度 = 10（"YYYY-MM-DD"）= 全天
- *  - 长度 > 10（"YYYY-MM-DDTHH:mm:ss"）= 时间段 */
+ *  - 长度 > 10 且时间部分为 "00:00:00" = 全天（凌晨边界，含拖选的多日全天范围）
+ *  - 长度 > 10 且时间部分非零 = 时间段 */
 function isAllDayLiteral(literal: string): boolean {
-  return literal.length <= 10;
+  if (literal.length <= 10) return true;
+  const t = timePartOf(literal);
+  return t === "00:00:00";
+}
+
+/** 把字面量加 N 天，返回新的 "YYYY-MM-DD" 字面量（仅处理日期，时间不保留） */
+function addDaysToDateLiteral(literal: string, days: number): string {
+  // 解析为本地 Date（用 parseLocalIso 处理全/带时分两种情况）
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(literal);
+  if (!m) return literal;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  d.setDate(d.getDate() + days);
+  return toIsoDate(d);
 }
 
 /** 把 Task 转换为 FullCalendar 事件 */
@@ -92,19 +112,22 @@ export function taskToEvent(task: Task): CalendarTaskEvent | null {
   const endLiteral = task.dueEndAt;
   const allDay = isAllDayLiteral(startLiteral) && isAllDayLiteral(endLiteral);
 
-  // FullCalendar 全天事件：end 必须是"下一天"，且不写时间部分；
-  // 我们的本地字面量如果 end 与 start 同日期（= 当天全天），FullCalendar 期望 end = start+1day
+  // FullCalendar 全天事件：end 必须是"下一天"（FC 全天 end 排他），
+  // 且不写时间部分（FC 会忽略时间分量，全天事件只用日期）
+  // 我们的本地字面量是"含端点"的语义（如 7/1-7/4 表示 4 天），
+  // 所以全天时统一把 end 加 1 天给 FC（7/4 → 7/5）
   let fcEnd = endLiteral;
-  if (allDay && startLiteral === endLiteral) {
-    const d = new Date(startLiteral);
-    d.setDate(d.getDate() + 1);
-    fcEnd = toIsoDate(d);
+  let fcStart = startLiteral;
+  if (allDay) {
+    fcEnd = addDaysToDateLiteral(endLiteral, 1);
+    // start 也只保留日期部分（FC 全天事件不关心时间）
+    fcStart = toIsoDate(startLiteral);
   }
 
   const event: CalendarTaskEvent = {
     id: task.id,
     title: task.title,
-    start: startLiteral,
+    start: fcStart,
     end: fcEnd,
     allDay,
     priority: task.priority,
