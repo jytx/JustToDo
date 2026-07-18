@@ -367,7 +367,12 @@ export function onCalendarEventClick(
  * 静默成功，不弹任何提示。
  */
 export async function onCalendarEventChange(info: {
-  event: { id: string; start: Date | null; end: Date | null };
+  event: {
+    id: string;
+    start: Date | null;
+    end: Date | null;
+    extendedProps?: { done?: boolean; parentId?: string | null };
+  };
   oldEvent: { start: Date | null; end: Date | null };
   revert: () => void;
 }, getApi?: () => CalendarApi | null): Promise<void> {
@@ -376,22 +381,31 @@ export async function onCalendarEventChange(info: {
     revert();
     return;
   }
-  const taskStore = useTaskStore();
-  // 在 store 内查找任务（currentTasks / subtasks / subtaskCache / selectedTask 之一）
-  const t =
-    taskStore.openTasks.find((x) => x.id === event.id) ??
-    taskStore.subtasks.find((x) => x.id === event.id) ??
-    Object.values(taskStore.subtaskCache)
-      .flat()
-      .find((x) => x.id === event.id) ??
-    (taskStore.selectedTask?.id === event.id ? taskStore.selectedTask : null);
-  if (!t || !canDragTask(t)) {
+  // 直接用 event 自带的 extendedProps 校验可拖（不依赖 taskStore.currentTasks）
+  // 日历视图的事件不在任何清单的 currentTasks 里，从 store 查会得到 undefined → 误 revert
+  const done = event.extendedProps?.done ?? false;
+  const parentId = event.extendedProps?.parentId ?? null;
+  if (done || parentId) {
     revert();
     return;
   }
   // 把 FC 的 Date 转回本地时间字面量
+  // 注意：FC 全天事件 end 是排他的（= lastDay + 1），
+  // 而我们的本地字面量是"含端点"语义，所以全天事件的 end 要回退一天
+  const isAllDay =
+    event.start.getHours() === 0 &&
+    event.start.getMinutes() === 0 &&
+    event.end.getHours() === 0 &&
+    event.end.getMinutes() === 0;
+  let endForDb = event.end;
+  if (isAllDay) {
+    const prev = new Date(event.end);
+    prev.setDate(prev.getDate() - 1);
+    endForDb = prev;
+  }
   const newStart = toLocalIso(event.start);
-  const newEnd = toLocalIso(event.end);
+  const newEnd = toLocalIso(endForDb);
+  const taskStore = useTaskStore();
   try {
     await taskStore.updateTask(event.id, {
       dueStartAt: newStart,
