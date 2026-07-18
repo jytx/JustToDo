@@ -389,21 +389,26 @@ export async function onCalendarEventChange(info: {
     revert();
     return;
   }
-  // 把 FC 的 Date 转回本地时间字面量
-  // 注意：FC 全天事件 end 是排他的（= lastDay + 1），
-  // 而我们的本地字面量是"含端点"语义，所以全天事件的 end 要回退一天
+  // 把 FC 的 start / end 规范成本地 Date（FC v6 对全天事件可能给 Date 或
+  // "YYYY-MM-DD" 字符串；时间段一定是 Date；统一处理）
+  const toDate = (v: Date | string): Date => (v instanceof Date ? v : new Date(v));
+  const startDate = toDate(event.start);
+  const endDate = toDate(event.end);
+  // 判断是否全天：两端都是 0:00:00
   const isAllDay =
-    event.start.getHours() === 0 &&
-    event.start.getMinutes() === 0 &&
-    event.end.getHours() === 0 &&
-    event.end.getMinutes() === 0;
-  let endForDb = event.end;
+    startDate.getHours() === 0 &&
+    startDate.getMinutes() === 0 &&
+    endDate.getHours() === 0 &&
+    endDate.getMinutes() === 0;
+  // FC 全天事件 end 是排他的（= lastDay + 1），
+  // 我们的本地字面量是"含端点"语义，所以全天时 end 要回退一天
+  let endForDb = endDate;
   if (isAllDay) {
-    const prev = new Date(event.end);
+    const prev = new Date(endDate);
     prev.setDate(prev.getDate() - 1);
     endForDb = prev;
   }
-  const newStart = toLocalIso(event.start);
+  const newStart = toLocalIso(startDate);
   const newEnd = toLocalIso(endForDb);
   const taskStore = useTaskStore();
   try {
@@ -420,11 +425,10 @@ export async function onCalendarEventChange(info: {
     const api = getApi?.();
     if (api) {
       const view = api.view;
-      const newStartDate = event.start;
       const isInRange =
-        newStartDate >= view.currentStart && newStartDate < view.currentEnd;
+        startDate >= view.currentStart && startDate < view.currentEnd;
       if (!isInRange) {
-        api.gotoDate(newStartDate);
+        api.gotoDate(startDate);
       }
     }
   } catch (e) {
