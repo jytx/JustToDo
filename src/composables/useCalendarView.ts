@@ -358,6 +358,11 @@ export function onCalendarEventClick(
  *      - store 内部已自动同步 currentTasks / subtasks / subtaskCache / selectedTaskObj
  *      - 并 notifyTaskChanged → 当前日历视图的 useCalendarEvents 会 reload
  *   4. 失败时 revert FC DOM（DB 不会被改）
+ *   5. 写库成功后若拖到可视范围外（如月视图拖到下个月），调 api.gotoDate 跳到新位置
+ *      触发 datesSet → handleDatesSet 自动 reload 新 range，让事件被 SQL 查到
+ *      （否则按当前 range 查询会漏掉新位置的事件）
+ *
+ * @param getApi 可选：返回 FullCalendar API；用于拖到 range 外时跳转可视范围
  *
  * 静默成功，不弹任何提示。
  */
@@ -365,7 +370,7 @@ export async function onCalendarEventChange(info: {
   event: { id: string; start: Date | null; end: Date | null };
   oldEvent: { start: Date | null; end: Date | null };
   revert: () => void;
-}): Promise<void> {
+}, getApi?: () => CalendarApi | null): Promise<void> {
   const { event, oldEvent, revert } = info;
   if (!event.start || !event.end || !oldEvent.start || !oldEvent.end) {
     revert();
@@ -395,6 +400,18 @@ export async function onCalendarEventChange(info: {
     // 拖拽成功 → 关闭详情面板（避免面板里"原日期"和新位置不一致造成认知负担）
     if (taskStore.selectedTaskId === event.id) {
       taskStore.selectTask(null);
+    }
+    // 拖到可视范围外时跳转 FC 视图，触发 datesSet → handleDatesSet reload 新 range
+    // 解决"按当前 range SQL 漏查新位置事件"导致的事件消失问题
+    const api = getApi?.();
+    if (api) {
+      const view = api.view;
+      const newStartDate = event.start;
+      const isInRange =
+        newStartDate >= view.currentStart && newStartDate < view.currentEnd;
+      if (!isInRange) {
+        api.gotoDate(newStartDate);
+      }
     }
   } catch (e) {
     console.error("[onCalendarEventChange] 更新任务日期失败:", e);

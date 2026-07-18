@@ -41,8 +41,10 @@ const options = computed(() => ({
   plugins: [timeGridPlugin, interactionPlugin],
   datesSet: handleDatesSet,
   eventClick: onCalendarEventClick,
-  eventDrop: onCalendarEventChange,
-  eventResize: onCalendarEventChange,
+  eventDrop: (info: Parameters<typeof onCalendarEventChange>[0]) =>
+    onCalendarEventChange(info, () => getApi()),
+  eventResize: (info: Parameters<typeof onCalendarEventChange>[0]) =>
+    onCalendarEventChange(info, () => getApi()),
   dateClick: onCalendarDateClick,
   select: onCalendarSelect,
   selectable: true,
