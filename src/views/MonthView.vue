@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 月视图 —— FullCalendar dayGridMonth + 真实任务数据
 // 顶部工具条由 CalendarToolbar 提供
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import FullCalendar from "@fullcalendar/vue3";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
@@ -13,12 +13,22 @@ import {
   onCalendarDateClick,
   onCalendarSelect,
 } from "@/composables/useCalendarView";
+import { useTaskStore } from "@/stores/task";
 import CalendarToolbar from "@/components/CalendarToolbar.vue";
 
 const calendarRef = ref<InstanceType<typeof FullCalendar> | null>(null);
+const taskStore = useTaskStore();
 
-/** 真实任务事件 + 加载状态 */
-const { events, status, error, handleDatesSet } = useCalendarEvents();
+/** 真实任务事件 + 加载状态（选中态与 taskStore.selectedTaskId 同步） */
+const { events, status, error, handleDatesSet, applySelection } = useCalendarEvents(
+  () => taskStore.selectedTaskId,
+);
+
+// 选中任务变化时只重算 events 上的选中 className（不重拉 DB）
+watch(
+  () => taskStore.selectedTaskId,
+  () => applySelection(),
+);
 
 /** 初始日期：默认今天（前端 Date → YYYY-MM-DD） */
 const initialDate = (() => {

@@ -97,8 +97,12 @@ function dateLiteralToDate(literal: string): Date {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
-/** 把 Task 转换为 FullCalendar 事件 */
-export function taskToEvent(task: Task): CalendarTaskEvent | null {
+/** 把 Task 转换为 FullCalendar 事件
+ *
+ * @param task 任务
+ * @param selectedId 当前选中任务 ID；匹配时给事件加 `jt-task-event--selected` class
+ *                   让 CSS 实现日历上的选中高亮（与详情面板打开态同步） */
+export function taskToEvent(task: Task, selectedId: string | null = null): CalendarTaskEvent | null {
   if (!task.dueStartAt || !task.dueEndAt) return null;
   const startLiteral = task.dueStartAt;
   const endLiteral = task.dueEndAt;
@@ -141,6 +145,11 @@ export function taskToEvent(task: Task): CalendarTaskEvent | null {
     event.classNames = ["jt-task-event", `jt-task-event--p${task.priority}`];
   }
 
+  // 选中态：与 taskStore.selectedTaskId 同步
+  if (selectedId && task.id === selectedId) {
+    event.classNames = [...(event.classNames ?? []), "jt-task-event--selected"];
+  }
+
   return event;
 }
 
@@ -175,7 +184,9 @@ export function createCalendarOptions(
     height: "calc(100vh - 56px - 16px * 2)",
     expandRows: true,
     nowIndicator: true,
-    dayMaxEventRows: 3,
+    // 不限制每天显示的事件数：月视图一天 4-5 个任务时不需要折叠成 "+N More"，
+    // 格子会自动撑高（搭配 expandRows: true）
+    dayMaxEventRows: false,
     // 关闭默认的点击/选择交互由父组件接管；eventClick 在 view 层配置
   };
 }
@@ -213,11 +224,25 @@ function subscribeTaskChanged(fn: TaskChangedListener): () => void {
  *  - `events`：当前范围内的任务事件
  *  - `status` / `error`：加载状态
  *  - `loadRange(start, end)`：手动拉取（也用于 FullCalendar `datesSet` 钩子）
+ *
+ * @param selectedIdGetter 接收一个"返回当前选中任务 ID"的 getter；
+ *                         选中态会反映到每个 event 的 classNames 上，
+ *                         选中变化时不需要重拉数据库，只重新 map 一遍 events
  */
-export function useCalendarEvents() {
+export function useCalendarEvents(
+  selectedIdGetter: () => string | null = () => null,
+) {
   const events = ref<CalendarTaskEvent[]>([]);
   const status = ref<CalendarStatus>("idle");
   const error = ref<string | null>(null);
+
+  /** 把 task 列表 + 当前选中 ID 转为 event 列表（事件本身 + 选中态 class） */
+  function mapTasks(tasks: Task[]): CalendarTaskEvent[] {
+    const selectedId = selectedIdGetter();
+    return tasks
+      .map((t) => taskToEvent(t, selectedId))
+      .filter((e): e is CalendarTaskEvent => e !== null);
+  }
 
   /** FullCalendar datesSet 回调风格直接传入 */
   async function loadRange(rangeStart: Date, rangeEnd: Date): Promise<void> {
@@ -229,9 +254,7 @@ export function useCalendarEvents() {
         toLocalIso(rangeEnd),
         false, // includeDone = false：默认隐藏已完成
       );
-      events.value = tasks
-        .map(taskToEvent)
-        .filter((e): e is CalendarTaskEvent => e !== null);
+      events.value = mapTasks(tasks);
       status.value = "success";
     } catch (e) {
       console.error("[useCalendarEvents] 加载失败:", e);
@@ -245,6 +268,20 @@ export function useCalendarEvents() {
     if (currentRange.value) {
       await loadRange(currentRange.value.start, currentRange.value.end);
     }
+  }
+
+  /** 选中态变化时只重算 classNames（不重拉 DB） */
+  function applySelection(): void {
+    const selectedId = selectedIdGetter();
+    events.value = events.value.map((e) => {
+      const isSelected = selectedId !== null && e.id === selectedId;
+      // taskToEvent 总把 classNames 设为数组；如果有遗漏的外部输入兜底成 []
+      const base = Array.isArray(e.classNames) ? e.classNames : [];
+      const classNames = base.filter((c: string) => c !== "jt-task-event--selected");
+      if (isSelected) classNames.push("jt-task-event--selected");
+      // 引用变化触发响应式
+      return { ...e, classNames };
+    });
   }
 
   /** FullCalendar 当前可视范围（由 datesSet 钩子写入） */
@@ -264,7 +301,7 @@ export function useCalendarEvents() {
     onUnmounted(unsubscribe);
   });
 
-  return { events, status, error, currentRange, loadRange, reload, handleDatesSet };
+  return { events, status, error, currentRange, loadRange, reload, handleDatesSet, applySelection };
 }
 
 /**

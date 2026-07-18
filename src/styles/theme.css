@@ -321,3 +321,29 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
   border-radius: 10px;
   overflow: hidden;
 }
+
+/*
+ * 日历事件（FullCalendar）样式
+ * - jt-task-event 是 taskToEvent 给所有任务事件加的统一 class
+ * - jt-task-event--selected 表示任务被选中（与详情面板打开态同步），
+ *   蓝色边框 + 阴影高亮
+ * - jt-task-event--done 已完成（灰色删除线），由 taskToEvent 自动加
+ */
+.jt-task-event {
+  border-radius: 4px;
+  font-size: 12px;
+  padding: 1px 4px;
+}
+
+.jt-task-event--selected {
+  outline: 2px solid var(--jt-primary);
+  outline-offset: -1px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-primary) 25%, transparent);
+  font-weight: 600;
+}
+
+/* 深色模式下选中态用更亮的强调色 */
+body[arco-theme="dark"] .jt-task-event--selected {
+  outline-color: var(--jt-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-accent) 35%, transparent);
+}
