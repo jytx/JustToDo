@@ -46,6 +46,12 @@ const showGlobalActions = computed(() => {
   return route.name !== "habits" && route.name !== "settings";
 });
 
+/** TheSidebar 只在 AppRail 选中"任务"族路由时显示 */
+const showTaskSidebar = computed(() => {
+  const name = route.name as string;
+  return name === "today" || name === "upcoming" || name === "all" || name === "list" || name === "tag";
+});
+
 /** 详情面板打开时，主区域右侧留出面板宽度的空间 */
 const mainStyle = computed(() => {
   if (!taskStore.detailOpen) return { paddingRight: "0px" };
@@ -179,8 +185,8 @@ useShortcuts({
     <!-- 最左侧：应用切换栏（任务 / 习惯 / 设置） -->
     <AppRail />
 
-    <!-- 侧边栏（左） -->
-    <TheSidebar v-model:collapsed="sidebarCollapsed" />
+    <!-- 侧边栏（左）—— 仅在 AppRail 选中"任务"时显示 -->
+    <TheSidebar v-if="showTaskSidebar" v-model:collapsed="sidebarCollapsed" />
 
     <!-- 主区域（中） -->
     <main class="app-layout__main" :style="mainStyle">
