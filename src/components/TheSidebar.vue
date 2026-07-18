@@ -8,7 +8,6 @@ import {
   IconCheckCircle,
   IconTag,
   IconPlus,
-  IconTrophy,
   IconDelete,
   IconMore,
   IconMenuFold,
@@ -21,7 +20,6 @@ import {
 // IconEdit 移到 SidebarListNode 中使用
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
-import { useHabitStore } from "@/stores/habit";
 import { useTaskStore } from "@/stores/task";
 import SidebarListNode from "./SidebarListNode.vue";
 import MenuPopover from "./MenuPopover.vue";
@@ -45,7 +43,6 @@ const route = useRoute();
 const router = useRouter();
 const listStore = useListStore();
 const tagStore = useTagStore();
-const habitStore = useHabitStore();
 const taskStore = useTaskStore();
 
 /** 各区块展开/收起状态 */
@@ -53,7 +50,6 @@ const sectionCollapsed = ref<Record<string, boolean>>({
   smart: false,
   lists: false,
   tags: false,
-  habits: false,
 });
 
 function toggleSection(key: string) {
@@ -153,39 +149,6 @@ async function onTagDrop(e: DragEvent, targetId: string) {
   ids.splice(fromIdx, 1);
   ids.splice(toIdx, 0, draggedId);
   await tagStore.reorderTags(ids);
-}
-
-/* === 习惯拖拽排序（HTML5 drag，同列表内重排） === */
-const habitDragOverId = ref<string | null>(null);
-
-function onHabitDragStart(e: DragEvent, habitId: string) {
-  if (!e.dataTransfer) return;
-  e.dataTransfer.setData("text/plain", habitId);
-  e.dataTransfer.effectAllowed = "move";
-}
-function onHabitDragOver(e: DragEvent, habitId: string) {
-  if (!e.dataTransfer) return;
-  e.dataTransfer.dropEffect = "move";
-  habitDragOverId.value = habitId;
-}
-function onHabitDragLeave(_e: DragEvent) {
-  /* 不立即清 —— dragend/drop 时统一清，避免子元素闪烁 */
-}
-function onHabitDragEnd() {
-  habitDragOverId.value = null;
-}
-async function onHabitDrop(e: DragEvent, targetId: string) {
-  e.preventDefault();
-  habitDragOverId.value = null;
-  const draggedId = e.dataTransfer?.getData("text/plain");
-  if (!draggedId || draggedId === targetId) return;
-  const ids = habitStore.habits.map((h) => h.habit.id);
-  const fromIdx = ids.indexOf(draggedId);
-  const toIdx = ids.indexOf(targetId);
-  if (fromIdx < 0 || toIdx < 0) return;
-  ids.splice(fromIdx, 1);
-  ids.splice(toIdx, 0, draggedId);
-  await habitStore.reorderHabits(ids);
 }
 
 async function confirmDeleteAction() {
@@ -298,15 +261,6 @@ async function saveTagEdit() {
   editingTag.value = null;
 }
 
-/** 跳到 /habits 并通过 store signal 触发 HabitView 自动打开新建弹窗 */
-function goToHabitsAndCreate() {
-  habitStore.fireCreateDialog();
-  // 已在 /habits 路由时 push 同路径不会重新 mount，但 watch signal 仍会触发
-  if (route.path !== "/habits") {
-    router.push("/habits");
-  }
-}
-
 /** 颜色选择器状态（list：新建 / edit：编辑，各自独立 anchor） */
 const colorPickerOpen = reactive<{ list: boolean; edit: boolean }>({
   list: false,
@@ -341,13 +295,6 @@ const newListFolderPopupVisible = ref(false);
 function onClickFolderTrigger(e: MouseEvent) {
   folderTriggerEl.value = e.currentTarget as HTMLElement;
   newListFolderPopupVisible.value = !newListFolderPopupVisible.value;
-}
-
-/** 「查看全部习惯」：强制清掉当前 hash 跳到 /habits 默认视图
- *  因为从 /habits#xxx 跳到 /habits 时 Vue Router 不会自动清 hash */
-function onClickViewAllHabits(e: MouseEvent) {
-  e.preventDefault();
-  router.replace({ path: "/habits", hash: "" });
 }
 
 /** 输入提示：把已有的目录拼成完整路径，作为自动补全的数据源 */
@@ -569,58 +516,7 @@ onMounted(async () => {
         <span class="sidebar__item-title">暂无标签</span>
       </div>
 
-      <!-- 习惯 -->
-      <div class="sidebar__subheader sidebar__subheader--toggle">
-        <div class="sidebar__subheader-left" @click="toggleSection('habits')">
-          <icon-down v-if="!sectionCollapsed.habits" :size="12" class="sidebar__toggle-icon" />
-          <icon-right v-else :size="12" class="sidebar__toggle-icon" />
-          <span>习惯</span>
-        </div>
-        <a-button size="mini" type="text" title="新建习惯" @click.stop="goToHabitsAndCreate">
-          <template #icon><icon-plus :size="16" /></template>
-        </a-button>
-      </div>
-      <router-link
-        v-for="h in habitStore.habits"
-        v-show="!sectionCollapsed.habits"
-        :key="h.habit.id"
-        :to="`/habits#${h.habit.id}`"
-        class="sidebar__item"
-        :class="{
-          // 只有当前 hash 等于这个 habit.id 时才高亮，避免所有 habit 同时显示 active
-          'sidebar__item--active':
-            activeRouteName === 'habits' && route.hash === '#' + h.habit.id,
-          'sidebar__item--drag-over': habitDragOverId === h.habit.id,
-        }"
-        :data-habit-id="h.habit.id"
-        :draggable="!sectionCollapsed.habits"
-        @dragstart="onHabitDragStart($event, h.habit.id)"
-        @dragover.prevent="onHabitDragOver($event, h.habit.id)"
-        @dragleave="onHabitDragLeave"
-        @drop="onHabitDrop($event, h.habit.id)"
-        @dragend="onHabitDragEnd"
-      >
-        <icon-trophy :size="16" class="sidebar__item-icon" :style="{ color: h.habit.color }" />
-        <span class="sidebar__item-title">{{ h.habit.name }}</span>
-        <span v-if="h.streak" class="sidebar__count">🔥{{ h.streak }}</span>
-      </router-link>
-      <a
-        v-show="!sectionCollapsed.habits && habitStore.habits.length > 0"
-        href="#/habits"
-        class="sidebar__item sidebar__item--minor"
-        @click="onClickViewAllHabits($event)"
-      >
-        <icon-more :size="14" class="sidebar__item-icon" />
-        <span class="sidebar__item-title">查看全部习惯</span>
-      </a>
-      <div
-        v-if="habitStore.habits.length === 0"
-        v-show="!sectionCollapsed.habits"
-        class="sidebar__item sidebar__item--disabled"
-      >
-        <icon-trophy :size="16" class="sidebar__item-icon" />
-        <span class="sidebar__item-title">暂无习惯</span>
-      </div>
+      <!-- 习惯区块已移除 —— 习惯入口已上移到 AppRail，TheSidebar 只承担任务二级导航 -->
     </nav>
   </aside>
 
