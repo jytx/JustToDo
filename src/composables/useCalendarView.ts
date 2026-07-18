@@ -34,6 +34,7 @@ export const SAMPLE_EVENTS: EventInput[] = [
 
 /**
  * 创建 FullCalendar options —— 用于周/月/年视图
+ * 顶部 headerToolbar 关闭，由 CalendarToolbar.vue 提供
  * @param initialView dayGridMonth / timeGridWeek / dayGridYear
  * @param initialDate 初始聚焦日期（默认今天）
  */
@@ -46,11 +47,8 @@ export function createCalendarOptions(
     initialDate: initialDate ?? "2026-07-15",
     locale: "zh-cn",
     firstDay: 1,
-    headerToolbar: {
-      left: "prev,next today",
-      center: "title",
-      right: "",
-    },
+    // 自定义 headerToolbar（CalendarToolbar 提供），这里隐藏 FullCalendar 自带的
+    headerToolbar: false,
     buttonText: {
       today: "今天",
       month: "月",
@@ -58,7 +56,7 @@ export function createCalendarOptions(
       day: "日",
     },
     events: SAMPLE_EVENTS,
-    height: "calc(100vh - 80px)",
+    height: "calc(100vh - 56px - 16px * 2)",
     expandRows: true,
     nowIndicator: true,
     dayMaxEventRows: 3,
