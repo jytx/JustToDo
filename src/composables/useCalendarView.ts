@@ -392,6 +392,10 @@ export async function onCalendarEventChange(info: {
       dueStartAt: newStart,
       dueEndAt: newEnd,
     });
+    // 拖拽成功 → 关闭详情面板（避免面板里"原日期"和新位置不一致造成认知负担）
+    if (taskStore.selectedTaskId === event.id) {
+      taskStore.selectTask(null);
+    }
   } catch (e) {
     console.error("[onCalendarEventChange] 更新任务日期失败:", e);
     revert();
