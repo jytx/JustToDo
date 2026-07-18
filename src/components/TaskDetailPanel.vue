@@ -79,11 +79,11 @@ async function loadTaskTags() {
 function startResize(e: MouseEvent) {
   e.preventDefault();
   const startX = e.clientX;
-  const startWidth = props.panelWidth ?? 360;
+  const startWidth = props.panelWidth ?? 480;
 
   function onMouseMove(ev: MouseEvent) {
     const delta = startX - ev.clientX;
-    const newWidth = Math.max(320, Math.min(720, startWidth + delta));
+    const newWidth = Math.max(480, Math.min(720, startWidth + delta));
     emit("update:panelWidth", newWidth);
   }
 
@@ -559,7 +559,7 @@ onBeforeUnmount(() => {
     v-if="task"
     ref="panelEl"
     class="detail-panel"
-    :style="{ width: (panelWidth ?? 360) + 'px' }"
+    :style="{ width: (panelWidth ?? 480) + 'px' }"
   >
     <!-- 拖拽手柄 -->
     <div class="detail-panel__resizer" @mousedown="startResize" />

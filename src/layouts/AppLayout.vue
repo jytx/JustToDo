@@ -30,7 +30,7 @@ const route = useRoute();
 const quickAdd = useQuickAdd();
 
 const sidebarCollapsed = ref(false);
-const panelWidth = ref(360);
+const panelWidth = ref(480);
 
 /** 是否显示排序按钮（清单/标签/全部视图） */
 const showSortButton = computed(() => {
