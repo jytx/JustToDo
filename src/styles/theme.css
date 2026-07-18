@@ -341,6 +341,15 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
   padding: 1px 4px;
 }
 
+/* 可拖事件：根任务 + 未完成（taskToEvent 写入 startEditable/durationEditable）
+   hover 时鼠标变 grab，FC 拖拽中变 grabbing；已完成 / 子任务保持默认箭头 */
+.jt-task-event:not(.jt-task-event--done):not(.jt-task-event--subtask) {
+  cursor: grab;
+}
+.jt-task-event:not(.jt-task-event--done):not(.jt-task-event--subtask):active {
+  cursor: grabbing;
+}
+
 .jt-task-event--selected,
 .jt-task-event--selected .fc-event-main,
 .jt-task-event--selected .fc-event-title,

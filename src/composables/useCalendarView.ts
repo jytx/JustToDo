@@ -150,7 +150,20 @@ export function taskToEvent(task: Task, selectedId: string | null = null): Calen
     event.classNames = [...(event.classNames ?? []), "jt-task-event--selected"];
   }
 
+  // 可拖动：根任务 + 未完成才允许拖（与 TaskListItem.canDrag 一致）
+  // FC per-event 覆盖全局 editable；null 表示用默认
+  const draggable = canDragTask(task);
+  event.startEditable = draggable;
+  event.durationEditable = draggable;
+
   return event;
+}
+
+/** 任务是否可拖（与 TaskListItem.canDrag 保持一致：根 + 未完成）
+ *  - !done：已完成不应再被移动
+ *  - !parentId：子任务的 due 跟随父任务语义，单独改会导致父子日期不一致 */
+export function canDragTask(task: Task): boolean {
+  return !task.done && !task.parentId;
 }
 
 // ─── FullCalendar options 工厂 ──────────────────────────
@@ -184,6 +197,9 @@ export function createCalendarOptions(
     height: "calc(100vh - 56px - 16px * 2)",
     expandRows: true,
     nowIndicator: true,
+    // 开启事件拖拽 + 改时长；具体哪些事件可拖由 taskToEvent 写入的
+    // event.startEditable / durationEditable（per-event）控制
+    editable: true,
     // 不限制每天显示的事件数：月视图一天 4-5 个任务时不需要折叠成 "+N More"，
     // 格子会自动撑高（搭配 expandRows: true）
     dayMaxEventRows: false,
@@ -329,6 +345,57 @@ export function onCalendarEventClick(
   clickInfo: { event: { id: string } },
 ): void {
   useTaskStore().selectTask(clickInfo.event.id);
+}
+
+/**
+ * 处理 FullCalendar eventDrop / eventResize —— 拖拽事件后把新的 start / end
+ * 持久化到任务 due_start_at / due_end_at。
+ *
+ * 流程：
+ *   1. 校验 event.start / event.end 都非空
+ *   2. 校验任务仍可拖（防御：FC event 自身在拖后可能被改写）
+ *   3. 调 taskStore.updateTask 写库
+ *      - store 内部已自动同步 currentTasks / subtasks / subtaskCache / selectedTaskObj
+ *      - 并 notifyTaskChanged → 当前日历视图的 useCalendarEvents 会 reload
+ *   4. 失败时 revert FC DOM（DB 不会被改）
+ *
+ * 静默成功，不弹任何提示。
+ */
+export async function onCalendarEventChange(info: {
+  event: { id: string; start: Date | null; end: Date | null };
+  oldEvent: { start: Date | null; end: Date | null };
+  revert: () => void;
+}): Promise<void> {
+  const { event, oldEvent, revert } = info;
+  if (!event.start || !event.end || !oldEvent.start || !oldEvent.end) {
+    revert();
+    return;
+  }
+  const taskStore = useTaskStore();
+  // 在 store 内查找任务（currentTasks / subtasks / subtaskCache / selectedTask 之一）
+  const t =
+    taskStore.openTasks.find((x) => x.id === event.id) ??
+    taskStore.subtasks.find((x) => x.id === event.id) ??
+    Object.values(taskStore.subtaskCache)
+      .flat()
+      .find((x) => x.id === event.id) ??
+    (taskStore.selectedTask?.id === event.id ? taskStore.selectedTask : null);
+  if (!t || !canDragTask(t)) {
+    revert();
+    return;
+  }
+  // 把 FC 的 Date 转回本地时间字面量
+  const newStart = toLocalIso(event.start);
+  const newEnd = toLocalIso(event.end);
+  try {
+    await taskStore.updateTask(event.id, {
+      dueStartAt: newStart,
+      dueEndAt: newEnd,
+    });
+  } catch (e) {
+    console.error("[onCalendarEventChange] 更新任务日期失败:", e);
+    revert();
+  }
 }
 
 /**

@@ -10,6 +10,7 @@ import {
   useCalendarCreateAction,
   useCalendarEvents,
   onCalendarEventClick,
+  onCalendarEventChange,
   onCalendarDateClick,
   onCalendarSelect,
 } from "@/composables/useCalendarView";
@@ -40,6 +41,8 @@ const options = computed(() => ({
   plugins: [timeGridPlugin, interactionPlugin],
   datesSet: handleDatesSet,
   eventClick: onCalendarEventClick,
+  eventDrop: onCalendarEventChange,
+  eventResize: onCalendarEventChange,
   dateClick: onCalendarDateClick,
   select: onCalendarSelect,
   selectable: true,
