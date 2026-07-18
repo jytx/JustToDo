@@ -8,6 +8,7 @@ import { useTaskStore } from "@/stores/task";
 import { useHabitStore } from "@/stores/habit";
 import { useRoute } from "vue-router";
 import { SORT_FIELDS, SORT_FIELD_LABELS, type SortField } from "@/types";
+import AppRail from "@/components/AppRail.vue";
 import TheSidebar from "@/components/TheSidebar.vue";
 import TaskDetailPanel from "@/components/TaskDetailPanel.vue";
 import SearchPalette from "@/components/SearchPalette.vue";
@@ -175,6 +176,9 @@ useShortcuts({
 
 <template>
   <div class="app-layout">
+    <!-- 最左侧：应用切换栏（任务 / 习惯 / 设置） -->
+    <AppRail />
+
     <!-- 侧边栏（左） -->
     <TheSidebar v-model:collapsed="sidebarCollapsed" />
 
@@ -248,19 +252,26 @@ useShortcuts({
       @update:model-value="quickAdd.close()"
     />
 
-    <!-- 删除任务确认对话框（键盘 Backspace 或任务项菜单触发） -->
+    <!-- 删除任务确认对话框（键盘 Backspace 或任务项菜单触发，极简卡片风） -->
     <a-modal
       v-model:visible="deleteModalVisible"
       :width="400"
+      :footer="false"
       :mask-closable="false"
-      @ok="taskStore.confirmDelete()"
+      :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
+      modal-class="confirm-dialog-modal"
     >
-      <template #title>确认删除</template>
-      <p>确定要删除任务「<strong>{{ deleteConfirmTitle }}</strong>」吗？</p>
-      <template #footer>
-        <a-button @click="taskStore.cancelDelete()">取消</a-button>
-        <a-button status="danger" type="primary" @click="taskStore.confirmDelete()">删除</a-button>
-      </template>
+      <div class="confirm-dialog">
+        <div class="confirm-dialog__title">
+          <span class="confirm-dialog__icon"><icon-exclamation-circle :size="16" /></span>
+          <span>删除任务「<strong>{{ deleteConfirmTitle }}</strong>」？</span>
+        </div>
+        <p class="confirm-dialog__desc">此操作无法撤销。</p>
+        <div class="confirm-dialog__footer">
+          <a-button @click="taskStore.cancelDelete()">取消</a-button>
+          <a-button status="danger" type="primary" @click="taskStore.confirmDelete()">删除</a-button>
+        </div>
+      </div>
     </a-modal>
   </div>
 </template>

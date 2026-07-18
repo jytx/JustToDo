@@ -8,7 +8,6 @@ import {
   IconCheckCircle,
   IconTag,
   IconPlus,
-  IconSettings,
   IconTrophy,
   IconDelete,
   IconMore,
@@ -267,6 +266,38 @@ async function confirmNewTag() {
   showCreateTagDialog.value = false;
 }
 
+/** 编辑标签弹窗状态 */
+const showEditTagDialog = ref(false);
+const editingTag = ref<{ id: string; name: string } | null>(null);
+const editTagName = ref("");
+const editTagNameInputRef = ref<HTMLInputElement | null>(null);
+
+/** 从标签菜单发起编辑：回填当前名称并打开弹窗 */
+function startEditTag(tag: { id: string; name: string }) {
+  tagMenuOpen[tag.id] = false;
+  editingTag.value = { id: tag.id, name: tag.name };
+  editTagName.value = tag.name;
+  showEditTagDialog.value = true;
+  nextTick(() => {
+    editTagNameInputRef.value?.focus();
+    // 选中全部文本，方便直接覆盖输入
+    editTagNameInputRef.value?.select();
+  });
+}
+
+/** 保存标签重命名（空名视为取消） */
+async function saveTagEdit() {
+  if (!editingTag.value) return;
+  const name = editTagName.value.trim();
+  if (!name || name === editingTag.value.name) {
+    showEditTagDialog.value = false;
+    return;
+  }
+  await tagStore.renameTag(editingTag.value.id, name);
+  showEditTagDialog.value = false;
+  editingTag.value = null;
+}
+
 /** 跳到 /habits 并通过 store signal 触发 HabitView 自动打开新建弹窗 */
 function goToHabitsAndCreate() {
   habitStore.fireCreateDialog();
@@ -276,22 +307,31 @@ function goToHabitsAndCreate() {
   }
 }
 
-/** 颜色选择器 hover 状态（list / habit 各自独立） */
-const colorPickerOpen = reactive<{ list: boolean }>({
+/** 颜色选择器状态（list：新建 / edit：编辑，各自独立 anchor） */
+const colorPickerOpen = reactive<{ list: boolean; edit: boolean }>({
   list: false,
+  edit: false,
 });
 
-/** 颜色 trigger 元素缓存（用 data-color-trigger 标识，click 时通过 querySelector 找） */
-const colorTriggerEls = reactive<{ list: HTMLElement | null }>({
+/** 颜色 trigger 元素缓存（list：新建 / edit：编辑） */
+const colorTriggerEls = reactive<{ list: HTMLElement | null; edit: HTMLElement | null }>({
   list: null,
+  edit: null,
 });
 
-/** 点击颜色 trigger —— 切换 popper + 缓存 trigger 元素 */
-function onClickColorTrigger(e: MouseEvent) {
-  // e.currentTarget 是当前 button（与原生 target 一致但不受子元素干扰）
+/** 关闭所有颜色 picker（切换前调用，避免多个同时打开） */
+function closeAllColorPickers(): void {
+  colorPickerOpen.list = false;
+  colorPickerOpen.edit = false;
+}
+
+/** 点击颜色 trigger —— 切换 popper + 缓存 trigger 元素
+ *  scope: "list"（新建清单）/ "edit"（编辑清单） */
+function onClickColorTrigger(e: MouseEvent, scope: "list" | "edit"): void {
   const el = e.currentTarget as HTMLElement;
-  colorTriggerEls.list = el;
-  colorPickerOpen.list = !colorPickerOpen.list;
+  closeAllColorPickers();
+  colorTriggerEls[scope] = el;
+  colorPickerOpen[scope] = true;
 }
 
 /** 目录 trigger 元素 + 弹层状态 */
@@ -510,6 +550,10 @@ onMounted(async () => {
               <icon-more :size="16" />
             </button>
           </template>
+          <MenuPopoverItem @click="startEditTag(tag)">
+            <icon-edit :size="15" />
+            <span>编辑标签</span>
+          </MenuPopoverItem>
           <MenuPopoverItem danger @click="askDeleteTag(tag)">
             <icon-delete :size="15" />
             <span>删除标签</span>
@@ -578,43 +622,38 @@ onMounted(async () => {
         <span class="sidebar__item-title">暂无习惯</span>
       </div>
     </nav>
-
-    <div class="sidebar__append">
-      <router-link to="/settings" class="sidebar__item">
-        <icon-settings :size="16" class="sidebar__item-icon" />
-        <span class="sidebar__item-title">设置</span>
-      </router-link>
-    </div>
   </aside>
 
-  <!-- 删除确认对话框 -->
+  <!-- 删除确认对话框（极简卡片风） -->
   <a-modal
     :visible="!!confirmDelete"
     :width="400"
+    :footer="false"
+    :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
+    modal-class="confirm-dialog-modal"
     @cancel="cancelDelete"
-    @ok="confirmDeleteAction"
   >
-    <template #title>确认删除</template>
-    <div v-if="confirmDelete">
-      <p>
-        确定要删除
-        <strong>{{ confirmDelete.type === "list" ? "清单" : "标签" }}「{{ confirmDelete.name }}」</strong>
-        吗？
+    <div v-if="confirmDelete" class="confirm-dialog">
+      <div class="confirm-dialog__title">
+        <span class="confirm-dialog__icon"><icon-exclamation-circle :size="16" /></span>
+        <span>
+          删除{{ confirmDelete.type === "list" ? "清单" : "标签" }}「<strong>{{ confirmDelete.name }}</strong>」？
+        </span>
+      </div>
+      <p v-if="confirmDelete.type === 'list' && confirmDelete.taskCount > 0" class="confirm-dialog__desc">
+        清单下的 {{ confirmDelete.taskCount }} 个任务将移动到「收件箱」。
       </p>
-      <p v-if="confirmDelete.type === 'list' && confirmDelete.taskCount > 0" class="sidebar__warn-text">
-        ⚠️ 清单下的 {{ confirmDelete.taskCount }} 个任务将移动到「收件箱」。
+      <p v-else-if="confirmDelete.type === 'list'" class="confirm-dialog__desc">
+        清单为空，将直接删除。
       </p>
-      <p v-else-if="confirmDelete.type === 'list'" class="sidebar__warn-text">
-        ⚠️ 清单为空，将直接删除。
+      <p v-else-if="confirmDelete.type === 'tag'" class="confirm-dialog__desc">
+        标签将被删除，任务不受影响。
       </p>
-      <p v-else-if="confirmDelete.type === 'tag'" class="sidebar__warn-text">
-        ⚠️ 标签将被删除（任务不受影响）。
-      </p>
+      <div class="confirm-dialog__footer">
+        <a-button @click="cancelDelete">取消</a-button>
+        <a-button status="danger" type="primary" @click="confirmDeleteAction">删除</a-button>
+      </div>
     </div>
-    <template #footer>
-      <a-button @click="cancelDelete">取消</a-button>
-      <a-button status="danger" type="primary" @click="confirmDeleteAction">删除</a-button>
-    </template>
   </a-modal>
 
   <!-- 新建清单弹窗（QuickAdd 风格：裸 input + 属性 trigger + 回车提交） -->
@@ -664,7 +703,7 @@ onMounted(async () => {
           data-color-trigger="list"
           type="button"
           class="sidebar-create__trigger"
-          @click="onClickColorTrigger($event)"
+          @click="onClickColorTrigger($event, 'list')"
         >
           <span
             class="sidebar-create__color-dot"
@@ -680,37 +719,53 @@ onMounted(async () => {
     </div>
   </a-modal>
 
-  <!-- 编辑清单/目录弹窗 -->
+  <!-- 编辑清单/目录弹窗（QuickAdd 风格：裸 input + 属性 trigger + 回车提交） -->
   <a-modal
     v-model:visible="showEditDialog"
-    :width="400"
-    title="编辑"
+    :width="440"
+    :footer="false"
+    :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
+    modal-class="sidebar-create-modal"
   >
-    <div class="create-list-dialog__field">
-      <label class="create-list-dialog__label">名称</label>
-      <a-input
-        v-model="editListName"
-        placeholder="名称"
-        @keydown.enter="saveListEdit"
-      />
-    </div>
-    <div class="create-list-dialog__colors">
-      <span class="create-list-dialog__label">颜色</span>
-      <div class="create-list-dialog__color-row">
-        <button
-          v-for="c in LIST_COLORS"
-          :key="c"
-          class="create-list-dialog__color"
-          :class="{ 'create-list-dialog__color--active': editListColor === c }"
-          :style="{ backgroundColor: c }"
-          @click="editListColor = c"
+    <div class="sidebar-create">
+      <!-- 主输入行 -->
+      <div class="sidebar-create__input-row">
+        <input
+          v-model="editListName"
+          class="sidebar-create__input"
+          placeholder="清单名称"
+          @keydown.enter="saveListEdit"
+          @keydown.escape.stop="showEditDialog = false"
         />
+        <button
+          class="sidebar-create__close"
+          title="关闭"
+          @click="showEditDialog = false"
+        >
+          <icon-close :size="14" />
+        </button>
+      </div>
+      <div class="sidebar-create__divider" />
+      <!-- 属性行：仅颜色 trigger（清单不能改父级目录） -->
+      <div class="sidebar-create__attrs">
+        <button
+          data-color-trigger="edit"
+          type="button"
+          class="sidebar-create__trigger"
+          @click="onClickColorTrigger($event, 'edit')"
+        >
+          <span
+            class="sidebar-create__color-dot"
+            :style="{ backgroundColor: editListColor }"
+          />
+          <span>颜色</span>
+        </button>
+
+        <span class="sidebar-create__spacer" />
+
+        <span class="sidebar-create__hint">回车保存</span>
       </div>
     </div>
-    <template #footer>
-      <a-button type="text" @click="showEditDialog = false">取消</a-button>
-      <a-button type="primary" @click="saveListEdit">保存</a-button>
-    </template>
   </a-modal>
 
   <!-- 新建标签弹窗（QuickAdd 风格） -->
@@ -735,6 +790,39 @@ onMounted(async () => {
           class="sidebar-create__close"
           title="关闭"
           @click="showCreateTagDialog = false"
+        >
+          <icon-close :size="14" />
+        </button>
+      </div>
+      <div class="sidebar-create__attrs">
+        <span class="sidebar-create__spacer" />
+        <span class="sidebar-create__hint">回车保存</span>
+      </div>
+    </div>
+  </a-modal>
+
+  <!-- 编辑标签弹窗（QuickAdd 风格，与新建标签一致） -->
+  <a-modal
+    v-model:visible="showEditTagDialog"
+    :width="440"
+    :footer="false"
+    :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
+    modal-class="sidebar-create-modal"
+  >
+    <div class="sidebar-create">
+      <div class="sidebar-create__input-row">
+        <input
+          ref="editTagNameInputRef"
+          v-model="editTagName"
+          class="sidebar-create__input"
+          placeholder="标签名称"
+          @keydown.enter="saveTagEdit"
+          @keydown.escape.stop="showEditTagDialog = false"
+        />
+        <button
+          class="sidebar-create__close"
+          title="关闭"
+          @click="showEditTagDialog = false"
         >
           <icon-close :size="14" />
         </button>
@@ -796,6 +884,24 @@ onMounted(async () => {
         :class="{ 'sidebar-create__color-swatch--active': selectedColor === c }"
         :style="{ backgroundColor: c }"
         @click="selectedColor = c; colorPickerOpen.list = false"
+      />
+    </div>
+  </TeleportPopper>
+
+  <!-- 编辑清单颜色 picker 弹层（独立 anchor，对应编辑弹窗的颜色 trigger） -->
+  <TeleportPopper
+    v-model:visible="colorPickerOpen.edit"
+    :anchor="colorTriggerEls.edit"
+    placement="bottom-left"
+  >
+    <div class="sidebar-create__color-picker">
+      <button
+        v-for="c in LIST_COLORS"
+        :key="c"
+        class="sidebar-create__color-swatch"
+        :class="{ 'sidebar-create__color-swatch--active': editListColor === c }"
+        :style="{ backgroundColor: c }"
+        @click="editListColor = c; colorPickerOpen.edit = false"
       />
     </div>
   </TeleportPopper>
@@ -1119,10 +1225,6 @@ onMounted(async () => {
   min-width: 60px;
 }
 
-.sidebar__append {
-  padding: 0 8px 12px;
-}
-
 .sidebar__warn-text {
   font-size: 12px;
   color: var(--jt-text-secondary);
@@ -1134,57 +1236,11 @@ onMounted(async () => {
 }
 </style>
 
-<!-- 新建清单弹窗样式 -->
+<!-- 新建/编辑清单弹窗统一用 sidebar-create 类（样式在全局 sidebar-create.css） -->
 <style scoped>
-.create-list-dialog__field {
-  margin-bottom: 16px;
-}
-
-.create-list-dialog__label {
-  display: block;
-  font-size: 12px;
-  color: var(--jt-text-secondary);
-  margin-bottom: 8px;
-}
-
-.create-list-dialog__colors {
-  margin-top: 4px;
-}
-
-.create-list-dialog__color-row {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.create-list-dialog__color {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  cursor: pointer;
-  transition: border-color 0.15s;
-}
-
-.create-list-dialog__color--active {
-  border-color: color-mix(in srgb, var(--jt-text-primary) 60%, transparent);
-}
-
 .sidebar__list-tree {
   display: flex;
   flex-direction: column;
-}
-
-/* 自动补全：目录路径候选 */
-.create-list-dialog__folder-suggestion {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  line-height: 1.2;
-}
-
-.create-list-dialog__folder-suggestion :deep(.arco-icon) {
-  color: var(--jt-text-tertiary);
 }
 </style>
 
