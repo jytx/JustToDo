@@ -90,7 +90,7 @@ function go(path: string): void {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 4px 4px 8px;
+  padding: 4px 4px 16px;
   background-color: var(--jt-surface-sunken);
   border-right: 1px solid var(--jt-border);
 }
