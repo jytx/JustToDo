@@ -350,6 +350,14 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
   font-weight: 600;
 }
 
+/* 取消 FC 在选中态下给 .fc-event-title / .fc-event-time 单独加的内层背景高亮
+   （FC 默认会给 title 加一个 background-color 用来视觉强调），
+   让选中态只有一个干净的浅色底 + 深色文字。 */
+.jt-task-event--selected .fc-event-title,
+.jt-task-event--selected .fc-event-time {
+  background-color: transparent !important;
+}
+
 body[arco-theme="dark"] .jt-task-event--selected,
 body[arco-theme="dark"] .jt-task-event--selected .fc-event-main,
 body[arco-theme="dark"] .jt-task-event--selected .fc-event-title,
