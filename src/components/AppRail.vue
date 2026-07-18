@@ -118,14 +118,15 @@ function go(path: string): void {
 }
 
 .app-rail__btn:hover {
-  /* 比 --jt-surface-hover 更明显的 hover 反馈 */
-  background-color: var(--color-fill-2, var(--jt-surface-hover));
+  /* 浅色模式：明显深于背景的 hover 反馈 */
+  background-color: rgba(0, 0, 0, 0.06);
   color: var(--jt-text-primary);
 }
 
 .app-rail--dark .app-rail__btn:hover {
-  /* 深色模式下用更深一档的填充色，避免与背景融合 */
-  background-color: var(--color-fill-3, var(--jt-surface-hover));
+  /* 深色模式：明显浅于背景的 hover 反馈 */
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--jt-text-primary);
 }
 
 .app-rail__btn--active {
