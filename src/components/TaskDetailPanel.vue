@@ -554,6 +554,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <Transition name="detail-drawer">
   <div
     v-if="task"
     ref="panelEl"
@@ -939,6 +940,7 @@ onBeforeUnmount(() => {
       </div>
     </a-modal>
   </div>
+  </Transition>
 </template>
 
 <script lang="ts">
@@ -966,6 +968,16 @@ function formatMeta(iso: string): string {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* 滑入抽屉：从右侧滑入 220ms，ease-out */
+.detail-drawer-enter-active,
+.detail-drawer-leave-active {
+  transition: transform 220ms ease-out;
+}
+.detail-drawer-enter-from,
+.detail-drawer-leave-to {
+  transform: translateX(100%);
 }
 
 .detail-panel__resizer {

@@ -60,15 +60,24 @@ const showTaskSidebar = computed(() => {
   );
 });
 
-/** 详情面板打开时，主区域右侧留出面板宽度的空间 */
+/** 是否日历视图（周/月/年）。
+ * 日历视图下，TaskDetailPanel 改为右侧悬浮 drawer（盖在日历之上），
+ * 所以不需要把主区域 / topbar 向右缩进让位。
+ * 任务类视图（today/upcoming/all/list/tag）保持原行为：让位让出 360px。 */
+const isCalendarView = computed<boolean>(() => {
+  const name = route.name as string;
+  return name === "week" || name === "month" || name === "year";
+});
+
+/** 详情面板打开时，主区域右侧留出面板宽度的空间（日历视图除外，悬浮不缩进） */
 const mainStyle = computed(() => {
-  if (!taskStore.detailOpen) return { paddingRight: "0px" };
+  if (!taskStore.detailOpen || isCalendarView.value) return { paddingRight: "0px" };
   return { paddingRight: panelWidth.value + "px" };
 });
 
-/** 详情面板打开时，topbar 整体向右推一个面板宽度（不重叠） */
+/** 详情面板打开时，topbar 整体向右推一个面板宽度（日历视图除外，悬浮不缩进） */
 const topbarStyle = computed(() => {
-  if (!taskStore.detailOpen) return {};
+  if (!taskStore.detailOpen || isCalendarView.value) return {};
   return { right: `${panelWidth.value + 24}px` };
 });
 
