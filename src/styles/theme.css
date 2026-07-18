@@ -326,8 +326,12 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
  * 日历事件（FullCalendar）样式
  * - jt-task-event 是 taskToEvent 给所有任务事件加的统一 class
  * - jt-task-event--selected 表示任务被选中（与详情面板打开态同步），
- *   蓝色边框 + 阴影高亮
+ *   底色变 accent-soft + 文字变 primary（深色模式用 accent）
  * - jt-task-event--done 已完成（灰色删除线），由 taskToEvent 自动加
+ *
+ * 注意：FC 的 event.color 会内联到 .fc-event 的 background-color，
+ * text-color 由 FC 自动按 background 算对比度（红/橙/蓝背景下是白色）。
+ * 选中态覆盖这两个值时需要 !important，否则被 FC 的内联 style 盖掉。
  */
 .jt-task-event {
   border-radius: 4px;
@@ -336,13 +340,11 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
 }
 
 .jt-task-event--selected {
-  /* 选中态：底色变成 accent-soft（与列表项选中、侧边栏激活项同语言） */
   background-color: var(--jt-accent-soft) !important;
-  color: var(--jt-primary);
+  color: var(--jt-primary) !important;
   font-weight: 600;
 }
 
-/* 深色模式下选中态保持底色变化（--jt-accent-soft 在深色已定义） */
 body[arco-theme="dark"] .jt-task-event--selected {
-  color: var(--jt-accent);
+  color: var(--jt-accent) !important;
 }
