@@ -41,15 +41,25 @@ const showSortButton = computed(() => {
   );
 });
 
-/** 是否显示搜索 + 新建任务按钮（习惯/设置视图不显示） */
+/** 是否显示搜索 + 新建任务按钮（习惯/设置/日历视图不显示） */
 const showGlobalActions = computed(() => {
-  return route.name !== "habits" && route.name !== "settings";
+  const name = route.name as string;
+  return name !== "habits" && name !== "settings" && name !== "week" && name !== "month" && name !== "year";
 });
 
 /** TheSidebar 只在 AppRail 选中"任务"族路由时显示 */
 const showTaskSidebar = computed(() => {
   const name = route.name as string;
-  return name === "today" || name === "upcoming" || name === "all" || name === "list" || name === "tag";
+  return (
+    name === "today" ||
+    name === "upcoming" ||
+    name === "all" ||
+    name === "list" ||
+    name === "tag" ||
+    name === "week" ||
+    name === "month" ||
+    name === "year"
+  );
 });
 
 /** 详情面板打开时，主区域右侧留出面板宽度的空间 */

@@ -54,6 +54,21 @@ const routes: RouteRecordRaw[] = [
     name: "habits",
     component: () => import("@/views/HabitView.vue"),
   },
+  {
+    path: "/week",
+    name: "week",
+    component: () => import("@/views/WeekView.vue"),
+  },
+  {
+    path: "/month",
+    name: "month",
+    component: () => import("@/views/MonthView.vue"),
+  },
+  {
+    path: "/year",
+    name: "year",
+    component: () => import("@/views/YearView.vue"),
+  },
 ];
 
 /** StartupView → 路由 path */
