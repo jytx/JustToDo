@@ -80,9 +80,21 @@ const PRIORITY_EVENT_COLOR: Record<number, string> = {
 
 /** 把本地字面量判别成"全天"还是"时间段"
  *  - 长度 = 10（"YYYY-MM-DD"）= 全天
- *  - 长度 > 10（"YYYY-MM-DDTHH:mm:ss"）= 时间段 */
+ *  - 长度 > 10 且时间部分为 "00:00:00" = 全天（凌晨边界，含拖选的多日全天范围）
+ *  - 长度 > 10 且时间部分非零 = 时间段 */
 function isAllDayLiteral(literal: string): boolean {
-  return literal.length <= 10;
+  if (literal.length <= 10) return true;
+  const m = literal.match(/[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return false;
+  const t = `${m[1]}:${m[2]}:${m[3] ?? "00"}`;
+  return t === "00:00:00";
+}
+
+/** 从本地字面量提取日期字段，转成本地 Date 对象 */
+function dateLiteralToDate(literal: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(literal);
+  if (!m) return new Date(literal);
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
 /** 把 Task 转换为 FullCalendar 事件 */
@@ -92,13 +104,17 @@ export function taskToEvent(task: Task): CalendarTaskEvent | null {
   const endLiteral = task.dueEndAt;
   const allDay = isAllDayLiteral(startLiteral) && isAllDayLiteral(endLiteral);
 
-  // FullCalendar 全天事件：end 必须是"下一天"，且不写时间部分；
-  // 我们的本地字面量如果 end 与 start 同日期（= 当天全天），FullCalendar 期望 end = start+1day
+  // FullCalendar 全天事件：
+  //   - start 用 YYYY-MM-DD（FC 全天事件会忽略时间分量，但带 T 的形式也接受）
+  //   - end 是排他的：start=7/1, end=7/5 实际占 7/1/7/2/7/3/7/4 四天
+  //   我们的本地字面量是"含端点"语义（7/1-7/4 表示 4 天），所以全天时 end 要 +1 天给 FC
+  //
+  // 关键点：保留 start 字符串原样（兼容可能存在的时间分量），让 FC 自己识别日期部分
   let fcEnd = endLiteral;
-  if (allDay && startLiteral === endLiteral) {
-    const d = new Date(startLiteral);
-    d.setDate(d.getDate() + 1);
-    fcEnd = toIsoDate(d);
+  if (allDay) {
+    const nextDay = dateLiteralToDate(endLiteral);
+    nextDay.setDate(nextDay.getDate() + 1);
+    fcEnd = toIsoDate(nextDay);
   }
 
   const event: CalendarTaskEvent = {
