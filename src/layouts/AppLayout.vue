@@ -47,7 +47,8 @@ const showGlobalActions = computed(() => {
   return name !== "habits" && name !== "settings" && name !== "week" && name !== "month" && name !== "year";
 });
 
-/** TheSidebar 只在 AppRail 选中"任务"族路由时显示 */
+/** TheSidebar 只在 AppRail 选中"任务"族路由时显示
+ * （日历/习惯/设置 都让 TheSidebar 隐藏，让主区域占满宽度） */
 const showTaskSidebar = computed(() => {
   const name = route.name as string;
   return (
@@ -55,10 +56,7 @@ const showTaskSidebar = computed(() => {
     name === "upcoming" ||
     name === "all" ||
     name === "list" ||
-    name === "tag" ||
-    name === "week" ||
-    name === "month" ||
-    name === "year"
+    name === "tag"
   );
 });
 
