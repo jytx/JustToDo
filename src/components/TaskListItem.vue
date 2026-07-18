@@ -359,7 +359,6 @@ function onDelete() {
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
-  margin-top: 8px;
 }
 
 .task-item__body {

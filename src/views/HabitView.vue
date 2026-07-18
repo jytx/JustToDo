@@ -814,26 +814,28 @@ function selectHabit(id: string) {
       </div>
     </TeleportPopper>
 
-    <!-- 删除确认弹窗 -->
+    <!-- 删除确认弹窗（极简卡片风） -->
     <a-modal
       :visible="confirmDelete"
-      :width="380"
-      title="确认删除"
+      :width="400"
+      :footer="false"
+      :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
+      modal-class="confirm-dialog-modal"
       @cancel="confirmDelete = false"
-      @ok="confirmDeleteHabit"
     >
-      <p>
-        确定要删除习惯
-        <strong>「{{ selectedHabit?.habit.name }}」</strong>
-        吗？
-      </p>
-      <p class="habit-delete-warn">
-        ⚠️ 该习惯的 {{ selectedHabit?.totalDays ?? 0 }} 条打卡记录将一并删除，且不可恢复。
-      </p>
-      <template #footer>
-        <a-button @click="confirmDelete = false">取消</a-button>
-        <a-button status="danger" type="primary" @click="confirmDeleteHabit">删除</a-button>
-      </template>
+      <div class="confirm-dialog">
+        <div class="confirm-dialog__title">
+          <span class="confirm-dialog__icon"><icon-exclamation-circle :size="16" /></span>
+          <span>删除习惯「<strong>{{ selectedHabit?.habit.name }}</strong>」？</span>
+        </div>
+        <p class="confirm-dialog__desc">
+          该习惯的 {{ selectedHabit?.totalDays ?? 0 }} 条打卡记录将一并删除，且不可恢复。
+        </p>
+        <div class="confirm-dialog__footer">
+          <a-button @click="confirmDelete = false">取消</a-button>
+          <a-button status="danger" type="primary" @click="confirmDeleteHabit">删除</a-button>
+        </div>
+      </div>
     </a-modal>
   </div>
 </template>
@@ -1351,13 +1353,6 @@ function selectHabit(id: string) {
   background-color: rgba(245, 34, 45, 0.08);
 }
 
-/* 删除确认弹窗内的提示文字 */
-.habit-delete-warn {
-  font-size: 12px;
-  color: var(--jt-text-secondary);
-  margin: 8px 0 0;
-}
-
 /* === 习惯卡片/详情的 avatar emoji 文字 === */
 .habit-card__avatar-icon,
 .habit-detail__avatar-icon {
@@ -1368,16 +1363,12 @@ function selectHabit(id: string) {
   font-size: 18px;
 }
 
-/* === 新建/编辑习惯弹窗（完整表单） === */
+/* === 新建/编辑习惯弹窗（完整表单）：去标题栏/内边距，圆角由 theme.css 全局统一 === */
 .habit-form-modal .arco-modal-header {
   display: none;
 }
 .habit-form-modal .arco-modal-body {
   padding: 0;
-}
-.habit-form-modal .arco-modal {
-  border-radius: 12px;
-  overflow: hidden;
 }
 
 .habit-form {

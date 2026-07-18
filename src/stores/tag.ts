@@ -28,6 +28,15 @@ export const useTagStore = defineStore("tag", () => {
     tags.value = tags.value.filter((t) => t.id !== id);
   }
 
+  /** 重命名标签（不改 position / createdAt） */
+  async function renameTag(id: string, name: string) {
+    await db.renameTag(id, name);
+    const tag = tags.value.find((t) => t.id === id);
+    if (tag) {
+      tag.name = name;
+    }
+  }
+
   function getByName(name: string): Tag | undefined {
     return tags.value.find((t) => t.name === name);
   }
@@ -52,5 +61,5 @@ export const useTagStore = defineStore("tag", () => {
     await db.reorderTags(merged.map((t) => [t.id, t.position]));
   }
 
-  return { tags, loading, loadTags, createTag, deleteTag, getByName, reorderTags };
+  return { tags, loading, loadTags, createTag, deleteTag, renameTag, getByName, reorderTags };
 });

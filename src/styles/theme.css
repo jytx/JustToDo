@@ -308,3 +308,16 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
   padding-left: 12px;
   padding-right: 12px;
 }
+
+/*
+ * 全局统一：所有 Arco 弹窗（modal）圆角更圆润
+ * - 覆盖 Arco 默认 4px，统一为 16px（更圆润）
+ * - overflow: hidden 让内部背景色块跟随圆角裁剪
+ * - 各弹窗（sidebar-create / confirm-dialog / habit-form / quick-add / search-palette）
+ *   不再单独定义圆角，统一由这条规则控制；如个别弹窗需要调整，在其 modal-class
+ *   作用域内用 .xxx-modal .arco-modal { border-radius: ... } 重写即可（优先级更高）
+ */
+.arco-modal {
+  border-radius: 10px;
+  overflow: hidden;
+}

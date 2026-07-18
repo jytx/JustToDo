@@ -916,21 +916,27 @@ onBeforeUnmount(() => {
       </Popover>
     </div>
 
-    <!-- 删除二次确认弹窗 -->
+    <!-- 删除二次确认弹窗（极简卡片风） -->
     <a-modal
       :visible="deleteConfirmVisible"
-      title="删除任务"
-      :ok-text="'删除'"
-      :cancel-text="'取消'"
-      :ok-button-props="{ status: 'danger' }"
-      :width="380"
+      :width="400"
+      :footer="false"
+      :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
+      modal-class="confirm-dialog-modal"
       :modal-style="{ maxWidth: 'calc(100vw - 32px)' }"
-      @ok="doDelete"
       @cancel="cancelDelete"
     >
-      <p style="margin: 0; color: var(--jt-text-secondary); line-height: 1.6;">
-        确定要删除任务「<strong style="color: var(--jt-text-primary);">{{ task?.title }}</strong>」吗？此操作无法撤销。
-      </p>
+      <div class="confirm-dialog">
+        <div class="confirm-dialog__title">
+          <span class="confirm-dialog__icon"><icon-exclamation-circle :size="16" /></span>
+          <span>删除任务「<strong>{{ task?.title }}</strong>」？</span>
+        </div>
+        <p class="confirm-dialog__desc">此操作无法撤销。</p>
+        <div class="confirm-dialog__footer">
+          <a-button @click="cancelDelete">取消</a-button>
+          <a-button status="danger" type="primary" @click="doDelete">删除</a-button>
+        </div>
+      </div>
     </a-modal>
   </div>
 </template>

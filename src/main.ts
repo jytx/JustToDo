@@ -17,6 +17,7 @@ import "@fontsource/jetbrains-mono";
 import "./styles/theme.css";
 import "./styles/typography.css";
 import "./styles/sidebar-create.css";
+import "./styles/confirm-dialog.css";
 
 const app = createApp(App);
 const pinia = createPinia();

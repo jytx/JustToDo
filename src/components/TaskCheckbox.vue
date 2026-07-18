@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 任务复选框 —— 圆形复选框，勾选时有缩放动效
+// 任务复选框 —— 方形复选框，勾选时有缩放动效
 defineProps<{
   done: boolean;
 }>();
@@ -23,7 +23,7 @@ defineEmits<{
 .task-checkbox {
   width: 16px;
   height: 16px;
-  border-radius: 50%;
+  border-radius: 4px;
   border: 2px solid var(--jt-text-tertiary);
   background: transparent;
   cursor: pointer;

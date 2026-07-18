@@ -1,16 +1,12 @@
 /* QuickAdd 风格创建弹窗 —— 侧栏清单/标签/习惯新建 + HabitView 习惯新建
    复用样式（全局，非 scoped，因为 class 用在多个组件的 modal 内部 DOM 中） */
 
-/* === 弹窗全局：去掉 arco 默认标题栏 + 圆角 + 内边距 === */
+/* === 弹窗全局：去掉 arco 默认标题栏 + 内边距（圆角由 theme.css 全局统一） === */
 .sidebar-create-modal .arco-modal-header {
   display: none;
 }
 .sidebar-create-modal .arco-modal-body {
   padding: 0;
-}
-.sidebar-create-modal .arco-modal {
-  border-radius: 12px;
-  overflow: hidden;
 }
 
 /* === 弹窗主容器 === */

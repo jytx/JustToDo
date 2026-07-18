@@ -1,0 +1,62 @@
+/* 确认对话框 —— 危险操作（删除清单/标签/任务/习惯）的极简卡片风弹窗
+   统一 4 处确认框：无标题栏、圆角 12px、顶部警告图标 + 主文案、副提示、底部右对齐按钮
+   全局（非 scoped），通过 modal-class="confirm-dialog-modal" 应用 */
+
+/* === Arco modal 外壳：去标题栏、去默认内边距（圆角由 theme.css 全局统一） === */
+.confirm-dialog-modal .arco-modal-header {
+  display: none;
+}
+.confirm-dialog-modal .arco-modal-body {
+  padding: 0;
+}
+
+/* === 弹窗主容器 === */
+.confirm-dialog {
+  padding: 20px 22px 16px;
+}
+
+/* === 顶部：警告图标 + 主文案（同行） === */
+.confirm-dialog__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  color: var(--jt-text-primary);
+  line-height: 1.4;
+}
+
+.confirm-dialog__title strong {
+  font-weight: 600;
+  color: var(--jt-text-primary);
+}
+
+/* 警告图标圆形容器（红底） */
+.confirm-dialog__icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: color-mix(in srgb, var(--jt-error) 12%, transparent);
+  color: var(--jt-error);
+}
+
+/* === 副提示：次要文字（影响范围说明等） === */
+.confirm-dialog__desc {
+  margin: 10px 0 0 38px; /* 左侧对齐主文案文字（图标宽 28 + gap 10） */
+  font-size: 13px;
+  color: var(--jt-text-secondary);
+  line-height: 1.6;
+}
+
+/* === 底部按钮区：右对齐 === */
+.confirm-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
