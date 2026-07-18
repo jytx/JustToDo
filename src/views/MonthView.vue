@@ -55,6 +55,11 @@ const options = computed(() => {
     dateClick: onCalendarDateClick,
     select: onCalendarSelect,
     selectable: true,
+    // selectMinDistance: 区分"拖事件"和"拖空白创建选区"
+    // 0 距离时按下：FC 优先识别为 eventClick（单天任务小 hit area 会先触发 select 起点 → 误判）
+    // 设 8px：用户先在事件上按下没移动 = 视为 event；移动 8px+ = 视为 select
+    // 解决"单天任务拖不了"问题
+    selectMinDistance: 8,
   };
 });
 

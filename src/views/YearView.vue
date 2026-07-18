@@ -48,6 +48,8 @@ const options = computed(() => ({
   dateClick: onCalendarDateClick,
   select: onCalendarSelect,
   selectable: true,
+  // selectMinDistance: 8 区分"拖事件"和"拖空白创建选区"
+  selectMinDistance: 8,
 }));
 
 const title = ref<string>(`${initialDate.slice(0, 4)}年`);

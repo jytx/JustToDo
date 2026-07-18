@@ -48,6 +48,9 @@ const options = computed(() => ({
   dateClick: onCalendarDateClick,
   select: onCalendarSelect,
   selectable: true,
+  // selectMinDistance: 8 区分"拖事件"和"拖空白创建选区"
+  // 单天任务 hit area 极小时不误判为 select 起点
+  selectMinDistance: 8,
 }));
 
 const title = ref<string>(initialDate);
