@@ -336,14 +336,13 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
 }
 
 .jt-task-event--selected {
-  outline: 2px solid var(--jt-primary);
-  outline-offset: -1px;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-primary) 25%, transparent);
+  /* 选中态：底色变成 accent-soft（与列表项选中、侧边栏激活项同语言） */
+  background-color: var(--jt-accent-soft) !important;
+  color: var(--jt-primary);
   font-weight: 600;
 }
 
-/* 深色模式下选中态用更亮的强调色 */
+/* 深色模式下选中态保持底色变化（--jt-accent-soft 在深色已定义） */
 body[arco-theme="dark"] .jt-task-event--selected {
-  outline-color: var(--jt-accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-accent) 35%, transparent);
+  color: var(--jt-accent);
 }
