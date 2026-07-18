@@ -52,7 +52,7 @@ function go(path: string): void {
       title="任务"
       @click="go('/today')"
     >
-      <icon-check-circle :size="20" />
+      <icon-check-circle :size="24" />
       <span v-if="globalOpenCount > 0" class="app-rail__badge">{{ badgeText }}</span>
     </button>
 
@@ -63,7 +63,7 @@ function go(path: string): void {
       title="习惯"
       @click="go('/habits')"
     >
-      <icon-trophy :size="20" />
+      <icon-trophy :size="24" />
     </button>
 
     <!-- 中间弹性占位：把"设置"压到底部 -->
@@ -76,21 +76,21 @@ function go(path: string): void {
       title="设置"
       @click="go('/settings')"
     >
-      <icon-settings :size="20" />
+      <icon-settings :size="24" />
     </button>
   </nav>
 </template>
 
 <style scoped>
 .app-rail {
-  width: 48px;
+  width: 56px;
   flex-shrink: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 0 4px;
+  gap: 8px;
+  padding: 4px 4px 8px;
   background-color: var(--jt-surface-sunken);
   border-right: 1px solid var(--jt-border);
 }
@@ -104,8 +104,8 @@ function go(path: string): void {
 
 .app-rail__btn {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   border: none;
   background: transparent;
   border-radius: 8px;
