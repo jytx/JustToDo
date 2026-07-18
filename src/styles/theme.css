@@ -329,9 +329,11 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
  *   底色变 accent-soft + 文字变 primary（深色模式用 accent）
  * - jt-task-event--done 已完成（灰色删除线），由 taskToEvent 自动加
  *
- * 注意：FC 的 event.color 会内联到 .fc-event 的 background-color，
- * text-color 由 FC 自动按 background 算对比度（红/橙/蓝背景下是白色）。
- * 选中态覆盖这两个值时需要 !important，否则被 FC 的内联 style 盖掉。
+ * 注意：FC v6 的 DOM 结构：
+ *   <a class="fc-event">           ← background-color 来自 event.color（inline）
+ *     <div class="fc-event-main"> ← color 来自 textColor / 自动对比度（inline）
+ *   FC 把 textColor 内联到 .fc-event-main 上，单纯写 .fc-event { color }
+ *   不够。需要在子元素上覆盖。
  */
 .jt-task-event {
   border-radius: 4px;
@@ -339,12 +341,18 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
   padding: 1px 4px;
 }
 
-.jt-task-event--selected {
+.jt-task-event--selected,
+.jt-task-event--selected .fc-event-main,
+.jt-task-event--selected .fc-event-title,
+.jt-task-event--selected .fc-event-time {
   background-color: var(--jt-accent-soft) !important;
   color: var(--jt-primary) !important;
   font-weight: 600;
 }
 
-body[arco-theme="dark"] .jt-task-event--selected {
+body[arco-theme="dark"] .jt-task-event--selected,
+body[arco-theme="dark"] .jt-task-event--selected .fc-event-main,
+body[arco-theme="dark"] .jt-task-event--selected .fc-event-title,
+body[arco-theme="dark"] .jt-task-event--selected .fc-event-time {
   color: var(--jt-accent) !important;
 }
