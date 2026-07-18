@@ -342,12 +342,16 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
 }
 
 /* 可拖事件：根任务 + 未完成（taskToEvent 写入 startEditable/durationEditable）
-   hover 时鼠标变 grab，FC 拖拽中变 grabbing；已完成 / 子任务保持默认箭头 */
-.jt-task-event:not(.jt-task-event--done):not(.jt-task-event--subtask) {
-  cursor: grab;
+   hover 时鼠标变 grab，FC 拖拽中变 grabbing；已完成 / 子任务保持默认箭头
+   - 用 !important 覆盖 FC 默认的 .fc-event { cursor: pointer }，
+     避免单天任务那种很窄的事件（dayGrid 折叠后）没有可拖指针 */
+.jt-task-event:not(.jt-task-event--done):not(.jt-task-event--subtask),
+a.jt-task-event:not(.jt-task-event--done):not(.jt-task-event--subtask) {
+  cursor: grab !important;
 }
-.jt-task-event:not(.jt-task-event--done):not(.jt-task-event--subtask):active {
-  cursor: grabbing;
+.jt-task-event:not(.jt-task-event--done):not(.jt-task-event--subtask):active,
+a.jt-task-event:not(.jt-task-event--done):not(.jt-task-event--subtask):active {
+  cursor: grabbing !important;
 }
 
 .jt-task-event--selected,
