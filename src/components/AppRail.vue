@@ -66,9 +66,6 @@ function go(path: string): void {
       <icon-trophy :size="24" />
     </button>
 
-    <!-- 中间弹性占位：把"设置"压到底部 -->
-    <div class="app-rail__spacer" />
-
     <!-- 设置 -->
     <button
       class="app-rail__btn"
@@ -89,8 +86,8 @@ function go(path: string): void {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 4px 4px 16px;
+  gap: 12px;
+  padding: 4px 4px 8px;
   background-color: var(--jt-surface-sunken);
   border-right: 1px solid var(--jt-border);
 }
@@ -144,9 +141,5 @@ function go(path: string): void {
   text-align: center;
   box-sizing: border-box;
   pointer-events: none;
-}
-
-.app-rail__spacer {
-  flex: 1;
 }
 </style>
