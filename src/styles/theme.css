@@ -358,6 +358,14 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
   background-color: transparent !important;
 }
 
+/* FC 内部 .fc-event-main 默认 padding + 圆角会让左右两侧露出一条"原背景色"，
+   选中态铺满：去掉内层 padding / border-radius，并把外层圆角也压成 0
+   （保留全事件通用的 4px 圆角，避免点击视觉怪异）。 */
+.jt-task-event--selected,
+.jt-task-event--selected .fc-event-main {
+  border-radius: 4px;
+}
+
 body[arco-theme="dark"] .jt-task-event--selected,
 body[arco-theme="dark"] .jt-task-event--selected .fc-event-main,
 body[arco-theme="dark"] .jt-task-event--selected .fc-event-title,
