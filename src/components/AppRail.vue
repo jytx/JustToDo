@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 最左侧应用切换栏（仿滴答清单）
-// 三个顶层入口：任务 / 习惯 / 设置
+// 四个顶层入口：任务 / 日历 / 习惯 / 设置
 // 任务图标右上角显示未完成任务总数徽标
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -8,6 +8,7 @@ import {
   IconCheckCircle,
   IconTrophy,
   IconSettings,
+  IconCalendar,
 } from "@arco-design/web-vue/es/icon";
 import { useTaskStore } from "@/stores/task";
 import { useTheme } from "@/composables/useTheme";
@@ -36,6 +37,12 @@ const isTasksActive = computed(() => {
 const isHabitsActive = computed(() => route.name === "habits");
 const isSettingsActive = computed(() => route.name === "settings");
 
+/** 日历族路由（周/月/年）共享同一个 active 态 */
+const isCalendarActive = computed(() => {
+  const name = route.name as string;
+  return name === "week" || name === "month" || name === "year";
+});
+
 /** 通用跳转：保持 hash 路由一致 */
 function go(path: string): void {
   router.push(path);
@@ -56,6 +63,16 @@ function go(path: string): void {
     >
       <icon-check-circle :size="24" />
       <span v-if="globalOpenCount > 0" class="app-rail__badge">{{ badgeText }}</span>
+    </button>
+
+    <!-- 日历：默认跳到 /month -->
+    <button
+      class="app-rail__btn"
+      :class="{ 'app-rail__btn--active': isCalendarActive }"
+      title="日历"
+      @click="go('/month')"
+    >
+      <icon-calendar :size="24" />
     </button>
 
     <!-- 习惯 -->
