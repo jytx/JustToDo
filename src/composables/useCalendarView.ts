@@ -200,6 +200,10 @@ export function createCalendarOptions(
     // 开启事件拖拽 + 改时长；具体哪些事件可拖由 taskToEvent 写入的
     // event.startEditable / durationEditable（per-event）控制
     editable: true,
+    // 单天任务在 dayGridMonth 上 hit area 很小，FC 默认要求长按 1s 才进 drag
+    // 用户体验差：缩短到 200ms，几乎是"按下就能拖"
+    // 多日任务 hit area 大，不会触发这个阈值，所以不冲突
+    eventLongPressDelay: 200,
     // 不限制每天显示的事件数：月视图一天 4-5 个任务时不需要折叠成 "+N More"，
     // 格子会自动撑高（搭配 expandRows: true）
     dayMaxEventRows: false,

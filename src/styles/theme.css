@@ -343,14 +343,16 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
 
 /* 可拖事件：根任务 + 未完成（taskToEvent 写入 startEditable/durationEditable）
    hover 时鼠标变 grab，FC 拖拽中变 grabbing；已完成 / 子任务保持默认箭头
-   - 用 !important 覆盖 FC 默认的 .fc-event { cursor: pointer }，
-     避免单天任务那种很窄的事件（dayGrid 折叠后）没有可拖指针 */
-.jt-task-event:not(.jt-task-event--done):not(.jt-task-event--subtask),
-a.jt-task-event:not(.jt-task-event--done):not(.jt-task-event--subtask) {
+   - FC 自带 .fc-event.fc-event-draggable { cursor: pointer }，
+     单天任务那种很窄的 dayGrid 折叠事件被它的 specificity 覆盖
+   - 我们的选择器加更多 specificity（双 class + 属性选择器 + 链 a.fc-event）
+     压过 FC 的两条规则 */
+.jt-task-event.fc-event-draggable:not(.jt-task-event--done):not(.jt-task-event--subtask),
+a.jt-task-event.fc-event-draggable:not(.jt-task-event--done):not(.jt-task-event--subtask) {
   cursor: grab !important;
 }
-.jt-task-event:not(.jt-task-event--done):not(.jt-task-event--subtask):active,
-a.jt-task-event:not(.jt-task-event--done):not(.jt-task-event--subtask):active {
+.jt-task-event.fc-event-draggable:not(.jt-task-event--done):not(.jt-task-event--subtask):active,
+a.jt-task-event.fc-event-draggable:not(.jt-task-event--done):not(.jt-task-event--subtask):active {
   cursor: grabbing !important;
 }
 
