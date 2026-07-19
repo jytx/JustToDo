@@ -24,6 +24,36 @@ export function parseLocalIso(iso: string | null | undefined): Date | null {
   );
 }
 
+/**
+ * 钳制日期区间，保证 end 不早于 start。
+ *
+ * 倒挂数据（end < start）会导致 FullCalendar 解析时丢弃 end（core parseSingle 的
+ * endMarker <= startMarker → null 分支），连锁引发日历事件无 end、拖拽失效、
+ * 显示异常等问题。所有写入 dueStartAt / dueEndAt 的入口都应过一遍此函数。
+ *
+ * 处理规则：
+ *   - start / end 任一为 null 或 undefined → 原样返回（无法比较，不干预开放区间任务）
+ *   - end >= start → 原样返回
+ *   - end < start → 把 end 钳制成 = start（零时长，非交换，符合用户选的"钳制"策略）
+ *
+ * 纯函数：不修改入参，返回新元组。
+ */
+export function clampDateRange(
+  start: string | null | undefined,
+  end: string | null | undefined,
+): [string | null, string | null] {
+  if (!start || !end) return [start ?? null, end ?? null];
+  const s = parseLocalIso(start);
+  const e = parseLocalIso(end);
+  // 解析失败（格式异常）→ 不干预，交给下游处理
+  if (!s || !e) return [start ?? null, end ?? null];
+  if (e.getTime() < s.getTime()) {
+    // end 早于 start：钳制 end 到 = start
+    return [start ?? null, start ?? null];
+  }
+  return [start ?? null, end ?? null];
+}
+
 /** 提取 YYYY-MM-DD 部分（用于 range-picker "YYYY-MM-DD HH:mm" 展示） */
 export function localIsoToDateOnly(iso: string | null | undefined): string | null {
   if (!iso) return null;
@@ -42,6 +72,25 @@ export function toLocalIso(pickerStr: string | null | undefined): string | null 
   if (!m) return null;
   const [, y, mo, d, h, mi, s] = m;
   return `${y}-${mo}-${d}T${h}:${mi}:${s ?? "00"}`;
+}
+
+/**
+ * 把本地 Date 转成本地时间字面量 "YYYY-MM-DDTHH:mm:ss"
+ *
+ * 与 toLocalIso 的区别：toLocalIso 接收字符串/字面量；dateToLocalIso 接收 JS Date。
+ * 用于 FullCalendar event.start / event.end 这种 Date 对象转回本地字面量。
+ * 用 getFullYear/Month/Date/Hours/Minutes/Seconds 取本地时间分量，
+ * 避免 toISOString() 把本地时间转成 UTC 引起时区漂移。
+ *
+ * 注意：toLocalIso(dateObj) 会返回 null（Date.toString() 不匹配 LOCAL_ISO_RE），
+ * 误用会导致任务 due_start_at 被清空、任务从日历上消失。
+ */
+export function dateToLocalIso(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  );
 }
 
 /** 把本地时间字面量转回 picker 用的 "YYYY-MM-DD HH:mm" 格式 */

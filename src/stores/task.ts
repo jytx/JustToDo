@@ -7,7 +7,7 @@ import type { Task, Priority, SortField, SortDir, ChecklistItem } from "@/types"
 import * as db from "@/api/db";
 import type { SmartViewId } from "@/api/db";
 import { useSettingsStore } from "@/stores/settings";
-import { nowLocalIso } from "@/utils/date";
+import { nowLocalIso, clampDateRange } from "@/utils/date";
 import { notifyTaskChanged } from "@/composables/useCalendarView";
 
 /**
@@ -313,6 +313,9 @@ export const useTaskStore = defineStore("task", () => {
       dueStartAt = nowLocalIso(start);
       dueEndAt = nowLocalIso(end);
     }
+    // 钳制：保证 end 不早于 start。倒挂数据会让 FullCalendar 丢弃 end，
+    // 导致日历事件无 end、拖拽失效、显示异常。
+    [dueStartAt, dueEndAt] = clampDateRange(dueStartAt, dueEndAt);
     const task = await db.createTask({ ...params, dueStartAt, dueEndAt });
     if (!params.parentId) {
       currentTasks.value.push(task);
@@ -380,24 +383,46 @@ export const useTaskStore = defineStore("task", () => {
     id: string,
     fields: Parameters<typeof db.updateTask>[1],
   ) {
-    await db.updateTask(id, fields);
+    // 钳制 end >= start：updateTask 是字段级更新，可能只传 start 或只传 end，
+    // 需结合任务当前值做联合校验。
+    const existing = findTaskById(id);
+    const startCandidate =
+      fields.dueStartAt !== undefined ? fields.dueStartAt : (existing?.dueStartAt ?? null);
+    const endCandidate =
+      fields.dueEndAt !== undefined ? fields.dueEndAt : (existing?.dueEndAt ?? null);
+    const [clampedStart, clampedEnd] = clampDateRange(startCandidate, endCandidate);
+    // 仅处理调用方显式传入的字段，避免误清空未传字段（undefined → null）
+    const merged: typeof fields = { ...fields };
+    if (fields.dueStartAt !== undefined) merged.dueStartAt = clampedStart;
+    if (fields.dueEndAt !== undefined) merged.dueEndAt = clampedEnd;
+    // 特殊情况：调用方只传了 start（没传 end），但 start 被钳制后需要同步拉高 end
+    // （否则 DB 里旧 end 仍小于新 start）。此时补传 dueEndAt 固化钳制结果。
+    if (
+      fields.dueStartAt !== undefined &&
+      fields.dueEndAt === undefined &&
+      existing &&
+      clampedEnd !== (existing.dueEndAt ?? null)
+    ) {
+      merged.dueEndAt = clampedEnd;
+    }
+    await db.updateTask(id, merged);
     const updatedAt = new Date().toISOString();
-    // 同步 selectedTaskObj
+    // 同步本地状态（用 merged 而非 fields，确保钳制结果同步到 UI）
     if (selectedTaskObj.value?.id === id) {
-      selectedTaskObj.value = { ...selectedTaskObj.value, ...fields, updatedAt };
+      selectedTaskObj.value = { ...selectedTaskObj.value, ...merged, updatedAt };
     }
     currentTasks.value = updateTaskInArray(currentTasks.value, id, (t) => {
-      Object.assign(t, fields);
+      Object.assign(t, merged);
       t.updatedAt = updatedAt;
     });
     subtasks.value = updateTaskInArray(subtasks.value, id, (t) => {
-      Object.assign(t, fields);
+      Object.assign(t, merged);
       t.updatedAt = updatedAt;
     });
     const newCache: Record<string, Task[]> = {};
     for (const [pid, arr] of Object.entries(subtaskCache.value)) {
       newCache[pid] = updateTaskInArray(arr, id, (t) => {
-        Object.assign(t, fields);
+        Object.assign(t, merged);
         t.updatedAt = updatedAt;
       });
     }

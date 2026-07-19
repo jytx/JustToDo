@@ -388,7 +388,11 @@ export async function onCalendarEventChange(info: {
   revert: () => void;
 }, getApi?: () => CalendarApi | null): Promise<void> {
   const { event, oldEvent, revert } = info;
-  if (!event.start || !event.end || !oldEvent.start || !oldEvent.end) {
+  // start 必须存在（拖拽/缩放都会产生新 start）；end 可能为 null：
+  //   - 任务本身是开放区间（DB dueEndAt 为 null）
+  //   - 或 DB 里 end ≤ start（倒挂），FC 解析时会丢弃 end（core parseSingle line 2096）
+  // 此时不能简单 revert，否则用户看到"拖动了但时间没变"。
+  if (!event.start || !oldEvent.start) {
     revert();
     return;
   }
@@ -404,29 +408,37 @@ export async function onCalendarEventChange(info: {
   // "YYYY-MM-DD" 字符串；时间段一定是 Date；统一处理）
   const toDate = (v: Date | string): Date => (v instanceof Date ? v : new Date(v));
   const startDate = toDate(event.start);
-  const endDate = toDate(event.end);
-  // 判断是否全天：两端都是 0:00:00
-  const isAllDay =
-    startDate.getHours() === 0 &&
-    startDate.getMinutes() === 0 &&
-    endDate.getHours() === 0 &&
-    endDate.getMinutes() === 0;
-  // FC 全天事件 end 是排他的（= lastDay + 1），
-  // 我们的本地字面量是"含端点"语义，所以全天时 end 要回退一天
-  let endForDb = endDate;
-  if (isAllDay) {
-    const prev = new Date(endDate);
-    prev.setDate(prev.getDate() - 1);
-    endForDb = prev;
+
+  // 计算新的 dueEndAt：
+  //   - oldEvent.end 为 null（FC 丢弃了 end）：保持任务的 end 不变（传 undefined 跳过更新）
+  //     这样倒挂数据/开放区间任务至少 start 能被正确拖动
+  //   - oldEvent.end 存在：end 平移同样的 delta，并按全天语义回退一天（FC end 排他）
+  let newEnd: string | undefined;
+  if (event.end && oldEvent.end) {
+    const endDate = toDate(event.end);
+    const oldEndDate = toDate(oldEvent.end);
+    // 判断是否全天：两端时间分量都是 0:00（FC 全天事件 start/end 都是当天 0:00）
+    const isAllDay =
+      startDate.getHours() === 0 &&
+      startDate.getMinutes() === 0 &&
+      oldEndDate.getHours() === 0 &&
+      oldEndDate.getMinutes() === 0;
+    // FC 全天事件 end 是排他的（= lastDay + 1），我们的字面量是"含端点"，回退一天
+    let endForDb = endDate;
+    if (isAllDay) {
+      const prev = new Date(endDate);
+      prev.setDate(prev.getDate() - 1);
+      endForDb = prev;
+    }
+    newEnd = toLocalIso(endForDb);
   }
   const newStart = toLocalIso(startDate);
-  const newEnd = toLocalIso(endForDb);
   const taskStore = useTaskStore();
   try {
-    await taskStore.updateTask(event.id, {
-      dueStartAt: newStart,
-      dueEndAt: newEnd,
-    });
+    // 只传需要更新的字段；end 为空时仅更新 start
+    const patch: { dueStartAt: string; dueEndAt?: string } = { dueStartAt: newStart };
+    if (newEnd !== undefined) patch.dueEndAt = newEnd;
+    await taskStore.updateTask(event.id, patch);
     // 拖拽成功 → 关闭详情面板（避免面板里"原日期"和新位置不一致造成认知负担）
     if (taskStore.selectedTaskId === event.id) {
       taskStore.selectTask(null);

@@ -4,7 +4,7 @@
 // 内容：快捷按钮 + 月历 + 时间/提醒/重复 子入口
 // 底部：清除 / 确定
 import { ref, computed, watch } from "vue";
-import { toLocalIso, parseLocalIso } from "@/utils/date";
+import { toLocalIso, parseLocalIso, clampDateRange } from "@/utils/date";
 
 const props = defineProps<{
   /** 起始日期（YYYY-MM-DDTHH:mm:ss 本地字面量） */
@@ -364,7 +364,10 @@ function onConfirm() {
   if (activeTab.value === "date") {
     emit("confirm", editDate.value, null);
   } else {
-    emit("confirm", editStart.value, editEnd.value);
+    // 钳制：range 模式下保证 end 不早于 start
+    // （setEndHour/setEndMinute 允许预览时自由调整，确认时统一纠正）
+    const [s, e] = clampDateRange(editStart.value, editEnd.value);
+    emit("confirm", s, e);
   }
 }
 
