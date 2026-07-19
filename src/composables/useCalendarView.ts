@@ -10,6 +10,13 @@ import type { CalendarOptions, EventInput, CalendarApi } from "@fullcalendar/cor
 // 需显式加到 options.locales 数组里（不能靠 side-effect import 自动注册）。
 // 这样 allDayText/按钮文本/moreLinkText 等才会中文化。
 import zhCnLocale from "@fullcalendar/core/locales/zh-cn";
+/**
+ * locales 数组必须用稳定的模块级常量。
+ * 若放在 createCalendarOptions 内每次新建数组（[zhCnLocale]），FC vue3 组件会因
+ * locales 引用变化触发完整重渲染循环（.fc 的 fallthrough attrs 每帧重设），
+ * 叠加 daygrid 的 flushScrollReset，导致年视图滚动被反复拉回当月位置（颤抖）。
+ */
+const FC_LOCALES = [zhCnLocale];
 import type { Task } from "@/types";
 import { getTasksByDueRange } from "@/api/db";
 import { useQuickAdd } from "@/composables/useQuickAdd";
@@ -197,7 +204,8 @@ export function createCalendarOptions(
     locale: "zh-cn",
     // 提供可用的 locale 列表（zh-cn 语言包对象）。
     // FC 会从中找 code === locale 的那个，应用其 allDayText / buttonText 等翻译。
-    locales: [zhCnLocale],
+    // 必须用模块级常量 FC_LOCALES（引用稳定），否则每次 options 重建会触发 FC 重渲染循环。
+    locales: FC_LOCALES,
     firstDay: 1,
     // 自定义 headerToolbar（CalendarToolbar 提供），隐藏 FullCalendar 自带的
     headerToolbar: false,
