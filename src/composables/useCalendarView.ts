@@ -6,6 +6,10 @@
 
 import { ref, onMounted, onUnmounted } from "vue";
 import type { CalendarOptions, EventInput, CalendarApi } from "@fullcalendar/core";
+// 中文语言包：FC v6 的 locale 模块 export default 一个 LocaleInput 对象，
+// 需显式加到 options.locales 数组里（不能靠 side-effect import 自动注册）。
+// 这样 allDayText/按钮文本/moreLinkText 等才会中文化。
+import zhCnLocale from "@fullcalendar/core/locales/zh-cn";
 import type { Task } from "@/types";
 import { getTasksByDueRange } from "@/api/db";
 import { useQuickAdd } from "@/composables/useQuickAdd";
@@ -191,6 +195,9 @@ export function createCalendarOptions(
     initialView,
     initialDate,
     locale: "zh-cn",
+    // 提供可用的 locale 列表（zh-cn 语言包对象）。
+    // FC 会从中找 code === locale 的那个，应用其 allDayText / buttonText 等翻译。
+    locales: [zhCnLocale],
     firstDay: 1,
     // 自定义 headerToolbar（CalendarToolbar 提供），隐藏 FullCalendar 自带的
     headerToolbar: false,
@@ -204,6 +211,11 @@ export function createCalendarOptions(
     height: "calc(100vh - 56px - 16px * 2)",
     expandRows: true,
     nowIndicator: true,
+    // 不在每次视图刷新时重置滚动位置（FC 默认 scrollTimeReset: true 会把滚动拉回 scrollTime 06:00）。
+    // 我们的事件总线会在任务变更时 reload（触发 FC 视图刷新），若开启 reset，
+    // 用户向上滚动时间轴时会立刻被拉回 6:00，出现"抖动、滚不过去"。
+    // 关闭后：滚动位置由用户掌控，仅初次进入/真正切换日期时才滚到 scrollTime。
+    scrollTimeReset: false,
     // 开启事件拖拽 + 改时长；具体哪些事件可拖由 taskToEvent 写入的
     // event.startEditable / durationEditable（per-event）控制
     editable: true,
@@ -445,12 +457,23 @@ export async function onCalendarEventChange(info: {
     }
     // 拖到可视范围外时跳转 FC 视图，触发 datesSet → handleDatesSet reload 新 range
     // 解决"按当前 range SQL 漏查新位置事件"导致的事件消失问题
+    //
+    // 注意：判断"是否在可视范围"必须同时考虑 start 和 end，不能只看 start。
+    // eventResize（拖尾部改 end）时 start 不变，用户可能已切到 end 所在的那一周，
+    // 若只判断 start，会把"start 不在当前周"误判为拖出范围，导致跳回 start 那周
+    // （用户看到"改完 end 后页面跳回开始的周"）。
+    // 只有整个任务（start 和 end 都）不在可视范围时才需要跳转。
     const api = getApi?.();
     if (api) {
       const view = api.view;
-      const isInRange =
+      const startInRange =
         startDate >= view.currentStart && startDate < view.currentEnd;
-      if (!isInRange) {
+      // end 可能不存在（开放区间/倒挂数据被 FC 丢弃），此时只用 start 判断
+      const endInRange =
+        event.end !== null &&
+        toDate(event.end) >= view.currentStart &&
+        toDate(event.end) < view.currentEnd;
+      if (!startInRange && !endInRange) {
         api.gotoDate(startDate);
       }
     }
