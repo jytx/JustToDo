@@ -12,7 +12,9 @@ const props = defineProps<{
   selected: Date | null;
   /** 月历光标：当前显示哪个月/年（v-model:month） */
   month: Date;
-  /** 选择粒度：day=选天，month=选月，year=选年 */
+  /** 最终选择粒度：day=选天跳转，month=选月跳转，year=选年跳转。
+   *  用户可通过点标题临时上钻到更粗粒度（选年后退回选月），但只有在回到
+   *  mode 对应粒度时选中才触发跳转。 */
   mode: "day" | "month" | "year";
 }>();
 
@@ -21,12 +23,26 @@ const emit = defineEmits<{
   (e: "select", date: Date): void;
 }>();
 
+/**
+ * 当前显示粒度（内部状态）。
+ * 初始 = 外部 mode；用户点标题可上钻（day→month→year），选中年/月后下钻回更细粒度。
+ * 仅当 activeMode === mode 时，选中才 emit select 触发跳转。
+ */
+const activeMode = ref<"day" | "month" | "year">(props.mode);
+// 外部 mode 变化（切换视图）时，activeMode 归位
+watch(
+  () => props.mode,
+  (m) => {
+    activeMode.value = m;
+  },
+);
+
 const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
 
 // ─── day 模式：月历选天 ──────────────────────────────
-/** 顶部标题：day→"2026年7月"，month→"2026年7月"，year→"2026年" */
+/** 顶部标题：day/month → "2026年7月"，year → "2026" */
 const monthLabel = computed(() => {
-  if (props.mode === "year") return `${props.month.getFullYear()}`;
+  if (activeMode.value === "year") return `${props.month.getFullYear()}`;
   return `${props.month.getFullYear()}年${props.month.getMonth() + 1}月`;
 });
 
@@ -113,12 +129,12 @@ function isToday(d: Date): boolean {
 }
 
 /**
- * 翻页：‹ ›
- *   day/month 模式 → 翻月（改 month 光标）
- *   year 模式 → 翻 12 年块（改 yearPage）
+ * 翻页：‹ ›（按 activeMode 决定翻什么）
+ *   day/month → 翻月（改 month 光标）
+ *   year      → 翻 12 年块（改 yearPage）
  */
 function prev(): void {
-  if (props.mode === "year") {
+  if (activeMode.value === "year") {
     yearPage.value -= 1;
   } else {
     const d = new Date(props.month);
@@ -127,7 +143,7 @@ function prev(): void {
   }
 }
 function next(): void {
-  if (props.mode === "year") {
+  if (activeMode.value === "year") {
     yearPage.value += 1;
   } else {
     const d = new Date(props.month);
@@ -136,27 +152,68 @@ function next(): void {
   }
 }
 
-/** 选中处理：统一 emit 一个 Date（跳转语义交给父组件，FC 按视图类型定位） */
-function pick(date: Date): void {
-  emit("select", date);
+/**
+ * 点标题 → 上钻一档（day→month→year），year 已最粗不再上钻。
+ * 标题可点条件：activeMode !== "year"。
+ */
+function drillUp(): void {
+  if (activeMode.value === "day") activeMode.value = "month";
+  else if (activeMode.value === "month") activeMode.value = "year";
+  // year：已最粗，不动
+}
+
+/**
+ * 网格选中处理（核心交互逻辑）：
+ *   - activeMode === mode（回到最终粒度）：emit select 触发跳转
+ *   - activeMode !== mode（临时上钻在更粗粒度）：只把光标移到选中位置并下钻到更细粒度，
+ *     不触发跳转。这样实现"月视图上钻选年后，退回选月再跳"。
+ *
+ * 例：mode=month，用户点标题上钻到 year，选 2025 年 →
+ *     光标移到 2025，activeMode 回到 month，继续选月。
+ */
+function onSelect(date: Date, cellMode: "day" | "month" | "year"): void {
+  if (cellMode === activeMode.value && cellMode === props.mode) {
+    // 回到最终粒度的选中 → 跳转
+    emit("select", date);
+    return;
+  }
+  // 粗粒度选中：移动光标 + 下钻
+  if (cellMode === "year") {
+    // 选年 → 光标移到该年 1 月，下钻到 month（若 mode 是 month/day）
+    emit("update:month", new Date(date.getFullYear(), 0, 1));
+    if (props.mode === "month" || props.mode === "day") activeMode.value = "month";
+  } else if (cellMode === "month") {
+    // 选月 → 光标移到该月，下钻到 day（仅 mode=day 时）
+    emit("update:month", new Date(date.getFullYear(), date.getMonth(), 1));
+    if (props.mode === "day") activeMode.value = "day";
+  }
 }
 </script>
 
 <template>
   <div class="mc">
-    <!-- 顶部翻页 -->
+    <!-- 顶部翻页 + 标题（标题可点击上钻） -->
     <div class="mc__head">
-      <button type="button" class="mc__nav" :title="mode === 'year' ? '上一个 12 年' : '上一月'" @click="prev">
+      <button type="button" class="mc__nav" :title="activeMode === 'year' ? '上一个 12 年' : '上一月'" @click="prev">
         <icon-left :size="14" />
       </button>
-      <span class="mc__title">{{ mode === "year" ? yearRangeLabel : monthLabel }}</span>
-      <button type="button" class="mc__nav" :title="mode === 'year' ? '下一个 12 年' : '下一月'" @click="next">
+      <button
+        type="button"
+        class="mc__title"
+        :class="{ 'mc__title--clickable': activeMode !== 'year' }"
+        :title="activeMode === 'year' ? '' : '点击切换到更高粒度'"
+        :disabled="activeMode === 'year'"
+        @click="drillUp"
+      >
+        {{ activeMode === "year" ? yearRangeLabel : monthLabel }}
+      </button>
+      <button type="button" class="mc__nav" :title="activeMode === 'year' ? '下一个 12 年' : '下一月'" @click="next">
         <icon-right :size="14" />
       </button>
     </div>
 
-    <!-- day 模式：完整月历 -->
-    <template v-if="mode === 'day'">
+    <!-- day 粒度：完整月历 -->
+    <template v-if="activeMode === 'day'">
       <div class="mc__weekdays">
         <span v-for="w in weekdays" :key="w" class="mc__weekday">{{ w }}</span>
       </div>
@@ -171,15 +228,15 @@ function pick(date: Date): void {
             'mc__day--today': isToday(c.date),
             'mc__day--selected': selected !== null && isSameDay(c.date, selected),
           }"
-          @click="pick(c.date)"
+          @click="onSelect(c.date, 'day')"
         >
           {{ c.date.getDate() }}
         </button>
       </div>
     </template>
 
-    <!-- month 模式：4×3 月份网格 -->
-    <div v-else-if="mode === 'month'" class="mc__grid mc__grid--month">
+    <!-- month 粒度：4×3 月份网格 -->
+    <div v-else-if="activeMode === 'month'" class="mc__grid mc__grid--month">
       <button
         v-for="c in monthCells"
         :key="c.monthIdx"
@@ -189,13 +246,13 @@ function pick(date: Date): void {
           'mc__cell--today': isSameMonth(c.date, new Date()),
           'mc__cell--selected': selected !== null && isSameMonth(c.date, selected),
         }"
-        @click="pick(c.date)"
+        @click="onSelect(c.date, 'month')"
       >
         {{ monthNames[c.monthIdx] }}
       </button>
     </div>
 
-    <!-- year 模式：4×3 年份网格 -->
+    <!-- year 粒度：4×3 年份网格 -->
     <div v-else class="mc__grid mc__grid--year">
       <button
         v-for="c in yearCells"
@@ -206,7 +263,7 @@ function pick(date: Date): void {
           'mc__cell--today': isSameYear(c.date, new Date()),
           'mc__cell--selected': selected !== null && isSameYear(c.date, selected),
         }"
-        @click="pick(c.date)"
+        @click="onSelect(c.date, 'year')"
       >
         {{ c.year }}
       </button>
@@ -249,9 +306,23 @@ function pick(date: Date): void {
 }
 
 .mc__title {
+  border: none;
+  background: transparent;
+  padding: 2px 6px;
+  border-radius: 4px;
   font-size: 13px;
   font-weight: 600;
   color: var(--jt-text-primary);
+  font-family: inherit;
+}
+.mc__title:disabled {
+  cursor: default;
+}
+.mc__title--clickable {
+  cursor: pointer;
+}
+.mc__title--clickable:hover {
+  background-color: var(--jt-surface-sunken);
 }
 
 .mc__weekdays {
