@@ -58,17 +58,29 @@ const viewMenuItems: Array<{ view: CalendarView; label: string; shortcut: string
   { view: "dayGridYear", label: "年", shortcut: "Y" },
 ];
 
-// ─── 标题点击 → 弹月历跳转 ─────────────────────────
+// ─── 标题点击 → 弹日期选择器跳转 ──────────────────────
 const pickerVisible = ref(false);
 /** 月历光标（当前显示哪个月），打开弹层时初始化为 FC 当前焦点日期所在月 */
 const pickerMonth = ref(new Date());
 
-/** FC 当前焦点日期（用作月历的高亮选中） */
+/** FC 当前焦点日期（用作选择器的高亮选中） */
 const cursorDate = computed<Date | null>(() => {
   return props.calendarApi?.getDate() ?? null;
 });
 
-/** 打开弹层时把月历光标对齐到当前焦点日期所在月 */
+/**
+ * 选择器粒度：与当前视图匹配。
+ *   周（timeGridWeek）→ day（选某天跳到那周）
+ *   月（dayGridMonth）→ month（选某月）
+ *   年（dayGridYear） → year（选某年）
+ */
+const pickerMode = computed<"day" | "month" | "year">(() => {
+  if (currentView.value === "dayGridYear") return "year";
+  if (currentView.value === "dayGridMonth") return "month";
+  return "day";
+});
+
+/** 打开弹层时把选择器光标对齐到当前焦点日期 */
 watch(pickerVisible, (v) => {
   if (v) {
     const d = props.calendarApi?.getDate() ?? new Date();
@@ -76,7 +88,7 @@ watch(pickerVisible, (v) => {
   }
 });
 
-/** 选某天 → emit goto 让父组件跳转，并关闭弹层 */
+/** 选某天/某月/某年 → emit goto 让父组件跳转，并关闭弹层 */
 function onPickDate(date: Date): void {
   emit("goto", date);
   pickerVisible.value = false;
@@ -102,6 +114,7 @@ function onPickDate(date: Date): void {
         </template>
         <MiniCalendar
           :selected="cursorDate"
+          :mode="pickerMode"
           v-model:month="pickerMonth"
           @select="onPickDate"
         />
