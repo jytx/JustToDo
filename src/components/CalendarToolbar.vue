@@ -1,17 +1,19 @@
 <script setup lang="ts">
 // 日历视图顶部工具条 —— 月/周/年 三个视图共用
-// 布局（仿滴答清单）：
-//   左侧：📅 日期切换器（点击弹月份选择）
-//   右侧：+ 新建  视图下拉（周/月/年）  ‹ 今天 ›  ⋯ 更多
-import { computed, ref } from "vue";
+// 布局（仿滴答清单 / Notion）：
+//   左侧：📅 标题（点击弹月历，选某天跳转）
+//   右侧：+ 新建  视图下拉（周/月/年）  ‹ 今天 ›
+import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { IconPlus, IconLeft, IconRight } from "@arco-design/web-vue/es/icon";
+import { IconPlus, IconLeft, IconRight, IconDown } from "@arco-design/web-vue/es/icon";
 import type { CalendarApi } from "@fullcalendar/core";
+import Popover from "@/components/Popover.vue";
+import MiniCalendar from "@/components/MiniCalendar.vue";
 
-defineProps<{
+const props = defineProps<{
   /** FullCalendar API 引用（父组件从 ref 传入） */
   calendarApi: CalendarApi | null;
-  /** 当前视图显示的标题（YYYY 年 M 月 或 2026年7月13日 - 19日） */
+  /** 当前视图显示的标题（FC view.title，如 "2026年7月"） */
   title: string;
 }>();
 
@@ -20,6 +22,8 @@ const emit = defineEmits<{
   (e: "prev"): void;
   (e: "next"): void;
   (e: "create"): void;
+  /** 跳转到指定日期（FC api.gotoDate，按当前视图类型定位） */
+  (e: "goto", date: Date): void;
 }>();
 
 const route = useRoute();
@@ -53,13 +57,55 @@ const viewMenuItems: Array<{ view: CalendarView; label: string; shortcut: string
   { view: "dayGridMonth", label: "月", shortcut: "M" },
   { view: "dayGridYear", label: "年", shortcut: "Y" },
 ];
+
+// ─── 标题点击 → 弹月历跳转 ─────────────────────────
+const pickerVisible = ref(false);
+/** 月历光标（当前显示哪个月），打开弹层时初始化为 FC 当前焦点日期所在月 */
+const pickerMonth = ref(new Date());
+
+/** FC 当前焦点日期（用作月历的高亮选中） */
+const cursorDate = computed<Date | null>(() => {
+  return props.calendarApi?.getDate() ?? null;
+});
+
+/** 打开弹层时把月历光标对齐到当前焦点日期所在月 */
+watch(pickerVisible, (v) => {
+  if (v) {
+    const d = props.calendarApi?.getDate() ?? new Date();
+    pickerMonth.value = new Date(d.getFullYear(), d.getMonth(), 1);
+  }
+});
+
+/** 选某天 → emit goto 让父组件跳转，并关闭弹层 */
+function onPickDate(date: Date): void {
+  emit("goto", date);
+  pickerVisible.value = false;
+}
 </script>
 
 <template>
   <div class="cal-toolbar">
-    <!-- 左侧：标题（纯展示，不可点击） -->
+    <!-- 左侧：标题（点击弹月历选日期跳转） -->
     <div class="cal-toolbar__date">
-      <h1 class="cal-toolbar__date-title">{{ title }}</h1>
+      <Popover v-model:visible="pickerVisible" placement="bottom-left">
+        <template #trigger>
+          <!-- Popover 不自动切换 visible，需在 trigger 上手动 toggle -->
+          <button
+            type="button"
+            class="cal-toolbar__date-title"
+            :title="'点击选择日期'"
+            @click="pickerVisible = !pickerVisible"
+          >
+            <span>{{ title }}</span>
+            <icon-down :size="14" class="cal-toolbar__date-caret" />
+          </button>
+        </template>
+        <MiniCalendar
+          :selected="cursorDate"
+          v-model:month="pickerMonth"
+          @select="onPickDate"
+        />
+      </Popover>
     </div>
 
     <!-- 右侧：新建 / 视图下拉 / 今天 / 更多 -->
@@ -140,12 +186,34 @@ const viewMenuItems: Array<{ view: CalendarView; label: string; shortcut: string
 }
 
 .cal-toolbar__date-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  padding: 4px 6px;
   margin: 0;
+  border-radius: 6px;
   font-size: 20px;
   font-weight: 700;
   color: var(--jt-text-primary);
   letter-spacing: 0.2px;
   line-height: 1.2;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.cal-toolbar__date-title:hover {
+  background-color: var(--jt-surface-sunken);
+}
+
+.cal-toolbar__date-caret {
+  color: var(--jt-text-tertiary);
+  transition: transform 0.15s;
+}
+
+.cal-toolbar__date-title:hover .cal-toolbar__date-caret {
+  color: var(--jt-text-secondary);
 }
 
 .cal-toolbar__view-btn {

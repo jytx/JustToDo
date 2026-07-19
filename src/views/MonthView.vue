@@ -20,8 +20,8 @@ import CalendarToolbar from "@/components/CalendarToolbar.vue";
 const calendarRef = ref<InstanceType<typeof FullCalendar> | null>(null);
 const taskStore = useTaskStore();
 
-/** 真实任务事件 + 加载状态（选中态与 taskStore.selectedTaskId 同步） */
-const { events, status, error, handleDatesSet, applySelection } = useCalendarEvents(
+/** 真实任务事件 + 加载状态（选中态与 taskStore.selectedTaskId 同步；title 由 datesSet 同步） */
+const { events, status, error, title, handleDatesSet, applySelection } = useCalendarEvents(
   () => taskStore.selectedTaskId,
 );
 
@@ -63,13 +63,7 @@ const options = computed(() => {
   };
 });
 
-/** 工具条显示的标题（占位初始值，FullCalendar 渲染后会同步实际视图）
- * 真正的"title 与 view 同步"交由后续迭代；现在用初始月份即可 */
-const title = ref<string>(
-  initialDate.slice(0, 7).replace("-", "年") + "月",
-);
-
-/** 拿到 FullCalendar API（用于 toolbar 触发 today/prev/next） */
+/** 拿到 FullCalendar API（用于 toolbar 触发 today/prev/next/goto） */
 function getApi() {
   return calendarRef.value?.getApi() ?? null;
 }
@@ -82,6 +76,10 @@ function onPrev(): void {
 }
 function onNext(): void {
   getApi()?.next();
+}
+/** 跳转到指定日期（FC 按当前视图类型定位：月视图跳到该月） */
+function onGoto(date: Date): void {
+  getApi()?.gotoDate(date);
 }
 
 /** + 新建：取当前视图区间起点（当月 1 号）作为预填日期，打开 QuickAddDialog */
@@ -96,6 +94,7 @@ const onCreate = useCalendarCreateAction(getApi);
       @today="onToday"
       @prev="onPrev"
       @next="onNext"
+      @goto="onGoto"
       @create="onCreate"
     />
     <div class="calendar-view__body">

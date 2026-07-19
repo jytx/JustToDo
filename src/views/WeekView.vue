@@ -20,7 +20,7 @@ import CalendarToolbar from "@/components/CalendarToolbar.vue";
 const calendarRef = ref<InstanceType<typeof FullCalendar> | null>(null);
 const taskStore = useTaskStore();
 
-const { events, status, error, handleDatesSet, applySelection } = useCalendarEvents(
+const { events, status, error, title, handleDatesSet, applySelection } = useCalendarEvents(
   () => taskStore.selectedTaskId,
 );
 
@@ -53,8 +53,6 @@ const options = computed(() => ({
   selectMinDistance: 8,
 }));
 
-const title = ref<string>(initialDate);
-
 function getApi() {
   return calendarRef.value?.getApi() ?? null;
 }
@@ -67,6 +65,10 @@ function onPrev(): void {
 }
 function onNext(): void {
   getApi()?.next();
+}
+/** 跳转到指定日期（周视图跳到含该天的周） */
+function onGoto(date: Date): void {
+  getApi()?.gotoDate(date);
 }
 
 /** + 新建：取当前视图区间起点（本周第一天）作为预填日期，打开 QuickAddDialog */
@@ -81,6 +83,7 @@ const onCreate = useCalendarCreateAction(getApi);
       @today="onToday"
       @prev="onPrev"
       @next="onNext"
+      @goto="onGoto"
       @create="onCreate"
     />
     <div class="calendar-view__body">

@@ -326,8 +326,23 @@ export function useCalendarEvents(
   /** FullCalendar 当前可视范围（由 datesSet 钩子写入） */
   const currentRange = ref<{ start: Date; end: Date } | null>(null);
 
-  function handleDatesSet(arg: { start: Date; end: Date }): void {
+  /**
+   * 当前视图标题（由 datesSet 钩子写入，来自 FC 原生 view.title）。
+   * 配合 zh-cn locale 输出中文（如 "2026年7月" / "2026年7月13日 - 19日"），
+   * 跳转 / 翻页 / 点今天后自动同步，无需各视图手写格式化。
+   */
+  const title = ref<string>("");
+
+  /** FC datesSet 回调参数类型（含 view.title） */
+  interface DatesSetArg {
+    start: Date;
+    end: Date;
+    view: { title: string };
+  }
+
+  function handleDatesSet(arg: DatesSetArg): void {
     currentRange.value = { start: arg.start, end: arg.end };
+    title.value = arg.view.title;
     void loadRange(arg.start, arg.end);
   }
 
@@ -340,7 +355,7 @@ export function useCalendarEvents(
     onUnmounted(unsubscribe);
   });
 
-  return { events, status, error, currentRange, loadRange, reload, handleDatesSet, applySelection };
+  return { events, status, error, currentRange, title, loadRange, reload, handleDatesSet, applySelection };
 }
 
 /**
