@@ -28,6 +28,16 @@ const router = useRouter();
 const route = useRoute();
 const quickAdd = useQuickAdd();
 
+/**
+ * 计算树节点左侧缩进。
+ * 顶层节点也需要位于“清单”分组标题的右侧，每深入一级再增加 16px。
+ */
+function getNodePaddingLeft(depth: number): string {
+  const baseIndent: number = 16;
+  const levelIndent: number = 16;
+  return `${baseIndent + depth * levelIndent}px`;
+}
+
 /** 当前清单项是否处于路由激活态（仅清单，非目录） */
 const isActive = computed(
   () => !props.node.isFolder && route.name === "list" && route.params.id === props.node.id,
@@ -190,7 +200,7 @@ function onDrop(e: DragEvent) {
         'list-node--drag-over': dragOver === 'before' || dragOver === 'after',
         'list-node--drag-inside': dragOver === 'inside',
       }"
-      :style="{ paddingLeft: depth * 16 + 'px' }"
+      :style="{ paddingLeft: getNodePaddingLeft(depth) }"
       :draggable="canDrag ? 'true' : 'false'"
       @dragstart="onDragStart"
       @dragend="onDragEnd"
@@ -241,7 +251,7 @@ function onDrop(e: DragEvent) {
         'list-node--active': isActive,
         'list-node--drag-over': dragOver === 'before' || dragOver === 'after',
       }"
-      :style="{ paddingLeft: depth * 16 + 'px' }"
+      :style="{ paddingLeft: getNodePaddingLeft(depth) }"
       :draggable="canDrag ? 'true' : 'false'"
       @dragstart="onDragStart"
       @dragend="onDragEnd"

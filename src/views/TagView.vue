@@ -59,38 +59,47 @@ onMounted(async () => {
 
     <a-divider class="mb-2" />
 
-    <!-- 未完成任务（有任务时才渲染，避免空状态被挤出视图） -->
-    <div v-if="taskStore.currentTasks.length > 0" class="tag-view__tasks">
-      <TaskListItem
-        v-for="task in taskStore.openTasks"
-        :key="task.id"
-        :task="task"
-        @select="taskStore.selectTask(task.id)"
-        @reorder="(draggedId: string, targetId: string, pos: 'before' | 'after') => taskStore.reorderTasks(draggedId, targetId, pos)"
-      />
-    </div>
-
-    <!-- 完成区（折叠） -->
-    <a-collapse
-      v-if="taskStore.doneTasks.length"
-      :bordered="false"
-      class="mt-4 tag-view__done"
-    >
-      <a-collapse-item
-        key="done"
-        :header="`已完成 · ${taskStore.doneTasks.length}`"
-        class="tag-view__done-header"
+    <!-- 未完成任务与完成区共用折叠面板和滚动容器 -->
+    <div v-if="taskStore.currentTasks.length > 0" class="tag-view__content">
+      <a-collapse
+        :bordered="false"
+        :default-active-key="['open']"
+        class="tag-view__collapse"
       >
-        <TaskListItem
-          v-for="task in taskStore.doneTasks"
-          :key="task.id"
-          :task="task"
-          @toggle="taskStore.toggleTask(task.id, !task.done)"
-          @select="taskStore.selectTask(task.id)"
-          @delete="taskStore.deleteTask(task.id)"
-        />
-      </a-collapse-item>
-    </a-collapse>
+        <a-collapse-item
+          v-if="taskStore.openTasks.length > 0"
+          key="open"
+          :header="`未完成 · ${taskStore.openTasks.length}`"
+          class="tag-view__collapse-header"
+        >
+          <div class="tag-view__tasks">
+            <TaskListItem
+              v-for="task in taskStore.openTasks"
+              :key="task.id"
+              :task="task"
+              @select="taskStore.selectTask(task.id)"
+              @reorder="(draggedId: string, targetId: string, pos: 'before' | 'after') => taskStore.reorderTasks(draggedId, targetId, pos)"
+            />
+          </div>
+        </a-collapse-item>
+
+        <a-collapse-item
+          v-if="taskStore.doneTasks.length > 0"
+          key="done"
+          :header="`已完成 · ${taskStore.doneTasks.length}`"
+          class="tag-view__collapse-header"
+        >
+          <TaskListItem
+            v-for="task in taskStore.doneTasks"
+            :key="task.id"
+            :task="task"
+            @toggle="taskStore.toggleTask(task.id, !task.done)"
+            @select="taskStore.selectTask(task.id)"
+            @delete="taskStore.deleteTask(task.id)"
+          />
+        </a-collapse-item>
+      </a-collapse>
+    </div>
 
     <!-- 空状态 -->
     <div
@@ -138,17 +147,21 @@ onMounted(async () => {
   padding: 0 8px 8px;
 }
 
-.tag-view__tasks {
+.tag-view__content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+}
+
+.tag-view__tasks {
   padding: 0 12px;
 }
 
-.tag-view__done {
+.tag-view__collapse {
   margin: 8px 12px;
 }
 
-.tag-view__done-header {
+.tag-view__collapse-header {
   font-size: 13px;
   font-weight: 500;
   color: var(--jt-text-secondary);

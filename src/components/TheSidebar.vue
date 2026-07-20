@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 侧边栏 —— 五区块导航（智能视图 / 清单 / 标签 / 日历）
+// 侧边栏 —— 智能视图 / 清单 / 标签导航
 import { computed, nextTick, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -16,8 +16,6 @@ import {
   IconDown,
   IconFolder,
   IconClose,
-  IconCalendar,
-  IconCalendarClock,
 } from "@arco-design/web-vue/es/icon";
 // IconEdit 移到 SidebarListNode 中使用
 import { useListStore } from "@/stores/list";
@@ -52,7 +50,6 @@ const sectionCollapsed = ref<Record<string, boolean>>({
   smart: false,
   lists: false,
   tags: false,
-  calendar: false,
 });
 
 function toggleSection(key: string) {
@@ -520,42 +517,6 @@ onMounted(async () => {
       </div>
 
       <!-- 习惯区块已移除 —— 习惯入口已上移到 AppRail，TheSidebar 只承担任务二级导航 -->
-
-      <!-- 日历区块（周 / 月 / 年） -->
-      <div class="sidebar__subheader sidebar__subheader--toggle">
-        <div class="sidebar__subheader-left" @click="toggleSection('calendar')">
-          <icon-down v-if="!sectionCollapsed.calendar" :size="12" class="sidebar__toggle-icon" />
-          <icon-right v-else :size="12" class="sidebar__toggle-icon" />
-          <span>日历</span>
-        </div>
-      </div>
-      <router-link
-        to="/week"
-        v-show="!sectionCollapsed.calendar"
-        class="sidebar__item"
-        :class="{ 'sidebar__item--active': activeRouteName === 'week' }"
-      >
-        <icon-calendar-clock :size="16" class="sidebar__item-icon" />
-        <span class="sidebar__item-title">周</span>
-      </router-link>
-      <router-link
-        to="/month"
-        v-show="!sectionCollapsed.calendar"
-        class="sidebar__item"
-        :class="{ 'sidebar__item--active': activeRouteName === 'month' }"
-      >
-        <icon-calendar :size="16" class="sidebar__item-icon" />
-        <span class="sidebar__item-title">月</span>
-      </router-link>
-      <router-link
-        to="/year"
-        v-show="!sectionCollapsed.calendar"
-        class="sidebar__item"
-        :class="{ 'sidebar__item--active': activeRouteName === 'year' }"
-      >
-        <icon-calendar :size="16" class="sidebar__item-icon" />
-        <span class="sidebar__item-title">年</span>
-      </router-link>
     </nav>
   </aside>
 
