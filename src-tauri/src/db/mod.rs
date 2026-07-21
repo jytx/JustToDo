@@ -7,6 +7,7 @@ use std::str::FromStr;
 
 pub const MIGRATIONS_001: &str = include_str!("migrations/001_init.sql");
 pub const MIGRATIONS_002: &str = include_str!("migrations/002_habits.sql");
+pub const MIGRATIONS_014: &str = include_str!("migrations/014_templates.sql");
 
 /// 检查表中是否存在某列
 async fn column_exists(pool: &SqlitePool, table: &str, column: &str) -> Result<bool, String> {
@@ -113,6 +114,13 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
 
     // 013: habits 加 icon（emoji 图标，默认 🏆）
     run_migration_013(&pool).await?;
+
+    // 014: 任务模板表 + 内置模板 seed
+    // 纯 SQL（建表 + INSERT OR IGNORE），与 001/002 同模式（幂等）
+    sqlx::query(MIGRATIONS_014)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("执行迁移 014_templates 失败: {}", e))?;
 
     Ok(pool)
 }

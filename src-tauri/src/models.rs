@@ -44,6 +44,37 @@ pub struct Task {
     pub checklist: Vec<ChecklistItem>,
 }
 
+/// 任务模板 —— "任务参数预设"，独立于 tasks 表
+/// 应用模板时由前端 taskStore.createTask + db.updateTask(note) 两步落库
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Template {
+    pub id: String,
+    pub name: String,
+    pub title: String,
+    /// HTML 富文本（RichTextEditor 输出）
+    pub note: String,
+    pub is_builtin: bool,
+    pub position: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// 创建模板的参数（id/时间戳由 Rust 端生成）
+#[derive(Debug, Deserialize)]
+pub struct CreateTemplateInput {
+    pub name: String,
+    pub title: String,
+    pub note: String,
+}
+
+/// 更新模板的参数（所有字段可选；与 UpdateTaskInput 同模式）
+#[derive(Debug, Deserialize)]
+pub struct UpdateTemplateInput {
+    pub name: Option<String>,
+    pub title: Option<String>,
+    pub note: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaskList {
     pub id: String,

@@ -1832,3 +1832,123 @@ pub async fn set_setting(
     }
     Ok(())
 }
+
+// ─── 模板操作 ────────────────────────────────────────────
+// 模板是"任务参数预设"，独立于 tasks 表。
+// 应用模板由前端编排：taskStore.createTask + db.updateTask(note)。
+
+/// 从行数据提取 Template（is_builtin 是 0/1 整数）
+fn row_to_template(row: &sqlx::sqlite::SqliteRow) -> Template {
+    Template {
+        id: row.get("id"),
+        name: row.get("name"),
+        title: row.get("title"),
+        note: row.get("note"),
+        is_builtin: row.get::<i32, _>("is_builtin") != 0,
+        position: row.get("position"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    }
+}
+
+#[tauri::command]
+pub async fn template_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<Template>> {
+    let rows = sqlx::query(
+        "SELECT id, name, title, note, is_builtin, position, created_at, updated_at FROM templates ORDER BY position ASC, created_at ASC",
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("查询模板失败: {}", e))?;
+
+    Ok(rows.iter().map(row_to_template).collect())
+}
+
+#[tauri::command]
+pub async fn template_create(
+    pool: State<'_, sqlx::SqlitePool>,
+    input: CreateTemplateInput,
+) -> CmdResult<Template> {
+    let id = uuid();
+    let ts = now();
+    // position 取当前最大值 + 1000，保证新模板排在最后
+    let max_pos: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(position), 0) FROM templates")
+        .fetch_one(pool.inner())
+        .await
+        .map_err(|e| format!("查询模板 position 失败: {}", e))?;
+    let position = max_pos + 1000;
+
+    sqlx::query(
+        "INSERT INTO templates (id, name, title, note, is_builtin, position, created_at, updated_at) VALUES ($1, $2, $3, $4, 0, $5, $6, $7)",
+    )
+    .bind(&id)
+    .bind(&input.name)
+    .bind(&input.title)
+    .bind(&input.note)
+    .bind(position)
+    .bind(&ts)
+    .bind(&ts)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| format!("创建模板失败: {}", e))?;
+
+    Ok(Template {
+        id,
+        name: input.name,
+        title: input.title,
+        note: input.note,
+        is_builtin: false,
+        position,
+        created_at: ts.clone(),
+        updated_at: ts,
+    })
+}
+
+#[tauri::command]
+pub async fn template_update(
+    pool: State<'_, sqlx::SqlitePool>,
+    id: String,
+    input: UpdateTemplateInput,
+) -> CmdResult<()> {
+    let ts = now();
+
+    // 逐字段更新（与 task_update 同模式；任一字段 Some 则更新该字段）
+    if let Some(name) = &input.name {
+        sqlx::query("UPDATE templates SET name = $1, updated_at = $2 WHERE id = $3")
+            .bind(name)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新模板失败: {}", e))?;
+    }
+    if let Some(title) = &input.title {
+        sqlx::query("UPDATE templates SET title = $1, updated_at = $2 WHERE id = $3")
+            .bind(title)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新模板失败: {}", e))?;
+    }
+    if let Some(note) = &input.note {
+        sqlx::query("UPDATE templates SET note = $1, updated_at = $2 WHERE id = $3")
+            .bind(note)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新模板失败: {}", e))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn template_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdResult<()> {
+    sqlx::query("DELETE FROM templates WHERE id = $1")
+        .bind(&id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("删除模板失败: {}", e))?;
+    Ok(())
+}
