@@ -22,7 +22,7 @@ CREATE INDEX IF NOT EXISTS idx_templates_position ON templates(position);
 INSERT OR IGNORE INTO templates (id, name, title, note, is_builtin, position, created_at, updated_at) VALUES
 ('tpl-meeting',
  '会议纪要',
- '{{date}} 会议纪要',
+ '{{date_cn}} 会议纪要',
  '<p><strong>会议：</strong>______</p><p><strong>时间：</strong>______</p><p><strong>参会：</strong>______</p><p><strong>议题：</strong></p><ul><li>议题一</li><li>议题二</li></ul><p><strong>结论 &amp; Action：</strong></p><ul><li>决定 1 —— 负责人 / 截止</li></ul>',
  1,
  1,
@@ -32,7 +32,7 @@ INSERT OR IGNORE INTO templates (id, name, title, note, is_builtin, position, cr
 INSERT OR IGNORE INTO templates (id, name, title, note, is_builtin, position, created_at, updated_at) VALUES
 ('tpl-weekly',
  '周报',
- '{{date}} 周报',
+ '{{date_cn}} 周报',
  '<p><strong>本周完成：</strong></p><ul><li></li></ul><p><strong>下周计划：</strong></p><ul><li></li></ul><p><strong>阻塞 / 风险：</strong></p><ul><li></li></ul>',
  1,
  2,

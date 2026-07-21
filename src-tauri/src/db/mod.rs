@@ -8,6 +8,7 @@ use std::str::FromStr;
 pub const MIGRATIONS_001: &str = include_str!("migrations/001_init.sql");
 pub const MIGRATIONS_002: &str = include_str!("migrations/002_habits.sql");
 pub const MIGRATIONS_014: &str = include_str!("migrations/014_templates.sql");
+pub const MIGRATIONS_015: &str = include_str!("migrations/015_templates_date_cn.sql");
 
 /// 检查表中是否存在某列
 async fn column_exists(pool: &SqlitePool, table: &str, column: &str) -> Result<bool, String> {
@@ -121,6 +122,12 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
         .execute(&pool)
         .await
         .map_err(|e| format!("执行迁移 014_templates 失败: {}", e))?;
+
+    // 015: 内置模板占位符 {{date}} → {{date_cn}}（只动 title，保留用户对 note 的修改）
+    sqlx::query(MIGRATIONS_015)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("执行迁移 015_templates_date_cn 失败: {}", e))?;
 
     Ok(pool)
 }

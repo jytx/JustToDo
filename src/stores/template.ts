@@ -8,6 +8,7 @@ import type { Template, TemplateForm, Task } from "@/types";
 import * as db from "@/api/db";
 import { useTaskStore } from "@/stores/task";
 import { useSettingsStore } from "@/stores/settings";
+import { replacePlaceholders } from "@/utils/template";
 
 export const useTemplateStore = defineStore("template", () => {
   const templates = ref<Template[]>([]);
@@ -106,24 +107,28 @@ export const useTemplateStore = defineStore("template", () => {
     const settings = useSettingsStore();
     const listId = settings.templateDefaultListId || "inbox";
 
+    // 2.5 占位符替换：{{date_cn}} 等替换为实际值（仅作用于新建任务，不改模板本身）
+    const resolvedTitle = replacePlaceholders(form.title || form.name);
+    const resolvedNote = replacePlaceholders(form.note);
+
     // 3. 创建任务
     const taskStore = useTaskStore();
     const task = await taskStore.createTask({
-      title: form.title || form.name,
+      title: resolvedTitle,
       listId,
     });
 
     // 4. 写 note（task_create 不接受 note，必须二次 update）
     // 用 taskStore.updateTask 而非 db.updateTask —— 这样能同步 selectedTaskObj，
     // 否则详情面板读到的还是 createTask 返回的 note='' 快照
-    if (form.note) {
-      await taskStore.updateTask(task.id, { note: form.note });
+    if (resolvedNote) {
+      await taskStore.updateTask(task.id, { note: resolvedNote });
     }
 
     // 5. 打开详情面板
     await taskStore.selectTask(task.id);
 
-    return { ...task, note: form.note };
+    return { ...task, note: resolvedNote };
   }
 
   return {
