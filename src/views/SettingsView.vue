@@ -11,9 +11,11 @@ import {
   IconBulb,
   IconStorage,
   IconInfoCircle,
+  IconCopy,
 } from "@arco-design/web-vue/es/icon";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import TemplateSection from "@/components/TemplateSection.vue";
 
 const settingsStore = useSettingsStore();
 const {
@@ -31,6 +33,7 @@ const sections = [
   { id: "general", icon: IconSettings, label: "通用" },
   { id: "appearance", icon: IconSkin, label: "外观" },
   { id: "shortcuts", icon: IconBulb, label: "快捷键" },
+  { id: "templates", icon: IconCopy, label: "模板" },
   { id: "data", icon: IconStorage, label: "数据" },
   { id: "about", icon: IconInfoCircle, label: "关于" },
 ];
@@ -223,6 +226,12 @@ async function changeAttachmentPath() {
             <span>{{ s.action }}</span>
             <kbd class="font-mono settings-section__kbd">{{ s.mac }}</kbd>
           </div>
+        </div>
+
+        <!-- 模板 -->
+        <div v-if="activeSection === 'templates'" class="settings-section">
+          <h2 class="settings-section__title">模板</h2>
+          <TemplateSection />
         </div>
 
         <!-- 数据 -->
