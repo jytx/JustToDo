@@ -214,6 +214,7 @@ async function onApply() {
   border: 1px solid var(--jt-border);
   border-radius: 6px;
   overflow: hidden;
+  display: flex;
 }
 .tpl-edit__rich-wrap:focus-within {
   border-color: var(--jt-primary);
@@ -223,6 +224,15 @@ async function onApply() {
    本场景已关闭 dragHandle，恢复对称 10/12 padding */
 .tpl-edit__rich-wrap :deep(.rich-text--borderless) .rich-text__editor-wrapper {
   padding: 10px 12px;
+}
+/* 让内部 RichTextEditor 撑满外层 wrap 的高度，避免下方出现未填充空隙（视觉上的"线"）*/
+.tpl-edit__rich-wrap :deep(.rich-text) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.tpl-edit__rich-wrap :deep(.rich-text__editor-wrapper) {
+  flex: 1;
 }
 
 .tpl-edit__footer {
