@@ -177,6 +177,11 @@ onMounted(() => {
   templateStore.loadTemplates().catch((e) => {
     console.error("[AppLayout] 预加载 templates 失败:", e);
   });
+  // 预加载清单列表（模板 section 的「默认清单」下拉、搜索结果等都依赖；
+  // 之前是各 ListView/SmartView onMounted 时 lazy 加载，用户直达设置页时会空）
+  listStore.loadLists().catch((e) => {
+    console.error("[AppLayout] 预加载 lists 失败:", e);
+  });
 });
 onUnmounted(() => window.removeEventListener("keydown", onNavigationKeydown));
 
