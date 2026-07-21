@@ -147,11 +147,12 @@ async function onApply() {
 
       <!-- 富文本分区（主体） -->
       <section class="tpl-edit__field tpl-edit__field--rich">
-        <label class="tpl-edit__field-label">备注（富文本）</label>
+        <label class="tpl-edit__field-label">备注</label>
         <div class="tpl-edit__rich-wrap">
           <RichTextEditor
             v-model="form.note"
             :drag-handle="false"
+            borderless
             placeholder="按 / 唤起命令，或点击左侧 A 图标打开工具栏…"
           />
         </div>
@@ -217,6 +218,11 @@ async function onApply() {
 .tpl-edit__rich-wrap:focus-within {
   border-color: var(--jt-primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-primary) 20%, transparent);
+}
+/* borderless 模式下 RichTextEditor 自带 24px 左 padding（给块拖拽手柄留位）；
+   本场景已关闭 dragHandle，恢复对称 10/12 padding */
+.tpl-edit__rich-wrap :deep(.rich-text--borderless) .rich-text__editor-wrapper {
+  padding: 10px 12px;
 }
 
 .tpl-edit__footer {
