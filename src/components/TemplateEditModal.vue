@@ -114,6 +114,7 @@ async function onApply() {
 <template>
   <a-modal
     :visible="visible"
+    :title="isEdit ? '编辑模板' : '新建模板'"
     :width="640"
     :footer="false"
     :mask-closable="false"
@@ -122,18 +123,16 @@ async function onApply() {
     @update:visible="(v) => emit('update:visible', v)"
   >
     <div class="tpl-edit">
-      <!-- 头部：模式标识 + 模板名 -->
-      <header class="tpl-edit__header">
-        <span class="tpl-edit__label">
-          {{ isEdit ? "编辑模板" : "新建模板" }}
-        </span>
+      <!-- 模板名 -->
+      <section class="tpl-edit__field">
+        <label class="tpl-edit__field-label">模板名称</label>
         <input
           v-model="form.name"
-          class="tpl-edit__name-input"
+          class="tpl-edit__field-input tpl-edit__field-input--name"
           placeholder="模板名称"
           maxlength="60"
         />
-      </header>
+      </section>
 
       <!-- 任务标题分区 -->
       <section class="tpl-edit__field">
@@ -172,32 +171,6 @@ async function onApply() {
   padding: 4px 0;
 }
 
-.tpl-edit__header {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.tpl-edit__label {
-  font-size: 11px;
-  color: var(--jt-text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.tpl-edit__name-input {
-  border: none;
-  outline: none;
-  background: transparent;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--jt-text-primary);
-  padding: 2px 0;
-  font-family: var(--font-display);
-}
-.tpl-edit__name-input::placeholder {
-  color: var(--jt-text-tertiary);
-  font-weight: 500;
-}
-
 .tpl-edit__field {
   display: flex;
   flex-direction: column;
@@ -221,6 +194,11 @@ async function onApply() {
 .tpl-edit__field-input:focus {
   border-color: var(--jt-primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-primary) 20%, transparent);
+}
+/* 模板名输入：比其它字段更醒目（替代原 name-input 的 18px 体验） */
+.tpl-edit__field-input--name {
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .tpl-edit__field--rich {
