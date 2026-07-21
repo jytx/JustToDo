@@ -208,6 +208,11 @@ async function onApply() {
 
 .tpl-edit__field--rich {
   flex: 1;
+  /* 限制整个富文本区的最大高度，内容超出后内部滚动，
+     防止备注变长把弹窗顶出屏幕 */
+  max-height: 50vh;
+  min-height: 0;
+  display: flex;
 }
 .tpl-edit__rich-wrap {
   min-height: 240px;
@@ -230,9 +235,13 @@ async function onApply() {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 .tpl-edit__rich-wrap :deep(.rich-text__editor-wrapper) {
   flex: 1;
+  /* 备注内容超出时内部滚动，不撑破弹窗 */
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .tpl-edit__footer {
