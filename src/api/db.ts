@@ -3,7 +3,7 @@
 // 这样绕过了 plugin-sql 前端 API 的 IPC 问题，走标准 invoke 通道
 
 import { invoke } from "@tauri-apps/api/core";
-import type { List, Task, Priority, RecurrenceFreq, ChecklistItem } from "@/types";
+import type { List, Task, Priority, RecurrenceFreq, ChecklistItem, Template } from "@/types";
 
 // ─── 类型（与 Rust models.rs 对应）──────────────────────
 
@@ -547,4 +547,69 @@ export async function saveImage(data: string, ext: string): Promise<string> {
 
 export async function getAttachmentFullpath(filename: string): Promise<string> {
   return await invoke<string>("get_attachment_fullpath", { filename });
+}
+
+// ─── 模板操作 ────────────────────────────────────────────
+// 模板是"任务参数预设"，独立于 tasks 表。
+// 应用模板由前端 store 编排：taskStore.createTask + db.updateTask(note)。
+
+/** Rust 端返回的模板行（snake_case） */
+interface RustTemplate {
+  id: string;
+  name: string;
+  title: string;
+  note: string;
+  is_builtin: boolean;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Rust 行 → 前端 camelCase */
+function mapTemplate(r: RustTemplate): Template {
+  return {
+    id: r.id,
+    name: r.name,
+    title: r.title,
+    note: r.note,
+    isBuiltin: r.is_builtin,
+    position: r.position,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+export async function getTemplates(): Promise<Template[]> {
+  const rows = await invoke<RustTemplate[]>("template_get_all");
+  return rows.map(mapTemplate);
+}
+
+export async function createTemplate(params: {
+  name: string;
+  title: string;
+  note: string;
+}): Promise<Template> {
+  const input = {
+    name: params.name,
+    title: params.title,
+    note: params.note,
+  };
+  const r = await invoke<RustTemplate>("template_create", { input });
+  return mapTemplate(r);
+}
+
+export async function updateTemplate(
+  id: string,
+  fields: { name?: string; title?: string; note?: string },
+): Promise<void> {
+  const input: Record<string, unknown> = {
+    name: fields.name,
+    title: fields.title,
+    note: fields.note,
+  };
+  await invoke<void>("template_update", { id, input });
+}
+
+export async function deleteTemplate(id: string): Promise<void> {
+  await invoke<void>("template_delete", { id });
 }

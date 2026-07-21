@@ -261,3 +261,27 @@ export function mapListRow(row: ListRow): List {
     isFolder: row.is_folder === 1,
   };
 }
+
+/** 任务模板 —— "任务参数预设"，独立于 tasks 表 */
+export interface Template {
+  id: string;
+  name: string;
+  /** 应用模板时作为新任务的 title */
+  title: string;
+  /** HTML 富文本（RichTextEditor 输出） */
+  note: string;
+  /** 是否内置预装（用户仍可改/删） */
+  isBuiltin: boolean;
+  /** 排序权重（MVP 不暴露 UI） */
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 模板编辑表单（弹窗内 v-model 绑定用；id 为 null 表示新建模式） */
+export interface TemplateForm {
+  id: string | null;
+  name: string;
+  title: string;
+  note: string;
+}
