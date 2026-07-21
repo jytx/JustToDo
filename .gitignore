@@ -28,3 +28,6 @@ src-tauri/target
 *.sw?
 
 .vscode
+
+# Visual Companion brainstorming sessions
+.superpowers/
