@@ -20,6 +20,7 @@ export const SETTINGS_KEYS = {
   recurrenceCheckInterval: "recurrence_check_interval",
   startupView: "startup_view",
   zoomLevel: "zoom_level",
+  templateDefaultListId: "template_default_list_id",
 } as const;
 
 /** 启动时打开的目标视图 */
@@ -32,6 +33,9 @@ const DEFAULT_ACCENT_COLOR = "#4F46E5";
 const DEFAULT_NEW_TASKS_DUE_TODAY = true;
 const DEFAULT_RECURRENCE_CHECK_INTERVAL = 60;
 const DEFAULT_STARTUP_VIEW: StartupView = "today";
+
+/** 模板应用时的默认目标清单 id（'inbox' 是预置不可删清单） */
+const DEFAULT_TEMPLATE_LIST_ID = "inbox";
 
 /** 窗口缩放级别上下限（与 Rust 端 menu.rs 保持一致） */
 const ZOOM_MIN = 0.5;
@@ -74,6 +78,12 @@ function parseStartupView(v: string | null): StartupView {
   return DEFAULT_STARTUP_VIEW;
 }
 
+/** 解析模板默认清单 id；空或不存在则回落到 inbox */
+function parseTemplateListId(v: string | null): string {
+  if (v && v.trim()) return v;
+  return DEFAULT_TEMPLATE_LIST_ID;
+}
+
 /** 解析并钳制缩放级别（保留两位小数，与 Rust 端 clamp_zoom 一致） */
 function parseZoomLevel(v: string | null): number {
   if (!v) return DEFAULT_ZOOM_LEVEL;
@@ -94,6 +104,7 @@ export const useSettingsStore = defineStore("settings", () => {
   const recurrenceCheckInterval = ref<number>(DEFAULT_RECURRENCE_CHECK_INTERVAL);
   const startupView = ref<StartupView>(DEFAULT_STARTUP_VIEW);
   const zoomLevel = ref<number>(DEFAULT_ZOOM_LEVEL);
+  const templateDefaultListId = ref<string>(DEFAULT_TEMPLATE_LIST_ID);
 
   const initialized = ref(false);
   const loading = ref(false);
@@ -136,13 +147,14 @@ export const useSettingsStore = defineStore("settings", () => {
     if (initialized.value || loading.value) return;
     loading.value = true;
     try {
-      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw] = await Promise.all([
+      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw] = await Promise.all([
         db.getSetting(SETTINGS_KEYS.themeMode).catch(() => null),
         db.getSetting(SETTINGS_KEYS.accentColor).catch(() => null),
         db.getSetting(SETTINGS_KEYS.newTasksDueToday).catch(() => null),
         db.getSetting(SETTINGS_KEYS.recurrenceCheckInterval).catch(() => null),
         db.getSetting(SETTINGS_KEYS.startupView).catch(() => null),
         db.getSetting(SETTINGS_KEYS.zoomLevel).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.templateDefaultListId).catch(() => null),
       ]);
 
       const mode = parseThemeMode(themeRaw);
@@ -151,6 +163,7 @@ export const useSettingsStore = defineStore("settings", () => {
       const interval = parseIntervalMinutes(intervalRaw);
       const startup = parseStartupView(startupRaw);
       const zoom = parseZoomLevel(zoomRaw);
+      const tplList = parseTemplateListId(tplListRaw);
 
       themeMode.value = mode;
       accentColor.value = accent;
@@ -158,6 +171,7 @@ export const useSettingsStore = defineStore("settings", () => {
       recurrenceCheckInterval.value = interval;
       startupView.value = startup;
       zoomLevel.value = zoom;
+      templateDefaultListId.value = tplList;
 
       // 先应用强调色（不依赖模式），再应用主题
       theme.setAccentColor(accent);
@@ -242,6 +256,17 @@ export const useSettingsStore = defineStore("settings", () => {
     }
   }
 
+  /** 修改模板默认清单并持久化 */
+  async function setTemplateDefaultListId(v: string): Promise<void> {
+    if (!v || !v.trim()) return;
+    const prev = templateDefaultListId.value;
+    templateDefaultListId.value = v;
+    const ok = await persist(SETTINGS_KEYS.templateDefaultListId, v, prev);
+    if (!ok) {
+      templateDefaultListId.value = prev;
+    }
+  }
+
   /**
    * 监听 Rust 端 zoom-changed 事件
    *
@@ -319,6 +344,7 @@ export const useSettingsStore = defineStore("settings", () => {
     recurrenceCheckInterval,
     startupView,
     zoomLevel,
+    templateDefaultListId,
     initialized,
     loading,
     error,
@@ -329,6 +355,7 @@ export const useSettingsStore = defineStore("settings", () => {
     setNewTasksDueToday,
     setRecurrenceCheckInterval,
     setStartupView,
+    setTemplateDefaultListId,
     cycleTheme,
     zoomIn,
     zoomOut,
