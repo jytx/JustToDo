@@ -64,6 +64,7 @@ async function confirm() {
 <template>
   <a-modal
     :visible="visible"
+    title="重命名模板"
     :width="400"
     :footer="false"
     :mask-closable="true"
@@ -72,9 +73,6 @@ async function confirm() {
     @update:visible="(v) => emit('update:visible', v)"
   >
     <div class="tpl-rename">
-      <header class="tpl-rename__header">
-        <span class="tpl-rename__label">重命名模板</span>
-      </header>
       <input
         ref="inputRef"
         v-model="newName"
@@ -97,16 +95,6 @@ async function confirm() {
   flex-direction: column;
   gap: 12px;
   padding: 4px 0;
-}
-.tpl-rename__header {
-  display: flex;
-  flex-direction: column;
-}
-.tpl-rename__label {
-  font-size: 11px;
-  color: var(--jt-text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 .tpl-rename__input {
   border: 1px solid var(--jt-border);
