@@ -310,6 +310,16 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
 }
 
 /*
+ * 全局统一：Arco a-collapse 内容区默认带一层 --color-fill-1 灰底（#F4F4F5），
+ * 让「未完成 / 已完成」分组下方形成凹陷感。项目里不需要这层底色，
+ * 让任务列表直接融入主背景。
+ * 影响：ListView / SmartView / TagView 三个视图的折叠面板。
+ */
+.arco-collapse-item-content {
+  background-color: transparent;
+}
+
+/*
  * 全局统一：所有 Arco 弹窗（modal）圆角更圆润
  * - 覆盖 Arco 默认 4px，统一为 16px（更圆润）
  * - overflow: hidden 让内部背景色块跟随圆角裁剪
