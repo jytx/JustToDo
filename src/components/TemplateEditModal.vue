@@ -149,7 +149,11 @@ async function onApply() {
       <section class="tpl-edit__field tpl-edit__field--rich">
         <label class="tpl-edit__field-label">备注（富文本）</label>
         <div class="tpl-edit__rich-wrap">
-          <RichTextEditor v-model="form.note" placeholder="支持富文本、图片粘贴..." />
+          <RichTextEditor
+            v-model="form.note"
+            :drag-handle="false"
+            placeholder="按 / 唤起命令，或点击左侧 A 图标打开工具栏…"
+          />
         </div>
       </section>
 

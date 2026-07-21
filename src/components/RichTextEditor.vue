@@ -71,12 +71,21 @@ const SelectAllFix = Extension.create({
   },
 });
 
-const props = defineProps<{
-  modelValue: string;
-  placeholder?: string;
-  /** 无边框模式（融入父容器，详情面板主区用） */
-  borderless?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: string;
+    placeholder?: string;
+    /** 无边框模式（融入父容器，详情面板主区用） */
+    borderless?: boolean;
+    /** 是否启用块拖拽手柄（默认 true；模板编辑弹窗等小场景下传 false 关闭） */
+    dragHandle?: boolean;
+  }>(),
+  {
+    placeholder: "",
+    borderless: false,
+    dragHandle: true,
+  },
+);
 
 const emit = defineEmits<{
   "update:modelValue": [value: string];
@@ -739,8 +748,9 @@ function fileToBase64(file: File): Promise<string> {
       @scroll="updateBtnPos"
     >
       <EditorContent :editor="editor" class="rich-text__editor" />
-      <!-- 块拖拽手柄 + 落点横线（放在 wrapper 内、absolute 定位，hover 链不断） -->
-      <BlockDragHandle :editor="editor" />
+      <!-- 块拖拽手柄 + 落点横线（放在 wrapper 内、absolute 定位，hover 链不断）
+           可通过 dragHandle prop 关闭（模板编辑弹窗等小场景不需要） -->
+      <BlockDragHandle v-if="dragHandle" :editor="editor" />
     </div>
 
     <!-- 空段落浮 + 按钮（Notion-like 入口之一） -->
