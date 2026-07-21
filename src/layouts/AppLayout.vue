@@ -6,6 +6,7 @@ import { useTheme } from "@/composables/useTheme";
 import { useSettingsStore } from "@/stores/settings";
 import { useTaskStore } from "@/stores/task";
 import { useHabitStore } from "@/stores/habit";
+import { useTemplateStore } from "@/stores/template";
 import { useRoute } from "vue-router";
 import { SORT_FIELDS, SORT_FIELD_LABELS, type SortField } from "@/types";
 import AppRail from "@/components/AppRail.vue";
@@ -26,6 +27,7 @@ const searchStore = useSearchStore();
 const listStore = useListStore();
 const taskStore = useTaskStore();
 const habitStore = useHabitStore();
+const templateStore = useTemplateStore();
 const route = useRoute();
 const quickAdd = useQuickAdd();
 
@@ -170,6 +172,10 @@ onMounted(() => {
   // HabitView 自身 mount 时会再 load 一次（重复但幂等，后端 getHabits 成本低）
   habitStore.loadHabits().catch((e) => {
     console.error("[AppLayout] 预加载 habits 失败:", e);
+  });
+  // 预加载模板列表（设置页模板 section 直接读 store）
+  templateStore.loadTemplates().catch((e) => {
+    console.error("[AppLayout] 预加载 templates 失败:", e);
   });
 });
 onUnmounted(() => window.removeEventListener("keydown", onNavigationKeydown));
