@@ -37,37 +37,37 @@ body {
   --warning-6: #F59E0B;
   --danger-6: #DC2626;
 
-  /* 背景层级（Arco 默认是纯白系，我们用暖色系） */
-  --color-bg-1: #FAFAF7;      /* 暖白主背景 */
+  /* 背景层级（中性灰，不带暖黄；对齐 Codex 偏白冷感） */
+  --color-bg-1: #FFFFFF;      /* 纯白主背景 */
   --color-bg-2: #FFFFFF;      /* 卡片/面板表面 */
-  --color-bg-3: #F3F2ED;      /* 侧边栏/输入框凹陷 */
+  --color-bg-3: #F7F7F8;      /* 侧边栏/输入框凹陷（中性浅灰） */
 
   /* 文字 */
-  --color-text-1: #1F1D1A;    /* 主文字 */
-  --color-text-2: #42423E;    /* 次级文字 */
-  --color-text-3: #6B675F;    /* 备注/元信息 */
-  --color-text-4: #A8A299;    /* 占位/禁用 */
+  --color-text-1: #0D0D0D;    /* 主文字（近黑，中性） */
+  --color-text-2: #3F3F46;    /* 次级文字 */
+  --color-text-3: #71717A;    /* 备注/元信息 */
+  --color-text-4: #A1A1AA;    /* 占位/禁用 */
 
   /* 边框 */
-  --color-border-1: #EFEDE6;
-  --color-border-2: #E8E5DD;
-  --color-border-3: #DDD9D0;
+  --color-border-1: #ECECEE;
+  --color-border-2: #E4E4E7;
+  --color-border-3: #D4D4D8;
 
   /* 填充 */
-  --color-fill-1: #F5F4EF;    /* hover 态 */
-  --color-fill-2: #F3F2ED;    /* 凹陷表面 */
-  --color-fill-3: #EDEBE3;    /* 更深 hover */
+  --color-fill-1: #F4F4F5;    /* hover 态 */
+  --color-fill-2: #F4F4F5;    /* 凹陷表面 */
+  --color-fill-3: #E4E4E7;    /* 更深 hover */
 
   /* === 自定义 token（非 Arco 标准，供组件引用） === */
   --jt-accent-soft: #EEF0FC;       /* 强调色低饱和背景 */
   --jt-accent: #4F46E5;            /* 主强调色 */
   --jt-surface: #FFFFFF;           /* 卡片表面 */
-  --jt-surface-sunken: #F3F2ED;    /* 凹陷表面 */
-  --jt-surface-hover: #F5F4EF;     /* hover */
-  --jt-text-primary: #1F1D1A;
-  --jt-text-secondary: #6B675F;
-  --jt-text-tertiary: #A8A299;
-  --jt-border: #E8E5DD;
+  --jt-surface-sunken: #F7F7F8;    /* 凹陷表面 */
+  --jt-surface-hover: #F4F4F5;     /* hover */
+  --jt-text-primary: #0D0D0D;
+  --jt-text-secondary: #71717A;
+  --jt-text-tertiary: #A1A1AA;
+  --jt-border: #E4E4E7;
   --jt-success: #059669;
   --jt-error: #DC2626;
   --jt-warning: #F59E0B;

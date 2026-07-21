@@ -151,8 +151,8 @@ export function taskToEvent(task: Task, selectedId: string | null = null): Calen
   };
 
   if (task.done) {
-    // 已完成：灰色 + 删除线样式
-    event.color = "#A8A299";
+    // 已完成：中性灰 + 删除线样式（与浅色主题中性调对齐）
+    event.color = "#A1A1AA";
     event.classNames = ["jt-task-event", "jt-task-event--done"];
   } else if (task.parentId) {
     // 子任务：浅一点
