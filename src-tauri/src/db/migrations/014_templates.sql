@@ -42,7 +42,7 @@ INSERT OR IGNORE INTO templates (id, name, title, note, is_builtin, position, cr
 INSERT OR IGNORE INTO templates (id, name, title, note, is_builtin, position, created_at, updated_at) VALUES
 ('tpl-codereview',
  '代码审查',
- '代码审查：{{title}}',
+ '代码审查：_____',
  '<p><strong>PR：</strong>______</p><p><strong>优点：</strong></p><ul><li></li></ul><p><strong>问题：</strong></p><ul><li></li></ul><p><strong>建议：</strong></p><ul><li></li></ul>',
  1,
  3,
@@ -52,7 +52,7 @@ INSERT OR IGNORE INTO templates (id, name, title, note, is_builtin, position, cr
 INSERT OR IGNORE INTO templates (id, name, title, note, is_builtin, position, created_at, updated_at) VALUES
 ('tpl-reading',
  '读书笔记',
- '《{{book}}》读书笔记',
+ '《_____》读书笔记',
  '<p><strong>书名：</strong>______</p><p><strong>作者：</strong>______</p><p><strong>核心观点：</strong></p><ul><li></li></ul><p><strong>摘录：</strong></p><blockquote></blockquote><p><strong>启发 / 行动：</strong></p><ul><li></li></ul>',
  1,
  4,
