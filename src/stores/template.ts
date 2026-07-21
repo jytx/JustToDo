@@ -114,8 +114,10 @@ export const useTemplateStore = defineStore("template", () => {
     });
 
     // 4. 写 note（task_create 不接受 note，必须二次 update）
+    // 用 taskStore.updateTask 而非 db.updateTask —— 这样能同步 selectedTaskObj，
+    // 否则详情面板读到的还是 createTask 返回的 note='' 快照
     if (form.note) {
-      await db.updateTask(task.id, { note: form.note });
+      await taskStore.updateTask(task.id, { note: form.note });
     }
 
     // 5. 打开详情面板

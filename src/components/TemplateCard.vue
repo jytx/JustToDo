@@ -65,7 +65,11 @@ function onDelete() {
       <span class="tpl-card__name" :title="template.name">{{ template.name }}</span>
       <MenuPopover v-model:visible="menuOpen" placement="bottom-right">
         <template #trigger>
-          <button class="tpl-card__menu" title="更多操作" @click.stop>
+          <button
+            class="tpl-card__menu"
+            title="更多操作"
+            @click.stop="menuOpen = !menuOpen"
+          >
             ⋯
           </button>
         </template>
