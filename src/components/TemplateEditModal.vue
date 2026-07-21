@@ -249,7 +249,6 @@ async function onApply() {
   justify-content: flex-end;
   gap: 8px;
   padding-top: 8px;
-  border-top: 1px solid var(--jt-border);
   margin-top: 4px;
 }
 </style>
