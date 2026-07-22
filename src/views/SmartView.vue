@@ -86,7 +86,7 @@ onMounted(async () => {
       />
     </div>
 
-    <a-divider class="mb-2" />
+    <div class="mb-2" />
 
     <!-- 数据库错误提示（用于诊断） -->
     <div v-if="dbError" class="smart-view__error">

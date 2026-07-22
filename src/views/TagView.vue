@@ -57,7 +57,7 @@ onMounted(async () => {
       <AddTaskBar :list-id="'inbox'" @add="onAdd" />
     </div>
 
-    <a-divider class="mb-2" />
+    <div class="mb-2" />
 
     <!-- 未完成任务与完成区共用折叠面板和滚动容器 -->
     <div v-if="taskStore.currentTasks.length > 0" class="tag-view__content">
