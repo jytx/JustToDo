@@ -54,6 +54,21 @@ function openEdit(tpl: Template) {
   editModalVisible.value = true;
 }
 
+// ─── 直接应用模板（不打开编辑弹窗，用模板当前内容创建任务）───
+async function applyDirectly(tpl: Template) {
+  try {
+    await templateStore.applyTemplate({
+      id: tpl.id,
+      name: tpl.name,
+      title: tpl.title,
+      note: tpl.note,
+    });
+    Message.success("已创建任务");
+  } catch (e) {
+    Message.error("应用模板失败：" + String(e));
+  }
+}
+
 // ─── 重命名弹窗 ───
 const renameModalVisible = ref(false);
 const renamingTemplate = ref<Template | null>(null);
@@ -293,6 +308,7 @@ async function onGridDrop(e: DragEvent) {
           :data-id="tpl.id"
           :template="tpl"
           @edit="openEdit"
+          @apply="applyDirectly"
           @rename="openRename"
           @delete="confirmDelete"
           @dragstart="onCardDragStart"

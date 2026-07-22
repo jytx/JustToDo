@@ -6,7 +6,7 @@
 //   交由父组件 TemplateSection 编排实时让位动画
 // · 正文区显示 note 前 3 行纯文本预览（HTML → textContent 截断）
 import { computed, ref } from "vue";
-import { IconMore, IconEdit, IconDelete } from "@arco-design/web-vue/es/icon";
+import { IconMore, IconEdit, IconDelete, IconLaunch } from "@arco-design/web-vue/es/icon";
 import type { Template } from "@/types";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
@@ -16,6 +16,8 @@ const emit = defineEmits<{
   edit: [template: Template];
   rename: [template: Template];
   delete: [template: Template];
+  /** 直接应用模板（不打开编辑弹窗，用模板当前内容创建任务）*/
+  apply: [template: Template];
   /** 拖拽事件转发 —— 让父组件做实时重排 + 持久化 */
   dragstart: [template: Template, e: DragEvent];
   dragend: [];
@@ -56,6 +58,10 @@ const previewText = computed<string>(() => {
 
 function onEdit() {
   emit("edit", props.template);
+}
+function onApply() {
+  menuOpen.value = false;
+  emit("apply", props.template);
 }
 function onRename() {
   menuOpen.value = false;
@@ -160,6 +166,10 @@ function onDrop(e: DragEvent) {
             <IconMore :size="16" />
           </button>
         </template>
+        <MenuPopoverItem @click="onApply">
+          <IconLaunch :size="15" />
+          <span>应用模板</span>
+        </MenuPopoverItem>
         <MenuPopoverItem @click="onRename">
           <IconEdit :size="15" />
           <span>重命名</span>
