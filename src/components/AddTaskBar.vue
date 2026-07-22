@@ -1,9 +1,12 @@
 <script setup lang="ts">
 // 添加任务栏 —— 底部常驻，聚焦后展开优先级/日期属性行
 // 日期入口已统一为 DueDateChip（与详情面板/快捷新建面板使用同一份 DatePopover）
+// 属性行还提供「模板」快捷入口：点选模板后直接创建任务（走全局默认清单）
 import { ref, computed, nextTick } from "vue";
+import { Message } from "@arco-design/web-vue";
 import { PRIORITY_LABELS, PRIORITY_COLORS, type Priority } from "@/types";
 import { useSettingsStore } from "@/stores/settings";
+import { useTemplateStore } from "@/stores/template";
 import { todayRange } from "@/utils/date";
 import PriorityDot from "./PriorityDot.vue";
 import MenuPopover from "./MenuPopover.vue";
@@ -19,6 +22,26 @@ const emit = defineEmits<{
 }>();
 
 const settings = useSettingsStore();
+const templateStore = useTemplateStore();
+
+/** 模板菜单可见态 */
+const showTemplateMenu = ref(false);
+
+/** 内置模板的 emoji 图标（与 TemplateCard 一致；用户自建用 📄）*/
+function templateIcon(tpl: { id: string }): string {
+  switch (tpl.id) {
+    case "tpl-meeting":
+      return "📝";
+    case "tpl-weekly":
+      return "📊";
+    case "tpl-codereview":
+      return "👀";
+    case "tpl-reading":
+      return "📖";
+    default:
+      return "📄";
+  }
+}
 
 /** 开关开启时，新建任务的默认日期预填为今天（所见即所得，与 store 兜底保持一致）。 */
 function defaultDueRange(): [string, string] | [null, null] {
@@ -72,6 +95,31 @@ function submit() {
   dueEndAt.value = resetEnd;
 }
 
+/**
+ * 快捷应用模板：用模板当前内容直接创建任务（走全局默认清单）
+ *
+ * 与设置页「应用模板」语义一致：占位符替换 + 创建任务 + 写 note + 打开详情。
+ * 不走 AddTaskBar 的 emit add（add 只传 title/priority/due，不带 note）。
+ */
+async function applyTemplate(tplId: string) {
+  showTemplateMenu.value = false;
+  const tpl = templateStore.templates.find((t) => t.id === tplId);
+  if (!tpl) return;
+  try {
+    await templateStore.applyTemplate({
+      id: tpl.id,
+      name: tpl.name,
+      title: tpl.title,
+      note: tpl.note,
+    });
+    Message.success("已创建任务");
+    // 应用模板后收起属性行（任务已创建并打开详情面板）
+    focused.value = false;
+  } catch (e) {
+    Message.error("应用模板失败：" + String(e));
+  }
+}
+
 /** 把焦点拉回输入框 */
 function refocusInput() {
   nextTick(() => {
@@ -86,8 +134,8 @@ function handleBlur() {
     if (document.activeElement === inputRef.value) {
       return;
     }
-    // 如果优先级下拉还开着，保持聚焦
-    if (showPriorityMenu.value) {
+    // 如果优先级/模板下拉还开着，保持聚焦
+    if (showPriorityMenu.value || showTemplateMenu.value) {
       focused.value = true;
       return;
     }
@@ -148,6 +196,29 @@ function onDateClose() {
         >
           <PriorityDot :priority="Number(p) as Priority" :size="10" />
           <span>{{ label }}</span>
+        </MenuPopoverItem>
+      </MenuPopover>
+
+      <!-- 模板快捷入口：popover 弹模板列表，选某项直接应用模板创建任务 -->
+      <MenuPopover v-model:visible="showTemplateMenu">
+        <template #trigger>
+          <a-button
+            type="text"
+            size="mini"
+            :disabled="templateStore.templates.length === 0"
+            @click="showTemplateMenu = !showTemplateMenu"
+          >
+            <template #icon><icon-copy /></template>
+            模板
+          </a-button>
+        </template>
+        <MenuPopoverItem
+          v-for="tpl in templateStore.sortedTemplates"
+          :key="tpl.id"
+          @click="applyTemplate(tpl.id)"
+        >
+          <span class="add-task-bar__tpl-icon">{{ templateIcon(tpl) }}</span>
+          <span>{{ tpl.name }}</span>
         </MenuPopoverItem>
       </MenuPopover>
 
@@ -219,5 +290,11 @@ function onDateClose() {
   font-size: 11px;
   color: var(--jt-text-tertiary);
   margin-left: 4px;
+}
+
+/* 模板菜单项的 emoji 图标 */
+.add-task-bar__tpl-icon {
+  font-size: 14px;
+  line-height: 1;
 }
 </style>
