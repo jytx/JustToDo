@@ -3,7 +3,15 @@
 //   上：可折叠「默认设置」面板（全局默认清单选择器）
 //   下：模板卡片网格（新建按钮 + TemplateCard 列表）
 // 弹窗在本组件统一管理（编辑/重命名/删除确认），子组件只 emit 事件
-import { ref, computed } from "vue";
+//
+// 拖拽实时让位（grid 容器级监听，不依赖进入某张卡的精确区域）：
+// · dragover 在整个 grid 上监听，根据鼠标坐标 vs 所有卡片的几何中心
+//   计算 dragging 应该插到哪个 index（鼠标在卡中心左/上 → 插该卡前，
+//   右/下 → 插该卡后），任何位置（含间隙）都能识别落位
+// · dragover 阶段实时调整 localOrder，TransitionGroup 做 FLIP 动画
+// · drop 时调 templateStore.reorderTemplates 持久化
+// · dragend 时若未 drop（拖出区域）则恢复快照
+import { ref, computed, watch } from "vue";
 import { Modal, Message } from "@arco-design/web-vue";
 import type { Template } from "@/types";
 import { useTemplateStore } from "@/stores/template";
@@ -74,6 +82,121 @@ function confirmDelete(tpl: Template) {
     },
   });
 }
+
+// ─── 拖拽排序：实时让位（grid 容器级监听）────────────────
+// localOrder：当前显示顺序的 id 数组（拖拽时本地调整，drop 后同步到 store）
+const localOrder = ref<string[]>([]);
+// draggingId：正在被拖动的模板 id（dragstart 设置，drop/dragend 清空）
+const draggingId = ref<string | null>(null);
+// dragStartSnapshot：dragstart 时的 localOrder 快照（用于 dragend 回滚）
+let dragStartSnapshot: string[] | null = null;
+// hasDropped：本次拖拽是否已成功 drop（用于 dragend 判断要不要回滚）
+let hasDropped = false;
+// gridRef：grid 容器 DOM 引用（dragover/drop 监听锚点）
+const gridRef = ref<HTMLElement | null>(null);
+
+/** store 数据变化（加载/新建/删除/重命名后）时同步本地顺序 */
+watch(
+  () => templateStore.sortedTemplates.map((t) => t.id),
+  (ids) => {
+    localOrder.value = [...ids];
+  },
+  { immediate: true },
+);
+
+/** 按本地顺序从 store 取出模板对象（渲染用） */
+const orderedTemplates = computed<Template[]>(() => {
+  const map = new Map(templateStore.templates.map((t) => [t.id, t]));
+  return localOrder.value
+    .map((id) => map.get(id))
+    .filter((t): t is Template => t !== undefined);
+});
+
+function onCardDragStart(tpl: Template, _e: DragEvent) {
+  draggingId.value = tpl.id;
+  hasDropped = false;
+  dragStartSnapshot = [...localOrder.value];
+}
+
+function onCardDragEnd() {
+  // 若未 drop（拖出区域），恢复快照
+  if (!hasDropped && dragStartSnapshot) {
+    localOrder.value = [...dragStartSnapshot];
+  }
+  draggingId.value = null;
+  dragStartSnapshot = null;
+}
+
+/**
+ * 根据鼠标坐标计算 dragging 应该插入的目标 index
+ *
+ * 遍历所有非 dragging 卡片，找到第一张「鼠标在其前半段」的卡
+ * （鼠标 X 在该卡左半 = 同行的左/同列的上半；鼠标 Y 在该卡上半 = 不同行的上），
+ * dragging 就插到它前面；如果鼠标在所有卡的后半段，dragging 插到最后。
+ *
+ * 关键：用「鼠标 X 在卡中心及以前」判定，鼠标正好在中心也算"插前面"，
+ * 这样从右往左/从下往上拖到卡片中心区域时也能立刻识别落位（修复从后往前
+ * 拖时必须拖到卡片极左/极上才生效的问题）。
+ *
+ * 这个算法不依赖进入哪张卡的事件，鼠标在间隙/边缘也能识别。
+ */
+function computeTargetIndex(clientX: number, clientY: number): number {
+  if (!gridRef.value) return -1;
+  const cards = Array.from(gridRef.value.querySelectorAll<HTMLElement>(".tpl-card"));
+  // dragging 自己跳过
+  const otherCards = cards.filter((c) => c.getAttribute("data-id") !== draggingId.value);
+  for (let i = 0; i < otherCards.length; i++) {
+    const rect = otherCards[i].getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    // 判定鼠标是否在该卡"前半段"：
+    // - 同一行（Y 在卡的上下界内）：X ≤ 中心 → 前面
+    // - 不同行：Y < 中心 → 前面（鼠标在更上面的行）
+    const sameRow = clientY >= rect.top && clientY <= rect.bottom;
+    if ((sameRow && clientX <= centerX) || (!sameRow && clientY < centerY)) {
+      const id = otherCards[i].getAttribute("data-id")!;
+      const withoutDragging = localOrder.value.filter((x) => x !== draggingId.value);
+      return withoutDragging.indexOf(id);
+    }
+  }
+  // 鼠标在所有卡后面 → 插到末尾
+  return localOrder.value.length - 1;
+}
+
+/** grid 容器级 dragover：实时调整 localOrder，触发 FLIP 让位动画 */
+function onGridDragOver(e: DragEvent) {
+  if (!draggingId.value) return;
+  e.preventDefault();
+  e.dataTransfer!.dropEffect = "move";
+
+  const targetIdx = computeTargetIndex(e.clientX, e.clientY);
+  if (targetIdx < 0) return;
+
+  const withoutDragging = localOrder.value.filter((id) => id !== draggingId.value);
+  // targetIdx 是「在 withoutDragging 中的位置」，限制范围
+  const clampedIdx = Math.max(0, Math.min(targetIdx, withoutDragging.length));
+  withoutDragging.splice(clampedIdx, 0, draggingId.value);
+
+  // 仅当顺序真正变化时才赋值（避免无限 dragover 触发响应式更新）
+  const changed = withoutDragging.some((id, i) => id !== localOrder.value[i]);
+  if (changed) {
+    localOrder.value = withoutDragging;
+  }
+}
+
+/** grid 容器级 drop：当前 localOrder 已经是用户想要的顺序，直接持久化 */
+async function onGridDrop(e: DragEvent) {
+  if (!draggingId.value) return;
+  e.preventDefault();
+  e.stopPropagation();
+  hasDropped = true;
+  const newOrder = [...localOrder.value];
+  try {
+    await templateStore.reorderTemplates(newOrder);
+  } catch (e) {
+    Message.error("保存顺序失败：" + String(e));
+  }
+}
 </script>
 
 <template>
@@ -122,15 +245,30 @@ function confirmDelete(tpl: Template) {
     <div v-if="templateStore.templates.length === 0" class="tpl-section__empty">
       暂无模板，点击右上「新建」创建一个
     </div>
-    <div v-else class="tpl-section__grid">
-      <TemplateCard
-        v-for="tpl in templateStore.sortedTemplates"
-        :key="tpl.id"
-        :template="tpl"
-        @edit="openEdit"
-        @rename="openRename"
-        @delete="confirmDelete"
-      />
+    <!-- 外层 div 挂 dragover/drop（避免 TransitionGroup tag=div 事件绑定兼容问题）；
+         根据鼠标坐标统一计算落位，不依赖进入某张卡的精确事件，间隙/边缘也能识别。
+         内层 TransitionGroup 用 display:contents 让卡片直接参与外层 grid 布局，
+         不引入多余的层级。 -->
+    <div
+      v-else
+      ref="gridRef"
+      class="tpl-section__grid"
+      @dragover="onGridDragOver"
+      @drop="onGridDrop"
+    >
+      <TransitionGroup name="tpl-flip" tag="div" class="tpl-section__grid-inner">
+        <TemplateCard
+          v-for="tpl in orderedTemplates"
+          :key="tpl.id"
+          :data-id="tpl.id"
+          :template="tpl"
+          @edit="openEdit"
+          @rename="openRename"
+          @delete="confirmDelete"
+          @dragstart="onCardDragStart"
+          @dragend="onCardDragEnd"
+        />
+      </TransitionGroup>
     </div>
 
     <!-- 弹窗（统一管理） -->
@@ -218,6 +356,31 @@ function confirmDelete(tpl: Template) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 12px;
+}
+/* TransitionGroup 内层 wrapper：display:contents 让卡片直接进入外层 grid，
+   不引入额外层级（保证 grid 自适应列数正常工作）*/
+.tpl-section__grid-inner {
+  display: contents;
+}
+
+/* === TransitionGroup FLIP 动画（拖拽实时让位）===
+   关键：.tpl-flip-move 让位置变化的元素平滑过渡。
+   ⚠️ Grid 布局下 FLIP 不工作（grid 重排会瞬间跳到新位置），
+   所以这里用 transition 让所有元素同时过渡到新位置（接近 FLIP 效果）。 */
+.tpl-flip-move {
+  transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+/* 源卡片半透明（在子组件 .tpl-card--dragging 控制），过渡更平滑 */
+.tpl-flip-enter-active,
+.tpl-flip-leave-active {
+  transition: all 0.25s ease;
+}
+.tpl-flip-leave-active {
+  position: absolute;
+}
+.tpl-flip-enter-from,
+.tpl-flip-leave-to {
+  opacity: 0;
 }
 .tpl-section__empty {
   padding: 32px 16px;
