@@ -88,9 +88,7 @@ function confirmDelete(tpl: Template) {
 const localOrder = ref<string[]>([]);
 // draggingId：正在被拖动的模板 id（dragstart 设置，drop/dragend 清空）
 const draggingId = ref<string | null>(null);
-// dragStartSnapshot：dragstart 时的 localOrder 快照（用于 dragend 回滚）
-let dragStartSnapshot: string[] | null = null;
-// hasDropped：本次拖拽是否已成功 drop（用于 dragend 判断要不要回滚）
+// hasDropped：本次拖拽是否已成功 drop（用于 dragend 判断要不要从 store 恢复）
 let hasDropped = false;
 // gridRef：grid 容器 DOM 引用（dragover/drop 监听锚点）
 const gridRef = ref<HTMLElement | null>(null);
@@ -115,16 +113,15 @@ const orderedTemplates = computed<Template[]>(() => {
 function onCardDragStart(tpl: Template, _e: DragEvent) {
   draggingId.value = tpl.id;
   hasDropped = false;
-  dragStartSnapshot = [...localOrder.value];
 }
 
 function onCardDragEnd() {
-  // 若未 drop（拖出区域），恢复快照
-  if (!hasDropped && dragStartSnapshot) {
-    localOrder.value = [...dragStartSnapshot];
+  // 若未 drop（拖出区域放手 / 拖到无效位置），localOrder 可能已被 dragover 改过
+  // 但没持久化 —— 从 store 重新同步，恢复真实顺序
+  if (!hasDropped) {
+    localOrder.value = templateStore.sortedTemplates.map((t) => t.id);
   }
   draggingId.value = null;
-  dragStartSnapshot = null;
 }
 
 /**
