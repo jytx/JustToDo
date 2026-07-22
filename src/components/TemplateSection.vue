@@ -12,7 +12,8 @@
 // · drop 时调 templateStore.reorderTemplates 持久化
 // · dragend 时若未 drop（拖出区域）则恢复快照
 import { ref, computed, watch } from "vue";
-import { Modal, Message } from "@arco-design/web-vue";
+import { Message } from "@arco-design/web-vue";
+import { IconExclamationCircle } from "@arco-design/web-vue/es/icon";
 import type { Template } from "@/types";
 import { useTemplateStore } from "@/stores/template";
 import { useListStore } from "@/stores/list";
@@ -62,25 +63,34 @@ function openRename(tpl: Template) {
   renameModalVisible.value = true;
 }
 
-// ─── 删除二次确认 ───
+// ─── 删除二次确认（极简卡片风，与任务详情同款）───
+const deleteConfirmVisible = ref(false);
+const pendingDelete = ref<Template | null>(null);
+const deleting = ref(false);
+
 function confirmDelete(tpl: Template) {
-  Modal.warning({
-    title: "删除模板",
-    content: `确定要删除模板「${tpl.name}」吗？此操作不可撤销。`,
-    okText: "删除",
-    cancelText: "取消",
-    hideCancel: false,
-    modalClass: "confirm-dialog-modal",
-    maskStyle: { backgroundColor: "rgba(0,0,0,0.35)" },
-    onOk: async () => {
-      try {
-        await templateStore.deleteTemplate(tpl.id);
-        Message.success("已删除模板");
-      } catch (e) {
-        Message.error("删除失败：" + String(e));
-      }
-    },
-  });
+  pendingDelete.value = tpl;
+  deleteConfirmVisible.value = true;
+}
+
+function cancelDelete() {
+  deleteConfirmVisible.value = false;
+  pendingDelete.value = null;
+}
+
+async function doDelete() {
+  if (!pendingDelete.value) return;
+  deleting.value = true;
+  try {
+    await templateStore.deleteTemplate(pendingDelete.value.id);
+    Message.success("已删除模板");
+    deleteConfirmVisible.value = false;
+    pendingDelete.value = null;
+  } catch (e) {
+    Message.error("删除失败：" + String(e));
+  } finally {
+    deleting.value = false;
+  }
 }
 
 // ─── 拖拽排序：实时让位（grid 容器级监听）────────────────
@@ -300,6 +310,33 @@ async function onGridDrop(e: DragEvent) {
       v-model:visible="renameModalVisible"
       :template="renamingTemplate"
     />
+
+    <!-- 删除二次确认弹窗（极简卡片风，与任务详情同款）-->
+    <a-modal
+      :visible="deleteConfirmVisible"
+      :width="400"
+      :footer="false"
+      :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
+      modal-class="confirm-dialog-modal"
+      :modal-style="{ maxWidth: 'calc(100vw - 32px)' }"
+      @cancel="cancelDelete"
+    >
+      <div class="confirm-dialog">
+        <div class="confirm-dialog__title">
+          <span class="confirm-dialog__icon">
+            <IconExclamationCircle :size="16" />
+          </span>
+          <span>删除模板「<strong>{{ pendingDelete?.name }}</strong>」？</span>
+        </div>
+        <p class="confirm-dialog__desc">此操作无法撤销。</p>
+        <div class="confirm-dialog__footer">
+          <a-button @click="cancelDelete">取消</a-button>
+          <a-button status="danger" type="primary" :loading="deleting" @click="doDelete">
+            删除
+          </a-button>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
