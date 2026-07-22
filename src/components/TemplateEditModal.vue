@@ -9,6 +9,8 @@ import { Message } from "@arco-design/web-vue";
 import type { Template, TemplateForm } from "@/types";
 import { useTemplateStore } from "@/stores/template";
 import RichTextEditor from "./RichTextEditor.vue";
+import RichTextToolbar from "./RichTextToolbar.vue";
+import Popover from "./Popover.vue";
 
 const props = defineProps<{
   visible: boolean;
@@ -31,6 +33,11 @@ const isEdit = computed(() => props.template !== null);
 const form = ref<TemplateForm>({ id: null, name: "", title: "", note: "" });
 const applying = ref(false);
 const saving = ref(false);
+
+/** RichTextEditor 实例引用（用于把 editor 传给工具条）*/
+const richTextRef = ref<InstanceType<typeof RichTextEditor> | null>(null);
+/** 「A」按钮触发的工具条 Popover 可见态 */
+const formatToolbarVisible = ref(false);
 
 /** visible 由 false → true 时初始化表单 */
 watch(
@@ -150,19 +157,42 @@ async function onApply() {
         <label class="tpl-edit__field-label">备注</label>
         <div class="tpl-edit__rich-wrap">
           <RichTextEditor
+            ref="richTextRef"
             v-model="form.note"
             :drag-handle="false"
             borderless
-            placeholder="按 / 唤起命令，或点击左侧 A 图标打开工具栏…"
+            placeholder="按 / 唤起命令，或点击下方 A 图标打开工具栏…"
           />
         </div>
       </section>
 
       <!-- footer -->
       <footer class="tpl-edit__footer">
-        <a-button @click="close">取消</a-button>
-        <a-button type="outline" :loading="saving" @click="onSave">保存模板</a-button>
-        <a-button type="primary" :loading="applying" @click="onApply">应用模板</a-button>
+        <!-- 富文本工具条入口（滴答清单风格：A 按钮 + 浮出工具条）-->
+        <Popover v-model:visible="formatToolbarVisible" placement="top-left" :offset="8">
+          <template #trigger>
+            <button
+              class="tpl-edit__format-btn"
+              :class="{ 'tpl-edit__format-btn--active': formatToolbarVisible }"
+              title="文字格式"
+              @click="formatToolbarVisible = !formatToolbarVisible"
+            >
+              <span class="tpl-edit__format-btn-text">A</span>
+            </button>
+          </template>
+          <div class="tpl-edit__format-popup">
+            <RichTextToolbar
+              v-if="richTextRef?.editor"
+              :editor="richTextRef.editor"
+              compact
+            />
+          </div>
+        </Popover>
+        <div class="tpl-edit__footer-actions">
+          <a-button @click="close">取消</a-button>
+          <a-button type="outline" :loading="saving" @click="onSave">保存模板</a-button>
+          <a-button type="primary" :loading="applying" @click="onApply">应用模板</a-button>
+        </div>
       </footer>
     </div>
   </a-modal>
@@ -246,10 +276,52 @@ async function onApply() {
 
 .tpl-edit__footer {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
   padding-top: 8px;
   margin-top: 4px;
+}
+.tpl-edit__footer-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 富文本工具条入口（A 按钮，滴答清单风格）*/
+.tpl-edit__format-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+}
+.tpl-edit__format-btn:hover {
+  background: var(--jt-surface-hover);
+  color: var(--jt-text-primary);
+}
+.tpl-edit__format-btn--active {
+  background: var(--jt-surface-sunken);
+  color: var(--jt-text-primary);
+}
+.tpl-edit__format-btn-text {
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tpl-edit__format-popup {
+  padding: 6px 8px;
+  background: var(--jt-surface);
+  border: 1px solid var(--jt-border);
+  border-radius: 8px;
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.12),
+    0 2px 6px rgba(0, 0, 0, 0.06);
 }
 </style>
 
