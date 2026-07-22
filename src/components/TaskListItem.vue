@@ -3,10 +3,10 @@
 // 含：展开箭头、复选框、标题、优先级色点、截止日期、hover 操作菜单
 import { ref, computed, watch } from "vue";
 import type { Task } from "@/types";
+import { PRIORITY_COLORS } from "@/types";
 import { formatDueDate } from "@/utils/date";
 import { useTaskStore } from "@/stores/task";
 import TaskCheckbox from "./TaskCheckbox.vue";
-import PriorityDot from "./PriorityDot.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
 
@@ -116,6 +116,15 @@ watch(isFocused, (focused) => {
 
 const dueInfo = computed(() => formatDueDate(props.task.dueStartAt, props.task.dueEndAt));
 
+/** 优先级对应的颜色（高=红 中=橙 低=蓝）*/
+const priorityColor = computed<string>(() => {
+  const token = PRIORITY_COLORS[props.task.priority];
+  if (token === "error") return "var(--jt-error)";
+  if (token === "warning") return "var(--jt-warning)";
+  if (token === "info") return "#3B82F6";
+  return "var(--jt-text-tertiary)";
+});
+
 // ─── 子任务展开 / 懒加载 ───────────────────────────────
 const expanded = ref(false);
 const childSubtasks = computed(() =>
@@ -223,8 +232,15 @@ function onDelete() {
         </div>
       </div>
 
+      <!-- 优先级火焰图标（常驻显示，无优先级时不渲染）-->
+      <icon-fire
+        v-if="task.priority > 0"
+        :size="14"
+        class="task-item__priority"
+        :style="{ color: priorityColor }"
+      />
+
       <div class="task-item__actions">
-        <PriorityDot :priority="task.priority" />
         <MenuPopover v-model:visible="menuOpen">
           <template #trigger>
             <button
@@ -412,6 +428,12 @@ function onDelete() {
 
 .task-item__due--today {
   font-weight: 600;
+}
+
+/* 优先级火焰图标（常驻显示，无优先级时 v-if 不渲染）*/
+.task-item__priority {
+  flex-shrink: 0;
+  margin-right: 4px;
 }
 
 .task-item__actions {
