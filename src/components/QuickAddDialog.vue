@@ -4,9 +4,11 @@
 // 设计参考 Linear / Things：单一焦点输入 + 紧凑属性 chip + 底部 hint
 // 日期入口已统一为 DueDateChip（与详情面板/主面板添加栏使用同一份 DatePopover）
 import { ref, watch, nextTick, computed } from "vue";
+import { Message } from "@arco-design/web-vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useSettingsStore } from "@/stores/settings";
+import { useTemplateStore } from "@/stores/template";
 import { todayRange } from "@/utils/date";
 import { PRIORITY_LABELS, PRIORITY_COLORS, type Priority } from "@/types";
 import PriorityDot from "./PriorityDot.vue";
@@ -29,6 +31,7 @@ const emit = defineEmits<{
 const taskStore = useTaskStore();
 const listStore = useListStore();
 const settings = useSettingsStore();
+const templateStore = useTemplateStore();
 
 /** 计算本次新建的初始日期范围。
  *  优先级：外部传入的 defaultStart/End > 开关开启时预填今天 > null。 */
@@ -49,9 +52,48 @@ const dueStartAt = ref<string | null>(null);
 const dueEndAt = ref<string | null>(null);
 const inputRef = ref<HTMLInputElement | null>(null);
 const feedback = ref<string | null>(null);
-/** 优先级 / 清单 popup 开关 —— 点击选项后立即关闭 */
+/** 优先级 / 清单 / 模板 popup 开关 —— 点击选项后立即关闭 */
 const priorityPopupVisible = ref(false);
 const listPopupVisible = ref(false);
+const templatePopupVisible = ref(false);
+
+/** 内置模板的 emoji 图标（与 TemplateCard/AddTaskBar 一致；用户自建用 📄）*/
+function templateIcon(tpl: { id: string }): string {
+  switch (tpl.id) {
+    case "tpl-meeting":
+      return "📝";
+    case "tpl-weekly":
+      return "📊";
+    case "tpl-codereview":
+      return "👀";
+    case "tpl-reading":
+      return "📖";
+    default:
+      return "📄";
+  }
+}
+
+/**
+ * 快捷应用模板：用模板当前内容直接创建任务（走全局默认清单）
+ * 应用后关闭快速添加弹窗（任务已创建并打开详情面板）
+ */
+async function applyTemplate(tplId: string) {
+  templatePopupVisible.value = false;
+  const tpl = templateStore.templates.find((t) => t.id === tplId);
+  if (!tpl) return;
+  try {
+    await templateStore.applyTemplate({
+      id: tpl.id,
+      name: tpl.name,
+      title: tpl.title,
+      note: tpl.note,
+    });
+    Message.success("已创建任务");
+    open.value = false;
+  } catch (e) {
+    Message.error("应用模板失败：" + String(e));
+  }
+}
 
 function selectPriority(p: Priority) {
   priority.value = p;
@@ -287,6 +329,37 @@ function onKeyDown(e: KeyboardEvent) {
           </template>
         </a-trigger>
 
+        <!-- 模板 —— 选某项直接应用模板创建任务（走全局默认清单）-->
+        <a-trigger
+          v-model:popup-visible="templatePopupVisible"
+          trigger="click"
+          position="bl"
+          :popup-translate="[0, 4]"
+        >
+          <button
+            type="button"
+            class="quick-add__trigger"
+            :disabled="templateStore.templates.length === 0"
+          >
+            <icon-copy :size="14" />
+            <span>模板</span>
+          </button>
+          <template #content>
+            <div class="quick-add__popup quick-add__popup--list">
+              <button
+                v-for="tpl in templateStore.sortedTemplates"
+                :key="tpl.id"
+                type="button"
+                class="quick-add__popup-item"
+                @click="applyTemplate(tpl.id)"
+              >
+                <span class="quick-add__tpl-icon">{{ templateIcon(tpl) }}</span>
+                <span>{{ tpl.name }}</span>
+              </button>
+            </div>
+          </template>
+        </a-trigger>
+
         <!-- 日期 —— 与详情面板一致的 DueDateChip
    chip 在弹窗底部属性行，弹层朝上开避免超出窗口顶部 -->
         <DueDateChip
@@ -394,6 +467,13 @@ function onKeyDown(e: KeyboardEvent) {
   border-radius: 50%;
   flex-shrink: 0;
   display: inline-block;
+}
+
+/* 模板菜单项的 emoji 图标 */
+.quick-add__tpl-icon {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 /* 反馈条 */
