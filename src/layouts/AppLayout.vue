@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 三栏布局骨架：侧边栏 + 任务列表区 + 任务详情面板
 // 集成全局搜索、快速添加、快捷键、键盘导航
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { useSettingsStore } from "@/stores/settings";
 import { useTaskStore } from "@/stores/task";
@@ -69,6 +69,18 @@ const showTaskSidebar = computed(() => {
 const isCalendarView = computed<boolean>(() => {
   const name = route.name as string;
   return name === "week" || name === "month" || name === "year";
+});
+
+/**
+ * 路由切换时关闭任务详情面板
+ *
+ * 仅当切到非任务族视图（日历/习惯/设置）时关闭；
+ * 任务族内部切换（today → list → tag 等）保留选中态，方便用户跨视图操作。
+ */
+watch(showTaskSidebar, (isTaskView) => {
+  if (!isTaskView && taskStore.selectedTaskId) {
+    taskStore.selectTask(null);
+  }
 });
 
 /** 详情面板打开时，主区域右侧留出面板宽度的空间（日历视图除外，悬浮不缩进） */
