@@ -161,6 +161,9 @@ async function confirmDeleteAction() {
     }
     await db.deleteList(id);
     await listStore.loadLists();
+    // list_delete 会把被删清单的任务迁移到收件箱，
+    // 必须刷新各清单角标，否则收件箱数字不变
+    await taskStore.refreshCounts();
     if (route.params.id === id) {
       // 删除后任务也会级联删除，刷新 currentTasks
       taskStore.selectedTaskId = null;
@@ -172,6 +175,8 @@ async function confirmDeleteAction() {
     }
     await db.deleteTag(id);
     await tagStore.loadTags();
+    // 删标签后刷新角标（标签计数可能变化）
+    await taskStore.refreshCounts();
   }
   confirmDelete.value = null;
   console.log(`已删除 ${type}: ${name}`);
