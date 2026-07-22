@@ -720,6 +720,14 @@ onBeforeUnmount(() => {
             <rect x="2" y="11" width="6" height="1.5" rx="0.75" fill="currentColor" />
           </svg>
         </button>
+        <!-- 关闭详情面板（与 ESC 快捷键行为一致：清空选中任务） -->
+        <button
+          class="detail-panel__more-btn"
+          title="关闭"
+          @click="taskStore.selectTask(null)"
+        >
+          <icon-close :size="16" />
+        </button>
       </div>
     </div>
 
