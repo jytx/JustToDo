@@ -7,23 +7,14 @@ import type { Task, Priority, SortField, SortDir, ChecklistItem } from "@/types"
 import * as db from "@/api/db";
 import type { SmartViewId } from "@/api/db";
 import { useSettingsStore } from "@/stores/settings";
-import { nowLocalIso, clampDateRange } from "@/utils/date";
+import { todayRange, clampDateRange } from "@/utils/date";
 import { notifyTaskChanged } from "@/composables/useCalendarView";
 
-/**
- * 在非 setup 上下文（如 createTask 的内部调用）安全获取 settings store。
- * Pinia 在 store 内部嵌套调用 useStore 是允许的，但若尚未初始化则返回 null，
- * 此时跳过自动今天兜底（使用调用方传入的原始参数）。
- */
-function useSettingsMaybe() {
-  try {
-    return useSettingsStore();
-  } catch {
-    return null;
-  }
-}
-
 export const useTaskStore = defineStore("task", () => {
+  // 在 setup 顶层获取 settings store，确保一定拿到 active pinia。
+  // 跨 store 引用写在 setup 函数体内是 Pinia 官方推荐做法，
+  // 这样在 createTask 等 action 闭包里复用 settings，不依赖调用时机的 active instance。
+  const settings = useSettingsStore();
   const currentListId = ref<string>("inbox");
   const currentTagId = ref<string | null>(null);
   const currentSmartView = ref<SmartViewId | null>(null);
@@ -303,15 +294,9 @@ export const useTaskStore = defineStore("task", () => {
       !params.parentId &&
       dueStartAt == null &&
       dueEndAt == null &&
-      useSettingsMaybe()?.newTasksDueToday
+      settings.newTasksDueToday
     ) {
-      const start = new Date();
-      start.setHours(0, 0, 0, 0);
-      const end = new Date();
-      end.setHours(23, 59, 59, 0);
-      // 本地字面量，无时区标记，与 picker 路径保持一致
-      dueStartAt = nowLocalIso(start);
-      dueEndAt = nowLocalIso(end);
+      [dueStartAt, dueEndAt] = todayRange();
     }
     // 钳制：保证 end 不早于 start。倒挂数据会让 FullCalendar 丢弃 end，
     // 导致日历事件无 end、拖拽失效、显示异常。

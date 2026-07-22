@@ -3,6 +3,8 @@
 // 日期入口已统一为 DueDateChip（与详情面板/快捷新建面板使用同一份 DatePopover）
 import { ref, computed, nextTick } from "vue";
 import { PRIORITY_LABELS, PRIORITY_COLORS, type Priority } from "@/types";
+import { useSettingsStore } from "@/stores/settings";
+import { todayRange } from "@/utils/date";
 import PriorityDot from "./PriorityDot.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
@@ -16,12 +18,21 @@ const emit = defineEmits<{
   add: [payload: { title: string; priority: Priority; dueStartAt: string | null; dueEndAt: string | null }];
 }>();
 
+const settings = useSettingsStore();
+
+/** 开关开启时，新建任务的默认日期预填为今天（所见即所得，与 store 兜底保持一致）。 */
+function defaultDueRange(): [string, string] | [null, null] {
+  if (!settings.newTasksDueToday) return [null, null];
+  return todayRange();
+}
+
 const title = ref("");
 const focused = ref(false);
 const priority = ref<Priority>(0);
 const showPriorityMenu = ref(false);
-const dueStartAt = ref<string | null>(null);
-const dueEndAt = ref<string | null>(null);
+const [initialStart, initialEnd] = defaultDueRange();
+const dueStartAt = ref<string | null>(initialStart);
+const dueEndAt = ref<string | null>(initialEnd);
 
 const inputRef = ref<HTMLInputElement | null>(null);
 
@@ -56,8 +67,9 @@ function submit() {
   // 重置（保持面板打开便于连续录入）
   title.value = "";
   priority.value = 0;
-  dueStartAt.value = null;
-  dueEndAt.value = null;
+  const [resetStart, resetEnd] = defaultDueRange();
+  dueStartAt.value = resetStart;
+  dueEndAt.value = resetEnd;
 }
 
 /** 把焦点拉回输入框 */

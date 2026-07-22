@@ -113,6 +113,15 @@ export function nowLocalIso(date: Date = new Date()): string {
   return `${y}-${mo}-${d}T${h}:${mi}:${s}`;
 }
 
+/** 今天的日期范围：本地 00:00:00 ~ 23:59:59（字面量，无时区标记）。 */
+export function todayRange(): [string, string] {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date();
+  end.setHours(23, 59, 59, 0);
+  return [nowLocalIso(start), nowLocalIso(end)];
+}
+
 /** 判断日期是否是今天（接受 Date） */
 function isToday(date: Date): boolean {
   const today = new Date();

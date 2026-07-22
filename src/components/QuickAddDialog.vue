@@ -6,6 +6,8 @@
 import { ref, watch, nextTick, computed } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
+import { useSettingsStore } from "@/stores/settings";
+import { todayRange } from "@/utils/date";
 import { PRIORITY_LABELS, PRIORITY_COLORS, type Priority } from "@/types";
 import PriorityDot from "./PriorityDot.vue";
 import DueDateChip from "./DueDateChip.vue";
@@ -26,6 +28,19 @@ const emit = defineEmits<{
 
 const taskStore = useTaskStore();
 const listStore = useListStore();
+const settings = useSettingsStore();
+
+/** 计算本次新建的初始日期范围。
+ *  优先级：外部传入的 defaultStart/End > 开关开启时预填今天 > null。 */
+function resolveInitialDueRange(): [string | null, string | null] {
+  if (props.defaultStart || props.defaultEnd) {
+    return [props.defaultStart ?? null, props.defaultEnd ?? null];
+  }
+  if (settings.newTasksDueToday) {
+    return todayRange();
+  }
+  return [null, null];
+}
 
 const title = ref("");
 const priority = ref<Priority>(0);
@@ -84,9 +99,10 @@ watch(open, async (isOpen) => {
       }
     }
     selectedListId.value = defaultId ?? firstActualListId();
-    // 外部传入默认日期时，按 start/end 回填（空 = 无日期）
-    dueStartAt.value = props.defaultStart ?? null;
-    dueEndAt.value = props.defaultEnd ?? null;
+    // 初始日期：外部默认 > 自动今天开关 > 空
+    const [initStart, initEnd] = resolveInitialDueRange();
+    dueStartAt.value = initStart;
+    dueEndAt.value = initEnd;
     feedback.value = null;
     await nextTick();
     inputRef.value?.focus();
@@ -150,8 +166,9 @@ async function submit(keepOpen: boolean) {
   if (keepOpen) {
     title.value = "";
     priority.value = 0;
-    dueStartAt.value = null;
-    dueEndAt.value = null;
+    const [resetStart, resetEnd] = resolveInitialDueRange();
+    dueStartAt.value = resetStart;
+    dueEndAt.value = resetEnd;
     setTimeout(() => feedback.value = null, 1500);
     await nextTick();
     inputRef.value?.focus();
