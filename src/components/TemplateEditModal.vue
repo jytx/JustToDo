@@ -161,33 +161,39 @@ async function onApply() {
             v-model="form.note"
             :drag-handle="false"
             borderless
-            placeholder="按 / 唤起命令，或点击下方 A 图标打开工具栏…"
+            placeholder="按 / 唤起命令，或点击右下角 A 图标打开工具栏…"
           />
+          <!-- 富文本工具条入口（悬浮在备注框右下角的 A 按钮）-->
+          <div class="tpl-edit__format-popover">
+            <Popover
+              v-model:visible="formatToolbarVisible"
+              placement="top-right"
+              :offset="8"
+            >
+              <template #trigger>
+                <button
+                  class="tpl-edit__format-btn"
+                  :class="{ 'tpl-edit__format-btn--active': formatToolbarVisible }"
+                  title="文字格式"
+                  @click="formatToolbarVisible = !formatToolbarVisible"
+                >
+                  <span class="tpl-edit__format-btn-text">A</span>
+                </button>
+              </template>
+              <div class="tpl-edit__format-popup">
+                <RichTextToolbar
+                  v-if="richTextRef?.editor"
+                  :editor="richTextRef.editor"
+                  compact
+                />
+              </div>
+            </Popover>
+          </div>
         </div>
       </section>
 
       <!-- footer -->
       <footer class="tpl-edit__footer">
-        <!-- 富文本工具条入口（滴答清单风格：A 按钮 + 浮出工具条）-->
-        <Popover v-model:visible="formatToolbarVisible" placement="top-left" :offset="8">
-          <template #trigger>
-            <button
-              class="tpl-edit__format-btn"
-              :class="{ 'tpl-edit__format-btn--active': formatToolbarVisible }"
-              title="文字格式"
-              @click="formatToolbarVisible = !formatToolbarVisible"
-            >
-              <span class="tpl-edit__format-btn-text">A</span>
-            </button>
-          </template>
-          <div class="tpl-edit__format-popup">
-            <RichTextToolbar
-              v-if="richTextRef?.editor"
-              :editor="richTextRef.editor"
-              compact
-            />
-          </div>
-        </Popover>
         <div class="tpl-edit__footer-actions">
           <a-button @click="close">取消</a-button>
           <a-button type="outline" :loading="saving" @click="onSave">保存模板</a-button>
@@ -245,6 +251,7 @@ async function onApply() {
   display: flex;
 }
 .tpl-edit__rich-wrap {
+  position: relative; /* 锚定 A 悬浮按钮的 absolute 定位 */
   min-height: 240px;
   border: 1px solid var(--jt-border);
   border-radius: 6px;
@@ -276,8 +283,8 @@ async function onApply() {
 
 .tpl-edit__footer {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
+  gap: 8px;
   padding-top: 8px;
   margin-top: 4px;
 }
@@ -286,12 +293,19 @@ async function onApply() {
   gap: 8px;
 }
 
-/* 富文本工具条入口（A 按钮，滴答清单风格）*/
+/* 富文本工具条入口（悬浮在备注框右下角的 A 按钮）*/
+.tpl-edit__format-popover {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+}
 .tpl-edit__format-btn {
   width: 28px;
   height: 28px;
   border: none;
-  background: transparent;
+  background: var(--jt-surface);
+  border: 1px solid var(--jt-border);
   border-radius: 6px;
   color: var(--jt-text-tertiary);
   cursor: pointer;
@@ -299,6 +313,7 @@ async function onApply() {
   align-items: center;
   justify-content: center;
   transition: all 0.12s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 .tpl-edit__format-btn:hover {
   background: var(--jt-surface-hover);
