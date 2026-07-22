@@ -77,6 +77,38 @@ export const useTemplateStore = defineStore("template", () => {
   }
 
   /**
+   * 重排模板：接收新的 id 顺序数组，写回本地 + 持久化
+   *
+   * position 用 1000 的间隔重排（避免频繁拖拽后浮点累积）。
+   * 调用方通常传拖拽后的完整新顺序 ids。
+   */
+  async function reorderTemplates(newOrderIds: string[]): Promise<void> {
+    if (newOrderIds.length !== templates.value.length) return;
+    // 1. 本地：按新顺序重排 + 重新分配 position
+    const idToNewPos = new Map<string, number>();
+    const items: [string, number][] = [];
+    newOrderIds.forEach((id, idx) => {
+      const pos = (idx + 1) * 1000;
+      idToNewPos.set(id, pos);
+      items.push([id, pos]);
+    });
+    // 重建 templates 数组（保持新顺序，更新 position）
+    const newTemplates: Template[] = newOrderIds
+      .map((id) => templates.value.find((t) => t.id === id))
+      .filter((t): t is Template => t !== undefined)
+      .map((t) => ({ ...t, position: idToNewPos.get(t.id) ?? t.position }));
+    templates.value = newTemplates;
+    // 2. 持久化
+    try {
+      await db.reorderTemplates(items);
+    } catch (e) {
+      console.error("[templateStore] reorderTemplates 持久化失败:", e);
+      // 失败时重新加载，恢复服务端真实顺序
+      await loadTemplates();
+    }
+  }
+
+  /**
    * 应用模板：先保存表单 → 创建任务 → 写 note → 打开详情面板
    *
    * 入参 form.id === null 表示新建模式（先创建模板拿到 id）
@@ -141,6 +173,7 @@ export const useTemplateStore = defineStore("template", () => {
     updateTemplate,
     renameTemplate,
     deleteTemplate,
+    reorderTemplates,
     applyTemplate,
   };
 });

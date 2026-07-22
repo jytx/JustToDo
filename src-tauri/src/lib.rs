@@ -267,6 +267,7 @@ pub fn run() {
             commands::template_create,
             commands::template_update,
             commands::template_delete,
+            commands::template_reorder,
         ]);
 
     // 仅在开发模式下启用 MCP 插件（用于 AI 辅助 GUI 测试，不影响 release 构建）

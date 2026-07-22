@@ -86,10 +86,12 @@ function confirmDelete(tpl: Template) {
 // ─── 拖拽排序：实时让位（grid 容器级监听）────────────────
 // localOrder：当前显示顺序的 id 数组（拖拽时本地调整，drop 后同步到 store）
 const localOrder = ref<string[]>([]);
-// draggingId：正在被拖动的模板 id（dragstart 设置，drop/dragend 清空）
+// draggingId：正在被拖动的模板 id（dragstart 设置，dragend 清空）
 const draggingId = ref<string | null>(null);
-// hasDropped：本次拖拽是否已成功 drop（用于 dragend 判断要不要从 store 恢复）
-let hasDropped = false;
+// orderChangedDuringDrag：本次拖拽期间 localOrder 是否真的变化过
+// （dragover 让位过 = true）。用于 dragend 判断要不要持久化。
+// drop 在 Tauri WKWebView 上不可靠，改为依赖 dragend 兜底持久化。
+let orderChangedDuringDrag = false;
 // gridRef：grid 容器 DOM 引用（dragover/drop 监听锚点）
 const gridRef = ref<HTMLElement | null>(null);
 
@@ -112,16 +114,32 @@ const orderedTemplates = computed<Template[]>(() => {
 
 function onCardDragStart(tpl: Template, _e: DragEvent) {
   draggingId.value = tpl.id;
-  hasDropped = false;
+  // 记录 dragstart 时的顺序快照，用于判断拖拽期间顺序是否真的变化过
+  orderChangedDuringDrag = false;
 }
 
-function onCardDragEnd() {
-  // 若未 drop（拖出区域放手 / 拖到无效位置），localOrder 可能已被 dragover 改过
-  // 但没持久化 —— 从 store 重新同步，恢复真实顺序
-  if (!hasDropped) {
+/**
+ * dragend：拖拽真正结束的可靠钩子（drop 在某些 webview 不触发）
+ *
+ * 策略：
+ * - 如果拖拽期间 localOrder 变化过（dragover 让位过）→ 直接持久化新顺序
+ * - 如果完全没变化（拖出区域 / 没触发让位）→ 不做任何事
+ */
+async function onCardDragEnd() {
+  const finalOrder = [...localOrder.value];
+  const draggingIdSnapshot = draggingId.value;
+  draggingId.value = null;
+  if (!orderChangedDuringDrag || !draggingIdSnapshot) {
+    return;
+  }
+  // 持久化最终顺序（drop 不触发的兜底）
+  try {
+    await templateStore.reorderTemplates(finalOrder);
+  } catch (e) {
+    Message.error("保存顺序失败：" + String(e));
+    // 失败回滚
     localOrder.value = templateStore.sortedTemplates.map((t) => t.id);
   }
-  draggingId.value = null;
 }
 
 /**
@@ -178,20 +196,25 @@ function onGridDragOver(e: DragEvent) {
   const changed = withoutDragging.some((id, i) => id !== localOrder.value[i]);
   if (changed) {
     localOrder.value = withoutDragging;
+    orderChangedDuringDrag = true;
   }
 }
 
-/** grid 容器级 drop：当前 localOrder 已经是用户想要的顺序，直接持久化 */
+/** grid 容器级 drop：标记已 drop（dragend 时优先用 drop 路径，避免双持久化） */
 async function onGridDrop(e: DragEvent) {
   if (!draggingId.value) return;
   e.preventDefault();
   e.stopPropagation();
-  hasDropped = true;
+  // drop 已触发时，立刻持久化并清状态；dragend 会再次触发但 orderChangedDuringDrag
+  // 此时 draggingId 已清空，会直接 return，不会重复持久化
   const newOrder = [...localOrder.value];
+  draggingId.value = null;
+  orderChangedDuringDrag = false; // 已 drop，dragend 不再处理
   try {
     await templateStore.reorderTemplates(newOrder);
-  } catch (e) {
-    Message.error("保存顺序失败：" + String(e));
+  } catch (err) {
+    Message.error("保存顺序失败：" + String(err));
+    localOrder.value = templateStore.sortedTemplates.map((t) => t.id);
   }
 }
 </script>

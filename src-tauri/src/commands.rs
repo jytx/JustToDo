@@ -1952,3 +1952,32 @@ pub async fn template_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> C
         .map_err(|e| format!("删除模板失败: {}", e))?;
     Ok(())
 }
+
+/// 批量重排模板顺序
+///
+/// 入参 items 是 [(id, position)] 的数组，前端在拖拽完成后一次性传入完整新顺序。
+/// 用事务批量 UPDATE，保证原子性。与 list_reorder / habit_reorder 同模式。
+#[tauri::command]
+pub async fn template_reorder(
+    pool: State<'_, sqlx::SqlitePool>,
+    items: Vec<(String, i64)>,
+) -> CmdResult<()> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("开启事务失败: {}", e))?;
+    let ts = now();
+    for (id, position) in &items {
+        sqlx::query("UPDATE templates SET position = $1, updated_at = $2 WHERE id = $3")
+            .bind(position)
+            .bind(&ts)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| format!("更新模板顺序失败: {}", e))?;
+    }
+    tx.commit()
+        .await
+        .map_err(|e| format!("提交事务失败: {}", e))?;
+    Ok(())
+}

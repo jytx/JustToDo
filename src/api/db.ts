@@ -613,3 +613,8 @@ export async function updateTemplate(
 export async function deleteTemplate(id: string): Promise<void> {
   await invoke<void>("template_delete", { id });
 }
+
+/** 批量重排模板顺序（拖拽后调用，传入完整新顺序的 [(id, position)] 数组） */
+export async function reorderTemplates(items: [string, number][]): Promise<void> {
+  await invoke<void>("template_reorder", { items });
+}
