@@ -106,19 +106,17 @@ onMounted(async () => {
           :header="`未完成 · ${taskStore.openTasks.length}`"
           class="smart-view__collapse-header"
         >
-          <div class="smart-view__tasks">
-            <TaskListItem
-              v-for="task in taskStore.openTasks"
-              :key="task.id"
-              :task="task"
-              show-list-dot
-              :list-color="listColorMap[task.listId] || '#6B7280'"
-              @toggle="taskStore.toggleTask(task.id, !task.done)"
-              @select="taskStore.selectTask(task.id)"
-              @delete="taskStore.deleteTask(task.id)"
-              @reorder="(draggedId: string, targetId: string, pos: 'before' | 'after') => taskStore.reorderTasks(draggedId, targetId, pos)"
-            />
-          </div>
+          <TaskListItem
+            v-for="task in taskStore.openTasks"
+            :key="task.id"
+            :task="task"
+            show-list-dot
+            :list-color="listColorMap[task.listId] || '#6B7280'"
+            @toggle="taskStore.toggleTask(task.id, !task.done)"
+            @select="taskStore.selectTask(task.id)"
+            @delete="taskStore.deleteTask(task.id)"
+            @reorder="(draggedId: string, targetId: string, pos: 'before' | 'after') => taskStore.reorderTasks(draggedId, targetId, pos)"
+          />
         </a-collapse-item>
 
         <a-collapse-item
@@ -186,10 +184,6 @@ onMounted(async () => {
   overflow-y: auto;
 }
 
-.smart-view__tasks {
-  padding: 0 12px;
-}
-
 .smart-view__error {
   margin: 12px 24px;
   padding: 12px 16px;
@@ -222,6 +216,11 @@ onMounted(async () => {
 
 .smart-view__collapse {
   margin: 8px 12px;
+}
+
+/* 去掉 Arco Collapse 内容区默认左侧缩进，任务行自带内边距 */
+.smart-view__collapse :deep(.arco-collapse-item-content) {
+  padding-left: 0;
 }
 
 .smart-view__collapse-header {

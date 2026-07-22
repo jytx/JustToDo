@@ -72,15 +72,13 @@ onMounted(async () => {
           :header="`未完成 · ${taskStore.openTasks.length}`"
           class="tag-view__collapse-header"
         >
-          <div class="tag-view__tasks">
-            <TaskListItem
-              v-for="task in taskStore.openTasks"
-              :key="task.id"
-              :task="task"
-              @select="taskStore.selectTask(task.id)"
-              @reorder="(draggedId: string, targetId: string, pos: 'before' | 'after') => taskStore.reorderTasks(draggedId, targetId, pos)"
-            />
-          </div>
+          <TaskListItem
+            v-for="task in taskStore.openTasks"
+            :key="task.id"
+            :task="task"
+            @select="taskStore.selectTask(task.id)"
+            @reorder="(draggedId: string, targetId: string, pos: 'before' | 'after') => taskStore.reorderTasks(draggedId, targetId, pos)"
+          />
         </a-collapse-item>
 
         <a-collapse-item
@@ -153,12 +151,13 @@ onMounted(async () => {
   overflow-y: auto;
 }
 
-.tag-view__tasks {
-  padding: 0 12px;
-}
-
 .tag-view__collapse {
   margin: 8px 12px;
+}
+
+/* 去掉 Arco Collapse 内容区默认左侧缩进，任务行自带内边距 */
+.tag-view__collapse :deep(.arco-collapse-item-content) {
+  padding-left: 0;
 }
 
 .tag-view__collapse-header {
