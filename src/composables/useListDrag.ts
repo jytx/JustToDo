@@ -267,7 +267,7 @@ export function useListDrag(options: UseListDragOptions) {
     const lineY = target.insertBefore ? rect.top : rect.bottom;
     /* 横线起点 = 容器 padding-left 后（绕开 ⋮⋮ 手柄占据的 padding 区域），
        这样落点横线只画在 item 内容区，不画到 ⋮⋮ 手柄正下方造成视觉干扰 */
-    const containerCS = getComputedStyle(containerRef.value);
+    const containerCS = getComputedStyle(c);
     const containerPaddingLeft = parseFloat(containerCS.paddingLeft) || 0;
     indicatorPos.value = {
       left: containerPaddingLeft,

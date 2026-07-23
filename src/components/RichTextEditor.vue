@@ -21,7 +21,7 @@ import { Extension } from "@tiptap/core";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { common, createLowlight } from "lowlight";
-import { watch, onBeforeUnmount, onMounted, ref, nextTick, computed, createApp } from "vue";
+import { watch, onBeforeUnmount, onMounted, ref, computed, createApp } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import SlashCommandMenu, { type SlashCommandItem } from "./SlashCommandMenu.vue";
 import RichTextFloatingMenu from "./RichTextFloatingMenu.vue";
@@ -533,7 +533,7 @@ function onResizeHandlePointerDown(e: PointerEvent | TouchEvent | MouseEvent) {
 
 function onEditorMouseOver(e: MouseEvent) {
   const t = e.target as HTMLElement | null;
-  const c = t?.closest("[data-resize-container]");
+  const c = t?.closest<HTMLElement>("[data-resize-container]");
   if (!c) return;
   cancelHide();
   hoveredContainer.value = c;
