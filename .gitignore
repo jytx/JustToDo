@@ -16,6 +16,9 @@ dist-ssr
 docs
 src-tauri/target
 
+# 图标备份目录(generate-icons.sh 自动创建,不入 git)
+src-tauri/icons.bak*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
