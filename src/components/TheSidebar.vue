@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 侧边栏 —— 智能视图 / 清单 / 标签导航
-import { computed, nextTick, onMounted, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import type { ListTreeNode } from "@/stores/list";
 import {
   IconStar,
   IconClockCircle,
@@ -22,6 +23,7 @@ import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
 import { useTaskStore } from "@/stores/task";
 import SidebarListNode from "./SidebarListNode.vue";
+import SidebarRailCascade from "./SidebarRailCascade.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
 import TeleportPopper from "./TeleportPopper.vue";
@@ -382,6 +384,150 @@ async function confirmNewList() {
 const activeListId = computed(() => route.params.id as string);
 const activeRouteName = computed(() => route.name as string);
 
+/** 收起态用：根级清单/目录（扁平，不含嵌套子项） */
+const rootLists = computed(() =>
+  listStore.sortedLists.filter((l) => l.parentId === null),
+);
+
+/** 收起态用：清单/目录是否处于 active 态。
+ *  目录 active 当其任意子清单被选中；清单 active 当自身被选中。 */
+function isListActive(node: { id: string; isFolder: boolean }): boolean {
+  if (activeRouteName.value !== "list") return false;
+  if (!node.isFolder) return activeListId.value === node.id;
+  return listStore.sortedLists.some(
+    (l) => l.parentId === node.id && l.id === activeListId.value,
+  );
+}
+
+/* === 收起态 hover tooltip（单例：一个气泡服务所有 rail-item） === */
+const railTip = reactive<{ visible: boolean; text: string; top: number; left: number }>({
+  visible: false,
+  text: "",
+  top: 0,
+  left: 0,
+});
+
+/** 鼠标进入 rail-item：贴 trigger 右边缘 + 垂直居中定位，填入文本 */
+function showRailTip(e: MouseEvent, text: string): void {
+  const el = e.currentTarget as HTMLElement;
+  const rect = el.getBoundingClientRect();
+  railTip.text = text;
+  railTip.top = rect.top + rect.height / 2;
+  railTip.left = rect.right; /* trigger 右边缘，气泡再向右偏移间距（见 CSS） */
+  railTip.visible = true;
+}
+
+/** 鼠标离开 rail-item：隐藏气泡（延迟，避免在相邻图标间移动时闪烁） */
+let hideRailTipTimer: number | null = null;
+function hideRailTip(): void {
+  if (hideRailTipTimer !== null) window.clearTimeout(hideRailTipTimer);
+  hideRailTipTimer = window.setTimeout(() => {
+    railTip.visible = false;
+  }, 80);
+}
+
+/** 鼠标再次进入时取消隐藏计时（在相邻图标快速移动时保持气泡常显） */
+function cancelHideRailTip(): void {
+  if (hideRailTipTimer !== null) {
+    window.clearTimeout(hideRailTipTimer);
+    hideRailTipTimer = null;
+  }
+}
+
+/* === tooltip 文本生成（纯函数：名称 + 可选计数） === */
+function smartViewTip(v: { id: string; label: string }): string {
+  const n = taskStore.smartCounts[v.id];
+  return n ? `${v.label} (${n})` : v.label;
+}
+
+function listTip(node: { id: string; name: string; isFolder: boolean }): string {
+  if (node.isFolder) return node.name;
+  const n = taskStore.listCounts[node.id];
+  return n ? `${node.name} (${n})` : node.name;
+}
+
+function tagTip(tag: { id: string; name: string }): string {
+  const n = taskStore.tagCounts[tag.id];
+  return n ? `${tag.name} (${n})` : tag.name;
+}
+
+/* === 收起态：目录级联浮动面板 === */
+/** 展开链项：目录 id + 该级面板的垂直锚点 */
+interface CascadeItem {
+  id: string;
+  anchorTop: number;
+}
+
+/** 当前展开的目录链（从根目录开始）；空数组 = 无面板 */
+const cascadeChain = ref<CascadeItem[]>([]);
+
+/** 第一级面板要展开的根目录节点（展开链第 0 项） */
+const cascadeRootFolder = computed<ListTreeNode | null>(() => {
+  const rootItem = cascadeChain.value[0];
+  if (!rootItem) return null;
+  return listStore.listTree.find((n) => n.id === rootItem.id) ?? null;
+});
+
+/** 点击 rail 上的清单/目录按钮：
+ *  - 目录：打开级联面板（重置展开链为 [该目录]）
+ *  - 清单：路由跳转 */
+function onRailListClick(e: MouseEvent, node: { id: string; isFolder: boolean }) {
+  if (!node.isFolder) {
+    router.push(`/list/${node.id}`);
+    return;
+  }
+  // 找到目录节点（rail 渲染的是根级，从 listTree 取）
+  const folder = listStore.listTree.find((n) => n.id === node.id);
+  if (!folder) return;
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  cascadeChain.value = [{ id: folder.id, anchorTop: rect.top + rect.height / 2 }];
+}
+
+/** 级联面板内展开子目录：
+ *  parentDepth = 被点击 folder 所在面板的深度；
+ *  新链 = 截断到 parentDepth（含）+ push 新目录及其锚点 */
+function onCascadeExpand(folder: ListTreeNode, anchorTop: number, parentDepth: number) {
+  const next = cascadeChain.value.slice(0, parentDepth + 1);
+  next.push({ id: folder.id, anchorTop });
+  cascadeChain.value = next;
+}
+
+/** 级联面板内选择清单：跳转后关闭整个级联 */
+function onCascadeSelect(_listId: string) {
+  cascadeChain.value = [];
+}
+
+/** 关闭级联面板（点外部 / Esc 时调用） */
+function closeCascade() {
+  if (cascadeChain.value.length > 0) {
+    cascadeChain.value = [];
+  }
+}
+
+/** 全局 mousedown：点在级联面板外部则关闭 */
+function onDocMouseDownForCascade(e: MouseEvent) {
+  if (cascadeChain.value.length === 0) return;
+  const target = e.target as HTMLElement | null;
+  // 面板容器带 .rail-cascade 类；触发按钮带 .sidebar__rail-cascade-trigger
+  if (target?.closest(".rail-cascade")) return;
+  if (target?.closest(".sidebar__rail-cascade-trigger")) return;
+  closeCascade();
+}
+
+/** 全局 keydown：Esc 关闭级联 */
+function onEscForCascade(e: KeyboardEvent) {
+  if (e.key === "Escape") closeCascade();
+}
+
+onMounted(() => {
+  document.addEventListener("mousedown", onDocMouseDownForCascade);
+  document.addEventListener("keydown", onEscForCascade);
+});
+onUnmounted(() => {
+  document.removeEventListener("mousedown", onDocMouseDownForCascade);
+  document.removeEventListener("keydown", onEscForCascade);
+});
+
 const smartViews = [
   { id: "today", route: "today", icon: IconStar, label: "今天" },
   { id: "upcoming", route: "upcoming", icon: IconClockCircle, label: "未来 7 天" },
@@ -412,6 +558,81 @@ onMounted(async () => {
     </div>
 
     <nav class="sidebar__nav">
+      <!-- ===== 收起态：垂直图标列（智能视图 + 清单圆点 + 标签） ===== -->
+      <template v-if="collapsed">
+        <!-- 智能视图图标（带未完成数角标） -->
+        <router-link
+          v-for="v in smartViews"
+          :key="v.id"
+          :to="`/${v.route}`"
+          class="sidebar__rail-item"
+          :class="{ 'sidebar__rail-item--active': activeRouteName === v.route }"
+          @mouseenter="showRailTip($event, smartViewTip(v))"
+          @mousemove="cancelHideRailTip"
+          @mouseleave="hideRailTip"
+        >
+          <component :is="v.icon" :size="18" />
+          <span
+            v-if="taskStore.smartCounts[v.id]"
+            class="sidebar__rail-badge"
+          >{{ taskStore.smartCounts[v.id] }}</span>
+        </router-link>
+
+        <!-- 分隔线（仅当有清单时才显示） -->
+        <div v-if="rootLists.length > 0" class="sidebar__rail-divider" />
+
+        <!-- 清单/目录按钮（目录点击展开级联面板，清单点击跳转） -->
+        <button
+          v-for="node in rootLists"
+          :key="node.id"
+          type="button"
+          class="sidebar__rail-item"
+          :class="{
+            'sidebar__rail-item--active': isListActive(node),
+            'sidebar__rail-cascade-trigger': node.isFolder,
+            'sidebar__rail-item--cascade-open': node.isFolder && cascadeChain[0]?.id === node.id,
+          }"
+          @click="onRailListClick($event, node)"
+          @mouseenter="showRailTip($event, listTip(node))"
+          @mousemove="cancelHideRailTip"
+          @mouseleave="hideRailTip"
+        >
+          <icon-folder
+            v-if="node.isFolder"
+            :size="18"
+            :style="{ color: node.color }"
+          />
+          <span
+            v-else
+            class="sidebar__rail-dot"
+            :style="{ backgroundColor: node.color }"
+          />
+          <span
+            v-if="!node.isFolder && taskStore.listCounts[node.id]"
+            class="sidebar__rail-badge"
+          >{{ taskStore.listCounts[node.id] }}</span>
+        </button>
+
+        <!-- 分隔线（仅当有标签时才显示） -->
+        <div v-if="tagStore.tags.length > 0" class="sidebar__rail-divider" />
+
+        <!-- 标签图标 -->
+        <router-link
+          v-for="tag in tagStore.tags"
+          :key="tag.id"
+          :to="`/tag/${tag.id}`"
+          class="sidebar__rail-item"
+          :class="{ 'sidebar__rail-item--active': activeRouteName === 'tag' && activeListId === tag.id }"
+          @mouseenter="showRailTip($event, tagTip(tag))"
+          @mousemove="cancelHideRailTip"
+          @mouseleave="hideRailTip"
+        >
+          <icon-tag :size="18" />
+        </router-link>
+      </template>
+
+      <template v-else>
+      <!-- ===== 展开态：原有完整导航 ===== -->
       <!-- 智能视图 -->
       <div class="sidebar__subheader sidebar__subheader--toggle">
         <div class="sidebar__subheader-left" @click="toggleSection('smart')">
@@ -522,8 +743,32 @@ onMounted(async () => {
       </div>
 
       <!-- 习惯区块已移除 —— 习惯入口已上移到 AppRail，TheSidebar 只承担任务二级导航 -->
+      </template>
     </nav>
   </aside>
+
+  <!-- 收起态 hover tooltip（Teleport 到 body，避开 sidebar overflow:hidden 裁剪） -->
+  <Teleport to="body">
+    <div
+      v-if="railTip.visible"
+      class="rail-tooltip"
+      :style="{ top: `${railTip.top}px`, left: `${railTip.left}px` }"
+    >
+      {{ railTip.text }}
+    </div>
+  </Teleport>
+
+  <!-- 收起态：目录级联浮动面板（点击目录图标后展开，递归渲染子项） -->
+  <SidebarRailCascade
+    v-if="cascadeRootFolder"
+    :folder="cascadeRootFolder"
+    :anchor-top="cascadeChain[0].anchorTop"
+    :left="112"
+    :expanded-chain="cascadeChain"
+    :depth="0"
+    @expand="onCascadeExpand"
+    @select="onCascadeSelect"
+  />
 
   <!-- 删除确认对话框（极简卡片风） -->
   <a-modal
@@ -825,7 +1070,7 @@ onMounted(async () => {
   width: 48px;
 }
 
-.sidebar--collapsed .sidebar__nav,
+/* 收起态：nav 不再隐藏，改为渲染垂直图标列（见模板侧 collapsed 分支） */
 .sidebar--collapse-on-collapse {
   display: none;
 }
@@ -839,6 +1084,12 @@ onMounted(async () => {
   gap: 4px;
   /* header 整条作为可拖动区域，按钮本身 no-drag */
   -webkit-app-region: drag;
+}
+
+/* 收起态：折叠按钮居中，与下方图标列对齐 */
+.sidebar--collapsed .sidebar__header {
+  justify-content: center;
+  padding: 32px 4px 4px;
 }
 
 .sidebar__header > * {
@@ -865,6 +1116,15 @@ onMounted(async () => {
   flex: 1;
   overflow-y: auto;
   padding: 0 8px;
+}
+
+/* 收起态：nav 变成垂直图标列，居中排列 */
+.sidebar--collapsed .sidebar__nav {
+  padding: 0 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
 }
 
 .sidebar__subheader {
@@ -983,6 +1243,77 @@ onMounted(async () => {
   position: absolute;
   right: 8px;
   transition: right 0.15s;
+}
+
+/* ===== 收起态：垂直图标列样式 ===== */
+.sidebar__rail-item {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;            /* 重置 <button> UA 默认的 outset 立体边框 */
+  background: transparent; /* 重置 <button> UA 默认的灰色底，与 <a>(router-link) 起点一致 */
+  border-radius: 8px;
+  color: var(--jt-text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.sidebar__rail-item:hover {
+  background-color: var(--jt-surface-hover);
+  color: var(--jt-text-primary);
+}
+
+.sidebar__rail-item--active {
+  background-color: var(--jt-accent-soft);
+  color: var(--jt-primary);
+}
+
+/* 目录图标在级联面板展开时的高亮（与 active 同色，表示"正在浏览此目录"） */
+.sidebar__rail-item--cascade-open {
+  background-color: var(--jt-accent-soft);
+  color: var(--jt-primary);
+}
+
+/* 收起态圆点（清单颜色标识） */
+.sidebar__rail-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+/* 收起态未完成数角标（右上角小数字） */
+.sidebar__rail-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background-color: var(--jt-error);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+/* 收起态分组分隔线 */
+.sidebar__rail-divider {
+  width: 20px;
+  height: 1px;
+  margin: 4px 0;
+  background-color: var(--jt-border);
+  flex-shrink: 0;
 }
 
 /* hover 时菜单按钮出现，计数左移让位 */
@@ -1142,6 +1473,38 @@ onMounted(async () => {
 .sidebar__list-tree {
   display: flex;
   flex-direction: column;
+}
+</style>
+
+<!-- 收起态 hover tooltip：Teleport 到 body，必须用非 scoped 样式才能命中 -->
+<style>
+.rail-tooltip {
+  position: fixed;
+  margin-left: 8px; /* trigger 右边缘 + 8px 间距（left 由 JS 动态设为 rect.right） */
+  transform: translateY(-50%); /* 垂直居中到 trigger 中点 */
+  z-index: 9999;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background-color: var(--jt-text-primary);
+  color: var(--jt-surface);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none; /* 气泡不拦截鼠标，避免干扰 hover 状态 */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  animation: rail-tooltip-in 0.12s ease-out;
+}
+
+@keyframes rail-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
 }
 </style>
 
