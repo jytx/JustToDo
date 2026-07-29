@@ -4,6 +4,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { ListTreeNode } from "@/stores/list";
 import type { List } from "@/types";
+import type { Tag } from "@/api/db";
 import {
   IconStar,
   IconClockCircle,
@@ -28,6 +29,7 @@ import SidebarListNode from "./SidebarListNode.vue";
 import SidebarRailCascade from "./SidebarRailCascade.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
+import ContextMenu from "./ContextMenu.vue";
 import TeleportPopper from "./TeleportPopper.vue";
 import * as db from "@/api/db";
 
@@ -662,6 +664,68 @@ const smartViews = [
   { id: "all", route: "all", icon: IconCheckCircle, label: "全部" },
 ];
 
+/* === 侧边栏右键菜单（清单/目录/标签 统一由一个 ContextMenu 实例服务） === */
+/** 右键目标类型：区分目录 / 清单 / 标签，决定渲染哪些菜单项 */
+type CtxTarget =
+  | { kind: "folder"; node: ListTreeNode }
+  | { kind: "list"; node: ListTreeNode }
+  | { kind: "tag"; tag: Tag };
+
+/** 右键菜单状态：可见性 + 鼠标坐标 + 当前目标 */
+const ctxMenu = reactive<{
+  visible: boolean;
+  x: number;
+  y: number;
+  target: CtxTarget | null;
+}>({
+  visible: false,
+  x: 0,
+  y: 0,
+  target: null,
+});
+
+/** 打开右键菜单：记录坐标与目标类型。由各行的 @contextmenu.prevent 调用。 */
+function openCtxMenu(e: MouseEvent, target: CtxTarget): void {
+  ctxMenu.x = e.clientX;
+  ctxMenu.y = e.clientY;
+  ctxMenu.target = target;
+  ctxMenu.visible = true;
+}
+
+/** 关闭右键菜单（点击菜单项后调用） */
+function closeCtxMenu(): void {
+  ctxMenu.visible = false;
+  ctxMenu.target = null;
+}
+
+/** 目录右键菜单项 —— 复用现有 hover 菜单的处理函数 */
+function onCtxAddFolder(node: ListTreeNode): void {
+  closeCtxMenu();
+  onAddSubFolder(node);
+}
+function onCtxEdit(node: ListTreeNode): void {
+  closeCtxMenu();
+  startEditList(node);
+}
+function onCtxDeleteList(node: ListTreeNode): void {
+  closeCtxMenu();
+  askDeleteList(node);
+}
+/** 清单右键：新建任务 —— 复用现有 hover 菜单的处理函数 */
+function onCtxAddTask(node: ListTreeNode): void {
+  closeCtxMenu();
+  quickAdd.open(node.id);
+}
+/** 标签右键：编辑 / 删除 —— 复用现有 hover 菜单的处理函数 */
+function onCtxEditTag(tag: Tag): void {
+  closeCtxMenu();
+  startEditTag(tag);
+}
+function onCtxDeleteTag(tag: Tag): void {
+  closeCtxMenu();
+  askDeleteTag(tag);
+}
+
 onMounted(async () => {
   await listStore.loadLists();
   await tagStore.loadTags();
@@ -811,6 +875,7 @@ onMounted(async () => {
           @addList="(n: ListTreeNode) => onAddListInFolder(n)"
           @addTask="(n: ListTreeNode) => quickAdd.open(n.id)"
           @move="onListMove"
+          @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
         />
       </div>
 
@@ -842,6 +907,7 @@ onMounted(async () => {
         @dragleave="onTagDragLeave"
         @drop="onTagDrop($event, tag.id)"
         @dragend="onTagDragEnd"
+        @contextmenu.prevent="openCtxMenu($event, { kind: 'tag', tag })"
       >
         <icon-tag :size="16" class="sidebar__item-icon" />
         <span class="sidebar__item-title">{{ tag.name }}</span>
@@ -1256,6 +1322,65 @@ onMounted(async () => {
       />
     </div>
   </TeleportPopper>
+
+  <!-- 侧边栏右键菜单（清单/目录/标签 统一服务，菜单项与 hover 三点菜单一致） -->
+  <ContextMenu
+    v-model:visible="ctxMenu.visible"
+    :x="ctxMenu.x"
+    :y="ctxMenu.y"
+  >
+    <!-- 目录：添加子目录 / 编辑目录 / 删除目录 -->
+    <template v-if="ctxMenu.target?.kind === 'folder'">
+      <MenuPopoverItem @click="onCtxAddFolder(ctxMenu.target.node)">
+        <icon-plus :size="15" />
+        <span>添加子目录</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem @click="onCtxEdit(ctxMenu.target.node)">
+        <icon-edit :size="15" />
+        <span>编辑目录</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem danger @click="onCtxDeleteList(ctxMenu.target.node)">
+        <icon-delete :size="15" />
+        <span>删除目录</span>
+      </MenuPopoverItem>
+    </template>
+    <!-- 清单：新建任务 / 编辑清单 / 删除清单 -->
+    <template v-else-if="ctxMenu.target?.kind === 'list'">
+      <MenuPopoverItem
+        v-if="ctxMenu.target.node.id !== 'inbox'"
+        @click="onCtxAddTask(ctxMenu.target.node)"
+      >
+        <icon-plus :size="15" />
+        <span>新建任务</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem
+        v-if="ctxMenu.target.node.id !== 'inbox'"
+        @click="onCtxEdit(ctxMenu.target.node)"
+      >
+        <icon-edit :size="15" />
+        <span>编辑清单</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem
+        v-if="ctxMenu.target.node.id !== 'inbox'"
+        danger
+        @click="onCtxDeleteList(ctxMenu.target.node)"
+      >
+        <icon-delete :size="15" />
+        <span>删除清单</span>
+      </MenuPopoverItem>
+    </template>
+    <!-- 标签：编辑标签 / 删除标签 -->
+    <template v-else-if="ctxMenu.target?.kind === 'tag'">
+      <MenuPopoverItem @click="onCtxEditTag(ctxMenu.target.tag)">
+        <icon-edit :size="15" />
+        <span>编辑标签</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem danger @click="onCtxDeleteTag(ctxMenu.target.tag)">
+        <icon-delete :size="15" />
+        <span>删除标签</span>
+      </MenuPopoverItem>
+    </template>
+  </ContextMenu>
 </template>
 
 <style scoped>

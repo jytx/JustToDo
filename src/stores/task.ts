@@ -6,7 +6,7 @@ import { ref, computed } from "vue";
 import type { Task, Priority, SortField, SortDir, ChecklistItem, Attachment } from "@/types";
 import { categorizeAttachmentType } from "@/types";
 import * as db from "@/api/db";
-import type { SmartViewId } from "@/api/db";
+import type { SmartViewId, Tag } from "@/api/db";
 import { useSettingsStore } from "@/stores/settings";
 import { todayRange, clampDateRange } from "@/utils/date";
 import { notifyTaskChanged } from "@/composables/useCalendarView";
@@ -36,6 +36,10 @@ export const useTaskStore = defineStore("task", () => {
   const subtasks = ref<Task[]>([]);
   /** 子任务缓存：parentId → Task[]，供树形列表按需懒加载子任务 */
   const subtaskCache = ref<Record<string, Task[]>>({});
+
+  /** 任务标签缓存：taskId → Tag[]，供任务列表项显示标签。
+   *  由 preloadTaskTags（列表加载时批量预取）和 refreshTaskTags（详情面板编辑后精确刷新）维护。 */
+  const taskTagMap = ref<Record<string, Tag[]>>({});
 
   /** 键盘导航焦点任务 ID（与 selectedTaskId 解耦，仅视觉高亮，不打开详情面板） */
   const focusedTaskId = ref<string | null>(null);
@@ -95,6 +99,49 @@ export const useTaskStore = defineStore("task", () => {
     subtaskCache.value = { ...subtaskCache.value, ...newCache };
   }
 
+  /** 批量预加载当前视图所有根任务的标签到 taskTagMap（一条 SQL，用于任务项显示标签） */
+  async function preloadTaskTags(): Promise<void> {
+    const ids = currentTasks.value.map((t) => t.id);
+    if (ids.length === 0) {
+      taskTagMap.value = {};
+      return;
+    }
+    try {
+      const links = await db.getTaskTagsBatch(ids);
+      // 把扁平的 TaskTagLink 数组按 task_id 分组成 taskId → Tag[]
+      const map: Record<string, Tag[]> = {};
+      // 先给所有任务初始化空数组，确保无标签的任务也有缓存条目（UI 判定 hasTag 时一致）
+      for (const id of ids) map[id] = [];
+      for (const link of links) {
+        const tag: Tag = {
+          id: link.tag_id,
+          name: link.tag_name,
+          createdAt: link.tag_created_at,
+          position: link.tag_position,
+        };
+        if (!map[link.task_id]) map[link.task_id] = [];
+        map[link.task_id].push(tag);
+      }
+      taskTagMap.value = map;
+    } catch (e) {
+      console.error("[TaskStore] 批量预加载任务标签失败:", e);
+      // 失败时初始化为空，避免 UI 显示陈旧数据
+      const map: Record<string, Tag[]> = {};
+      for (const id of ids) map[id] = [];
+      taskTagMap.value = map;
+    }
+  }
+
+  /** 精确刷新单个任务的标签缓存（详情面板增删标签后调用） */
+  async function refreshTaskTags(taskId: string): Promise<void> {
+    try {
+      const tags = await db.getTaskTags(taskId);
+      taskTagMap.value = { ...taskTagMap.value, [taskId]: tags };
+    } catch (e) {
+      console.error("[TaskStore] 刷新任务标签失败:", e);
+    }
+  }
+
   async function loadTasks(listId: string, keepSelection = false) {
     loading.value = true;
     currentListId.value = listId;
@@ -118,6 +165,7 @@ export const useTaskStore = defineStore("task", () => {
         currentSort.value.dir,
       );
       await preloadSubtaskCounts();
+      await preloadTaskTags();
     } finally {
       loading.value = false;
     }
@@ -147,6 +195,7 @@ export const useTaskStore = defineStore("task", () => {
         currentSort.value.dir,
       );
       await preloadSubtaskCounts();
+      await preloadTaskTags();
     } finally {
       loading.value = false;
     }
@@ -168,6 +217,7 @@ export const useTaskStore = defineStore("task", () => {
         currentSort.value.dir,
       );
       await preloadSubtaskCounts();
+      await preloadTaskTags();
     } finally {
       loading.value = false;
     }
@@ -308,6 +358,8 @@ export const useTaskStore = defineStore("task", () => {
     } else {
       subtasks.value.push(task);
     }
+    // 新建任务默认无标签，补一个空数组到缓存，保持 taskTagMap 与 currentTasks 同步
+    taskTagMap.value = { ...taskTagMap.value, [task.id]: [] };
     refreshCounts();
     // 通知日历视图刷新（create 不区分是否带日期，全通知；视图自己按当前 range 决定是否可见）
     notifyTaskChanged();
@@ -651,6 +703,10 @@ export const useTaskStore = defineStore("task", () => {
     }
     // 清除该任务自身的子任务缓存
     delete subtaskCache.value[id];
+    // 清除该任务的标签缓存
+    const newTagMap = { ...taskTagMap.value };
+    delete newTagMap[id];
+    taskTagMap.value = newTagMap;
     if (selectedTaskId.value === id) {
       selectedTaskId.value = null;
       selectedTaskObj.value = null; // 同步清空选中对象，关闭详情面板
@@ -763,6 +819,8 @@ export const useTaskStore = defineStore("task", () => {
       ...subtaskCache.value,
       [parentTask.id]: [...(subtaskCache.value[parentTask.id] ?? []), sub],
     };
+    // 新建子任务默认无标签，补空数组到缓存
+    taskTagMap.value = { ...taskTagMap.value, [sub.id]: [] };
     notifyTaskChanged();
     return sub;
   }
@@ -843,6 +901,7 @@ export const useTaskStore = defineStore("task", () => {
     pendingDeleteId,
     subtasks,
     subtaskCache,
+    taskTagMap,
     loading,
     selectedTaskId,
     openTasks,
@@ -874,6 +933,7 @@ export const useTaskStore = defineStore("task", () => {
     loadSubtasksToCache,
     getCachedSubtasks,
     getSubtasks,
+    refreshTaskTags,
     // 检查项操作
     addChecklistItem,
     insertChecklistItemAfter,

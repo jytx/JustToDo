@@ -15,6 +15,15 @@ export interface Tag {
   position: number;
 }
 
+/** 批量查询返回的任务-标签关联条目（与 Rust TaskTagLink 对应，snake_case） */
+export interface TaskTagLink {
+  task_id: string;
+  tag_id: string;
+  tag_name: string;
+  tag_created_at: string;
+  tag_position: number;
+}
+
 interface TaskList {
   id: string;
   name: string;
@@ -513,6 +522,12 @@ export async function reorderHabits(items: [string, number][]): Promise<void> {
 
 export async function getTaskTags(taskId: string): Promise<Tag[]> {
   return await invoke<Tag[]>("task_get_tags", { taskId });
+}
+
+/** 批量查询多个任务的标签关联（一条 SQL），返回扁平数组，前端自行按 task_id 分组 */
+export async function getTaskTagsBatch(taskIds: string[]): Promise<TaskTagLink[]> {
+  if (taskIds.length === 0) return [];
+  return await invoke<TaskTagLink[]>("task_get_tags_batch", { taskIds });
 }
 
 export async function addTaskTag(taskId: string, tagId: string): Promise<void> {

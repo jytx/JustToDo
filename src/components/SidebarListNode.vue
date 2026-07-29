@@ -54,6 +54,8 @@ const emit = defineEmits<{
   addTask: [node: ListTreeNode];
   /** 拖拽放置：被拖拽的节点 ID，目标父级 ID，目标位置（before/after/inside） */
   move: [draggedId: string, targetNode: ListTreeNode, position: "before" | "after" | "inside"];
+  /** 右键菜单：鼠标事件 + 当前节点（向上冒泡到 TheSidebar 统一处理） */
+  contextmenu: [event: MouseEvent, node: ListTreeNode];
 }>();
 
 /** 菜单点击的 key（addFolder 仅目录菜单有，addTask 仅清单菜单有） */
@@ -214,6 +216,7 @@ function onDrop(e: DragEvent) {
       @dragover="onDragOver"
       @dragleave="onDragLeave"
       @drop="onDrop"
+      @contextmenu.prevent="emit('contextmenu', $event, node)"
     >
       <span class="list-node__expand" @click="expanded = !expanded">
         <icon-down v-if="expanded" :size="12" />
@@ -270,6 +273,7 @@ function onDrop(e: DragEvent) {
       @dragleave="onDragLeave"
       @drop="onDrop"
       @click="goToList"
+      @contextmenu.prevent="emit('contextmenu', $event, node)"
     >
       <span class="list-node__dot-placeholder" />
       <span
@@ -312,6 +316,7 @@ function onDrop(e: DragEvent) {
         @addList="(n: ListTreeNode) => $emit('addList', n)"
         @addTask="(n: ListTreeNode) => $emit('addTask', n)"
         @move="(id: string, target: ListTreeNode, pos: 'before' | 'after' | 'inside') => $emit('move', id, target, pos)"
+        @contextmenu="(e: MouseEvent, n: ListTreeNode) => $emit('contextmenu', e, n)"
       />
     </div>
   </div>

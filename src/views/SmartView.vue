@@ -5,9 +5,12 @@ import { computed, watch, onMounted } from "vue";
 import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import { formatPageDate } from "@/utils/date";
+import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import type { SmartViewId } from "@/api/db";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
+import ContextMenu from "@/components/ContextMenu.vue";
+import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 
 const props = defineProps<{ view: SmartViewId }>();
 
@@ -44,6 +47,11 @@ const defaultListId = computed(() => {
   return inbox?.id ?? listStore.sortedLists[0]?.id ?? "inbox";
 });
 
+// 面板右键菜单：新建任务归属默认清单
+const { ctxMenu, onContextMenu, onCreateTask } = useTaskPanelContextMenu(
+  () => defaultListId.value,
+);
+
 async function onAddTask(payload: { title: string; priority: import("@/types").Priority; dueStartAt: string | null; dueEndAt: string | null }) {
   await taskStore.createTask({
     title: payload.title,
@@ -68,7 +76,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="smart-view">
+  <div class="smart-view" @contextmenu="onContextMenu">
     <!-- 列表头 -->
     <header class="smart-view__header">
       <h1 class="smart-view__title">{{ pageTitle }}</h1>
@@ -146,6 +154,14 @@ onMounted(async () => {
       <p class="smart-view__empty-title">{{ VIEW_EMPTY[view] }}</p>
       <p class="smart-view__empty-hint">在上方添加新任务</p>
     </div>
+
+    <!-- 面板右键菜单：新建任务 -->
+    <ContextMenu v-model:visible="ctxMenu.visible" :x="ctxMenu.x" :y="ctxMenu.y">
+      <MenuPopoverItem @click="onCreateTask">
+        <icon-plus :size="15" />
+        <span>新建任务</span>
+      </MenuPopoverItem>
+    </ContextMenu>
   </div>
 </template>
 

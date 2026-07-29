@@ -5,13 +5,19 @@ import { computed, watch, onMounted } from "vue";
 import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import { formatPageDate } from "@/utils/date";
+import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
+import ContextMenu from "@/components/ContextMenu.vue";
+import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 
 const props = defineProps<{ id: string }>();
 
 const listStore = useListStore();
 const taskStore = useTaskStore();
+
+// 面板右键菜单：新建任务归属当前清单
+const { ctxMenu, onContextMenu, onCreateTask } = useTaskPanelContextMenu(() => props.id);
 
 const currentList = computed(() => listStore.getById(props.id));
 
@@ -33,7 +39,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="list-view">
+  <div class="list-view" @contextmenu="onContextMenu">
     <!-- 列表头 -->
     <header class="list-view__header">
       <h1 class="list-view__title">{{ pageTitle }}</h1>
@@ -107,6 +113,14 @@ onMounted(async () => {
       <p class="list-view__empty-title">这个清单还没有任务</p>
       <p class="list-view__empty-hint">在上方添加你的第一个任务</p>
     </div>
+
+    <!-- 面板右键菜单：新建任务 -->
+    <ContextMenu v-model:visible="ctxMenu.visible" :x="ctxMenu.x" :y="ctxMenu.y">
+      <MenuPopoverItem @click="onCreateTask">
+        <icon-plus :size="15" />
+        <span>新建任务</span>
+      </MenuPopoverItem>
+    </ContextMenu>
   </div>
 </template>
 
