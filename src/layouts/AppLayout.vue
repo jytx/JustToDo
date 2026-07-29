@@ -32,6 +32,8 @@ const route = useRoute();
 const quickAdd = useQuickAdd();
 
 const sidebarCollapsed = ref(false);
+/** 侧边栏宽度（仅展开态生效；收起态固定 48px） */
+const sidebarWidth = ref(240);
 const panelWidth = ref(480);
 
 /** 是否显示排序按钮（清单/标签/全部视图） */
@@ -226,7 +228,11 @@ useShortcuts({
     <AppRail />
 
     <!-- 侧边栏（左）—— 仅在 AppRail 选中"任务"时显示 -->
-    <TheSidebar v-if="showTaskSidebar" v-model:collapsed="sidebarCollapsed" />
+    <TheSidebar
+      v-if="showTaskSidebar"
+      v-model:collapsed="sidebarCollapsed"
+      v-model:width="sidebarWidth"
+    />
 
     <!-- 主区域（中） -->
     <main class="app-layout__main" :style="mainStyle">

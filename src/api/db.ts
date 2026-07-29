@@ -3,7 +3,7 @@
 // 这样绕过了 plugin-sql 前端 API 的 IPC 问题，走标准 invoke 通道
 
 import { invoke } from "@tauri-apps/api/core";
-import type { List, Task, Priority, RecurrenceFreq, ChecklistItem, Template } from "@/types";
+import type { List, Task, Priority, RecurrenceFreq, ChecklistItem, Template, Attachment, AttachmentType } from "@/types";
 
 // ─── 类型（与 Rust models.rs 对应）──────────────────────
 
@@ -53,6 +53,8 @@ interface UpdateTaskInput {
   remindOffsetMinutes?: number | null;
   /** 检查项列表（整组覆盖） */
   checklist?: ChecklistItem[];
+  /** 附件列表（整组覆盖） */
+  attachments?: Attachment[];
 }
 
 export type SmartViewId = "today" | "upcoming" | "all";
@@ -136,6 +138,7 @@ interface RustTask {
   remind_offset_minutes: number | null;
   notified_at: string | null;
   checklist: ChecklistItem[];
+  attachments: Attachment[];
 }
 
 function mapTask(r: RustTask): Task {
@@ -161,6 +164,7 @@ function mapTask(r: RustTask): Task {
     remindOffsetMinutes: r.remind_offset_minutes,
     notifiedAt: r.notified_at,
     checklist: r.checklist,
+    attachments: r.attachments,
   };
 }
 
@@ -324,6 +328,7 @@ export async function updateTask(
     recurrence_count: fields.recurrenceCount,
     remind_offset_minutes: fields.remindOffsetMinutes,
     checklist: fields.checklist,
+    attachments: fields.attachments,
   };
   await invoke<void>("task_update", { id, input });
 }
@@ -547,6 +552,38 @@ export async function saveImage(data: string, ext: string): Promise<string> {
 
 export async function getAttachmentFullpath(filename: string): Promise<string> {
   return await invoke<string>("get_attachment_fullpath", { filename });
+}
+
+/**
+ * 保存任意类型附件（base64 数据），返回相对附件目录的子路径（YYYYMMDD/<type>/<uuid>.<ext>）。
+ * category 由前端从文件名推导（categorizeAttachmentType），Rust 端会白名单校验。
+ */
+export async function saveAttachment(
+  data: string,
+  ext: string,
+  category: AttachmentType,
+): Promise<string> {
+  return await invoke<string>("save_attachment", { data, ext, category });
+}
+
+/** 删除附件目录中的物理文件（幂等，文件不存在视为成功） */
+export async function deleteAttachment(storedName: string): Promise<void> {
+  await invoke<void>("delete_attachment", { storedName });
+}
+
+/** 读取文本类附件内容（md/txt 预览用；超过 2MB 会报错） */
+export async function readAttachmentText(storedName: string): Promise<string> {
+  return await invoke<string>("read_attachment_text", { storedName });
+}
+
+/** 在系统文件管理器中定位（高亮选中）附件文件 */
+export async function revealAttachment(storedName: string): Promise<void> {
+  await invoke<void>("reveal_attachment", { storedName });
+}
+
+/** 把附件完整路径写入系统剪贴板 */
+export async function copyAttachmentPath(storedName: string): Promise<void> {
+  await invoke<void>("copy_attachment_path", { storedName });
 }
 
 // ─── 模板操作 ────────────────────────────────────────────

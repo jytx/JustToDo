@@ -92,6 +92,8 @@ export interface Task {
   notifiedAt: string | null;
   /** 检查项列表（独立于 note 富文本；滴答清单风格） */
   checklist: ChecklistItem[];
+  /** 附件列表（独立于 note 富文本；文件实体存附件目录） */
+  attachments: Attachment[];
 }
 
 /** 检查项（独立存储；后端 JSON 数组） */
@@ -101,6 +103,109 @@ export interface ChecklistItem {
   done: boolean;
   /** 排序权重（数字小 = 排前） */
   order: number;
+}
+
+/** 任务附件（独立存储；后端 JSON 数组，文件实体存附件目录） */
+export interface Attachment {
+  /** 附件唯一 ID（UUID，与文件名中的 UUID 一致） */
+  id: string;
+  /** 用户原始文件名（如 "需求文档.md"） */
+  originalName: string;
+  /** 落盘后的文件名（UUID.ext，如 "a3f5...c1.md"） */
+  storedName: string;
+  /** MIME 类型（如 "text/markdown"、"video/mp4"），未知则 "application/octet-stream" */
+  mime: string;
+  /** 文件大小（字节） */
+  size: number;
+  /** 添加时间（本地时间字面量，与任务 createdAt 同格式） */
+  createdAt: string;
+}
+
+/** 附件预览分类（决定点击附件时的预览/打开行为） */
+export type AttachmentCategory =
+  | "image" // png/jpg/gif/webp/svg → 图片灯箱
+  | "video" // mp4/mov/webm → 视频播放器弹窗
+  | "audio" // mp3/wav/m4a → 音频播放器弹窗
+  | "markdown" // md → 应用内 markdown 预览弹窗
+  | "text" // txt/log/json → 应用内纯文本预览弹窗
+  | "pdf" // pdf → iframe 预览弹窗
+  | "other"; // 其他 → 不预览，直接系统默认程序打开
+
+/** 被拦截的危险扩展名（可执行类，防误操作） */
+export const BLOCKED_EXTENSIONS: readonly string[] = [
+  "exe",
+  "app",
+  "bat",
+  "sh",
+  "cmd",
+  "com",
+  "msi",
+  "scr",
+  "vbs",
+  "ps1",
+];
+
+/** 根据扩展名判定附件预览分类 */
+export function categorizeAttachment(fileName: string): AttachmentCategory {
+  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"].includes(ext))
+    return "image";
+  if (["mp4", "mov", "webm", "ogv", "mkv"].includes(ext)) return "video";
+  if (["mp3", "wav", "m4a", "ogg", "flac", "aac"].includes(ext)) return "audio";
+  if (["md", "markdown"].includes(ext)) return "markdown";
+  if (["txt", "log", "json", "yml", "yaml", "csv", "tsv"].includes(ext))
+    return "text";
+  if (ext === "pdf") return "pdf";
+  return "other";
+}
+
+/**
+ * 附件磁盘存储分类(目录名,英文)。
+ * 与 AttachmentCategory(7 类,预览分流用)的区别:
+ *   - 粒度更粗:markdown/text/pdf 合并到 docs(磁盘按"文档"一类即可)
+ *   - 新增 archives:压缩包独立成桶
+ * 用于 save_attachment 时落盘的子目录名,以及存量迁移时的归类。
+ */
+export type AttachmentType =
+  | "images"
+  | "videos"
+  | "audios"
+  | "docs"
+  | "archives"
+  | "others";
+
+/** 合法的磁盘分类目录名(白名单,与 Rust 端 save_attachment 校验保持一致) */
+export const ATTACHMENT_TYPE_DIRS: readonly AttachmentType[] = [
+  "images",
+  "videos",
+  "audios",
+  "docs",
+  "archives",
+  "others",
+];
+
+/** 根据文件名判定磁盘存储分类(决定落盘子目录) */
+export function categorizeAttachmentType(fileName: string): AttachmentType {
+  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"].includes(ext))
+    return "images";
+  if (["mp4", "mov", "webm", "ogv", "mkv"].includes(ext)) return "videos";
+  if (["mp3", "wav", "m4a", "ogg", "flac", "aac"].includes(ext)) return "audios";
+  // 文档类:markdown/text/pdf 统一归 docs
+  if (
+    ["md", "markdown", "txt", "log", "json", "yml", "yaml", "csv", "tsv", "pdf"].includes(ext)
+  )
+    return "docs";
+  // 压缩包
+  if (["zip", "rar", "7z", "tar", "gz", "bz2", "xz"].includes(ext))
+    return "archives";
+  return "others";
+}
+
+/** 判断文件名是否被拦截（可执行类） */
+export function isBlockedAttachment(fileName: string): boolean {
+  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
+  return BLOCKED_EXTENSIONS.includes(ext);
 }
 
 /** 提醒预设项（分钟）。value 表示 remindOffsetMinutes，传 null = 不提醒 */
@@ -198,6 +303,8 @@ export interface TaskRow {
   notified_at: string | null;
   /** JSON 字符串（后端 Vec<ChecklistItem> 序列化） */
   checklist: string;
+  /** JSON 字符串（后端 Vec<Attachment> 序列化） */
+  attachments: string;
 }
 
 /** 清单数据库原始行 */
@@ -235,6 +342,7 @@ export function mapTaskRow(row: TaskRow): Task {
     remindOffsetMinutes: row.remind_offset_minutes,
     notifiedAt: row.notified_at,
     checklist: parseChecklist(row.checklist),
+    attachments: parseAttachments(row.attachments),
   };
 }
 
@@ -244,6 +352,17 @@ function parseChecklist(raw: string): ChecklistItem[] {
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr)) return [];
     return arr as ChecklistItem[];
+  } catch {
+    return [];
+  }
+}
+
+/** 把 JSON 字符串解析为 Attachment 列表（解析失败则空列表） */
+function parseAttachments(raw: string): Attachment[] {
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr as Attachment[];
   } catch {
     return [];
   }

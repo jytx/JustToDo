@@ -3,6 +3,7 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { ListTreeNode } from "@/stores/list";
+import type { List } from "@/types";
 import {
   IconStar,
   IconClockCircle,
@@ -22,6 +23,7 @@ import {
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
 import { useTaskStore } from "@/stores/task";
+import { useQuickAdd } from "@/composables/useQuickAdd";
 import SidebarListNode from "./SidebarListNode.vue";
 import SidebarRailCascade from "./SidebarRailCascade.vue";
 import MenuPopover from "./MenuPopover.vue";
@@ -31,14 +33,90 @@ import * as db from "@/api/db";
 
 const props = defineProps<{
   collapsed?: boolean;
+  /** 受控宽度（展开态生效；收起态固定走 CSS 的 48px） */
+  width?: number;
 }>();
 
 const emit = defineEmits<{
   "update:collapsed": [value: boolean];
+  "update:width": [value: number];
 }>();
 
+/** 侧边栏宽度边界：最小 = 收起态宽度，最大避免挤压主区域 */
+const SIDEBAR_MIN_WIDTH: number = 48;
+const SIDEBAR_MAX_WIDTH: number = 480;
+/** 默认展开宽度（点击展开图标恢复到此值） */
+const SIDEBAR_DEFAULT_WIDTH: number = 240;
+
+/** 把宽度限制在 [最小, 最大] 区间（纯函数） */
+function clampWidth(w: number): number {
+  return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, w));
+}
+
 function toggleCollapsed() {
-  emit("update:collapsed", !props.collapsed);
+  const nextCollapsed = !props.collapsed;
+  emit("update:collapsed", nextCollapsed);
+  // 由收起 → 展开时，恢复默认宽度
+  if (!nextCollapsed) {
+    emit("update:width", SIDEBAR_DEFAULT_WIDTH);
+  }
+}
+
+/** 拖拽中标志：临时关闭 width 过渡，避免宽度滞后鼠标 */
+const isResizing = ref(false);
+
+/** 判定"真正开始拖拽"的位移阈值（px）。小于此值视为单纯点击，不改变任何状态，
+ *  避免收起态下点一下手柄就意外展开。 */
+const DRAG_THRESHOLD: number = 3;
+
+/** 拖拽调宽 —— 范式参考 TaskDetailPanel.startResize，方向相反（侧边栏在左）。
+ *  - mousedown 不改变状态；只有移动超过阈值才算"开始拖拽"
+ *  - 起点若是收起态，首次真正拖动时才退出收起（从 48px 起算跟随鼠标）
+ *  - 拖到最小宽度 48px 时，吸附为收起态 */
+function startResize(e: MouseEvent) {
+  e.preventDefault();
+  const startX: number = e.clientX;
+  const startWidth: number = props.collapsed
+    ? SIDEBAR_MIN_WIDTH
+    : props.width ?? SIDEBAR_DEFAULT_WIDTH;
+  /** 是否已跨过阈值、进入真正的拖拽（首次跨过时退出收起态） */
+  let dragStarted: boolean = false;
+
+  function onMouseMove(ev: MouseEvent) {
+    const delta: number = ev.clientX - startX;
+    // 未跨过阈值：单纯点击抖动，不改变状态
+    if (!dragStarted && Math.abs(delta) < DRAG_THRESHOLD) return;
+    // 首次跨过阈值：若是收起态，先退出收起（从 48px 起算跟随鼠标）
+    if (!dragStarted) {
+      dragStarted = true;
+      isResizing.value = true;
+      if (props.collapsed) {
+        emit("update:collapsed", false);
+      }
+    }
+    const newWidth = clampWidth(startWidth + delta);
+    if (newWidth <= SIDEBAR_MIN_WIDTH) {
+      // 吸附收起
+      emit("update:width", SIDEBAR_MIN_WIDTH);
+      emit("update:collapsed", true);
+    } else {
+      emit("update:collapsed", false);
+      emit("update:width", newWidth);
+    }
+  }
+
+  function onMouseUp() {
+    document.removeEventListener("mousemove", onMouseMove);
+    document.removeEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    isResizing.value = false;
+  }
+
+  document.addEventListener("mousemove", onMouseMove);
+  document.addEventListener("mouseup", onMouseUp);
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
 }
 
 const route = useRoute();
@@ -46,6 +124,7 @@ const router = useRouter();
 const listStore = useListStore();
 const tagStore = useTagStore();
 const taskStore = useTaskStore();
+const quickAdd = useQuickAdd();
 
 /** 各区块展开/收起状态 */
 const sectionCollapsed = ref<Record<string, boolean>>({
@@ -93,6 +172,46 @@ async function saveListEdit() {
   await listStore.loadLists();
   showEditDialog.value = false;
   editingList.value = null;
+}
+
+/** 新建子目录弹窗状态 —— 点击"添加子目录"后打开，回车才真正创建（ESC 可取消） */
+const showCreateSubFolderDialog = ref(false);
+const newSubFolderName = ref("");
+const newSubFolderParentId = ref<string | null>(null);
+const newSubFolderNameInputRef = ref<HTMLInputElement | null>(null);
+/** 子目录颜色（与新建清单一致，默认橙色） */
+const newSubFolderColor = ref("#F59E0B");
+
+/** 从目录菜单发起"添加子目录"：仅打开弹窗，不立即创建 */
+function onAddSubFolder(parent: { id: string }) {
+  newSubFolderParentId.value = parent.id;
+  newSubFolderName.value = "";
+  newSubFolderColor.value = "#F59E0B";
+  showCreateSubFolderDialog.value = true;
+  nextTick(() => {
+    newSubFolderNameInputRef.value?.focus();
+  });
+}
+
+/** 回车创建子目录（名字必填：空名保持弹窗打开，不做任何事） */
+async function confirmNewSubFolder() {
+  const name = newSubFolderName.value.trim();
+  if (!name) return; // 名字必填：空名不创建、不关闭弹窗
+  await listStore.createList({
+    name,
+    color: newSubFolderColor.value,
+    parentId: newSubFolderParentId.value,
+    isFolder: true,
+  });
+  showCreateSubFolderDialog.value = false;
+}
+
+/** 从目录行的 + 按钮发起"在该目录下新建清单"：
+ *  把当前目录路径预填到新建清单弹窗的目录字段，复用现有 showCreateDialog。
+ *  注意：startNewList 会清空 newListFolder，所以这里在它之后再覆盖路径。 */
+function onAddListInFolder(folder: { id: string }) {
+  startNewList();
+  newListFolder.value = buildFolderPath(folder.id);
 }
 
 async function askDeleteList(list: { id: string; name: string }) {
@@ -268,27 +387,34 @@ async function saveTagEdit() {
   editingTag.value = null;
 }
 
-/** 颜色选择器状态（list：新建 / edit：编辑，各自独立 anchor） */
-const colorPickerOpen = reactive<{ list: boolean; edit: boolean }>({
+/** 颜色选择器状态（list：新建清单 / edit：编辑 / subfolder：新建子目录，各自独立 anchor） */
+const colorPickerOpen = reactive<{ list: boolean; edit: boolean; subfolder: boolean }>({
   list: false,
   edit: false,
+  subfolder: false,
 });
 
-/** 颜色 trigger 元素缓存（list：新建 / edit：编辑） */
-const colorTriggerEls = reactive<{ list: HTMLElement | null; edit: HTMLElement | null }>({
+/** 颜色 trigger 元素缓存（list：新建 / edit：编辑 / subfolder：新建子目录） */
+const colorTriggerEls = reactive<{
+  list: HTMLElement | null;
+  edit: HTMLElement | null;
+  subfolder: HTMLElement | null;
+}>({
   list: null,
   edit: null,
+  subfolder: null,
 });
 
 /** 关闭所有颜色 picker（切换前调用，避免多个同时打开） */
 function closeAllColorPickers(): void {
   colorPickerOpen.list = false;
   colorPickerOpen.edit = false;
+  colorPickerOpen.subfolder = false;
 }
 
 /** 点击颜色 trigger —— 切换 popper + 缓存 trigger 元素
- *  scope: "list"（新建清单）/ "edit"（编辑清单） */
-function onClickColorTrigger(e: MouseEvent, scope: "list" | "edit"): void {
+ *  scope: "list"（新建清单）/ "edit"（编辑清单）/ "subfolder"（新建子目录） */
+function onClickColorTrigger(e: MouseEvent, scope: "list" | "edit" | "subfolder"): void {
   const el = e.currentTarget as HTMLElement;
   closeAllColorPickers();
   colorTriggerEls[scope] = el;
@@ -304,25 +430,27 @@ function onClickFolderTrigger(e: MouseEvent) {
   newListFolderPopupVisible.value = !newListFolderPopupVisible.value;
 }
 
+/** 根据目录 id，向上追溯父级，拼出完整路径字符串（如 "工作/项目A"）。
+ *  纯函数：只读 listStore，不修改任何状态。 */
+function buildFolderPath(folderId: string): string {
+  const ids: string[] = [];
+  let curId: string | null = folderId;
+  while (curId) {
+    ids.unshift(curId);
+    const node: List | undefined = listStore.getById(curId);
+    curId = node?.parentId ?? null;
+  }
+  return ids
+    .map((nid) => listStore.getById(nid)?.name)
+    .filter(Boolean)
+    .join("/");
+}
+
 /** 输入提示：把已有的目录拼成完整路径，作为自动补全的数据源 */
 const folderSuggestions = computed(() => {
   const folders = listStore.sortedLists.filter((l) => l.isFolder);
-  // 按"根→叶"路径分组，输出完整路径字符串
-  const buildPath = (id: string): string => {
-    const ids: string[] = [];
-    let cur: string | null | undefined = id;
-    while (cur) {
-      ids.unshift(cur);
-      const node: any = listStore.getById(cur);
-      cur = node?.parentId ?? null;
-    }
-    return ids
-      .map((nid) => listStore.getById(nid)?.name)
-      .filter(Boolean)
-      .join("/");
-  };
   return folders.map((f) => {
-    const path = buildPath(f.id);
+    const path = buildFolderPath(f.id);
     return {
       value: path,
       label: path, // Arco 默认按 label 字段展示，这里保持一致
@@ -542,7 +670,11 @@ onMounted(async () => {
 </script>
 
 <template>
-  <aside class="sidebar" :class="{ 'sidebar--collapsed': collapsed }">
+  <aside
+    class="sidebar"
+    :class="{ 'sidebar--collapsed': collapsed, 'sidebar--resizing': isResizing }"
+    :style="!collapsed && width ? { width: width + 'px' } : {}"
+  >
     <div class="sidebar__header">
       <a-button
         class="sidebar__collapse-btn"
@@ -675,6 +807,9 @@ onMounted(async () => {
           :depth="0"
           @edit="(n: any) => startEditList(n)"
           @delete="(n: any) => askDeleteList(n)"
+          @addFolder="(n: ListTreeNode) => onAddSubFolder(n)"
+          @addList="(n: ListTreeNode) => onAddListInFolder(n)"
+          @addTask="(n: ListTreeNode) => quickAdd.open(n.id)"
           @move="onListMove"
         />
       </div>
@@ -745,6 +880,9 @@ onMounted(async () => {
       <!-- 习惯区块已移除 —— 习惯入口已上移到 AppRail，TheSidebar 只承担任务二级导航 -->
       </template>
     </nav>
+
+    <!-- 拖拽调宽手柄（贴右边缘；双击切换收起/展开，收起态也保留可拖拽重新展开） -->
+    <div class="sidebar__resizer" @mousedown="startResize" @dblclick="toggleCollapsed" />
   </aside>
 
   <!-- 收起态 hover tooltip（Teleport 到 body，避开 sidebar overflow:hidden 裁剪） -->
@@ -980,6 +1118,73 @@ onMounted(async () => {
     </div>
   </a-modal>
 
+  <!-- 新建子目录弹窗（QuickAdd 风格：仅名字输入 + 回车创建） -->
+  <a-modal
+    v-model:visible="showCreateSubFolderDialog"
+    :width="440"
+    :footer="false"
+    :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
+    modal-class="sidebar-create-modal"
+  >
+    <div class="sidebar-create">
+      <div class="sidebar-create__input-row">
+        <input
+          ref="newSubFolderNameInputRef"
+          v-model="newSubFolderName"
+          class="sidebar-create__input"
+          placeholder="子目录名称"
+          @keydown.enter="confirmNewSubFolder"
+          @keydown.escape.stop="showCreateSubFolderDialog = false"
+        />
+        <button
+          class="sidebar-create__close"
+          title="关闭"
+          @click="showCreateSubFolderDialog = false"
+        >
+          <icon-close :size="14" />
+        </button>
+      </div>
+      <div class="sidebar-create__divider" />
+      <div class="sidebar-create__attrs">
+        <!-- 颜色 trigger：与新建清单弹窗同款 -->
+        <button
+          data-color-trigger="subfolder"
+          type="button"
+          class="sidebar-create__trigger"
+          @click="onClickColorTrigger($event, 'subfolder')"
+        >
+          <span
+            class="sidebar-create__color-dot"
+            :style="{ backgroundColor: newSubFolderColor }"
+          />
+          <span>颜色</span>
+        </button>
+
+        <span class="sidebar-create__spacer" />
+
+        <span class="sidebar-create__hint">回车创建</span>
+      </div>
+    </div>
+  </a-modal>
+
+  <!-- 新建子目录颜色 picker 弹层（独立 anchor） -->
+  <TeleportPopper
+    v-model:visible="colorPickerOpen.subfolder"
+    :anchor="colorTriggerEls.subfolder"
+    placement="bottom-left"
+  >
+    <div class="sidebar-create__color-picker">
+      <button
+        v-for="c in LIST_COLORS"
+        :key="c"
+        class="sidebar-create__color-swatch"
+        :class="{ 'sidebar-create__color-swatch--active': newSubFolderColor === c }"
+        :style="{ backgroundColor: c }"
+        @click="newSubFolderColor = c; colorPickerOpen.subfolder = false"
+      />
+    </div>
+  </TeleportPopper>
+
   <!-- 目录输入弹层（Teleport 到 body，避开 modal overflow 裁剪） -->
   <TeleportPopper
     v-model:visible="newListFolderPopupVisible"
@@ -1064,10 +1269,32 @@ onMounted(async () => {
   border-right: 1px solid var(--jt-border);
   transition: width 0.2s ease;
   overflow: hidden;
+  position: relative; /* 拖拽手柄绝对定位的基准 */
 }
 
 .sidebar--collapsed {
   width: 48px;
+}
+
+/* 拖拽调宽手柄：贴右边缘，跨在边框上（一半在内一半在外） */
+.sidebar__resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -3px;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 10;
+  transition: background-color 0.15s ease;
+}
+
+.sidebar__resizer:hover {
+  background-color: color-mix(in srgb, var(--jt-primary) 30%, transparent);
+}
+
+/* 拖拽期间关闭 width 过渡，避免宽度滞后鼠标 */
+.sidebar--resizing {
+  transition: none !important;
 }
 
 /* 收起态：nav 不再隐藏，改为渲染垂直图标列（见模板侧 collapsed 分支） */

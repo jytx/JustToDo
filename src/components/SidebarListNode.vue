@@ -5,7 +5,6 @@ import { ref, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { ListTreeNode } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
-import { useQuickAdd } from "@/composables/useQuickAdd";
 import {
   IconFolder,
   IconMore,
@@ -26,7 +25,6 @@ const props = defineProps<{
 const taskStore = useTaskStore();
 const router = useRouter();
 const route = useRoute();
-const quickAdd = useQuickAdd();
 
 /**
  * 计算树节点左侧缩进。
@@ -48,15 +46,24 @@ const expanded = ref(true);
 const emit = defineEmits<{
   edit: [node: ListTreeNode];
   delete: [node: ListTreeNode];
+  /** 在该目录下新建子目录 */
+  addFolder: [node: ListTreeNode];
+  /** 在该目录下新建清单 */
+  addList: [node: ListTreeNode];
+  /** 在该清单下新建任务（仅清单菜单） */
+  addTask: [node: ListTreeNode];
   /** 拖拽放置：被拖拽的节点 ID，目标父级 ID，目标位置（before/after/inside） */
   move: [draggedId: string, targetNode: ListTreeNode, position: "before" | "after" | "inside"];
 }>();
 
-function onMenuClick(key: "edit" | "delete") {
+/** 菜单点击的 key（addFolder 仅目录菜单有，addTask 仅清单菜单有） */
+function onMenuClick(key: "edit" | "delete" | "addFolder" | "addTask") {
   folderMenuOpen.value = false;
   listMenuOpen.value = false;
   if (key === "edit") emit("edit", props.node);
   else if (key === "delete") emit("delete", props.node);
+  else if (key === "addFolder") emit("addFolder", props.node);
+  else if (key === "addTask") emit("addTask", props.node);
 }
 
 /** 目录行更多菜单（独立 ref） */
@@ -218,11 +225,11 @@ function onDrop(e: DragEvent) {
         :style="{ color: node.color }"
       />
       <span class="list-node__name">{{ node.name }}</span>
-      <!-- 在目录下新建任务（hover 才显示） -->
+      <!-- 在该目录下新建清单（hover 才显示） -->
       <button
         class="list-node__add-btn"
-        title="在此目录下新建任务"
-        @click.stop="quickAdd.open(node.id)"
+        title="在此目录下新建清单"
+        @click.stop="emit('addList', node)"
       >
         <icon-plus :size="14" />
       </button>
@@ -232,6 +239,10 @@ function onDrop(e: DragEvent) {
             <icon-more :size="16" />
           </button>
         </template>
+        <MenuPopoverItem @click="onMenuClick('addFolder')">
+          <icon-plus :size="15" />
+          <span>添加子目录</span>
+        </MenuPopoverItem>
         <MenuPopoverItem @click="onMenuClick('edit')">
           <icon-edit :size="15" />
           <span>编辑目录</span>
@@ -273,6 +284,10 @@ function onDrop(e: DragEvent) {
             <icon-more :size="16" />
           </button>
         </template>
+        <MenuPopoverItem @click="onMenuClick('addTask')">
+          <icon-plus :size="15" />
+          <span>新建任务</span>
+        </MenuPopoverItem>
         <MenuPopoverItem @click="onMenuClick('edit')">
           <icon-edit :size="15" />
           <span>编辑清单</span>
@@ -293,6 +308,9 @@ function onDrop(e: DragEvent) {
         :depth="depth + 1"
         @edit="(n: ListTreeNode) => $emit('edit', n)"
         @delete="(n: ListTreeNode) => $emit('delete', n)"
+        @addFolder="(n: ListTreeNode) => $emit('addFolder', n)"
+        @addList="(n: ListTreeNode) => $emit('addList', n)"
+        @addTask="(n: ListTreeNode) => $emit('addTask', n)"
         @move="(id: string, target: ListTreeNode, pos: 'before' | 'after' | 'inside') => $emit('move', id, target, pos)"
       />
     </div>

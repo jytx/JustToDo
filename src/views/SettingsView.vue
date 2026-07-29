@@ -16,6 +16,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import TemplateSection from "@/components/TemplateSection.vue";
+import { isValidHHmm } from "@/utils/date";
 
 const settingsStore = useSettingsStore();
 const {
@@ -25,6 +26,7 @@ const {
   recurrenceCheckInterval,
   startupView,
   error,
+  dailyReminderTimes,
 } = storeToRefs(settingsStore);
 
 const attachmentPath = ref("");
@@ -82,6 +84,96 @@ const isSavingAccent = computed(() => settingsStore.isSaving(SETTINGS_KEYS.accen
 const isSavingDueToday = computed(() =>
   settingsStore.isSaving(SETTINGS_KEYS.newTasksDueToday),
 );
+const isSavingDailyTimes = computed(() =>
+  settingsStore.isSaving(SETTINGS_KEYS.dailyReminderTimes),
+);
+
+/* ─── 每日固定时点提醒 ────────────────────────────────────── */
+
+/**
+ * 自建 hour/minute 选择器（HH:mm），绕开 Arco a-time-picker 在 Tauri WKWebView
+ * 下弹层渲染失败的兼容性问题（已实测：visible=true 但 portal DOM 不挂载）。
+ * 体验上比纯手输 input 更"选"一些：自带 ▲▼ 微调 + 5 分钟步进 + 顶部快选预设。
+ */
+
+/** 当前选中的小时（0–23，未选 = null） */
+const pendingHour = ref<number | null>(null);
+/** 当前选中的分钟（0–55，按 5 分钟步进；未选 = null） */
+const pendingMinute = ref<number | null>(null);
+
+/** 拼装 "HH:mm"，缺任一字段返回 null */
+const pendingTime = computed<string | null>(() => {
+  if (pendingHour.value === null || pendingMinute.value === null) return null;
+  const h = pendingHour.value;
+  const m = pendingMinute.value;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+});
+
+/** 5 分钟步进刻度（bumpMinute 用 step=5） */ // 暂时仅作为常量备查；模板内步进按钮 hard-coded 用 5
+
+/** ▲/▼ 按钮：小时 ±1（自动 0–23 环绕） */
+function bumpHour(delta: number): void {
+  const cur = pendingHour.value ?? 0;
+  const next = (cur + delta + 24) % 24;
+  pendingHour.value = next;
+}
+
+/** ▲/▼ 按钮：分钟 ±5 */
+function bumpMinute(delta: number): void {
+  const cur = pendingMinute.value ?? 0;
+  let next = cur + delta;
+  if (next < 0) next += 60;
+  if (next >= 60) next -= 60;
+  pendingMinute.value = next;
+}
+
+// 标记 MINUTE_STEP 常量保留以备扩展（顶部栅格 / 键盘 step 等）
+
+/** 输入框直接编辑 —— 解析合法才回填 */
+function onHourInput(e: Event): void {
+  const raw = (e.target as HTMLInputElement).value;
+  if (raw === "") {
+    pendingHour.value = null;
+    return;
+  }
+  const n = Number(raw);
+  if (Number.isInteger(n) && n >= 0 && n < 24) pendingHour.value = n;
+}
+
+function onMinuteInput(e: Event): void {
+  const raw = (e.target as HTMLInputElement).value;
+  if (raw === "") {
+    pendingMinute.value = null;
+    return;
+  }
+  const n = Number(raw);
+  if (Number.isInteger(n) && n >= 0 && n < 60) pendingMinute.value = n;
+}
+
+/** 「添加」按钮 —— 校验 + 持久化 + 清空 */
+async function confirmAddTime(): Promise<void> {
+  const t = pendingTime.value;
+  if (!t || !isValidHHmm(t)) return;
+  if (!dailyReminderTimes.value.includes(t)) {
+    const next = [...dailyReminderTimes.value, t];
+    await settingsStore.setDailyReminderTimes(next);
+  }
+  pendingHour.value = null;
+  pendingMinute.value = null;
+}
+
+/** 「清空」按钮 */
+function clearPendingTime(): void {
+  pendingHour.value = null;
+  pendingMinute.value = null;
+}
+
+/** 移除 tag */
+async function removeTime(t: string): Promise<void> {
+  const next = dailyReminderTimes.value.filter((x) => x !== t);
+  if (next.length === dailyReminderTimes.value.length) return;
+  await settingsStore.setDailyReminderTimes(next);
+}
 
 onMounted(async () => {
   try {
@@ -176,6 +268,108 @@ async function changeAttachmentPath() {
                 @change="(v: number | undefined) => settingsStore.setRecurrenceCheckInterval(v ?? 60)"
               />
               <span class="settings-section__interval-unit">分钟</span>
+            </div>
+          </div>
+          <div class="settings-section__item">
+            <div>
+              <span>每日固定时点提醒</span>
+              <p class="settings-section__path-hint">
+                到点扫描未完成的根任务并发汇总通知，每日每时刻只发一次（应用需保持运行）
+              </p>
+            </div>
+            <div class="settings-section__daily-add">
+              <!-- 整体两列布局：左侧 stepper（HH:MM 选时刻），右侧 添加/清空 按钮 -->
+              <div class="settings-section__time-group">
+                <!-- 时 -->
+                <div class="settings-section__time-col">
+                  <div class="settings-section__time-bumps">
+                    <button
+                      type="button"
+                      class="settings-section__time-bump"
+                      :disabled="dailyReminderTimes.length >= 8"
+                      aria-label="小时加一"
+                      @click="bumpHour(1)"
+                    >▲</button>
+                    <button
+                      type="button"
+                      class="settings-section__time-bump"
+                      :disabled="dailyReminderTimes.length >= 8"
+                      aria-label="小时减一"
+                      @click="bumpHour(-1)"
+                    >▼</button>
+                  </div>
+                  <input
+                    type="number"
+                    class="settings-section__time-input"
+                    :value="pendingHour === null ? '' : pendingHour"
+                    min="0"
+                    max="23"
+                    step="1"
+                    placeholder="时"
+                    :disabled="dailyReminderTimes.length >= 8"
+                    @input="onHourInput"
+                  />
+                </div>
+
+                <span class="settings-section__time-sep">:</span>
+
+                <!-- 分 -->
+                <div class="settings-section__time-col">
+                  <div class="settings-section__time-bumps">
+                    <button
+                      type="button"
+                      class="settings-section__time-bump"
+                      :disabled="dailyReminderTimes.length >= 8"
+                      aria-label="分钟加五"
+                      @click="bumpMinute(5)"
+                    >▲</button>
+                    <button
+                      type="button"
+                      class="settings-section__time-bump"
+                      :disabled="dailyReminderTimes.length >= 8"
+                      aria-label="分钟减五"
+                      @click="bumpMinute(-5)"
+                    >▼</button>
+                  </div>
+                  <input
+                    type="number"
+                    class="settings-section__time-input"
+                    :value="pendingMinute === null ? '' : pendingMinute"
+                    min="0"
+                    max="59"
+                    step="5"
+                    placeholder="分"
+                    :disabled="dailyReminderTimes.length >= 8"
+                    @input="onMinuteInput"
+                  />
+                </div>
+              </div>
+
+              <div class="settings-section__daily-actions">
+                <a-button
+                  type="primary"
+                  size="small"
+                  :disabled="!pendingTime || dailyReminderTimes.length >= 8"
+                  @click="confirmAddTime"
+                >添加</a-button>
+                <a-button
+                  size="small"
+                  :disabled="pendingHour === null && pendingMinute === null"
+                  @click="clearPendingTime"
+                >清空</a-button>
+              </div>
+            </div>
+          </div>
+          <div v-if="dailyReminderTimes.length > 0" class="settings-section__item">
+            <span>已添加时刻</span>
+            <div class="settings-section__daily-times">
+              <a-tag
+                v-for="t in dailyReminderTimes"
+                :key="t"
+                closable
+                :loading="isSavingDailyTimes"
+                @close="removeTime(t)"
+              >{{ t }}</a-tag>
             </div>
           </div>
         </div>
@@ -445,6 +639,125 @@ async function changeAttachmentPath() {
 .settings-section__interval-unit {
   font-size: 13px;
   color: var(--jt-text-secondary);
+}
+
+/* 每日固定时点提醒：自建 HH:mm 选择器 */
+.settings-section__daily-add {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* HH : mm 容器：两列（时 + 分）+ 中间冒号 */
+.settings-section__time-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 单列：箭头列（左）｜输入框列（右），两列等高 */
+.settings-section__time-col {
+  display: grid;
+  grid-template-columns: 14px auto;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 箭头列：▲ 在上、▼ 在下，垂直堆叠 */
+.settings-section__time-bumps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ▲/▼ 步进按钮（窄条，与输入框同高） */
+.settings-section__time-bump {
+  width: 14px;
+  height: 13px;
+  border: 1px solid var(--jt-border);
+  background: var(--jt-surface);
+  color: var(--jt-text-secondary);
+  border-radius: 3px;
+  font-size: 8px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 0.12s, color 0.12s, background-color 0.12s;
+}
+
+.settings-section__time-bump:hover:not(:disabled) {
+  border-color: var(--jt-primary);
+  color: var(--jt-primary);
+  background: var(--jt-accent-soft);
+}
+
+.settings-section__time-bump:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 输入框列（与箭头列对齐，整体略宽） */
+.settings-section__time-input {
+  width: 48px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--jt-border);
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: var(--font-mono, var(--font-body));
+  color: var(--jt-text-primary);
+  background: var(--jt-surface);
+  outline: none;
+  text-align: center;
+  transition: border-color 0.12s, box-shadow 0.12s;
+  box-sizing: border-box;
+}
+
+.settings-section__time-input:focus {
+  border-color: var(--jt-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-primary) 20%, transparent);
+}
+
+/* 隐藏原生上下箭头 */
+.settings-section__time-input::-webkit-inner-spin-button,
+.settings-section__time-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.settings-section__time-input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.settings-section__time-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-section__time-sep {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--jt-text-primary);
+  font-family: var(--font-mono, var(--font-body));
+  align-self: center;
+}
+
+/* 添加 / 清空按钮（垂直对齐到 input 行） */
+.settings-section__daily-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+}
+
+/* 每日固定时点提醒：tag 列表（行式，与 settings-section__item 同行） */
+.settings-section__daily-times {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  justify-content: flex-end;
 }
 
 .settings-section__desc--danger {

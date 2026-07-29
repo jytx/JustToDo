@@ -72,6 +72,12 @@ fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
             .ok()
             .and_then(|s| serde_json::from_str::<Vec<ChecklistItem>>(&s).ok())
             .unwrap_or_default(),
+        // attachments 同 checklist：JSON 字符串，解析失败为空列表
+        attachments: row
+            .try_get::<String, _>("attachments")
+            .ok()
+            .and_then(|s| serde_json::from_str::<Vec<Attachment>>(&s).ok())
+            .unwrap_or_default(),
     }
 }
 
@@ -565,6 +571,7 @@ pub async fn task_create(
         remind_offset_minutes,
         notified_at: None,
         checklist: Vec::new(),
+        attachments: Vec::new(),
     })
 }
 
@@ -689,6 +696,18 @@ pub async fn task_update(
             .execute(pool.inner())
             .await
             .map_err(|e| format!("更新检查项失败: {}", e))?;
+    }
+    // 附件列表（整组覆盖为 JSON 数组；与 checklist 完全对称）
+    if let Some(attachments) = &input.attachments {
+        let json =
+            serde_json::to_string(attachments).map_err(|e| format!("序列化附件失败: {}", e))?;
+        sqlx::query("UPDATE tasks SET attachments = $1, updated_at = $2 WHERE id = $3")
+            .bind(json)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新附件失败: {}", e))?;
     }
 
     Ok(())
@@ -1358,6 +1377,197 @@ pub async fn get_attachment_fullpath(app: AppHandle, filename: String) -> CmdRes
         .to_string())
 }
 
+/// 合法的附件磁盘分类目录名（白名单，杜绝路径穿越）
+/// 与前端 ATTACHMENT_TYPE_DIRS 保持一致
+const ATTACHMENT_CATEGORY_DIRS: [&str; 6] = [
+    "images",
+    "videos",
+    "audios",
+    "docs",
+    "archives",
+    "others",
+];
+
+/// 保存任意类型附件到附件目录，返回相对路径（YYYYMMDD/<category>/<uuid>.<ext>）
+///
+/// 存储结构：按"日期/类型"分层，便于在 Finder 中按天查看、按类型筛选。
+/// - 日期：Rust 端取当前本地日期（与前端 createdAt 同一刻，忽略秒级偏差）
+/// - 类型：前端传 category（从文件名推导），Rust 白名单校验后用作子目录名
+/// - 安全：category 走白名单，避免前端拼子路径导致的路径穿越（Path::join 不拦截 ..）
+///
+/// 返回的相对路径会存入 tasks.attachments 的 stored_name 字段；
+/// 其他命令（get_fullpath/delete/read/reveal）用 Path::join(stored_name) 自动适配多级路径。
+#[tauri::command]
+pub async fn save_attachment(
+    app: AppHandle,
+    data: String,
+    ext: String,
+    category: String,
+) -> CmdResult<String> {
+    // 白名单校验 category，杜绝路径穿越
+    if !ATTACHMENT_CATEGORY_DIRS.contains(&category.as_str()) {
+        return Err(format!(
+            "非法的附件分类: {}（合法值: {}）",
+            category,
+            ATTACHMENT_CATEGORY_DIRS.join(", ")
+        ));
+    }
+
+    let dir = get_attachment_path(app.clone()).await?;
+    let id = uuid();
+    // ext 已由前端小写化处理；为空时用 bin 兜底，避免拼出 "uuid." 这样的文件名
+    let safe_ext = if ext.is_empty() { "bin".to_string() } else { ext };
+
+    // 拼相对子路径：YYYYMMDD/<category>/<uuid>.<ext>
+    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    let rel_path = format!("{}/{}/{}.{}", today, category, id, safe_ext);
+    let filepath = PathBuf::from(&dir).join(&rel_path);
+
+    // 确保子目录存在（create_dir_all 幂等，已有不报错）
+    if let Some(parent) = filepath.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("创建附件目录失败: {}", e))?;
+    }
+
+    use std::io::Write;
+    let bytes = base64_decode(&data)?;
+    let mut file =
+        std::fs::File::create(&filepath).map_err(|e| format!("创建文件失败: {}", e))?;
+    file.write_all(&bytes)
+        .map_err(|e| format!("写入文件失败: {}", e))?;
+
+    Ok(rel_path)
+}
+
+/// 删除附件目录中的物理文件（删除任务附件时调用，避免孤儿文件）
+/// 文件不存在视为成功（幂等）
+#[tauri::command]
+pub async fn delete_attachment(app: AppHandle, stored_name: String) -> CmdResult<()> {
+    let dir = get_attachment_path(app).await?;
+    let filepath = PathBuf::from(&dir).join(&stored_name);
+    if filepath.exists() {
+        std::fs::remove_file(&filepath).map_err(|e| format!("删除附件文件失败: {}", e))?;
+    }
+    Ok(())
+}
+
+/// 读取文本类附件内容（用于 md/txt 应用内预览）
+/// 2MB 上限保护：超过则让前端改走系统默认程序打开
+#[tauri::command]
+pub async fn read_attachment_text(app: AppHandle, stored_name: String) -> CmdResult<String> {
+    let dir = get_attachment_path(app).await?;
+    let filepath = PathBuf::from(&dir).join(&stored_name);
+    let meta = std::fs::metadata(&filepath)
+        .map_err(|e| format!("读取附件信息失败: {}", e))?;
+    if meta.len() > 2 * 1024 * 1024 {
+        return Err("文件超过 2MB，请使用系统默认程序打开".to_string());
+    }
+    std::fs::read_to_string(&filepath).map_err(|e| format!("读取附件内容失败: {}", e))
+}
+
+/// 在系统文件管理器中定位（高亮选中）附件文件
+/// macOS: Finder；Windows: 资源管理器；Linux: 打开所在目录
+#[tauri::command]
+pub async fn reveal_attachment(app: AppHandle, stored_name: String) -> CmdResult<()> {
+    let dir = get_attachment_path(app).await?;
+    let filepath = PathBuf::from(&dir).join(&stored_name);
+    if !filepath.exists() {
+        return Err("附件文件不存在".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&filepath)
+            .spawn()
+            .map_err(|e| format!("打开 Finder 失败: {}", e))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // /select, 后面跟逗号是 explorer 的参数分隔符
+        std::process::Command::new("explorer.exe")
+            .arg(format!("/select,{}", filepath.display()))
+            .spawn()
+            .map_err(|e| format!("打开资源管理器失败: {}", e))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Linux 无统一高亮选中机制，退化为打开所在目录
+        std::process::Command::new("xdg-open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("打开文件管理器失败: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// 把附件完整路径写入系统剪贴板
+/// macOS: pbcopy；Windows: clip；Linux: xclip/wl-copy
+#[tauri::command]
+pub async fn copy_attachment_path(app: AppHandle, stored_name: String) -> CmdResult<()> {
+    let dir = get_attachment_path(app).await?;
+    let filepath = PathBuf::from(&dir).join(&stored_name);
+    let path_str = filepath.to_string_lossy().to_string();
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::io::Write;
+        let mut child = std::process::Command::new("pbcopy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("启动 pbcopy 失败: {}", e))?;
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin
+                .write_all(path_str.as_bytes())
+                .map_err(|e| format!("写入剪贴板失败: {}", e))?;
+        }
+        child.wait().map_err(|e| format!("pbcopy 等待失败: {}", e))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::io::Write;
+        let mut child = std::process::Command::new("clip")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("启动 clip 失败: {}", e))?;
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin
+                .write_all(path_str.as_bytes())
+                .map_err(|e| format!("写入剪贴板失败: {}", e))?;
+        }
+        child.wait().map_err(|e| format!("clip 等待失败: {}", e))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write;
+        // 优先 xclip，失败回退 wl-copy（Wayland）
+        let result = std::process::Command::new("xclip")
+            .arg("-selection")
+            .arg("clipboard")
+            .stdin(std::process::Stdio::piped())
+            .spawn();
+        let mut child = match result {
+            Ok(c) => c,
+            Err(_) => std::process::Command::new("wl-copy")
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("启动剪贴板工具失败（xclip/wl-copy）: {}", e))?,
+        };
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin
+                .write_all(path_str.as_bytes())
+                .map_err(|e| format!("写入剪贴板失败: {}", e))?;
+        }
+        child
+            .wait()
+            .map_err(|e| format!("剪贴板工具等待失败: {}", e))?;
+    }
+
+    Ok(())
+}
+
 /// 简单的 base64 解码（不依赖外部 crate）
 fn base64_decode(input: &str) -> CmdResult<Vec<u8>> {
     const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -1778,6 +1988,277 @@ pub async fn task_check_reminders(
             .show();
         if let Err(e) = res {
             eprintln!("[JustToDo] 通知失败：{}", e);
+        }
+    })
+    .await?;
+    Ok(count)
+}
+
+// ─── 每日固定时点提醒（汇总通知） ────────────────────────
+//
+// 与 task_check_reminders_inner 解耦：
+// - 任务级提醒：每个有 remind_offset_minutes 的任务在 due 时刻前后发单条；
+//   去重靠 tasks.notified_at。
+// - 每日汇总：用户在设置里配置的若干 HH:mm 到点，发一条汇总未完成任务数的通知；
+//   去重靠 daily_reminder_log (log_date, log_time) 主键。
+//
+// 应用场景：用户配置 09:00 / 17:00 两个时刻，每天 09:00、17:00 各发一条：
+//   「即时通知
+//    7月23日 周四
+//    69 过期任务
+//    立即查看今天的任务」
+//
+// 启动补发：lib.rs 后台 task 第一轮会扫描过去 24h 内所有到点时刻，确保关闭期间
+// 漏发的时刻也能补上（同一天同一时刻只补一次，由 log 表约束保证）。
+
+/// 每日汇总通知内容（与 PendingReminder 解耦，独立结构）
+#[derive(Debug, Clone)]
+pub struct DailySummary {
+    pub title: String,
+    pub body: String,
+}
+
+/// 解析 CSV 时刻字符串（"09:00,17:00"）为合法 HH:mm 列表
+/// - 去重、去空
+/// - 仅接受 `^[0-2]\d:[0-5]\d$` 格式（24h 制，HH:mm）
+/// - 字典序排序（HH:mm 字典序 == 时间序）
+/// - 最多 8 个（与前端 store 的上限保持一致）
+pub fn parse_daily_times(raw: Option<String>) -> Vec<String> {
+    const MAX_TIMES: usize = 8;
+    let Some(s) = raw else { return Vec::new() };
+    let mut seen: Vec<String> = Vec::new();
+    for tok in s.split(',') {
+        let t = tok.trim();
+        if t.is_empty() {
+            continue;
+        }
+        // 严格校验：2 位小时（00-23）+ 冒号 + 2 位分钟（00-59）
+        let valid = {
+            let bytes = t.as_bytes();
+            bytes.len() == 5
+                && bytes[2] == b':'
+                && bytes[0].is_ascii_digit()
+                && bytes[1].is_ascii_digit()
+                && bytes[3].is_ascii_digit()
+                && bytes[4].is_ascii_digit()
+                && t[0..2].parse::<u32>().is_ok_and(|h| h < 24)
+                && t[3..5].parse::<u32>().is_ok_and(|m| m < 60)
+        };
+        if !valid {
+            continue;
+        }
+        if !seen.iter().any(|x| x == t) {
+            seen.push(t.to_string());
+        }
+        if seen.len() >= MAX_TIMES {
+            break;
+        }
+    }
+    seen.sort();
+    seen
+}
+
+/// 扫描过去 24h 内"应该发但还没发"的时刻，对每个时刻：
+///   1) 计算过期 / 今天 / 未来 7 天的未完成根任务计数
+///   2) 调 on_emit(&DailySummary) 让调用方发通知
+///   3) 写入 daily_reminder_log 防重复
+///
+/// 触发条件：`times` 中的某个 `HH:mm` 满足：
+///   - hh:mm <= now（防止 11:00 时补 14:00 的）
+///   - hh:mm >= now - 24h（防止过老的补发）
+///   - daily_reminder_log 里 (today, hh:mm) 不存在
+///
+/// 返回实际发送的通知条数（用于日志 / UI 反馈）。
+pub async fn task_daily_reminder_scan_inner(
+    pool: &sqlx::SqlitePool,
+    times: &[String],
+    now: chrono::NaiveDateTime,
+    on_emit: impl Fn(&DailySummary),
+) -> Result<usize, String> {
+    if times.is_empty() {
+        return Ok(0);
+    }
+
+    // 本地今日 YYYY-MM-DD（与 chrono::Local 一致）
+    let today_str = now.format("%Y-%m-%d").to_string();
+
+    // 本地今日 00:00 / 明日 00:00 / 未来 7 天结束边界（用于三类计数）
+    let today_start: chrono::NaiveDateTime = now
+        .date()
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| "now.date() 转 NaiveDateTime 失败".to_string())?;
+    let tomorrow_start = today_start + chrono::Duration::days(1);
+    let week_later_start = today_start + chrono::Duration::days(7);
+
+    // 触发窗口：每个配置时刻的"今日目标时间"在
+    //   [today_target, today_target + 24h) 区间内
+    // 含义：今天 hh:mm 对应的本地时间字面量，加上 24 小时窗口。这意味着循环里
+    // today_target 之后**任意一次扫描**都算"在窗口里"（不再依赖 now_hhmm 严格匹配）。
+    // daily_reminder_log (log_date, log_time) 主键防同一天重复发。
+    // 启动补发同理：spawn 第一轮 + 启动期间窗口足够长，足以补过去 24h 内的所有时刻。
+    let day_window = chrono::Duration::hours(24);
+
+    let mut sent = 0usize;
+
+    for hhmm in times {
+        // 1. 时点合法性（parse_daily_times 已保证 hh:mm 格式）→ 拆出 h / m
+        if hhmm.len() != 5 {
+            continue;
+        }
+        let h: u32 = match hhmm[0..2].parse() {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let m: u32 = match hhmm[3..5].parse() {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if h >= 24 || m >= 60 {
+            continue;
+        }
+        // 今日 hh:mm 对应的本地 NaiveDateTime（与 today_start 同日期，仅替换时分）
+        let today_target = match today_start.date().and_hms_opt(h, m, 0) {
+            Some(dt) => dt,
+            None => continue,
+        };
+
+        // 2. 触发窗口判定：now 落在 [today_target, today_target + 24h)
+        if now < today_target || now >= today_target + day_window {
+            continue;
+        }
+
+        // 3. 是否已发过？（daily_reminder_log 主键 (log_date, log_time)）
+        let already = sqlx::query(
+            "SELECT 1 FROM daily_reminder_log WHERE log_date = $1 AND log_time = $2 LIMIT 1",
+        )
+        .bind(&today_str)
+        .bind(hhmm)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("查询 daily_reminder_log 失败: {}", e))?;
+        if already.is_some() {
+            continue;
+        }
+
+        // 4. 统计三类未完成根任务数（done=0 AND parent_id IS NULL AND due_end_at 非空）
+        //    过期：due_end_at < today 00:00
+        //    今天：today 00:00 <= due_end_at < 明天 00:00
+        //    未来 7 天：明天 00:00 <= due_end_at < 8 天后 00:00
+        let count_overdue: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM tasks
+             WHERE parent_id IS NULL AND done = 0
+               AND due_end_at IS NOT NULL
+               AND datetime(replace(due_end_at, 'T', ' '), 'localtime')
+                   < datetime($1, 'localtime')",
+        )
+        .bind(format_local_naive(today_start))
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("统计过期任务失败: {}", e))?;
+
+        let count_today: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM tasks
+             WHERE parent_id IS NULL AND done = 0
+               AND due_end_at IS NOT NULL
+               AND datetime(replace(due_end_at, 'T', ' '), 'localtime')
+                   >= datetime($1, 'localtime')
+               AND datetime(replace(due_end_at, 'T', ' '), 'localtime')
+                   < datetime($2, 'localtime')",
+        )
+        .bind(format_local_naive(today_start))
+        .bind(format_local_naive(tomorrow_start))
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("统计今日任务失败: {}", e))?;
+
+        let count_week: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM tasks
+             WHERE parent_id IS NULL AND done = 0
+               AND due_end_at IS NOT NULL
+               AND datetime(replace(due_end_at, 'T', ' '), 'localtime')
+                   >= datetime($1, 'localtime')
+               AND datetime(replace(due_end_at, 'T', ' '), 'localtime')
+                   < datetime($2, 'localtime')",
+        )
+        .bind(format_local_naive(tomorrow_start))
+        .bind(format_local_naive(week_later_start))
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("统计未来 7 天任务失败: {}", e))?;
+
+        // 5. 组装通知文案（中文）
+        //    标题始终为「即时通知」
+        //    正文：日期 + 三段计数（0 段省略）+ 行动号召
+        //    全部为 0 时退化为「暂无未完成任务」
+        let weekday_cn = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+            [now.weekday().num_days_from_monday() as usize];
+        let date_label = format!(
+            "{}月{}日 {}",
+            now.month(),
+            now.day(),
+            weekday_cn,
+        );
+
+        let mut lines: Vec<String> = Vec::new();
+        if count_overdue > 0 {
+            lines.push(format!("{} 过期任务", count_overdue));
+        }
+        if count_today > 0 {
+            lines.push(format!("{} 今天的任务", count_today));
+        }
+        if count_week > 0 {
+            lines.push(format!("{} 未来 7 天", count_week));
+        }
+
+        let body = if lines.is_empty() {
+            format!("{}\n暂无未完成任务", date_label)
+        } else {
+            format!("{}\n{}\n立即查看今天的任务", date_label, lines.join("\n"))
+        };
+
+        let summary = DailySummary {
+            title: "即时通知".to_string(),
+            body,
+        };
+        on_emit(&summary);
+
+        // 6. 写入 log 防重复（即使 on_emit 失败也写，避免反复尝试）
+        let sent_at = format_local_naive(now);
+        sqlx::query(
+            "INSERT OR IGNORE INTO daily_reminder_log (log_date, log_time, sent_at)
+             VALUES ($1, $2, $3)",
+        )
+        .bind(&today_str)
+        .bind(hhmm)
+        .bind(&sent_at)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("写入 daily_reminder_log 失败: {}", e))?;
+
+        sent += 1;
+    }
+
+    Ok(sent)
+}
+
+#[tauri::command]
+pub async fn task_daily_reminder_scan(
+    app: tauri::AppHandle,
+    pool: State<'_, sqlx::SqlitePool>,
+) -> CmdResult<usize> {
+    use tauri_plugin_notification::NotificationExt;
+    let raw = get_setting_inner(pool.inner(), "daily_reminder_times".to_string()).await?;
+    let times = parse_daily_times(raw);
+    let now = chrono::Local::now().naive_local();
+    let count = task_daily_reminder_scan_inner(pool.inner(), &times, now, |summary| {
+        let res = app
+            .notification()
+            .builder()
+            .title(&summary.title)
+            .body(&summary.body)
+            .show();
+        if let Err(e) = res {
+            eprintln!("[JustToDo] 每日提醒通知失败：{}", e);
         }
     })
     .await?;

@@ -4,6 +4,7 @@
 // 设计参考 Linear / Things：单一焦点输入 + 紧凑属性 chip + 底部 hint
 // 日期入口已统一为 DueDateChip（与详情面板/主面板添加栏使用同一份 DatePopover）
 import { ref, watch, nextTick, computed } from "vue";
+import { useRoute } from "vue-router";
 import { Message } from "@arco-design/web-vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
@@ -32,6 +33,7 @@ const taskStore = useTaskStore();
 const listStore = useListStore();
 const settings = useSettingsStore();
 const templateStore = useTemplateStore();
+const route = useRoute();
 
 /** 计算本次新建的初始日期范围。
  *  优先级：外部传入的 defaultStart/End > 开关开启时预填今天 > null。 */
@@ -110,37 +112,61 @@ const open = computed({
   set: (v) => emit("update:modelValue", v),
 });
 
+/** 从目录（folder）出发，向下穿透多层目录，找到第一个真实清单的 ID。
+ *  若整棵子树都没有真实清单，返回 null。纯函数：只读 store。 */
+function findFirstActualListInFolder(folderId: string): string | null {
+  let cur: string | null = folderId;
+  while (cur) {
+    // 优先在同一父级下找真实清单子节点
+    const child = actualLists.value.find((l) => l.parentId === cur);
+    if (child) return child.id;
+    // 没有真实清单子节点，则下钻到第一个目录子节点继续找
+    const folderChild = listStore.sortedLists.find(
+      (l) => l.parentId === cur && l.isFolder,
+    );
+    cur = folderChild ? folderChild.id : null;
+  }
+  return null;
+}
+
+/** 解析本次新建的默认清单 ID。优先级：
+ *  1. 外部显式传入的 defaultListId（目录自动穿透到首个真实清单）
+ *  2. 当前路由所在的清单（/list/:id；目录同样穿透）
+ *  3. 排序首个真实清单（兜底） */
+function resolveDefaultListId(): string {
+  // 1) 外部传入
+  if (props.defaultListId) {
+    const node = listStore.getById(props.defaultListId);
+    if (node) {
+      if (node.isFolder) {
+        const hit = findFirstActualListInFolder(node.id);
+        if (hit) return hit;
+      } else {
+        return node.id;
+      }
+    }
+  }
+  // 2) 当前路由清单
+  if (route.name === "list" && typeof route.params.id === "string") {
+    const node = listStore.getById(route.params.id);
+    if (node) {
+      if (node.isFolder) {
+        const hit = findFirstActualListInFolder(node.id);
+        if (hit) return hit;
+      } else {
+        return node.id;
+      }
+    }
+  }
+  // 3) 兜底
+  return firstActualListId();
+}
+
 watch(open, async (isOpen) => {
   if (isOpen) {
     title.value = "";
     priority.value = 0;
-    // 优先使用外部传入的默认清单（如果是目录，自动 fallback 到它下面第一个子清单）
-    let defaultId: string | null = null;
-    if (props.defaultListId) {
-      const node = listStore.getById(props.defaultListId);
-      if (node) {
-        if (node.isFolder) {
-          // 目录：递归穿透多层目录，找第一个真实清单
-          let cur: string | null = node.id;
-          while (cur) {
-            const child = actualLists.value.find((l) => l.parentId === cur);
-            if (child) {
-              defaultId = child.id;
-              break;
-            }
-            // 没有真实清单子节点，尝试下钻到第一个目录子节点
-            const folderChild = listStore.sortedLists.find(
-              (l) => l.parentId === cur && l.isFolder,
-            );
-            if (folderChild) cur = folderChild.id;
-            else break;
-          }
-        } else {
-          defaultId = node.id;
-        }
-      }
-    }
-    selectedListId.value = defaultId ?? firstActualListId();
+    selectedListId.value = resolveDefaultListId();
     // 初始日期：外部默认 > 自动今天开关 > 空
     const [initStart, initEnd] = resolveInitialDueRange();
     dueStartAt.value = initStart;

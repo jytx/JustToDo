@@ -46,7 +46,9 @@
     "@tiptap/suggestion": "^3.27.4",
     "@tiptap/vue-3": "^3.27.4",
     "@vueuse/core": "^14.3.0",
+    "dompurify": "^3.4.12",
     "lowlight": "^3.3.0",
+    "marked": "^18.0.7",
     "pinia": "^3.0.4",
     "tauri-plugin-mcp": "file:../../../.cargo/git/checkouts/tauri-plugin-mcp-2fd5dc058bb53a96/d5e0b80",
     "vue": "^3.5.13",
@@ -54,6 +56,7 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@types/dompurify": "^3.0.5",
     "@vitejs/plugin-vue": "^5.2.1",
     "typescript": "~5.6.2",
     "vite": "^6.0.3",

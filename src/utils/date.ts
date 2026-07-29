@@ -290,3 +290,23 @@ export function formatPageDate(date: Date = new Date()): string {
   const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
   return `${month}月${day}日 · ${weekdays[date.getDay()]}`;
 }
+
+/**
+ * 返回本地今日 YYYY-MM-DD（与 Rust chrono::Local::now().format("%Y-%m-%d") 一致）。
+ * 用于设置项持久化的日期字段；与本地时间字面量（带 T 时分秒）的区别是只取日期部分。
+ */
+export function todayDateOnly(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${da}`;
+}
+
+/** HH:mm 24h 制校验：00–23 小时 + 00–59 分钟 */
+export function isValidHHmm(s: string): boolean {
+  if (typeof s !== "string" || s.length !== 5 || s[2] !== ":") return false;
+  const hh = Number(s.slice(0, 2));
+  const mm = Number(s.slice(3, 5));
+  if (!Number.isInteger(hh) || !Number.isInteger(mm)) return false;
+  return hh >= 0 && hh < 24 && mm >= 0 && mm < 60;
+}

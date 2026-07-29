@@ -5,6 +5,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import * as db from "@/api/db";
 import { useTheme } from "@/composables/useTheme";
+import { isValidHHmm } from "@/utils/date";
 
 /** 主题模式：light | dark | system */
 export type ThemeMode = "light" | "dark" | "system";
@@ -21,7 +22,11 @@ export const SETTINGS_KEYS = {
   startupView: "startup_view",
   zoomLevel: "zoom_level",
   templateDefaultListId: "template_default_list_id",
+  dailyReminderTimes: "daily_reminder_times",
 } as const;
+
+/** 每日汇总提醒时点配置 —— 上限 8 个（与 Rust 端 parse_daily_times 一致） */
+const MAX_DAILY_REMINDER_TIMES = 8;
 
 /** 启动时打开的目标视图 */
 export type StartupView = "today" | "all" | "inbox";
@@ -84,6 +89,27 @@ function parseTemplateListId(v: string | null): string {
   return DEFAULT_TEMPLATE_LIST_ID;
 }
 
+/**
+ * 解析每日汇总提醒时点 CSV 字符串（"09:00,17:00"）为合法 HH:mm 列表
+ * - 去重、去空
+ * - 严格 24h HH:mm 校验（委托 isValidHHmm）
+ * - 字典序排序（HH:mm 字典序 == 时间序）
+ * - 最多 MAX_DAILY_REMINDER_TIMES 个
+ * - 与 Rust 端 parse_daily_times 保持一致
+ */
+function parseDailyReminderTimes(v: string | null): string[] {
+  if (!v) return [];
+  const seen: string[] = [];
+  for (const tok of v.split(",")) {
+    const t = tok.trim();
+    if (!t || !isValidHHmm(t)) continue;
+    if (!seen.includes(t)) seen.push(t);
+    if (seen.length >= MAX_DAILY_REMINDER_TIMES) break;
+  }
+  seen.sort();
+  return seen;
+}
+
 /** 解析并钳制缩放级别（保留两位小数，与 Rust 端 clamp_zoom 一致） */
 function parseZoomLevel(v: string | null): number {
   if (!v) return DEFAULT_ZOOM_LEVEL;
@@ -105,6 +131,8 @@ export const useSettingsStore = defineStore("settings", () => {
   const startupView = ref<StartupView>(DEFAULT_STARTUP_VIEW);
   const zoomLevel = ref<number>(DEFAULT_ZOOM_LEVEL);
   const templateDefaultListId = ref<string>(DEFAULT_TEMPLATE_LIST_ID);
+  /** 每日固定时点提醒时刻列表（HH:mm，24h 制，字典序升序） */
+  const dailyReminderTimes = ref<string[]>([]);
 
   const initialized = ref(false);
   const loading = ref(false);
@@ -147,7 +175,7 @@ export const useSettingsStore = defineStore("settings", () => {
     if (initialized.value || loading.value) return;
     loading.value = true;
     try {
-      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw] = await Promise.all([
+      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, dailyTimesRaw] = await Promise.all([
         db.getSetting(SETTINGS_KEYS.themeMode).catch(() => null),
         db.getSetting(SETTINGS_KEYS.accentColor).catch(() => null),
         db.getSetting(SETTINGS_KEYS.newTasksDueToday).catch(() => null),
@@ -155,6 +183,7 @@ export const useSettingsStore = defineStore("settings", () => {
         db.getSetting(SETTINGS_KEYS.startupView).catch(() => null),
         db.getSetting(SETTINGS_KEYS.zoomLevel).catch(() => null),
         db.getSetting(SETTINGS_KEYS.templateDefaultListId).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.dailyReminderTimes).catch(() => null),
       ]);
 
       const mode = parseThemeMode(themeRaw);
@@ -164,6 +193,7 @@ export const useSettingsStore = defineStore("settings", () => {
       const startup = parseStartupView(startupRaw);
       const zoom = parseZoomLevel(zoomRaw);
       const tplList = parseTemplateListId(tplListRaw);
+      const dailyTimes = parseDailyReminderTimes(dailyTimesRaw);
 
       themeMode.value = mode;
       accentColor.value = accent;
@@ -172,6 +202,7 @@ export const useSettingsStore = defineStore("settings", () => {
       startupView.value = startup;
       zoomLevel.value = zoom;
       templateDefaultListId.value = tplList;
+      dailyReminderTimes.value = dailyTimes;
 
       // 先应用强调色（不依赖模式），再应用主题
       theme.setAccentColor(accent);
@@ -256,16 +287,52 @@ export const useSettingsStore = defineStore("settings", () => {
     }
   }
 
-  /** 修改模板默认清单并持久化 */
-  async function setTemplateDefaultListId(v: string): Promise<void> {
-    if (!v || !v.trim()) return;
-    const prev = templateDefaultListId.value;
-    templateDefaultListId.value = v;
-    const ok = await persist(SETTINGS_KEYS.templateDefaultListId, v, prev);
-    if (!ok) {
-      templateDefaultListId.value = prev;
-    }
+/** 修改模板默认清单并持久化 */
+async function setTemplateDefaultListId(v: string): Promise<void> {
+  if (!v || !v.trim()) return;
+  const prev = templateDefaultListId.value;
+  templateDefaultListId.value = v;
+  const ok = await persist(SETTINGS_KEYS.templateDefaultListId, v, prev);
+  if (!ok) {
+    templateDefaultListId.value = prev;
   }
+}
+
+/**
+ * 规范化每日汇总提醒时点：去重 + 合法性校验 + 排序 + 上限裁剪
+ * 纯函数（只读入参，返回新数组），供 setter 共用。
+ */
+function normalizeDailyReminderTimes(times: readonly string[]): string[] {
+  const seen: string[] = [];
+  for (const t of times) {
+    const s = typeof t === "string" ? t.trim() : "";
+    if (!s || !isValidHHmm(s)) continue;
+    if (!seen.includes(s)) seen.push(s);
+    if (seen.length >= MAX_DAILY_REMINDER_TIMES) break;
+  }
+  seen.sort();
+  return seen;
+}
+
+/**
+ * 修改每日固定时点提醒时刻列表并持久化
+ * - 入参合法性由 normalizeDailyReminderTimes 兜底（UI 也应预校验）
+ * - 持久化为 CSV "09:00,17:00"；Rust 端 parse_daily_times 解析
+ * - 失败回滚到上一次成功的列表
+ */
+async function setDailyReminderTimes(times: readonly string[]): Promise<void> {
+  const valid = normalizeDailyReminderTimes(times);
+  const prev = [...dailyReminderTimes.value];
+  dailyReminderTimes.value = valid;
+  const ok = await persist(
+    SETTINGS_KEYS.dailyReminderTimes,
+    valid.join(","),
+    prev.join(","),
+  );
+  if (!ok) {
+    dailyReminderTimes.value = prev;
+  }
+}
 
   /**
    * 监听 Rust 端 zoom-changed 事件
@@ -345,6 +412,7 @@ export const useSettingsStore = defineStore("settings", () => {
     startupView,
     zoomLevel,
     templateDefaultListId,
+    dailyReminderTimes,
     initialized,
     loading,
     error,
@@ -356,6 +424,7 @@ export const useSettingsStore = defineStore("settings", () => {
     setRecurrenceCheckInterval,
     setStartupView,
     setTemplateDefaultListId,
+    setDailyReminderTimes,
     cycleTheme,
     zoomIn,
     zoomOut,
