@@ -605,13 +605,14 @@ onBeforeUnmount(() => {
         @clear="onDateClear"
       />
 
-      <!-- 提醒（默认只图标 + tooltip） -->
+      <!-- 提醒（默认只图标 + a-tooltip 与原生 title 兜底） -->
       <a-tooltip :content="remindLabel" position="bottom">
         <Popover v-model:visible="reminderVisible" placement="bottom-left">
           <template #trigger>
             <PropertyChip
               :active="task.remindOffsetMinutes != null"
               icon-only
+              :title="remindLabel"
               @click="reminderVisible = !reminderVisible"
             >
               <template #icon>
@@ -635,6 +636,7 @@ onBeforeUnmount(() => {
             <PropertyChip
               :active="!!task.recurrenceFreq"
               icon-only
+              :title="recurrenceLabel"
               @click="recurrenceVisible = !recurrenceVisible"
             >
               <template #icon>
@@ -658,6 +660,7 @@ onBeforeUnmount(() => {
             <PropertyChip
               :active="task.priority > 0"
               icon-only
+              :title="priorityLabel"
               :style="task.priority > 0 ? { color: priorityColorValue } : {}"
               @click="priorityVisible = !priorityVisible"
             >
@@ -690,6 +693,7 @@ onBeforeUnmount(() => {
             <PropertyChip
               :active="taskTags.length > 0"
               icon-only
+              :title="tagLabel"
               @click="tagVisible = !tagVisible"
             >
               <template #icon>
@@ -735,6 +739,7 @@ onBeforeUnmount(() => {
           <PropertyChip
             :active="attachmentDrawerVisible"
             icon-only
+            :title="task.attachments.length ? `附件 (${task.attachments.length})` : '附件'"
           >
             <template #icon>
               <icon-attachment :size="14" />
