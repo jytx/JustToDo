@@ -37,7 +37,6 @@ const canDrag = computed(
     taskStore.currentSort.field === "manual",
 );
 const dragOver = ref<"before" | "after" | null>(null);
-const isDragging = ref(false);
 
 function onDragStart(e: DragEvent) {
   if (!canDrag.value) {
@@ -47,19 +46,19 @@ function onDragStart(e: DragEvent) {
   e.dataTransfer!.setData("text/plain", props.task.id);
   e.dataTransfer!.effectAllowed = "move";
 
-  // 自定义幽灵图：任务标题
+  // 自定义拖拽幽灵图：带任务标题的小卡片
+  // 注意：必须显式调用 setDragImage —— 某些 webview（Tauri wkwebview）
+  // 若不设置自定义图像，浏览器默认拖动半透明视觉可能不被渲染，
+  // 进而影响用户对「拖起来了」的体感。先保留此段以稳定原生窗口行为。
   const ghost = document.createElement("div");
   ghost.textContent = props.task.title;
   ghost.style.cssText = `position:absolute;top:-1000px;left:-1000px;padding:5px 12px;background:var(--jt-primary,#4F46E5);color:#fff;font-size:13px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.2);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;`;
   document.body.appendChild(ghost);
   e.dataTransfer!.setDragImage(ghost, 15, 12);
   setTimeout(() => document.body.removeChild(ghost), 0);
-
-  isDragging.value = true;
 }
 
 function onDragEnd() {
-  isDragging.value = false;
   dragOver.value = null;
 }
 
@@ -70,11 +69,11 @@ function onDragOver(e: DragEvent) {
   dragOver.value = computeDropPosition(e);
 }
 
-/** 计算拖拽放置位置：上半区 60% 为 before，下半区 40% 为 after */
+/** 计算拖拽放置位置：与 SidebarListNode 保持一致 —— 上 1/3 为 before，下 2/3 为 after */
 function computeDropPosition(e: DragEvent): "before" | "after" {
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const y = e.clientY - rect.top;
-  return y < rect.height * 0.6 ? "before" : "after";
+  return y < rect.height / 3 ? "before" : "after";
 }
 
 function onDragLeave(e: DragEvent) {
@@ -224,9 +223,7 @@ function onCtxDelete(): void {
         'task-item--done': task.done,
         'task-item--selected': isSelected,
         'task-item--focused': isFocused,
-        'task-item--dragging': isDragging,
-        'task-item--drag-before': dragOver === 'before',
-        'task-item--drag-after': dragOver === 'after',
+        'task-item--drag-over': dragOver === 'before' || dragOver === 'after',
       }"
       :style="{ paddingLeft: depth * 20 + 'px' }"
       :draggable="canDrag ? 'true' : 'false'"
@@ -380,41 +377,20 @@ function onCtxDelete(): void {
   outline-offset: -2px;
 }
 
-/* 拖拽排序视觉反馈 */
-.task-item--dragging {
-  opacity: 0.3;
+/* 拖拽排序视觉反馈 —— 与侧边栏清单节点（SidebarListNode）一致：
+ * 整行 outline 高亮 + accent-soft 背景；不使用上下细线/半透明。 */
+.task-item--drag-over {
+  outline: 1.5px solid var(--jt-primary);
+  outline-offset: -1.5px;
+  background-color: var(--jt-accent-soft);
 }
 
-/* drag-before：顶部插入线 + 淡背景 */
-.task-item--drag-before {
-  background-color: color-mix(in srgb, var(--jt-primary) 5%, transparent) !important;
+/* 可拖拽行：grab cursor（与清单行一致） */
+.task-item[draggable="true"] {
+  cursor: grab;
 }
-.task-item--drag-before::before {
-  content: "";
-  position: absolute;
-  top: -1px;
-  left: 12px;
-  right: 12px;
-  height: 2px;
-  background: var(--jt-primary);
-  border-radius: 1px;
-  z-index: 10;
-}
-
-/* drag-after：底部插入线 + 淡背景 */
-.task-item--drag-after {
-  background-color: color-mix(in srgb, var(--jt-primary) 5%, transparent) !important;
-}
-.task-item--drag-after::after {
-  content: "";
-  position: absolute;
-  bottom: -1px;
-  left: 12px;
-  right: 12px;
-  height: 2px;
-  background: var(--jt-primary);
-  border-radius: 1px;
-  z-index: 10;
+.task-item[draggable="true"]:active {
+  cursor: grabbing;
 }
 
 .task-item__expand {
