@@ -319,6 +319,7 @@ pub fn run() {
             commands::list_delete,
             commands::list_rename,
             commands::list_move,
+            commands::list_archive_tree,
             commands::list_reorder,
             commands::list_set_sort_pref,
             commands::list_get_sort_pref,

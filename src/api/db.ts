@@ -32,6 +32,7 @@ interface TaskList {
   created_at: string;
   parent_id: string | null;
   is_folder: boolean;
+  archived: number;
 }
 
 interface CreateTaskInput {
@@ -80,6 +81,7 @@ export async function getLists(): Promise<List[]> {
     createdAt: r.created_at,
     parentId: r.parent_id,
     isFolder: r.is_folder,
+    archived: !!r.archived,
   }));
 }
 
@@ -103,6 +105,7 @@ export async function createList(params: {
     createdAt: r.created_at,
     parentId: r.parent_id,
     isFolder: r.is_folder,
+    archived: !!r.archived,
   };
 }
 
@@ -116,6 +119,16 @@ export async function renameList(id: string, name: string, color: string): Promi
 
 export async function moveList(id: string, parentId: string | null, position?: number): Promise<void> {
   await invoke<void>("list_move", { id, parentId, position: position ?? null });
+}
+
+/**
+ * 归档/取消归档整棵子树（自身 + 所有后代清单/子目录）
+ * - archived=true → 归档整树（首页侧边栏隐藏，归档区可见）
+ * - archived=false → 取消归档，整树恢复
+ * 任务本身不动（list_id 不变），仅随清单一起在首页隐藏
+ */
+export async function setListArchived(id: string, archived: boolean): Promise<void> {
+  await invoke<void>("list_archive_tree", { id, archived });
 }
 
 export async function reorderLists(items: [string, number][]): Promise<void> {

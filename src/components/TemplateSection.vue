@@ -30,9 +30,10 @@ const settings = useSettingsStore();
 /** 默认设置面板是否展开（本地状态，无需持久化） */
 const settingsExpanded = ref(true);
 
-/** 清单下拉选项：仅展示真实清单（非目录），按 position 排序 */
+/** 清单下拉选项：仅展示未归档的真实清单（非目录），按 position 排序
+ *  （模板生成的"默认清单"应是主页可见清单，不推荐归档项） */
 const listOptions = computed(() =>
-  listStore.sortedLists
+  listStore.activeLists
     .filter((l) => !l.isFolder)
     .map((l) => ({ value: l.id, label: l.name })),
 );

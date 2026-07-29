@@ -120,8 +120,8 @@ function findFirstActualListInFolder(folderId: string): string | null {
     // 优先在同一父级下找真实清单子节点
     const child = actualLists.value.find((l) => l.parentId === cur);
     if (child) return child.id;
-    // 没有真实清单子节点，则下钻到第一个目录子节点继续找
-    const folderChild = listStore.sortedLists.find(
+    // 没有真实清单子节点，则下钻到第一个未归档目录子节点继续找
+    const folderChild = listStore.activeLists.find(
       (l) => l.parentId === cur && l.isFolder,
     );
     cur = folderChild ? folderChild.id : null;
@@ -199,9 +199,10 @@ const selectedListColor = computed(
   () => listStore.getById(selectedListId.value)?.color ?? null,
 );
 
-/** 仅真实清单（排除目录）—— 任务只能附加到清单，不能附加到目录 */
+/** 仅未归档真实清单（排除目录）—— 任务只能附加到清单，不能附加到目录；
+ *  归档清单不能选作任务归属（避免误把任务塞进归档） */
 const actualLists = computed(() =>
-  listStore.sortedLists.filter((l) => !l.isFolder),
+  listStore.activeLists.filter((l) => !l.isFolder),
 );
 
 /** 在真实清单里查找第一个（按 sortOrder） */

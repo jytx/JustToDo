@@ -19,6 +19,7 @@ import {
   IconDown,
   IconFolder,
   IconClose,
+  IconArchive,
 } from "@arco-design/web-vue/es/icon";
 // IconEdit 移到 SidebarListNode 中使用
 import { useListStore } from "@/stores/list";
@@ -133,6 +134,8 @@ const sectionCollapsed = ref<Record<string, boolean>>({
   smart: false,
   lists: false,
   tags: false,
+  /** 归档折叠区默认收起（用户进入归档较少） */
+  archive: true,
 });
 
 function toggleSection(key: string) {
@@ -448,9 +451,10 @@ function buildFolderPath(folderId: string): string {
     .join("/");
 }
 
-/** 输入提示：把已有的目录拼成完整路径，作为自动补全的数据源 */
+/** 输入提示：把已有的目录拼成完整路径，作为自动补全的数据源
+ *  仅展示未归档目录（主页新建清单时不应引用归档目录名） */
 const folderSuggestions = computed(() => {
-  const folders = listStore.sortedLists.filter((l) => l.isFolder);
+  const folders = listStore.activeLists.filter((l) => l.isFolder);
   return folders.map((f) => {
     const path = buildFolderPath(f.id);
     return {
@@ -473,10 +477,10 @@ async function onListMove(draggedId: string, target: any, position: "before" | "
       // 放入目录：target 是目录节点
       await listStore.moveNode(draggedId, target.id, 999);
     } else {
-      // before/after：和 target 同级
+      // before/after：和 target 同级（仅未归档；归档项不计索引）
       const targetParentId = target.parentId;
       // 找到 target 在同级中的索引
-      const siblings = listStore.sortedLists.filter((l) => l.parentId === targetParentId);
+      const siblings = listStore.activeLists.filter((l) => l.parentId === targetParentId);
       const targetIndex = siblings.findIndex((l) => l.id === target.id);
       const insertIndex = position === "before" ? targetIndex : targetIndex + 1;
       // 如果拖动的节点也在同一父级且在目标前面，索引需要 -1（因为移除后位置变化）
@@ -514,17 +518,17 @@ async function confirmNewList() {
 const activeListId = computed(() => route.params.id as string);
 const activeRouteName = computed(() => route.name as string);
 
-/** 收起态用：根级清单/目录（扁平，不含嵌套子项） */
+/** 收起态用：根级清单/目录（扁平，不含嵌套子项；仅未归档） */
 const rootLists = computed(() =>
-  listStore.sortedLists.filter((l) => l.parentId === null),
+  listStore.activeLists.filter((l) => l.parentId === null),
 );
 
 /** 收起态用：清单/目录是否处于 active 态。
- *  目录 active 当其任意子清单被选中；清单 active 当自身被选中。 */
+ *  目录 active 当其任意未归档子清单被选中；清单 active 当自身被选中。 */
 function isListActive(node: { id: string; isFolder: boolean }): boolean {
   if (activeRouteName.value !== "list") return false;
   if (!node.isFolder) return activeListId.value === node.id;
-  return listStore.sortedLists.some(
+  return listStore.activeLists.some(
     (l) => l.parentId === node.id && l.id === activeListId.value,
   );
 }
@@ -627,6 +631,16 @@ function onCascadeSelect(_listId: string) {
   cascadeChain.value = [];
 }
 
+/** 收起态 rail 点击归档图标：若侧栏收起则展开，并在下一帧打开归档折叠区 */
+async function onRailArchiveClick(): Promise<void> {
+  if (props.collapsed) {
+    // 先展开侧栏（width 恢复默认），下一帧再切归档区
+    toggleCollapsed();
+    await nextTick();
+  }
+  sectionCollapsed.value.archive = false;
+}
+
 /** 关闭级联面板（点外部 / Esc 时调用） */
 function closeCascade() {
   if (cascadeChain.value.length > 0) {
@@ -726,6 +740,35 @@ function onCtxDeleteTag(tag: Tag): void {
   askDeleteTag(tag);
 }
 
+/** 归档整棵子树（首页右键菜单调用）：先关菜单再调 store；若是当前激活路由则跳走 */
+async function onCtxArchive(node: ListTreeNode): Promise<void> {
+  closeCtxMenu();
+  // 若当前正是这个被归档清单，跳到全部视图
+  if (route.name === "list" && route.params.id === node.id) {
+    router.push("/all");
+  }
+  await listStore.archiveTree(node.id);
+  // 主页角标已由 Rust 端的 task_count_by_list 自动过滤，但需要触发前端重新拉
+  await taskStore.refreshCounts();
+}
+
+/** 取消归档整棵子树 */
+async function onCtxUnarchive(node: ListTreeNode): Promise<void> {
+  closeCtxMenu();
+  await listStore.unarchiveTree(node.id);
+  await taskStore.refreshCounts();
+}
+
+/** SidebarListNode hover 三点菜单触发的归档：
+ *  与 onCtxArchive 同流程（路由跳转 + store + refreshCounts），不关菜单（hover 菜单已自己关） */
+async function onHoverArchive(node: ListTreeNode): Promise<void> {
+  if (route.name === "list" && route.params.id === node.id) {
+    router.push("/all");
+  }
+  await listStore.archiveTree(node.id);
+  await taskStore.refreshCounts();
+}
+
 onMounted(async () => {
   await listStore.loadLists();
   await tagStore.loadTags();
@@ -809,6 +852,22 @@ onMounted(async () => {
           >{{ taskStore.listCounts[node.id] }}</span>
         </button>
 
+        <!-- 归档入口 —— 仅当有归档项时才显示分隔线 + 图标 -->
+        <div v-if="listStore.archivedLists.length > 0" class="sidebar__rail-divider" />
+        <button
+          v-if="listStore.archivedLists.length > 0"
+          type="button"
+          class="sidebar__rail-item"
+          :class="{ 'sidebar__rail-item--active': activeRouteName === 'list' && listStore.archivedLists.some((l) => l.id === activeListId) }"
+          :title="`归档（${listStore.archivedLists.length}）`"
+          @click="onRailArchiveClick"
+          @mouseenter="showRailTip($event, `归档（${listStore.archivedLists.length}）`)"
+          @mousemove="cancelHideRailTip"
+          @mouseleave="hideRailTip"
+        >
+          <icon-archive :size="18" />
+        </button>
+
         <!-- 分隔线（仅当有标签时才显示） -->
         <div v-if="tagStore.tags.length > 0" class="sidebar__rail-divider" />
 
@@ -874,9 +933,35 @@ onMounted(async () => {
           @addFolder="(n: ListTreeNode) => onAddSubFolder(n)"
           @addList="(n: ListTreeNode) => onAddListInFolder(n)"
           @addTask="(n: ListTreeNode) => quickAdd.open(n.id)"
+          @archive="(n: ListTreeNode) => onHoverArchive(n)"
           @move="onListMove"
           @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
         />
+      </div>
+
+      <!-- 归档 —— 与清单/标签同级，无 + 按钮；目录与清单同理可点击展开进入 -->
+      <div class="sidebar__subheader sidebar__subheader--toggle">
+        <div class="sidebar__subheader-left" @click="toggleSection('archive')">
+          <icon-down v-if="!sectionCollapsed.archive" :size="12" class="sidebar__toggle-icon" />
+          <icon-right v-else :size="12" class="sidebar__toggle-icon" />
+          <span>归档</span>
+        </div>
+      </div>
+
+      <!-- 归档树渲染 -->
+      <div v-show="!sectionCollapsed.archive" class="sidebar__list-tree">
+        <SidebarListNode
+          v-for="node in listStore.archiveListTree"
+          :key="node.id"
+          :node="node"
+          :depth="0"
+          :readonly="true"
+          @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
+        />
+        <div v-if="listStore.archivedLists.length === 0" class="sidebar__item sidebar__item--disabled">
+          <icon-archive :size="16" class="sidebar__item-icon" />
+          <span class="sidebar__item-title">归档区为空</span>
+        </div>
       </div>
 
       <!-- 标签 -->
@@ -1329,45 +1414,69 @@ onMounted(async () => {
     :x="ctxMenu.x"
     :y="ctxMenu.y"
   >
-    <!-- 目录：添加子目录 / 编辑目录 / 删除目录 -->
+    <!-- 目录：未归档 显示 添加子目录 / 编辑 / 删除 / 归档 ；已归档 仅显示 取消归档 -->
     <template v-if="ctxMenu.target?.kind === 'folder'">
-      <MenuPopoverItem @click="onCtxAddFolder(ctxMenu.target.node)">
-        <icon-plus :size="15" />
-        <span>添加子目录</span>
-      </MenuPopoverItem>
-      <MenuPopoverItem @click="onCtxEdit(ctxMenu.target.node)">
-        <icon-edit :size="15" />
-        <span>编辑目录</span>
-      </MenuPopoverItem>
-      <MenuPopoverItem danger @click="onCtxDeleteList(ctxMenu.target.node)">
-        <icon-delete :size="15" />
-        <span>删除目录</span>
-      </MenuPopoverItem>
+      <template v-if="!ctxMenu.target.node.archived">
+        <MenuPopoverItem @click="onCtxAddFolder(ctxMenu.target.node)">
+          <icon-plus :size="15" />
+          <span>添加子目录</span>
+        </MenuPopoverItem>
+        <MenuPopoverItem @click="onCtxEdit(ctxMenu.target.node)">
+          <icon-edit :size="15" />
+          <span>编辑目录</span>
+        </MenuPopoverItem>
+        <MenuPopoverItem danger @click="onCtxDeleteList(ctxMenu.target.node)">
+          <icon-delete :size="15" />
+          <span>删除目录</span>
+        </MenuPopoverItem>
+        <MenuPopoverItem @click="onCtxArchive(ctxMenu.target.node)">
+          <icon-archive :size="15" />
+          <span>归档目录</span>
+        </MenuPopoverItem>
+      </template>
+      <template v-else>
+        <MenuPopoverItem @click="onCtxUnarchive(ctxMenu.target.node)">
+          <icon-archive :size="15" />
+          <span>取消归档</span>
+        </MenuPopoverItem>
+      </template>
     </template>
-    <!-- 清单：新建任务 / 编辑清单 / 删除清单 -->
+    <!-- 清单：未归档 显示 新建任务 / 编辑 / 删除 / 归档 ；已归档 仅显示 取消归档 -->
     <template v-else-if="ctxMenu.target?.kind === 'list'">
-      <MenuPopoverItem
-        v-if="ctxMenu.target.node.id !== 'inbox'"
-        @click="onCtxAddTask(ctxMenu.target.node)"
-      >
-        <icon-plus :size="15" />
-        <span>新建任务</span>
-      </MenuPopoverItem>
-      <MenuPopoverItem
-        v-if="ctxMenu.target.node.id !== 'inbox'"
-        @click="onCtxEdit(ctxMenu.target.node)"
-      >
-        <icon-edit :size="15" />
-        <span>编辑清单</span>
-      </MenuPopoverItem>
-      <MenuPopoverItem
-        v-if="ctxMenu.target.node.id !== 'inbox'"
-        danger
-        @click="onCtxDeleteList(ctxMenu.target.node)"
-      >
-        <icon-delete :size="15" />
-        <span>删除清单</span>
-      </MenuPopoverItem>
+      <template v-if="!ctxMenu.target.node.archived">
+        <MenuPopoverItem
+          v-if="ctxMenu.target.node.id !== 'inbox'"
+          @click="onCtxAddTask(ctxMenu.target.node)"
+        >
+          <icon-plus :size="15" />
+          <span>新建任务</span>
+        </MenuPopoverItem>
+        <MenuPopoverItem
+          v-if="ctxMenu.target.node.id !== 'inbox'"
+          @click="onCtxEdit(ctxMenu.target.node)"
+        >
+          <icon-edit :size="15" />
+          <span>编辑清单</span>
+        </MenuPopoverItem>
+        <MenuPopoverItem
+          v-if="ctxMenu.target.node.id !== 'inbox'"
+          danger
+          @click="onCtxDeleteList(ctxMenu.target.node)"
+        >
+          <icon-delete :size="15" />
+          <span>删除清单</span>
+        </MenuPopoverItem>
+        <MenuPopoverItem @click="onCtxArchive(ctxMenu.target.node)">
+          <icon-archive :size="15" />
+          <span>归档清单</span>
+        </MenuPopoverItem>
+      </template>
+      <template v-else>
+        <MenuPopoverItem @click="onCtxUnarchive(ctxMenu.target.node)">
+          <icon-archive :size="15" />
+          <span>取消归档</span>
+        </MenuPopoverItem>
+      </template>
     </template>
     <!-- 标签：编辑标签 / 删除标签 -->
     <template v-else-if="ctxMenu.target?.kind === 'tag'">

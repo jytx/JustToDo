@@ -41,10 +41,10 @@ const listColorMap = computed(() => {
   return map;
 });
 
-/** 智能视图下新建任务的默认清单（收件箱或第一个清单） */
+/** 智能视图下新建任务的默认清单（收件箱或第一个未归档清单） */
 const defaultListId = computed(() => {
   const inbox = listStore.lists.find((l) => l.id === "inbox");
-  return inbox?.id ?? listStore.sortedLists[0]?.id ?? "inbox";
+  return inbox?.id ?? listStore.activeLists[0]?.id ?? "inbox";
 });
 
 // 面板右键菜单：新建任务归属默认清单

@@ -57,6 +57,9 @@ export interface List {
   parentId: string | null;
   /** 是否为目录（文件夹） */
   isFolder: boolean;
+  /** 是否已归档（true = 已归档，首页侧边栏隐藏，归档区可见）。
+   *  旧数据缺省视为 false（未归档），Rust 端 #[serde(default)] 提供兼容。 */
+  archived?: boolean;
 }
 
 /** 任务 —— 支持子任务嵌套（parentId 自引用） */

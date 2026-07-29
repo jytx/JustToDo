@@ -110,6 +110,10 @@ pub struct TaskList {
     pub created_at: String,
     pub parent_id: Option<String>,
     pub is_folder: bool,
+    /// 是否已归档（true = 归档；首页侧边栏默认隐藏，归档区可见）
+    /// 旧数据迁移时此列缺省为 0（未归档）
+    #[serde(default)]
+    pub archived: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

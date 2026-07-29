@@ -157,8 +157,10 @@ async function setPriority(p: Priority) {
 }
 
 // ─── 清单 ─────────────────────────────────────────
+/** 任务可移动到的清单下拉选项：仅未归档项
+ *  （归档清单不应作为移动目标，避免任务"消失"在归档区但主页角标却不减） */
 const listOptions = computed(() =>
-  listStore.sortedLists.map((l) => ({ id: l.id, name: l.name, color: l.color })),
+  listStore.activeLists.map((l) => ({ id: l.id, name: l.name, color: l.color })),
 );
 const currentList = computed(() =>
   listOptions.value.find((l) => l.id === task.value?.listId) ?? null,

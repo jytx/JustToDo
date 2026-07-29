@@ -1,4 +1,4 @@
-// 清单 store —— 管理清单与目录的加载、创建、树形结构
+// 清单 store —— 管理清单与目录的加载、创建、树形结构、归档
 // 遵循 AGENTS.md：store 作为唯一数据源，组件只读取不缓存
 
 import { defineStore } from "pinia";
@@ -11,6 +11,21 @@ export interface ListTreeNode extends List {
   children: ListTreeNode[];
 }
 
+/** 递归遍历扁平数组，返回指定 id 的全部后代 id（含自身），按深度顺序排列
+ *  纯函数：不修改入参，只读 lists.value；用于归档/取消归档后本地批量更新 archived 字段 */
+function collectSubtreeIds(lists: List[], rootId: string): string[] {
+  const ids: string[] = [];
+  const stack: string[] = [rootId];
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    ids.push(cur);
+    for (const l of lists) {
+      if (l.parentId === cur) stack.push(l.id);
+    }
+  }
+  return ids;
+}
+
 export const useListStore = defineStore("list", () => {
   const lists = ref<List[]>([]);
   const loading = ref(false);
@@ -21,12 +36,37 @@ export const useListStore = defineStore("list", () => {
     [...lists.value].sort((a, b) => a.position - b.position),
   );
 
-  /** 将扁平数组构建为树形结构 */
+  /** 已归档清单/目录（首页隐藏，归档区可见） */
+  const archivedLists = computed(() => sortedLists.value.filter((l) => !!l.archived));
+  /** 未归档清单/目录（首页可见） */
+  const activeLists = computed(() => sortedLists.value.filter((l) => !l.archived));
+
+  /** 将扁平数组构建为树形结构（仅未归档项；归档项由 archiveListTree 独立渲染） */
   const listTree = computed<ListTreeNode[]>(() => {
     const build = (parentId: string | null): ListTreeNode[] => {
-      return sortedLists.value
+      return activeLists.value
         .filter((l) => l.parentId === parentId)
         .map((l) => ({ ...l, children: build(l.id) }));
+    };
+    return build(null);
+  });
+
+  /** 归档子树（按 parentId 重组，仅含 archived=true 的节点）
+   *  关键：根级判定 = parentId 缺省为 null **或** parentId 自身也是 archived 项
+   *  ——这样归档子清单、归档子目录都能在归档区渲染（不会因父级未归档被吞） */
+  const archiveListTree = computed<ListTreeNode[]>(() => {
+    const archivedIds = new Set(archivedLists.value.map((l) => l.id));
+    // 按 parentId 分桶（仅归档集合内部）
+    const byParent: Record<string, List[]> = {};
+    for (const l of archivedLists.value) {
+      const key =
+        l.parentId !== null && archivedIds.has(l.parentId) ? l.parentId : "__root__";
+      (byParent[key] ??= []).push(l);
+    }
+    const build = (parentId: string | null): ListTreeNode[] => {
+      const key = parentId ?? "__root__";
+      const children = byParent[key] ?? [];
+      return children.map((l) => ({ ...l, children: build(l.id) }));
     };
     return build(null);
   });
@@ -130,10 +170,34 @@ export const useListStore = defineStore("list", () => {
     }
   }
 
+  /** 归档整棵子树（自身 + 所有后代）。调 db 完成持久化后就地更新 lists.value 的 archived 字段，
+   *  不调 loadLists：避免一次额外 round-trip。任务本身不动（list_id 不变）。 */
+  async function archiveTree(id: string): Promise<void> {
+    await db.setListArchived(id, true);
+    const ids = collectSubtreeIds(lists.value, id);
+    for (const nid of ids) {
+      const node = lists.value.find((l) => l.id === nid);
+      if (node) node.archived = true;
+    }
+  }
+
+  /** 取消归档整棵子树（自身 + 所有后代），与 archiveTree 对称。 */
+  async function unarchiveTree(id: string): Promise<void> {
+    await db.setListArchived(id, false);
+    const ids = collectSubtreeIds(lists.value, id);
+    for (const nid of ids) {
+      const node = lists.value.find((l) => l.id === nid);
+      if (node) node.archived = false;
+    }
+  }
+
   return {
     lists,
     sortedLists,
+    archivedLists,
+    activeLists,
     listTree,
+    archiveListTree,
     loading,
     error,
     loadLists,
@@ -142,5 +206,7 @@ export const useListStore = defineStore("list", () => {
     getChildren,
     ensureFolderPath,
     moveNode,
+    archiveTree,
+    unarchiveTree,
   };
 });

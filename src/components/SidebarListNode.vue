@@ -13,6 +13,7 @@ import {
   IconPlus,
   IconRight,
   IconDown,
+  IconArchive,
 } from "@arco-design/web-vue/es/icon";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
@@ -20,6 +21,15 @@ import MenuPopoverItem from "./MenuPopoverItem.vue";
 const props = defineProps<{
   node: ListTreeNode;
   depth: number;
+  /**
+   * 只读模式（归档区使用）：
+   * - 隐藏行内 + 号（在该目录下新建清单）
+   * - 目录行的 MenuPopover 不渲染（"+ 子目录 / 编辑 / 删除 / 归档" 等都禁掉）
+   * - 清单行的 MenuPopover 仅保留右键菜单项（无 hover 菜单）
+   * 任务的右键菜单由调用方通过 ctxmenu 事件自行实现，这里不参与
+   * 默认 false
+   */
+  readonly?: boolean;
 }>();
 
 const taskStore = useTaskStore();
@@ -52,6 +62,8 @@ const emit = defineEmits<{
   addList: [node: ListTreeNode];
   /** 在该清单下新建任务（仅清单菜单） */
   addTask: [node: ListTreeNode];
+  /** 归档当前节点（目录或清单）；TheSidebar 调 store.archiveTree */
+  archive: [node: ListTreeNode];
   /** 拖拽放置：被拖拽的节点 ID，目标父级 ID，目标位置（before/after/inside） */
   move: [draggedId: string, targetNode: ListTreeNode, position: "before" | "after" | "inside"];
   /** 右键菜单：鼠标事件 + 当前节点（向上冒泡到 TheSidebar 统一处理） */
@@ -59,13 +71,14 @@ const emit = defineEmits<{
 }>();
 
 /** 菜单点击的 key（addFolder 仅目录菜单有，addTask 仅清单菜单有） */
-function onMenuClick(key: "edit" | "delete" | "addFolder" | "addTask") {
+function onMenuClick(key: "edit" | "delete" | "addFolder" | "addTask" | "archive") {
   folderMenuOpen.value = false;
   listMenuOpen.value = false;
   if (key === "edit") emit("edit", props.node);
   else if (key === "delete") emit("delete", props.node);
   else if (key === "addFolder") emit("addFolder", props.node);
   else if (key === "addTask") emit("addTask", props.node);
+  else if (key === "archive") emit("archive", props.node);
 }
 
 /** 目录行更多菜单（独立 ref） */
@@ -228,15 +241,16 @@ function onDrop(e: DragEvent) {
         :style="{ color: node.color }"
       />
       <span class="list-node__name">{{ node.name }}</span>
-      <!-- 在该目录下新建清单（hover 才显示） -->
+      <!-- 在该目录下新建清单（hover 才显示）；只读模式（归档区）隐藏 -->
       <button
+        v-if="!readonly"
         class="list-node__add-btn"
         title="在此目录下新建清单"
         @click.stop="emit('addList', node)"
       >
         <icon-plus :size="14" />
       </button>
-      <MenuPopover v-model:visible="folderMenuOpen">
+      <MenuPopover v-if="!readonly" v-model:visible="folderMenuOpen">
         <template #trigger>
           <button class="list-node__menu-btn" @click.stop="folderMenuOpen = !folderMenuOpen">
             <icon-more :size="16" />
@@ -253,6 +267,12 @@ function onDrop(e: DragEvent) {
         <MenuPopoverItem danger @click="onMenuClick('delete')">
           <icon-delete :size="15" />
           <span>删除目录</span>
+        </MenuPopoverItem>
+        <!-- 归档：仅主页（未归档）显示。归档区由 contextmenu 触发取消归档，
+             hover 菜单不暴露，避免误点导致跨树来回 -->
+        <MenuPopoverItem v-if="!node.archived" @click="onMenuClick('archive')">
+          <icon-archive :size="15" />
+          <span>归档目录</span>
         </MenuPopoverItem>
       </MenuPopover>
     </div>
@@ -282,7 +302,7 @@ function onDrop(e: DragEvent) {
       />
       <span class="list-node__title">{{ node.name }}</span>
       <span v-if="taskStore.listCounts[node.id]" class="list-node__count">{{ taskStore.listCounts[node.id] }}</span>
-      <MenuPopover v-if="node.id !== 'inbox'" v-model:visible="listMenuOpen">
+      <MenuPopover v-if="!readonly && node.id !== 'inbox'" v-model:visible="listMenuOpen">
         <template #trigger>
           <button class="list-node__menu-btn" @click.stop.prevent="listMenuOpen = !listMenuOpen">
             <icon-more :size="16" />
@@ -300,6 +320,11 @@ function onDrop(e: DragEvent) {
           <icon-delete :size="15" />
           <span>删除清单</span>
         </MenuPopoverItem>
+        <!-- 归档：仅主页（未归档）显示 -->
+        <MenuPopoverItem v-if="!node.archived" @click="onMenuClick('archive')">
+          <icon-archive :size="15" />
+          <span>归档清单</span>
+        </MenuPopoverItem>
       </MenuPopover>
     </div>
 
@@ -310,11 +335,13 @@ function onDrop(e: DragEvent) {
         :key="child.id"
         :node="child"
         :depth="depth + 1"
+        :readonly="readonly"
         @edit="(n: ListTreeNode) => $emit('edit', n)"
         @delete="(n: ListTreeNode) => $emit('delete', n)"
         @addFolder="(n: ListTreeNode) => $emit('addFolder', n)"
         @addList="(n: ListTreeNode) => $emit('addList', n)"
         @addTask="(n: ListTreeNode) => $emit('addTask', n)"
+        @archive="(n: ListTreeNode) => $emit('archive', n)"
         @move="(id: string, target: ListTreeNode, pos: 'before' | 'after' | 'inside') => $emit('move', id, target, pos)"
         @contextmenu="(e: MouseEvent, n: ListTreeNode) => $emit('contextmenu', e, n)"
       />

@@ -155,7 +155,16 @@ pub async fn init_pool(db_path: &str, app_data_dir: Option<&std::path::Path>) ->
         run_migration_019(&pool, data_dir).await?;
     }
 
+    // 020: lists 表加 archived（清单/目录归档位，0=未归档 1=已归档）
+    run_migration_020(&pool).await?;
+
     Ok(pool)
+}
+
+/// 迁移 020：清单/目录归档状态（与 018 同模式：单列添加 + DEFAULT 0）
+async fn run_migration_020(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "lists", "archived", "INTEGER NOT NULL DEFAULT 0").await?;
+    Ok(())
 }
 
 /// 迁移 004：lists 表加 parent_id（目录父级）+ is_folder（是否目录）

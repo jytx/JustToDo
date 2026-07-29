@@ -86,7 +86,7 @@ fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
 #[tauri::command]
 pub async fn list_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<TaskList>> {
     let rows = sqlx::query(
-        "SELECT id, name, color, position, created_at, parent_id, is_folder FROM lists ORDER BY position ASC, created_at ASC"
+        "SELECT id, name, color, position, created_at, parent_id, is_folder, archived FROM lists ORDER BY position ASC, created_at ASC"
     )
     .fetch_all(pool.inner())
     .await
@@ -102,6 +102,7 @@ pub async fn list_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<Ta
             created_at: r.get("created_at"),
             parent_id: r.get("parent_id"),
             is_folder: r.get::<i32, _>("is_folder") != 0,
+            archived: r.get::<i32, _>("archived") != 0,
         })
         .collect())
 }
@@ -141,6 +142,7 @@ pub async fn list_create(
         created_at: ts,
         parent_id,
         is_folder: is_folder_val != 0,
+        archived: false,
     })
 }
 
@@ -241,6 +243,49 @@ pub async fn list_move(
     Ok(())
 }
 
+/// 归档 / 取消归档整棵子树（id 自身 + 所有后代清单与子目录）。
+/// archived=true → 整树隐藏进归档区；archived=false → 整树恢复。
+/// 任务本身**不动**（list_id 不变），仅随归属清单一起在主页隐藏。
+/// - inbox 硬保护（与 delete/rename/move 同样不允许）
+/// - 用 SQLite WITH RECURSIVE 一次 SQL 找出整棵子树，避免多条往返
+#[tauri::command]
+pub async fn list_archive_tree(
+    pool: State<'_, sqlx::SqlitePool>,
+    id: String,
+    archived: bool,
+) -> CmdResult<()> {
+    if id == "inbox" {
+        return Err("收件箱不能归档".to_string());
+    }
+    if !archived {
+        // 取消归档：额外校验目标存在（避免脏前端调错）
+        let row = sqlx::query("SELECT id FROM lists WHERE id = $1")
+            .bind(&id)
+            .fetch_optional(pool.inner())
+            .await
+            .map_err(|e| format!("查询失败: {}", e))?;
+        if row.is_none() {
+            return Err("清单不存在".to_string());
+        }
+    }
+    let archived_val: i32 = if archived { 1 } else { 0 };
+    sqlx::query(
+        "WITH RECURSIVE subtree(id) AS (
+             SELECT id FROM lists WHERE id = $1
+             UNION ALL
+             SELECT l.id FROM lists l JOIN subtree s ON l.parent_id = s.id
+         )
+         UPDATE lists SET archived = $2
+         WHERE id IN (SELECT id FROM subtree)",
+    )
+    .bind(&id)
+    .bind(archived_val)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| format!("归档清单失败: {}", e))?;
+    Ok(())
+}
+
 /// 批量更新清单位置（拖拽排序后）
 #[tauri::command]
 pub async fn list_reorder(
@@ -261,12 +306,18 @@ pub async fn list_reorder(
 // ─── 任务操作 ────────────────────────────────────────────
 
 /// 统计各清单的未完成根任务数量（供侧边栏显示）
+/// 归属已归档清单的任务不计入角标（归档清单虽仍含任务，但不再进主页统计）
 #[tauri::command]
 pub async fn task_count_by_list(
     pool: State<'_, sqlx::SqlitePool>,
 ) -> CmdResult<Vec<(String, i64)>> {
     let rows = sqlx::query(
-        "SELECT list_id, COUNT(*) as cnt FROM tasks WHERE parent_id IS NULL AND done = 0 GROUP BY list_id"
+        "SELECT t.list_id, COUNT(*) as cnt
+         FROM tasks t
+         WHERE t.parent_id IS NULL
+           AND t.done = 0
+           AND t.list_id NOT IN (SELECT id FROM lists WHERE archived = 1)
+         GROUP BY t.list_id"
     )
     .fetch_all(pool.inner())
     .await

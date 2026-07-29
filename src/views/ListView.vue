@@ -42,14 +42,18 @@ onMounted(async () => {
   <div class="list-view" @contextmenu="onContextMenu">
     <!-- 列表头 -->
     <header class="list-view__header">
-      <h1 class="list-view__title">{{ pageTitle }}</h1>
+      <h1 class="list-view__title">
+        {{ pageTitle }}
+        <!-- 已归档清单/目录：低饱和度胶囊角标 -->
+        <span v-if="currentList?.archived" class="list-view__archived-tag">已归档</span>
+      </h1>
       <p class="list-view__subtitle">
         {{ formatPageDate() }} · {{ openCount }} 个待办
       </p>
     </header>
 
-    <!-- 顶部添加栏 -->
-    <div class="list-view__add-bar">
+    <!-- 顶部添加栏：归档清单下隐藏（产品策略：归档区不可新建任务） -->
+    <div v-if="!currentList?.archived" class="list-view__add-bar">
       <AddTaskBar
         :list-id="props.id"
         @add="
@@ -208,5 +212,20 @@ onMounted(async () => {
 .list-view__add-bar {
   flex-shrink: 0;
   padding: 0 8px 8px;
+}
+
+/* 已归档角标：低饱和度灰底胶囊，置于标题右侧 */
+.list-view__archived-tag {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: var(--jt-text-secondary);
+  background-color: var(--jt-surface-hover);
+  border-radius: 10px;
+  vertical-align: middle;
+  font-family: var(--font-body);
 }
 </style>
