@@ -734,7 +734,7 @@ onBeforeUnmount(() => {
           :attachments="task.attachments"
         >
           <PropertyChip
-            :active="attachmentDrawerVisible"
+            :active="task.attachments.length > 0"
             icon-only
             :title="task.attachments.length ? `附件 (${task.attachments.length})` : '附件'"
           >
