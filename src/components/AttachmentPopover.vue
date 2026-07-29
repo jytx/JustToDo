@@ -43,8 +43,8 @@ const emit = defineEmits<{
     :popup-visible-async="false"
     @update:visible="(v: boolean) => emit('update:visible', v)"
   >
-    <!-- a-popover 的 trigger 是默认 slot（非 #trigger） -->
-    <slot name="trigger" />
+    <!-- a-popover 的 trigger 是默认 slot（PropertyChip 直接放这里作为触发元素） -->
+    <slot />
     <template #content>
       <div class="att-popover">
         <AttachmentSection :task-id="taskId" :attachments="attachments" />
