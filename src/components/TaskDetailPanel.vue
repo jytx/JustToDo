@@ -24,6 +24,7 @@ import ReminderPopover from "./ReminderPopover.vue";
 import RecurrencePopover from "./RecurrencePopover.vue";
 import ListDragHandle from "./ListDragHandle.vue";
 import AttachmentPopover from "./AttachmentPopover.vue";
+import ChipPopover from "./ChipPopover.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import { useAttachmentUpload } from "@/composables/useAttachmentUpload";
 import * as db from "@/api/db";
@@ -605,123 +606,119 @@ onBeforeUnmount(() => {
         @clear="onDateClear"
       />
 
-      <!-- 提醒（默认只图标 + a-tooltip 与原生 title 兜底） -->
+      <!-- 提醒（默认只图标 + a-tooltip 黑气泡） -->
       <a-tooltip :content="remindLabel" position="bottom">
-        <Popover v-model:visible="reminderVisible" placement="bottom-left">
-          <template #trigger>
-            <PropertyChip
-              :active="task.remindOffsetMinutes != null"
-              icon-only
-              :title="remindLabel"
-              @click="reminderVisible = !reminderVisible"
-            >
-              <template #icon>
-                <icon-notification :size="14" />
-              </template>
-              {{ remindLabel }}
-            </PropertyChip>
+        <ChipPopover v-model:visible="reminderVisible">
+          <PropertyChip
+            :active="task.remindOffsetMinutes != null"
+            icon-only
+            :title="remindLabel"
+            @click="reminderVisible = !reminderVisible"
+          >
+            <template #icon>
+              <icon-notification :size="14" />
+            </template>
+          </PropertyChip>
+          <template #content>
+            <ReminderPopover
+              :value="task.remindOffsetMinutes"
+              @confirm="onReminderConfirm"
+              @clear="onReminderClear"
+            />
           </template>
-          <ReminderPopover
-            :value="task.remindOffsetMinutes"
-            @confirm="onReminderConfirm"
-            @clear="onReminderClear"
-          />
-        </Popover>
+        </ChipPopover>
       </a-tooltip>
 
       <!-- 重复 -->
       <a-tooltip :content="recurrenceLabel" position="bottom">
-        <Popover v-model:visible="recurrenceVisible" placement="bottom-left">
-          <template #trigger>
-            <PropertyChip
-              :active="!!task.recurrenceFreq"
-              icon-only
-              :title="recurrenceLabel"
-              @click="recurrenceVisible = !recurrenceVisible"
-            >
-              <template #icon>
-                <icon-refresh :size="14" />
-              </template>
-              {{ recurrenceLabel }}
-            </PropertyChip>
+        <ChipPopover v-model:visible="recurrenceVisible">
+          <PropertyChip
+            :active="!!task.recurrenceFreq"
+            icon-only
+            :title="recurrenceLabel"
+            @click="recurrenceVisible = !recurrenceVisible"
+          >
+            <template #icon>
+              <icon-refresh :size="14" />
+            </template>
+          </PropertyChip>
+          <template #content>
+            <RecurrencePopover
+              :freq="task.recurrenceFreq"
+              :interval="task.recurrenceInterval"
+              @confirm="onRecurrenceConfirm"
+            />
           </template>
-          <RecurrencePopover
-            :freq="task.recurrenceFreq"
-            :interval="task.recurrenceInterval"
-            @confirm="onRecurrenceConfirm"
-          />
-        </Popover>
+        </ChipPopover>
       </a-tooltip>
 
       <!-- 优先级 -->
       <a-tooltip :content="priorityLabel" position="bottom">
-        <Popover v-model:visible="priorityVisible" placement="bottom-left">
-          <template #trigger>
-            <PropertyChip
-              :active="task.priority > 0"
-              icon-only
-              :title="priorityLabel"
-              :style="task.priority > 0 ? { color: priorityColorValue } : {}"
-              @click="priorityVisible = !priorityVisible"
-            >
-              <template #icon>
-                <icon-fire :size="14" />
-              </template>
-              {{ priorityLabel }}
-            </PropertyChip>
+        <ChipPopover v-model:visible="priorityVisible">
+          <PropertyChip
+            :active="task.priority > 0"
+            icon-only
+            :title="priorityLabel"
+            :style="task.priority > 0 ? { color: priorityColorValue } : {}"
+            @click="priorityVisible = !priorityVisible"
+          >
+            <template #icon>
+              <icon-fire :size="14" />
+            </template>
+          </PropertyChip>
+          <template #content>
+            <div class="detail-panel__popup">
+              <button
+                v-for="(label, p) in PRIORITY_LABELS"
+                :key="p"
+                type="button"
+                class="detail-panel__popup-item"
+                :class="{ 'detail-panel__popup-item--active': Number(p) === task.priority }"
+                @click="setPriority(Number(p) as Priority); priorityVisible = false"
+              >
+                <PriorityDot :priority="(Number(p) as Priority)" :size="10" />
+                <span>{{ label }}</span>
+              </button>
+            </div>
           </template>
-          <div class="detail-panel__popup">
-            <button
-              v-for="(label, p) in PRIORITY_LABELS"
-              :key="p"
-              type="button"
-              class="detail-panel__popup-item"
-              :class="{ 'detail-panel__popup-item--active': Number(p) === task.priority }"
-              @click="setPriority(Number(p) as Priority); priorityVisible = false"
-            >
-              <PriorityDot :priority="(Number(p) as Priority)" :size="10" />
-              <span>{{ label }}</span>
-            </button>
-          </div>
-        </Popover>
+        </ChipPopover>
       </a-tooltip>
 
       <!-- 标签 -->
       <a-tooltip :content="tagLabel" position="bottom">
-        <Popover v-model:visible="tagVisible" placement="bottom-left">
-          <template #trigger>
-            <PropertyChip
-              :active="taskTags.length > 0"
-              icon-only
-              :title="tagLabel"
-              @click="tagVisible = !tagVisible"
-            >
-              <template #icon>
-                <icon-tag :size="14" />
-              </template>
-              {{ tagLabel }}
-            </PropertyChip>
+        <ChipPopover v-model:visible="tagVisible">
+          <PropertyChip
+            :active="taskTags.length > 0"
+            icon-only
+            :title="tagLabel"
+            @click="tagVisible = !tagVisible"
+          >
+            <template #icon>
+              <icon-tag :size="14" />
+            </template>
+          </PropertyChip>
+          <template #content>
+            <div class="detail-panel__popup detail-panel__popup--tag">
+              <button
+                v-for="opt in availableTagOptions"
+                :key="opt.id"
+                type="button"
+                class="detail-panel__popup-item"
+                @click="addExistingTag(opt.id); tagVisible = false"
+              >
+                <icon-tag :size="12" />
+                <span>{{ opt.name }}</span>
+              </button>
+              <a-input
+                placeholder="+ 新建标签"
+                size="mini"
+                allow-clear
+                style="margin-top: 4px"
+                @keydown.enter="(e: any) => { createNewTag(e.target.value); (e.target as HTMLInputElement).value = ''; tagVisible = false; }"
+              />
+            </div>
           </template>
-          <div class="detail-panel__popup detail-panel__popup--tag">
-            <button
-              v-for="opt in availableTagOptions"
-              :key="opt.id"
-              type="button"
-              class="detail-panel__popup-item"
-              @click="addExistingTag(opt.id); tagVisible = false"
-            >
-              <icon-tag :size="12" />
-              <span>{{ opt.name }}</span>
-            </button>
-            <a-input
-              placeholder="+ 新建标签"
-              size="mini"
-              allow-clear
-              style="margin-top: 4px"
-              @keydown.enter="(e: any) => { createNewTag(e.target.value); (e.target as HTMLInputElement).value = ''; tagVisible = false; }"
-            />
-          </div>
-        </Popover>
+        </ChipPopover>
       </a-tooltip>
 
       <!-- 附件（点击弹出下拉浮窗查看附件列表，带箭头指向 chip；
