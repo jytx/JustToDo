@@ -3,7 +3,8 @@
 
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import type { Task, Priority, SortField, SortDir, ChecklistItem } from "@/types";
+import type { Task, Priority, SortField, SortDir, ChecklistItem, Attachment } from "@/types";
+import { categorizeAttachmentType } from "@/types";
 import * as db from "@/api/db";
 import type { SmartViewId } from "@/api/db";
 import { useSettingsStore } from "@/stores/settings";
@@ -535,6 +536,97 @@ export const useTaskStore = defineStore("task", () => {
     await updateTask(taskId, { checklist: reordered });
   }
 
+  // ─── 附件操作（独立于 note 富文本）────────────────────
+  // 附件元信息存 tasks.attachments（JSON 数组），文件实体存附件目录。
+  // 添加流程：前端读 File → base64 → db.saveAttachment 落盘 → 追加到 attachments 数组 → updateTask
+  // 删除流程：从数组移除 → updateTask → db.deleteAttachment 清理磁盘文件
+
+  /** 把 File 转为 base64 字符串（不含 data: 前缀） */
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // readAsDataURL 返回 "data:<mime>;base64,<data>"，去掉前缀
+        const commaIdx = result.indexOf(",");
+        resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /** 生成附件 ID（UUID v4，与文件名中的 UUID 一致） */
+  function generateAttachmentId(): string {
+    // 优先用 crypto.randomUUID（Tauri webview 支持）
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    // 兜底：基于时间戳 + 随机数
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  /** 当前本地时间字面量（"YYYY-MM-DDTHH:mm:ss"，与任务 createdAt 同格式） */
+  function nowLocalIso(): string {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  /**
+   * 为任务添加附件（文件实体落盘 + 元信息入库）
+   * @returns 新增的 Attachment（含 storedName），调用方可用于 UI 反馈
+   */
+  async function addAttachment(taskId: string, file: File): Promise<Attachment> {
+    // 扩展名小写化（无扩展名则空串，Rust 端会用 bin 兜底）
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    // 磁盘分类（决定落盘子目录，Rust 白名单校验）
+    const category = categorizeAttachmentType(file.name);
+    const base64 = await fileToBase64(file);
+    const storedName = await db.saveAttachment(base64, ext, category);
+
+    const attachment: Attachment = {
+      id: generateAttachmentId(),
+      originalName: file.name,
+      storedName,
+      mime: file.type || "application/octet-stream",
+      size: file.size,
+      createdAt: nowLocalIso(),
+    };
+
+    const task = findTaskById(taskId);
+    const next = [...(task?.attachments ?? []), attachment];
+    await updateTask(taskId, { attachments: next });
+    return attachment;
+  }
+
+  /** 批量添加附件（逐个落盘，避免并发 IPC 冲突） */
+  async function addAttachments(taskId: string, files: File[]): Promise<Attachment[]> {
+    const added: Attachment[] = [];
+    for (const file of files) {
+      const att = await addAttachment(taskId, file);
+      added.push(att);
+    }
+    return added;
+  }
+
+  /** 删除附件（从数组移除 + 清理磁盘文件） */
+  async function removeAttachment(taskId: string, attachmentId: string): Promise<void> {
+    const task = findTaskById(taskId);
+    if (!task) return;
+    const target = task.attachments.find((a) => a.id === attachmentId);
+    if (!target) return;
+
+    const next = task.attachments.filter((a) => a.id !== attachmentId);
+    await updateTask(taskId, { attachments: next });
+    // 元信息删除成功后再清理磁盘文件（失败不阻断 UI，仅记日志）
+    try {
+      await db.deleteAttachment(target.storedName);
+    } catch (e) {
+      console.warn("[task] 清理附件磁盘文件失败:", e);
+    }
+  }
+
   /** 在任务的所有数据副本中找 task（currentTasks / subtasks / subtaskCache / selectedTaskObj） */
   function findTaskById(id: string): Task | null {
     if (selectedTaskObj.value?.id === id) return selectedTaskObj.value;
@@ -789,5 +881,8 @@ export const useTaskStore = defineStore("task", () => {
     toggleChecklistItem,
     removeChecklistItem,
     reorderChecklist,
+    addAttachment,
+    addAttachments,
+    removeAttachment,
   };
 });

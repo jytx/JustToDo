@@ -23,6 +23,7 @@ import DueDateChip from "./DueDateChip.vue";
 import ReminderPopover from "./ReminderPopover.vue";
 import RecurrencePopover from "./RecurrencePopover.vue";
 import ListDragHandle from "./ListDragHandle.vue";
+import AttachmentSection from "./AttachmentSection.vue";
 import * as db from "@/api/db";
 
 const taskStore = useTaskStore();
@@ -785,6 +786,13 @@ onBeforeUnmount(() => {
         borderless
         placeholder="输入内容或使用 / 快速插入"
         @update:model-value="(v) => { noteDraft = v; saveNote(v); }"
+      />
+
+      <!-- 附件区（独立于描述；支持图片/视频/音频/md/zip 等，可预览可定位） -->
+      <AttachmentSection
+        v-if="task.id"
+        :task-id="task.id"
+        :attachments="task.attachments"
       />
 
       <!-- 检查项区（独立于描述） -->

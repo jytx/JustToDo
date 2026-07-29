@@ -67,7 +67,10 @@ async fn run_migration_003(pool: &SqlitePool) -> Result<(), String> {
 }
 
 /// 初始化数据库连接池并执行迁移
-pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
+///
+/// `app_data_dir`: 应用数据目录路径。仅 migration 019 需要（用它定位附件目录来移动磁盘文件）。
+/// 传 None 时跳过 019（用于不涉及附件迁移的纯 DB 初始化场景，当前无此调用，保留扩展性）。
+pub async fn init_pool(db_path: &str, app_data_dir: Option<&std::path::Path>) -> Result<SqlitePool, String> {
     let options = SqliteConnectOptions::from_str(db_path)
         .map_err(|e| format!("无效的数据库路径: {}", e))?
         .create_if_missing(true);
@@ -135,6 +138,15 @@ pub async fn init_pool(db_path: &str) -> Result<SqlitePool, String> {
         .execute(&pool)
         .await
         .map_err(|e| format!("执行迁移 016_templates_placeholders 失败: {}", e))?;
+
+    // 018: 任务附件字段（attachments JSON 数组）
+    run_migration_018(&pool).await?;
+
+    // 019: 附件磁盘文件按"日期/类型"分目录（存量迁移）
+    // 需要 app_data_dir 来定位附件目录，若未提供则跳过（保留旧平铺结构，功能不丢）
+    if let Some(data_dir) = app_data_dir {
+        run_migration_019(&pool, data_dir).await?;
+    }
 
     Ok(pool)
 }
@@ -297,5 +309,207 @@ async fn run_migration_013(pool: &SqlitePool) -> Result<(), String> {
         "TEXT NOT NULL DEFAULT '🏆'",
     )
     .await?;
+    Ok(())
+}
+
+/// 迁移 018：任务附件字段
+/// - attachments: JSON 数组 [{id, original_name, stored_name, mime, size, created_at}]
+///   文件实体存附件目录（由 save_attachment 落盘），这里只存元信息。
+///   设计与 checklist（009）完全对称：JSON 数组 + 整组覆盖更新。
+async fn run_migration_018(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "tasks", "attachments", "TEXT NOT NULL DEFAULT '[]'").await?;
+    Ok(())
+}
+
+/// 根据文件名扩展名判定磁盘分类（与前端 categorizeAttachmentType 逻辑一致）
+/// 复制一份在迁移里用，避免 migration 依赖 commands 模块
+fn m19_categorize(file_name: &str) -> &'static str {
+    let ext = file_name.rsplit('.').next().unwrap_or("").to_lowercase();
+    if matches!(
+        ext.as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" | "ico"
+    ) {
+        return "images";
+    }
+    if matches!(ext.as_str(), "mp4" | "mov" | "webm" | "ogv" | "mkv") {
+        return "videos";
+    }
+    if matches!(
+        ext.as_str(),
+        "mp3" | "wav" | "m4a" | "ogg" | "flac" | "aac"
+    ) {
+        return "audios";
+    }
+    if matches!(
+        ext.as_str(),
+        "md" | "markdown" | "txt" | "log" | "json" | "yml" | "yaml" | "csv" | "tsv" | "pdf"
+    ) {
+        return "docs";
+    }
+    if matches!(ext.as_str(), "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz") {
+        return "archives";
+    }
+    "others"
+}
+
+/// 读附件目录（复用 commands::get_attachment_path 的逻辑：读 attachment_path.txt，否则默认）
+fn m19_read_attachment_dir(app_data_dir: &std::path::Path) -> std::path::PathBuf {
+    let config_path = app_data_dir.join("attachment_path.txt");
+    if let Ok(path) = std::fs::read_to_string(&config_path) {
+        let p = std::path::PathBuf::from(&path);
+        if p.exists() {
+            return p;
+        }
+    }
+    // 默认：app_data_dir/attachments
+    let default = app_data_dir.join("attachments");
+    let _ = std::fs::create_dir_all(&default);
+    default
+}
+
+/// 迁移 019：附件磁盘文件按"日期/类型"分目录（存量迁移）
+///
+/// 把旧的平铺附件（attachments/<uuid>.<ext>）按其 created_at 移到新结构：
+///   attachments/<YYYYMMDD>/<category>/<uuid>.<ext>
+///
+/// - 幂等：stored_name 已含 `/` 的跳过（已是新结构）
+/// - 安全：逐条处理，rename 成功后才更新 DB；单条失败跳过并记日志，不阻断整体
+/// - 写回：每个任务的 attachments 数组若有变更，整体 UPDATE 一次
+/// - created_at 格式："YYYY-MM-DDTHH:mm:ss"，取前 10 位去掉 `-` 得 YYYYMMDD
+async fn run_migration_019(pool: &SqlitePool, app_data_dir: &std::path::Path) -> Result<(), String> {
+    // 该 migration 既读 attachment_path.txt，也可能因 attachments 列不存在（旧版）而失败。
+    // 如果 attachments 列不存在（018 没跑），直接跳过 —— 说明是全新或过旧的库，无附件可迁移。
+    let has_attachments_col = column_exists(pool, "tasks", "attachments").await?;
+    if !has_attachments_col {
+        return Ok(());
+    }
+
+    let attach_dir = m19_read_attachment_dir(app_data_dir);
+
+    // 读所有任务的 (id, attachments_json)
+    let rows = sqlx::query("SELECT id, attachments FROM tasks")
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("迁移019: 查询任务失败: {}", e))?;
+
+    let mut migrated_count: u32 = 0;
+    let mut skipped_count: u32 = 0;
+    let mut failed_count: u32 = 0;
+
+    for row in &rows {
+        let task_id: String = row.get("id");
+        let raw: String = row.get("attachments");
+
+        // 解析为 serde_json::Value 数组（不强制类型，宽松处理历史脏数据）
+        let mut arr: Vec<serde_json::Value> = match serde_json::from_str(&raw) {
+            Ok(v) => v,
+            Err(_) => {
+                // JSON 解析失败：跳过该任务，不动其数据
+                skipped_count += 1;
+                continue;
+            }
+        };
+
+        let mut changed = false;
+        for item in arr.iter_mut() {
+            let obj = match item.as_object_mut() {
+                Some(o) => o,
+                None => continue,
+            };
+
+            // 取 stored_name 和 created_at、original_name（camelCase，由 serde rename_all 决定）
+            let stored_name = match obj.get("storedName").and_then(|v| v.as_str()) {
+                Some(s) => s.to_string(),
+                None => continue,
+            };
+
+            // 幂等：已含路径分隔符说明已是新结构
+            if stored_name.contains('/') || stored_name.contains('\\') {
+                continue;
+            }
+
+            let original_name = obj
+                .get("originalName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let created_at = obj
+                .get("createdAt")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            // 推导日期目录：created_at 前 10 位 "YYYY-MM-DD" → "YYYYMMDD"
+            // 格式不符则用当前日期兜底（尽量不丢文件）
+            let date_dir: String = if created_at.len() >= 10 {
+                created_at[..10].chars().filter(|c| *c != '-').collect()
+            } else {
+                chrono::Local::now().format("%Y%m%d").to_string()
+            };
+            let category = m19_categorize(original_name);
+
+            // 拼新旧路径
+            let old_path = attach_dir.join(&stored_name);
+            let new_rel = format!("{}/{}/{}", date_dir, category, stored_name);
+            let new_path = attach_dir.join(&new_rel);
+
+            // 源文件不存在：可能已被手动移走或本就是测试数据，跳过（保留 DB 原值）
+            if !old_path.exists() {
+                skipped_count += 1;
+                continue;
+            }
+
+            // 创建目标父目录
+            if let Some(parent) = new_path.parent() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    eprintln!(
+                        "[迁移019] 创建目录失败 {} (task={}): {}",
+                        parent.display(),
+                        task_id,
+                        e
+                    );
+                    failed_count += 1;
+                    continue;
+                }
+            }
+
+            // 移动文件
+            match std::fs::rename(&old_path, &new_path) {
+                Ok(_) => {
+                    obj.insert(
+                        "storedName".to_string(),
+                        serde_json::Value::String(new_rel),
+                    );
+                    changed = true;
+                    migrated_count += 1;
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[迁移019] 移动文件失败 {} -> {} (task={}): {}",
+                        old_path.display(),
+                        new_path.display(),
+                        task_id,
+                        e
+                    );
+                    failed_count += 1;
+                }
+            }
+        }
+
+        // 该任务的 attachments 有变更，整体写回
+        if changed {
+            let new_json = serde_json::to_string(&arr)
+                .map_err(|e| format!("迁移019: 序列化失败 (task={}): {}", task_id, e))?;
+            sqlx::query("UPDATE tasks SET attachments = $1 WHERE id = $2")
+                .bind(&new_json)
+                .bind(&task_id)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("迁移019: 更新失败 (task={}): {}", task_id, e))?;
+        }
+    }
+
+    println!(
+        "[JustToDo] 迁移019 完成: 迁移 {} 个, 跳过 {}, 失败 {}",
+        migrated_count, skipped_count, failed_count
+    );
     Ok(())
 }

@@ -72,6 +72,12 @@ fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
             .ok()
             .and_then(|s| serde_json::from_str::<Vec<ChecklistItem>>(&s).ok())
             .unwrap_or_default(),
+        // attachments 同 checklist：JSON 字符串，解析失败为空列表
+        attachments: row
+            .try_get::<String, _>("attachments")
+            .ok()
+            .and_then(|s| serde_json::from_str::<Vec<Attachment>>(&s).ok())
+            .unwrap_or_default(),
     }
 }
 
@@ -565,6 +571,7 @@ pub async fn task_create(
         remind_offset_minutes,
         notified_at: None,
         checklist: Vec::new(),
+        attachments: Vec::new(),
     })
 }
 
@@ -689,6 +696,18 @@ pub async fn task_update(
             .execute(pool.inner())
             .await
             .map_err(|e| format!("更新检查项失败: {}", e))?;
+    }
+    // 附件列表（整组覆盖为 JSON 数组；与 checklist 完全对称）
+    if let Some(attachments) = &input.attachments {
+        let json =
+            serde_json::to_string(attachments).map_err(|e| format!("序列化附件失败: {}", e))?;
+        sqlx::query("UPDATE tasks SET attachments = $1, updated_at = $2 WHERE id = $3")
+            .bind(json)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新附件失败: {}", e))?;
     }
 
     Ok(())
@@ -1356,6 +1375,197 @@ pub async fn get_attachment_fullpath(app: AppHandle, filename: String) -> CmdRes
         .join(&filename)
         .to_string_lossy()
         .to_string())
+}
+
+/// 合法的附件磁盘分类目录名（白名单，杜绝路径穿越）
+/// 与前端 ATTACHMENT_TYPE_DIRS 保持一致
+const ATTACHMENT_CATEGORY_DIRS: [&str; 6] = [
+    "images",
+    "videos",
+    "audios",
+    "docs",
+    "archives",
+    "others",
+];
+
+/// 保存任意类型附件到附件目录，返回相对路径（YYYYMMDD/<category>/<uuid>.<ext>）
+///
+/// 存储结构：按"日期/类型"分层，便于在 Finder 中按天查看、按类型筛选。
+/// - 日期：Rust 端取当前本地日期（与前端 createdAt 同一刻，忽略秒级偏差）
+/// - 类型：前端传 category（从文件名推导），Rust 白名单校验后用作子目录名
+/// - 安全：category 走白名单，避免前端拼子路径导致的路径穿越（Path::join 不拦截 ..）
+///
+/// 返回的相对路径会存入 tasks.attachments 的 stored_name 字段；
+/// 其他命令（get_fullpath/delete/read/reveal）用 Path::join(stored_name) 自动适配多级路径。
+#[tauri::command]
+pub async fn save_attachment(
+    app: AppHandle,
+    data: String,
+    ext: String,
+    category: String,
+) -> CmdResult<String> {
+    // 白名单校验 category，杜绝路径穿越
+    if !ATTACHMENT_CATEGORY_DIRS.contains(&category.as_str()) {
+        return Err(format!(
+            "非法的附件分类: {}（合法值: {}）",
+            category,
+            ATTACHMENT_CATEGORY_DIRS.join(", ")
+        ));
+    }
+
+    let dir = get_attachment_path(app.clone()).await?;
+    let id = uuid();
+    // ext 已由前端小写化处理；为空时用 bin 兜底，避免拼出 "uuid." 这样的文件名
+    let safe_ext = if ext.is_empty() { "bin".to_string() } else { ext };
+
+    // 拼相对子路径：YYYYMMDD/<category>/<uuid>.<ext>
+    let today = chrono::Local::now().format("%Y%m%d").to_string();
+    let rel_path = format!("{}/{}/{}.{}", today, category, id, safe_ext);
+    let filepath = PathBuf::from(&dir).join(&rel_path);
+
+    // 确保子目录存在（create_dir_all 幂等，已有不报错）
+    if let Some(parent) = filepath.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("创建附件目录失败: {}", e))?;
+    }
+
+    use std::io::Write;
+    let bytes = base64_decode(&data)?;
+    let mut file =
+        std::fs::File::create(&filepath).map_err(|e| format!("创建文件失败: {}", e))?;
+    file.write_all(&bytes)
+        .map_err(|e| format!("写入文件失败: {}", e))?;
+
+    Ok(rel_path)
+}
+
+/// 删除附件目录中的物理文件（删除任务附件时调用，避免孤儿文件）
+/// 文件不存在视为成功（幂等）
+#[tauri::command]
+pub async fn delete_attachment(app: AppHandle, stored_name: String) -> CmdResult<()> {
+    let dir = get_attachment_path(app).await?;
+    let filepath = PathBuf::from(&dir).join(&stored_name);
+    if filepath.exists() {
+        std::fs::remove_file(&filepath).map_err(|e| format!("删除附件文件失败: {}", e))?;
+    }
+    Ok(())
+}
+
+/// 读取文本类附件内容（用于 md/txt 应用内预览）
+/// 2MB 上限保护：超过则让前端改走系统默认程序打开
+#[tauri::command]
+pub async fn read_attachment_text(app: AppHandle, stored_name: String) -> CmdResult<String> {
+    let dir = get_attachment_path(app).await?;
+    let filepath = PathBuf::from(&dir).join(&stored_name);
+    let meta = std::fs::metadata(&filepath)
+        .map_err(|e| format!("读取附件信息失败: {}", e))?;
+    if meta.len() > 2 * 1024 * 1024 {
+        return Err("文件超过 2MB，请使用系统默认程序打开".to_string());
+    }
+    std::fs::read_to_string(&filepath).map_err(|e| format!("读取附件内容失败: {}", e))
+}
+
+/// 在系统文件管理器中定位（高亮选中）附件文件
+/// macOS: Finder；Windows: 资源管理器；Linux: 打开所在目录
+#[tauri::command]
+pub async fn reveal_attachment(app: AppHandle, stored_name: String) -> CmdResult<()> {
+    let dir = get_attachment_path(app).await?;
+    let filepath = PathBuf::from(&dir).join(&stored_name);
+    if !filepath.exists() {
+        return Err("附件文件不存在".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&filepath)
+            .spawn()
+            .map_err(|e| format!("打开 Finder 失败: {}", e))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // /select, 后面跟逗号是 explorer 的参数分隔符
+        std::process::Command::new("explorer.exe")
+            .arg(format!("/select,{}", filepath.display()))
+            .spawn()
+            .map_err(|e| format!("打开资源管理器失败: {}", e))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Linux 无统一高亮选中机制，退化为打开所在目录
+        std::process::Command::new("xdg-open")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("打开文件管理器失败: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// 把附件完整路径写入系统剪贴板
+/// macOS: pbcopy；Windows: clip；Linux: xclip/wl-copy
+#[tauri::command]
+pub async fn copy_attachment_path(app: AppHandle, stored_name: String) -> CmdResult<()> {
+    let dir = get_attachment_path(app).await?;
+    let filepath = PathBuf::from(&dir).join(&stored_name);
+    let path_str = filepath.to_string_lossy().to_string();
+
+    #[cfg(target_os = "macos")]
+    {
+        use std::io::Write;
+        let mut child = std::process::Command::new("pbcopy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("启动 pbcopy 失败: {}", e))?;
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin
+                .write_all(path_str.as_bytes())
+                .map_err(|e| format!("写入剪贴板失败: {}", e))?;
+        }
+        child.wait().map_err(|e| format!("pbcopy 等待失败: {}", e))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::io::Write;
+        let mut child = std::process::Command::new("clip")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("启动 clip 失败: {}", e))?;
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin
+                .write_all(path_str.as_bytes())
+                .map_err(|e| format!("写入剪贴板失败: {}", e))?;
+        }
+        child.wait().map_err(|e| format!("clip 等待失败: {}", e))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write;
+        // 优先 xclip，失败回退 wl-copy（Wayland）
+        let result = std::process::Command::new("xclip")
+            .arg("-selection")
+            .arg("clipboard")
+            .stdin(std::process::Stdio::piped())
+            .spawn();
+        let mut child = match result {
+            Ok(c) => c,
+            Err(_) => std::process::Command::new("wl-copy")
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("启动剪贴板工具失败（xclip/wl-copy）: {}", e))?,
+        };
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin
+                .write_all(path_str.as_bytes())
+                .map_err(|e| format!("写入剪贴板失败: {}", e))?;
+        }
+        child
+            .wait()
+            .map_err(|e| format!("剪贴板工具等待失败: {}", e))?;
+    }
+
+    Ok(())
 }
 
 /// 简单的 base64 解码（不依赖外部 crate）

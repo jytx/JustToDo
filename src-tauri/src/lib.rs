@@ -32,8 +32,11 @@ pub fn run() {
             println!("[JustToDo] 数据库路径: {}", db_path.display());
 
             // 初始化数据库连接池（同步阻塞，确保 setup 完成后 pool 就绪）
-            let pool = tauri::async_runtime::block_on(async { db::init_pool(&db_url).await })
-                .expect("数据库初始化失败");
+            // 传入 app_data_dir：migration 019 需要它来定位附件目录、移动磁盘文件
+            let pool = tauri::async_runtime::block_on(async {
+                db::init_pool(&db_url, Some(&app_data_dir)).await
+            })
+            .expect("数据库初始化失败");
 
             // 后台定时检查重复任务实例
             // 间隔由 app_settings.recurrence_check_interval 控制（分钟），可在设置页修改
@@ -259,6 +262,11 @@ pub fn run() {
             commands::set_attachment_dir,
             commands::save_image,
             commands::get_attachment_fullpath,
+            commands::save_attachment,
+            commands::delete_attachment,
+            commands::read_attachment_text,
+            commands::reveal_attachment,
+            commands::copy_attachment_path,
             commands::task_get_tags,
             commands::task_add_tag,
             commands::task_remove_tag,
