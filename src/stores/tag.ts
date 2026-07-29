@@ -3,6 +3,26 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import type { Tag } from "@/api/db";
 import * as db from "@/api/db";
+import { useTaskStore } from "@/stores/task";
+
+/**
+ * 纯函数：从「任务 → 标签数组」映射中剔除指定标签。
+ * 返回新映射（仅当确实出现剔除时才产生新引用，否则原样返回，避免无谓的响应式触发）。
+ * 用于删除标签后同步清理 taskStore.taskTagMap，使任务列表项 / 详情面板立即不再显示该标签。
+ */
+function stripTagFromMap(
+  map: Record<string, Tag[]>,
+  tagId: string,
+): Record<string, Tag[]> {
+  let changed = false;
+  const next: Record<string, Tag[]> = {};
+  for (const [taskId, tags] of Object.entries(map)) {
+    const filtered = tags.filter((t) => t.id !== tagId);
+    next[taskId] = filtered;
+    if (filtered.length !== tags.length) changed = true;
+  }
+  return changed ? next : map;
+}
 
 export const useTagStore = defineStore("tag", () => {
   const tags = ref<Tag[]>([]);
@@ -26,6 +46,10 @@ export const useTagStore = defineStore("tag", () => {
   async function deleteTag(id: string) {
     await db.deleteTag(id);
     tags.value = tags.value.filter((t) => t.id !== id);
+    // 同步清理任务标签缓存：后端已级联删除 task_tags，前端缓存需一并剔除，
+    // 否则任务列表项（读 taskTagMap）和详情面板会继续显示已删除的标签。
+    const taskStore = useTaskStore();
+    taskStore.taskTagMap = stripTagFromMap(taskStore.taskTagMap, id);
   }
 
   /** 重命名标签（不改 position / createdAt） */

@@ -1008,6 +1008,21 @@ pub async fn tag_get_sort_pref(
 
 #[tauri::command]
 pub async fn tag_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdResult<()> {
+    // 级联清理关联表，再删标签本体。
+    // SQLite 默认不开启外键约束（init_pool 未设 PRAGMA foreign_keys=ON），
+    // schema 的 ON DELETE CASCADE 不生效，必须手动删除孤儿关联，否则
+    // task_tags / tag_sort_prefs 会残留指向已删除标签的死引用。
+    // 顺序：先删关联（task_tags / tag_sort_prefs）再删 tags，幂等安全。
+    sqlx::query("DELETE FROM task_tags WHERE tag_id = $1")
+        .bind(&id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("清理任务标签关联失败: {}", e))?;
+    sqlx::query("DELETE FROM tag_sort_prefs WHERE tag_id = $1")
+        .bind(&id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("清理标签排序偏好失败: {}", e))?;
     sqlx::query("DELETE FROM tags WHERE id = $1")
         .bind(&id)
         .execute(pool.inner())

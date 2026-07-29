@@ -49,8 +49,16 @@ const task = computed(() => taskStore.selectedTask);
 const titleDraft = ref("");
 const noteDraft = ref("");
 
-/** 当前任务的关联标签 */
-const taskTags = ref<db.Tag[]>([]);
+/**
+ * 当前任务的关联标签 —— 直接派生自 taskStore.taskTagMap（唯一数据源）。
+ * 列表项、详情面板、侧边栏删除标签时都只维护这一份缓存，自动保持同步，
+ * 避免原先「store 缓存 + 本地 ref」双数据源导致删除标签后界面不同步。
+ */
+const taskTags = computed<db.Tag[]>(() => {
+  const id = task.value?.id;
+  if (!id) return [];
+  return taskStore.taskTagMap[id] ?? [];
+});
 
 /** 父任务链（面包屑导航）—— 从直接父级到根级 */
 const parentChain = ref<Task[]>([]);
@@ -68,19 +76,6 @@ async function loadParentChain() {
     currentParentId = parent.parentId;
   }
   parentChain.value = chain;
-}
-
-/** 加载当前任务的标签 */
-async function loadTaskTags() {
-  if (!task.value) {
-    taskTags.value = [];
-    return;
-  }
-  try {
-    taskTags.value = await db.getTaskTags(task.value.id);
-  } catch (e) {
-    console.error("[TaskDetail] 加载任务标签失败:", e);
-  }
 }
 
 // 拖拽调宽
@@ -115,10 +110,11 @@ watch(
     noteDraft.value = task.value?.note ?? "";
     if (id) {
       await tagStore.loadTags();
-      await loadTaskTags();
+      // 兜底：详情面板可能从 DB 单独加载任务（taskTagMap 无该任务条目），
+      // 刷新一次确保 store 缓存有值，computed 才能正确派生标签。
+      await taskStore.refreshTaskTags(id);
       await loadParentChain();
     } else {
-      taskTags.value = [];
       parentChain.value = [];
     }
   },
@@ -255,8 +251,7 @@ const tagLabel = computed(() => {
 async function addExistingTag(tagId: string) {
   if (!task.value || !tagId) return;
   await db.addTaskTag(task.value.id, tagId);
-  await loadTaskTags();
-  // 同步刷新任务列表项的标签缓存
+  // 刷新 store 缓存（taskTagMap 是列表项 + 详情面板的唯一数据源）
   await taskStore.refreshTaskTags(task.value.id);
 }
 
@@ -268,16 +263,14 @@ async function createNewTag(name: string) {
     tag = await tagStore.createTag(trimmed);
   }
   await db.addTaskTag(task.value.id, tag.id);
-  await loadTaskTags();
-  // 同步刷新任务列表项的标签缓存
+  // 刷新 store 缓存（taskTagMap 是列表项 + 详情面板的唯一数据源）
   await taskStore.refreshTaskTags(task.value.id);
 }
 
 async function removeTaskTag(tagId: string) {
   if (!task.value) return;
   await db.removeTaskTag(task.value.id, tagId);
-  await loadTaskTags();
-  // 同步刷新任务列表项的标签缓存
+  // 刷新 store 缓存（taskTagMap 是列表项 + 详情面板的唯一数据源）
   await taskStore.refreshTaskTags(task.value.id);
 }
 
