@@ -3,6 +3,7 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { ListTreeNode } from "@/stores/list";
+import type { List } from "@/types";
 import {
   IconStar,
   IconClockCircle,
@@ -22,6 +23,7 @@ import {
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
 import { useTaskStore } from "@/stores/task";
+import { useQuickAdd } from "@/composables/useQuickAdd";
 import SidebarListNode from "./SidebarListNode.vue";
 import SidebarRailCascade from "./SidebarRailCascade.vue";
 import MenuPopover from "./MenuPopover.vue";
@@ -46,6 +48,7 @@ const router = useRouter();
 const listStore = useListStore();
 const tagStore = useTagStore();
 const taskStore = useTaskStore();
+const quickAdd = useQuickAdd();
 
 /** 各区块展开/收起状态 */
 const sectionCollapsed = ref<Record<string, boolean>>({
@@ -93,6 +96,46 @@ async function saveListEdit() {
   await listStore.loadLists();
   showEditDialog.value = false;
   editingList.value = null;
+}
+
+/** 新建子目录弹窗状态 —— 点击"添加子目录"后打开，回车才真正创建（ESC 可取消） */
+const showCreateSubFolderDialog = ref(false);
+const newSubFolderName = ref("");
+const newSubFolderParentId = ref<string | null>(null);
+const newSubFolderNameInputRef = ref<HTMLInputElement | null>(null);
+/** 子目录颜色（与新建清单一致，默认橙色） */
+const newSubFolderColor = ref("#F59E0B");
+
+/** 从目录菜单发起"添加子目录"：仅打开弹窗，不立即创建 */
+function onAddSubFolder(parent: { id: string }) {
+  newSubFolderParentId.value = parent.id;
+  newSubFolderName.value = "";
+  newSubFolderColor.value = "#F59E0B";
+  showCreateSubFolderDialog.value = true;
+  nextTick(() => {
+    newSubFolderNameInputRef.value?.focus();
+  });
+}
+
+/** 回车创建子目录（名字必填：空名保持弹窗打开，不做任何事） */
+async function confirmNewSubFolder() {
+  const name = newSubFolderName.value.trim();
+  if (!name) return; // 名字必填：空名不创建、不关闭弹窗
+  await listStore.createList({
+    name,
+    color: newSubFolderColor.value,
+    parentId: newSubFolderParentId.value,
+    isFolder: true,
+  });
+  showCreateSubFolderDialog.value = false;
+}
+
+/** 从目录行的 + 按钮发起"在该目录下新建清单"：
+ *  把当前目录路径预填到新建清单弹窗的目录字段，复用现有 showCreateDialog。
+ *  注意：startNewList 会清空 newListFolder，所以这里在它之后再覆盖路径。 */
+function onAddListInFolder(folder: { id: string }) {
+  startNewList();
+  newListFolder.value = buildFolderPath(folder.id);
 }
 
 async function askDeleteList(list: { id: string; name: string }) {
@@ -268,27 +311,34 @@ async function saveTagEdit() {
   editingTag.value = null;
 }
 
-/** 颜色选择器状态（list：新建 / edit：编辑，各自独立 anchor） */
-const colorPickerOpen = reactive<{ list: boolean; edit: boolean }>({
+/** 颜色选择器状态（list：新建清单 / edit：编辑 / subfolder：新建子目录，各自独立 anchor） */
+const colorPickerOpen = reactive<{ list: boolean; edit: boolean; subfolder: boolean }>({
   list: false,
   edit: false,
+  subfolder: false,
 });
 
-/** 颜色 trigger 元素缓存（list：新建 / edit：编辑） */
-const colorTriggerEls = reactive<{ list: HTMLElement | null; edit: HTMLElement | null }>({
+/** 颜色 trigger 元素缓存（list：新建 / edit：编辑 / subfolder：新建子目录） */
+const colorTriggerEls = reactive<{
+  list: HTMLElement | null;
+  edit: HTMLElement | null;
+  subfolder: HTMLElement | null;
+}>({
   list: null,
   edit: null,
+  subfolder: null,
 });
 
 /** 关闭所有颜色 picker（切换前调用，避免多个同时打开） */
 function closeAllColorPickers(): void {
   colorPickerOpen.list = false;
   colorPickerOpen.edit = false;
+  colorPickerOpen.subfolder = false;
 }
 
 /** 点击颜色 trigger —— 切换 popper + 缓存 trigger 元素
- *  scope: "list"（新建清单）/ "edit"（编辑清单） */
-function onClickColorTrigger(e: MouseEvent, scope: "list" | "edit"): void {
+ *  scope: "list"（新建清单）/ "edit"（编辑清单）/ "subfolder"（新建子目录） */
+function onClickColorTrigger(e: MouseEvent, scope: "list" | "edit" | "subfolder"): void {
   const el = e.currentTarget as HTMLElement;
   closeAllColorPickers();
   colorTriggerEls[scope] = el;
@@ -304,25 +354,27 @@ function onClickFolderTrigger(e: MouseEvent) {
   newListFolderPopupVisible.value = !newListFolderPopupVisible.value;
 }
 
+/** 根据目录 id，向上追溯父级，拼出完整路径字符串（如 "工作/项目A"）。
+ *  纯函数：只读 listStore，不修改任何状态。 */
+function buildFolderPath(folderId: string): string {
+  const ids: string[] = [];
+  let curId: string | null = folderId;
+  while (curId) {
+    ids.unshift(curId);
+    const node: List | undefined = listStore.getById(curId);
+    curId = node?.parentId ?? null;
+  }
+  return ids
+    .map((nid) => listStore.getById(nid)?.name)
+    .filter(Boolean)
+    .join("/");
+}
+
 /** 输入提示：把已有的目录拼成完整路径，作为自动补全的数据源 */
 const folderSuggestions = computed(() => {
   const folders = listStore.sortedLists.filter((l) => l.isFolder);
-  // 按"根→叶"路径分组，输出完整路径字符串
-  const buildPath = (id: string): string => {
-    const ids: string[] = [];
-    let cur: string | null | undefined = id;
-    while (cur) {
-      ids.unshift(cur);
-      const node: any = listStore.getById(cur);
-      cur = node?.parentId ?? null;
-    }
-    return ids
-      .map((nid) => listStore.getById(nid)?.name)
-      .filter(Boolean)
-      .join("/");
-  };
   return folders.map((f) => {
-    const path = buildPath(f.id);
+    const path = buildFolderPath(f.id);
     return {
       value: path,
       label: path, // Arco 默认按 label 字段展示，这里保持一致
@@ -675,6 +727,9 @@ onMounted(async () => {
           :depth="0"
           @edit="(n: any) => startEditList(n)"
           @delete="(n: any) => askDeleteList(n)"
+          @addFolder="(n: ListTreeNode) => onAddSubFolder(n)"
+          @addList="(n: ListTreeNode) => onAddListInFolder(n)"
+          @addTask="(n: ListTreeNode) => quickAdd.open(n.id)"
           @move="onListMove"
         />
       </div>
@@ -979,6 +1034,73 @@ onMounted(async () => {
       </div>
     </div>
   </a-modal>
+
+  <!-- 新建子目录弹窗（QuickAdd 风格：仅名字输入 + 回车创建） -->
+  <a-modal
+    v-model:visible="showCreateSubFolderDialog"
+    :width="440"
+    :footer="false"
+    :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
+    modal-class="sidebar-create-modal"
+  >
+    <div class="sidebar-create">
+      <div class="sidebar-create__input-row">
+        <input
+          ref="newSubFolderNameInputRef"
+          v-model="newSubFolderName"
+          class="sidebar-create__input"
+          placeholder="子目录名称"
+          @keydown.enter="confirmNewSubFolder"
+          @keydown.escape.stop="showCreateSubFolderDialog = false"
+        />
+        <button
+          class="sidebar-create__close"
+          title="关闭"
+          @click="showCreateSubFolderDialog = false"
+        >
+          <icon-close :size="14" />
+        </button>
+      </div>
+      <div class="sidebar-create__divider" />
+      <div class="sidebar-create__attrs">
+        <!-- 颜色 trigger：与新建清单弹窗同款 -->
+        <button
+          data-color-trigger="subfolder"
+          type="button"
+          class="sidebar-create__trigger"
+          @click="onClickColorTrigger($event, 'subfolder')"
+        >
+          <span
+            class="sidebar-create__color-dot"
+            :style="{ backgroundColor: newSubFolderColor }"
+          />
+          <span>颜色</span>
+        </button>
+
+        <span class="sidebar-create__spacer" />
+
+        <span class="sidebar-create__hint">回车创建</span>
+      </div>
+    </div>
+  </a-modal>
+
+  <!-- 新建子目录颜色 picker 弹层（独立 anchor） -->
+  <TeleportPopper
+    v-model:visible="colorPickerOpen.subfolder"
+    :anchor="colorTriggerEls.subfolder"
+    placement="bottom-left"
+  >
+    <div class="sidebar-create__color-picker">
+      <button
+        v-for="c in LIST_COLORS"
+        :key="c"
+        class="sidebar-create__color-swatch"
+        :class="{ 'sidebar-create__color-swatch--active': newSubFolderColor === c }"
+        :style="{ backgroundColor: c }"
+        @click="newSubFolderColor = c; colorPickerOpen.subfolder = false"
+      />
+    </div>
+  </TeleportPopper>
 
   <!-- 目录输入弹层（Teleport 到 body，避开 modal overflow 裁剪） -->
   <TeleportPopper
