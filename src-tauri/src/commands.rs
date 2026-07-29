@@ -1994,6 +1994,277 @@ pub async fn task_check_reminders(
     Ok(count)
 }
 
+// ─── 每日固定时点提醒（汇总通知） ────────────────────────
+//
+// 与 task_check_reminders_inner 解耦：
+// - 任务级提醒：每个有 remind_offset_minutes 的任务在 due 时刻前后发单条；
+//   去重靠 tasks.notified_at。
+// - 每日汇总：用户在设置里配置的若干 HH:mm 到点，发一条汇总未完成任务数的通知；
+//   去重靠 daily_reminder_log (log_date, log_time) 主键。
+//
+// 应用场景：用户配置 09:00 / 17:00 两个时刻，每天 09:00、17:00 各发一条：
+//   「即时通知
+//    7月23日 周四
+//    69 过期任务
+//    立即查看今天的任务」
+//
+// 启动补发：lib.rs 后台 task 第一轮会扫描过去 24h 内所有到点时刻，确保关闭期间
+// 漏发的时刻也能补上（同一天同一时刻只补一次，由 log 表约束保证）。
+
+/// 每日汇总通知内容（与 PendingReminder 解耦，独立结构）
+#[derive(Debug, Clone)]
+pub struct DailySummary {
+    pub title: String,
+    pub body: String,
+}
+
+/// 解析 CSV 时刻字符串（"09:00,17:00"）为合法 HH:mm 列表
+/// - 去重、去空
+/// - 仅接受 `^[0-2]\d:[0-5]\d$` 格式（24h 制，HH:mm）
+/// - 字典序排序（HH:mm 字典序 == 时间序）
+/// - 最多 8 个（与前端 store 的上限保持一致）
+pub fn parse_daily_times(raw: Option<String>) -> Vec<String> {
+    const MAX_TIMES: usize = 8;
+    let Some(s) = raw else { return Vec::new() };
+    let mut seen: Vec<String> = Vec::new();
+    for tok in s.split(',') {
+        let t = tok.trim();
+        if t.is_empty() {
+            continue;
+        }
+        // 严格校验：2 位小时（00-23）+ 冒号 + 2 位分钟（00-59）
+        let valid = {
+            let bytes = t.as_bytes();
+            bytes.len() == 5
+                && bytes[2] == b':'
+                && bytes[0].is_ascii_digit()
+                && bytes[1].is_ascii_digit()
+                && bytes[3].is_ascii_digit()
+                && bytes[4].is_ascii_digit()
+                && t[0..2].parse::<u32>().is_ok_and(|h| h < 24)
+                && t[3..5].parse::<u32>().is_ok_and(|m| m < 60)
+        };
+        if !valid {
+            continue;
+        }
+        if !seen.iter().any(|x| x == t) {
+            seen.push(t.to_string());
+        }
+        if seen.len() >= MAX_TIMES {
+            break;
+        }
+    }
+    seen.sort();
+    seen
+}
+
+/// 扫描过去 24h 内"应该发但还没发"的时刻，对每个时刻：
+///   1) 计算过期 / 今天 / 未来 7 天的未完成根任务计数
+///   2) 调 on_emit(&DailySummary) 让调用方发通知
+///   3) 写入 daily_reminder_log 防重复
+///
+/// 触发条件：`times` 中的某个 `HH:mm` 满足：
+///   - hh:mm <= now（防止 11:00 时补 14:00 的）
+///   - hh:mm >= now - 24h（防止过老的补发）
+///   - daily_reminder_log 里 (today, hh:mm) 不存在
+///
+/// 返回实际发送的通知条数（用于日志 / UI 反馈）。
+pub async fn task_daily_reminder_scan_inner(
+    pool: &sqlx::SqlitePool,
+    times: &[String],
+    now: chrono::NaiveDateTime,
+    on_emit: impl Fn(&DailySummary),
+) -> Result<usize, String> {
+    if times.is_empty() {
+        return Ok(0);
+    }
+
+    // 本地今日 YYYY-MM-DD（与 chrono::Local 一致）
+    let today_str = now.format("%Y-%m-%d").to_string();
+
+    // 本地今日 00:00 / 明日 00:00 / 未来 7 天结束边界（用于三类计数）
+    let today_start: chrono::NaiveDateTime = now
+        .date()
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| "now.date() 转 NaiveDateTime 失败".to_string())?;
+    let tomorrow_start = today_start + chrono::Duration::days(1);
+    let week_later_start = today_start + chrono::Duration::days(7);
+
+    // 触发窗口：每个配置时刻的"今日目标时间"在
+    //   [today_target, today_target + 24h) 区间内
+    // 含义：今天 hh:mm 对应的本地时间字面量，加上 24 小时窗口。这意味着循环里
+    // today_target 之后**任意一次扫描**都算"在窗口里"（不再依赖 now_hhmm 严格匹配）。
+    // daily_reminder_log (log_date, log_time) 主键防同一天重复发。
+    // 启动补发同理：spawn 第一轮 + 启动期间窗口足够长，足以补过去 24h 内的所有时刻。
+    let day_window = chrono::Duration::hours(24);
+
+    let mut sent = 0usize;
+
+    for hhmm in times {
+        // 1. 时点合法性（parse_daily_times 已保证 hh:mm 格式）→ 拆出 h / m
+        if hhmm.len() != 5 {
+            continue;
+        }
+        let h: u32 = match hhmm[0..2].parse() {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let m: u32 = match hhmm[3..5].parse() {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if h >= 24 || m >= 60 {
+            continue;
+        }
+        // 今日 hh:mm 对应的本地 NaiveDateTime（与 today_start 同日期，仅替换时分）
+        let today_target = match today_start.date().and_hms_opt(h, m, 0) {
+            Some(dt) => dt,
+            None => continue,
+        };
+
+        // 2. 触发窗口判定：now 落在 [today_target, today_target + 24h)
+        if now < today_target || now >= today_target + day_window {
+            continue;
+        }
+
+        // 3. 是否已发过？（daily_reminder_log 主键 (log_date, log_time)）
+        let already = sqlx::query(
+            "SELECT 1 FROM daily_reminder_log WHERE log_date = $1 AND log_time = $2 LIMIT 1",
+        )
+        .bind(&today_str)
+        .bind(hhmm)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("查询 daily_reminder_log 失败: {}", e))?;
+        if already.is_some() {
+            continue;
+        }
+
+        // 4. 统计三类未完成根任务数（done=0 AND parent_id IS NULL AND due_end_at 非空）
+        //    过期：due_end_at < today 00:00
+        //    今天：today 00:00 <= due_end_at < 明天 00:00
+        //    未来 7 天：明天 00:00 <= due_end_at < 8 天后 00:00
+        let count_overdue: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM tasks
+             WHERE parent_id IS NULL AND done = 0
+               AND due_end_at IS NOT NULL
+               AND datetime(replace(due_end_at, 'T', ' '), 'localtime')
+                   < datetime($1, 'localtime')",
+        )
+        .bind(format_local_naive(today_start))
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("统计过期任务失败: {}", e))?;
+
+        let count_today: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM tasks
+             WHERE parent_id IS NULL AND done = 0
+               AND due_end_at IS NOT NULL
+               AND datetime(replace(due_end_at, 'T', ' '), 'localtime')
+                   >= datetime($1, 'localtime')
+               AND datetime(replace(due_end_at, 'T', ' '), 'localtime')
+                   < datetime($2, 'localtime')",
+        )
+        .bind(format_local_naive(today_start))
+        .bind(format_local_naive(tomorrow_start))
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("统计今日任务失败: {}", e))?;
+
+        let count_week: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM tasks
+             WHERE parent_id IS NULL AND done = 0
+               AND due_end_at IS NOT NULL
+               AND datetime(replace(due_end_at, 'T', ' '), 'localtime')
+                   >= datetime($1, 'localtime')
+               AND datetime(replace(due_end_at, 'T', ' '), 'localtime')
+                   < datetime($2, 'localtime')",
+        )
+        .bind(format_local_naive(tomorrow_start))
+        .bind(format_local_naive(week_later_start))
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("统计未来 7 天任务失败: {}", e))?;
+
+        // 5. 组装通知文案（中文）
+        //    标题始终为「即时通知」
+        //    正文：日期 + 三段计数（0 段省略）+ 行动号召
+        //    全部为 0 时退化为「暂无未完成任务」
+        let weekday_cn = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+            [now.weekday().num_days_from_monday() as usize];
+        let date_label = format!(
+            "{}月{}日 {}",
+            now.month(),
+            now.day(),
+            weekday_cn,
+        );
+
+        let mut lines: Vec<String> = Vec::new();
+        if count_overdue > 0 {
+            lines.push(format!("{} 过期任务", count_overdue));
+        }
+        if count_today > 0 {
+            lines.push(format!("{} 今天的任务", count_today));
+        }
+        if count_week > 0 {
+            lines.push(format!("{} 未来 7 天", count_week));
+        }
+
+        let body = if lines.is_empty() {
+            format!("{}\n暂无未完成任务", date_label)
+        } else {
+            format!("{}\n{}\n立即查看今天的任务", date_label, lines.join("\n"))
+        };
+
+        let summary = DailySummary {
+            title: "即时通知".to_string(),
+            body,
+        };
+        on_emit(&summary);
+
+        // 6. 写入 log 防重复（即使 on_emit 失败也写，避免反复尝试）
+        let sent_at = format_local_naive(now);
+        sqlx::query(
+            "INSERT OR IGNORE INTO daily_reminder_log (log_date, log_time, sent_at)
+             VALUES ($1, $2, $3)",
+        )
+        .bind(&today_str)
+        .bind(hhmm)
+        .bind(&sent_at)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("写入 daily_reminder_log 失败: {}", e))?;
+
+        sent += 1;
+    }
+
+    Ok(sent)
+}
+
+#[tauri::command]
+pub async fn task_daily_reminder_scan(
+    app: tauri::AppHandle,
+    pool: State<'_, sqlx::SqlitePool>,
+) -> CmdResult<usize> {
+    use tauri_plugin_notification::NotificationExt;
+    let raw = get_setting_inner(pool.inner(), "daily_reminder_times".to_string()).await?;
+    let times = parse_daily_times(raw);
+    let now = chrono::Local::now().naive_local();
+    let count = task_daily_reminder_scan_inner(pool.inner(), &times, now, |summary| {
+        let res = app
+            .notification()
+            .builder()
+            .title(&summary.title)
+            .body(&summary.body)
+            .show();
+        if let Err(e) = res {
+            eprintln!("[JustToDo] 每日提醒通知失败：{}", e);
+        }
+    })
+    .await?;
+    Ok(count)
+}
+
 // ─── 应用设置 ────────────────────────────────────────────
 
 /// 查询设置（纯函数版本，供内部调用）

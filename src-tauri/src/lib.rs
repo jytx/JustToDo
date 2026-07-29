@@ -115,6 +115,102 @@ pub fn run() {
                 });
             }
 
+            // ─── 每日固定时点提醒（独立 task） ──────────────────
+            //
+            // 复用现有连接池；不动 `recurrence_check_interval`。
+            // 独立调度：30s 一轮，分钟级精度足以覆盖任意 HH:mm 触发。
+            // 启动后第一轮立刻跑一次补发，覆盖过去 24h 内漏发的时刻。
+            // 同一时刻每日只发一次：依赖 daily_reminder_log 主键防重。
+            {
+                let pool_clone = pool.clone();
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tauri_plugin_notification::NotificationExt;
+
+                    // 启动立刻跑一次补发（不 await 完成检测，启动期间 UI 不阻塞）
+                    match commands::get_setting_inner(
+                        &pool_clone,
+                        "daily_reminder_times".to_string(),
+                    )
+                    .await
+                    {
+                        Ok(raw) => {
+                            let times = commands::parse_daily_times(raw);
+                            if !times.is_empty() {
+                                let now = chrono::Local::now().naive_local();
+                                let _ = commands::task_daily_reminder_scan_inner(
+                                    &pool_clone,
+                                    &times,
+                                    now,
+                                    |summary| {
+                                        let res = app_handle
+                                            .notification()
+                                            .builder()
+                                            .title(&summary.title)
+                                            .body(&summary.body)
+                                            .show();
+                                        if let Err(e) = res {
+                                            eprintln!(
+                                                "[JustToDo] 每日提醒通知失败：{}",
+                                                e
+                                            );
+                                        }
+                                    },
+                                )
+                                .await;
+                            }
+                        }
+                        Err(e) => println!("[JustToDo] 读取 daily_reminder_times 失败: {}", e),
+                    }
+
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                        match commands::get_setting_inner(
+                            &pool_clone,
+                            "daily_reminder_times".to_string(),
+                        )
+                        .await
+                        {
+                            Ok(raw) => {
+                                let times = commands::parse_daily_times(raw);
+                                if times.is_empty() {
+                                    continue;
+                                }
+                                let now = chrono::Local::now().naive_local();
+                                match commands::task_daily_reminder_scan_inner(
+                                    &pool_clone,
+                                    &times,
+                                    now,
+                                    |summary| {
+                                        let res = app_handle
+                                            .notification()
+                                            .builder()
+                                            .title(&summary.title)
+                                            .body(&summary.body)
+                                            .show();
+                                        if let Err(e) = res {
+                                            eprintln!(
+                                                "[JustToDo] 每日提醒通知失败：{}",
+                                                e
+                                            );
+                                        }
+                                    },
+                                )
+                                .await
+                                {
+                                    Ok(n) if n > 0 => {
+                                        println!("[JustToDo] 触发了 {} 条每日汇总提醒", n)
+                                    }
+                                    Ok(_) => {}
+                                    Err(e) => println!("[JustToDo] 扫描每日提醒失败: {}", e),
+                                }
+                            }
+                            Err(e) => println!("[JustToDo] 读取 daily_reminder_times 失败: {}", e),
+                        }
+                    }
+                });
+            }
+
             app.manage(pool.clone());
 
             // 当前 zoom 级别的内存缓存（WebviewWindow 无 zoom getter，用 State 记录）
@@ -241,6 +337,7 @@ pub fn run() {
             commands::task_get_subtasks,
             commands::task_generate_recurring,
             commands::task_check_reminders,
+            commands::task_daily_reminder_scan,
             commands::get_setting,
             commands::set_setting,
             commands::tag_get_all,

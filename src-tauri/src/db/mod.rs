@@ -10,6 +10,7 @@ pub const MIGRATIONS_002: &str = include_str!("migrations/002_habits.sql");
 pub const MIGRATIONS_014: &str = include_str!("migrations/014_templates.sql");
 pub const MIGRATIONS_015: &str = include_str!("migrations/015_templates_date_cn.sql");
 pub const MIGRATIONS_016: &str = include_str!("migrations/016_templates_placeholders.sql");
+pub const MIGRATIONS_017: &str = include_str!("migrations/017_daily_reminder_log.sql");
 
 /// 检查表中是否存在某列
 async fn column_exists(pool: &SqlitePool, table: &str, column: &str) -> Result<bool, String> {
@@ -138,6 +139,12 @@ pub async fn init_pool(db_path: &str, app_data_dir: Option<&std::path::Path>) ->
         .execute(&pool)
         .await
         .map_err(|e| format!("执行迁移 016_templates_placeholders 失败: {}", e))?;
+
+    // 017: 每日固定时点提醒日志（去重）
+    sqlx::query(MIGRATIONS_017)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("执行迁移 017_daily_reminder_log 失败: {}", e))?;
 
     // 018: 任务附件字段（attachments JSON 数组）
     run_migration_018(&pool).await?;
