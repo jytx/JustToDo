@@ -24,11 +24,17 @@ import ReminderPopover from "./ReminderPopover.vue";
 import RecurrencePopover from "./RecurrencePopover.vue";
 import ListDragHandle from "./ListDragHandle.vue";
 import AttachmentSection from "./AttachmentSection.vue";
+import ConfirmDialog from "./ConfirmDialog.vue";
+import { useAttachmentUpload } from "@/composables/useAttachmentUpload";
 import * as db from "@/api/db";
 
 const taskStore = useTaskStore();
 const listStore = useListStore();
 const tagStore = useTagStore();
+
+// 附件上传（添加入口在 footer 的更多菜单里；taskId 随当前选中任务变化）
+const { pickFiles: pickAttachmentFiles, uploading: attachmentUploading } =
+  useAttachmentUpload(() => task.value?.id ?? "");
 
 const props = defineProps<{
   panelWidth?: number;
@@ -305,11 +311,6 @@ function askDelete() {
 async function doDelete() {
   if (!task.value) return;
   await taskStore.deleteTask(task.value.id);
-  deleteConfirmVisible.value = false;
-}
-
-/** 取消删除 */
-function cancelDelete() {
   deleteConfirmVisible.value = false;
 }
 
@@ -796,13 +797,6 @@ onBeforeUnmount(() => {
         @update:model-value="(v) => { noteDraft = v; saveNote(v); }"
       />
 
-      <!-- 附件区（独立于描述；支持图片/视频/音频/md/zip 等，可预览可定位） -->
-      <AttachmentSection
-        v-if="task.id"
-        :task-id="task.id"
-        :attachments="task.attachments"
-      />
-
       <!-- 检查项区（独立于描述） -->
       <div
         ref="checklistContainerRef"
@@ -845,6 +839,13 @@ onBeforeUnmount(() => {
           :on-move="onChecklistReorder"
         />
       </div>
+
+      <!-- 附件区（仅在有附件时展示；添加入口在 footer 更多菜单） -->
+      <AttachmentSection
+        v-if="task.id && task.attachments.length > 0"
+        :task-id="task.id"
+        :attachments="task.attachments"
+      />
     </div>
 
     <!-- 底部 footer -->
@@ -915,6 +916,16 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="detail-panel__popup-item"
+            :disabled="attachmentUploading"
+            :title="attachmentUploading ? '上传中…' : '添加附件'"
+            @click="pickAttachmentFiles(); moreVisible = false"
+          >
+            <icon-attachment :size="14" />
+            <span>{{ attachmentUploading ? "上传中…" : "添加附件" }}</span>
+          </button>
+          <button
+            type="button"
+            class="detail-panel__popup-item"
             @click="addSubtask(); moreVisible = false"
           >
             <icon-plus :size="14" />
@@ -941,28 +952,14 @@ onBeforeUnmount(() => {
       </Popover>
     </div>
 
-    <!-- 删除二次确认弹窗（极简卡片风） -->
-    <a-modal
+    <!-- 删除二次确认弹窗（统一极简卡片风） -->
+    <ConfirmDialog
       :visible="deleteConfirmVisible"
-      :width="400"
-      :footer="false"
-      :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
-      modal-class="confirm-dialog-modal"
-      :modal-style="{ maxWidth: 'calc(100vw - 32px)' }"
-      @cancel="cancelDelete"
+      @update:visible="(v) => { deleteConfirmVisible = v; }"
+      @confirm="doDelete"
     >
-      <div class="confirm-dialog">
-        <div class="confirm-dialog__title">
-          <span class="confirm-dialog__icon"><icon-exclamation-circle :size="16" /></span>
-          <span>删除任务「<strong>{{ task?.title }}</strong>」？</span>
-        </div>
-        <p class="confirm-dialog__desc">此操作无法撤销。</p>
-        <div class="confirm-dialog__footer">
-          <a-button @click="cancelDelete">取消</a-button>
-          <a-button status="danger" type="primary" @click="doDelete">删除</a-button>
-        </div>
-      </div>
-    </a-modal>
+      <template #title>删除任务「<strong>{{ task?.title }}</strong>」？</template>
+    </ConfirmDialog>
   </div>
   </Transition>
 </template>

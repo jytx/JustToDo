@@ -13,12 +13,12 @@
 // · dragend 时若未 drop（拖出区域）则恢复快照
 import { ref, computed, watch } from "vue";
 import { Message } from "@arco-design/web-vue";
-import { IconExclamationCircle } from "@arco-design/web-vue/es/icon";
 import type { Template } from "@/types";
 import { useTemplateStore } from "@/stores/template";
 import { useListStore } from "@/stores/list";
 import { useSettingsStore } from "@/stores/settings";
 import SelectPopover from "@/components/SelectPopover.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import TemplateCard from "./TemplateCard.vue";
 import TemplateEditModal from "./TemplateEditModal.vue";
 import TemplateRenameModal from "./TemplateRenameModal.vue";
@@ -89,6 +89,7 @@ function confirmDelete(tpl: Template) {
   deleteConfirmVisible.value = true;
 }
 
+/** 取消删除（清理待删项） */
 function cancelDelete() {
   deleteConfirmVisible.value = false;
   pendingDelete.value = null;
@@ -328,32 +329,15 @@ async function onGridDrop(e: DragEvent) {
       :template="renamingTemplate"
     />
 
-    <!-- 删除二次确认弹窗（极简卡片风，与任务详情同款）-->
-    <a-modal
+    <!-- 删除二次确认弹窗（统一极简卡片风） -->
+    <ConfirmDialog
       :visible="deleteConfirmVisible"
-      :width="400"
-      :footer="false"
-      :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
-      modal-class="confirm-dialog-modal"
-      :modal-style="{ maxWidth: 'calc(100vw - 32px)' }"
-      @cancel="cancelDelete"
+      :loading="deleting"
+      @update:visible="(v) => { if (!v) cancelDelete(); }"
+      @confirm="doDelete"
     >
-      <div class="confirm-dialog">
-        <div class="confirm-dialog__title">
-          <span class="confirm-dialog__icon">
-            <IconExclamationCircle :size="16" />
-          </span>
-          <span>删除模板「<strong>{{ pendingDelete?.name }}</strong>」？</span>
-        </div>
-        <p class="confirm-dialog__desc">此操作无法撤销。</p>
-        <div class="confirm-dialog__footer">
-          <a-button @click="cancelDelete">取消</a-button>
-          <a-button status="danger" type="primary" :loading="deleting" @click="doDelete">
-            删除
-          </a-button>
-        </div>
-      </div>
-    </a-modal>
+      <template #title>删除模板「<strong>{{ pendingDelete?.name }}</strong>」？</template>
+    </ConfirmDialog>
   </div>
 </template>
 

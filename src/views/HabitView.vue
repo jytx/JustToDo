@@ -4,6 +4,7 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useHabitStore } from "@/stores/habit";
 import TeleportPopper from "@/components/TeleportPopper.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import type { HabitWithStats } from "@/api/db";
 
 const habitStore = useHabitStore();
@@ -814,29 +815,17 @@ function selectHabit(id: string) {
       </div>
     </TeleportPopper>
 
-    <!-- 删除确认弹窗（极简卡片风） -->
-    <a-modal
+    <!-- 删除确认弹窗（统一极简卡片风） -->
+    <ConfirmDialog
       :visible="confirmDelete"
-      :width="400"
-      :footer="false"
-      :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
-      modal-class="confirm-dialog-modal"
-      @cancel="confirmDelete = false"
+      @update:visible="(v) => { confirmDelete = v; }"
+      @confirm="confirmDeleteHabit"
     >
-      <div class="confirm-dialog">
-        <div class="confirm-dialog__title">
-          <span class="confirm-dialog__icon"><icon-exclamation-circle :size="16" /></span>
-          <span>删除习惯「<strong>{{ selectedHabit?.habit.name }}</strong>」？</span>
-        </div>
-        <p class="confirm-dialog__desc">
-          该习惯的 {{ selectedHabit?.totalDays ?? 0 }} 条打卡记录将一并删除，且不可恢复。
-        </p>
-        <div class="confirm-dialog__footer">
-          <a-button @click="confirmDelete = false">取消</a-button>
-          <a-button status="danger" type="primary" @click="confirmDeleteHabit">删除</a-button>
-        </div>
-      </div>
-    </a-modal>
+      <template #title>删除习惯「<strong>{{ selectedHabit?.habit.name }}</strong>」？</template>
+      <template #default>
+        该习惯的 {{ selectedHabit?.totalDays ?? 0 }} 条打卡记录将一并删除，且不可恢复。
+      </template>
+    </ConfirmDialog>
   </div>
 </template>
 

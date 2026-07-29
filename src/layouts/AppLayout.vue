@@ -16,6 +16,7 @@ import SearchPalette from "@/components/SearchPalette.vue";
 import QuickAddDialog from "@/components/QuickAddDialog.vue";
 import MenuPopover from "@/components/MenuPopover.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import { useSearchStore } from "@/stores/search";
 import { useListStore } from "@/stores/list";
 import { useShortcuts } from "@/composables/useShortcuts";
@@ -306,27 +307,15 @@ useShortcuts({
       @update:model-value="quickAdd.close()"
     />
 
-    <!-- 删除任务确认对话框（键盘 Backspace 或任务项菜单触发，极简卡片风） -->
-    <a-modal
+    <!-- 删除任务确认对话框（键盘 Backspace 或任务项菜单触发，统一极简卡片风） -->
+    <ConfirmDialog
       v-model:visible="deleteModalVisible"
-      :width="400"
-      :footer="false"
       :mask-closable="false"
-      :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
-      modal-class="confirm-dialog-modal"
+      @cancel="taskStore.cancelDelete()"
+      @confirm="taskStore.confirmDelete()"
     >
-      <div class="confirm-dialog">
-        <div class="confirm-dialog__title">
-          <span class="confirm-dialog__icon"><icon-exclamation-circle :size="16" /></span>
-          <span>删除任务「<strong>{{ deleteConfirmTitle }}</strong>」？</span>
-        </div>
-        <p class="confirm-dialog__desc">此操作无法撤销。</p>
-        <div class="confirm-dialog__footer">
-          <a-button @click="taskStore.cancelDelete()">取消</a-button>
-          <a-button status="danger" type="primary" @click="taskStore.confirmDelete()">删除</a-button>
-        </div>
-      </div>
-    </a-modal>
+      <template #title>删除任务「<strong>{{ deleteConfirmTitle }}</strong>」？</template>
+    </ConfirmDialog>
   </div>
 </template>
 

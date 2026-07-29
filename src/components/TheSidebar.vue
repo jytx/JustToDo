@@ -30,6 +30,7 @@ import SidebarListNode from "./SidebarListNode.vue";
 import SidebarRailCascade from "./SidebarRailCascade.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import ContextMenu from "./ContextMenu.vue";
 import TeleportPopper from "./TeleportPopper.vue";
 import * as db from "@/api/db";
@@ -1059,37 +1060,26 @@ onMounted(async () => {
     @select="onCascadeSelect"
   />
 
-  <!-- 删除确认对话框（极简卡片风） -->
-  <a-modal
+  <!-- 删除确认对话框（统一极简卡片风） -->
+  <ConfirmDialog
     :visible="!!confirmDelete"
-    :width="400"
-    :footer="false"
-    :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
-    modal-class="confirm-dialog-modal"
-    @cancel="cancelDelete"
+    @update:visible="(v) => { if (!v) cancelDelete(); }"
+    @confirm="confirmDeleteAction"
   >
-    <div v-if="confirmDelete" class="confirm-dialog">
-      <div class="confirm-dialog__title">
-        <span class="confirm-dialog__icon"><icon-exclamation-circle :size="16" /></span>
-        <span>
-          删除{{ confirmDelete.type === "list" ? "清单" : "标签" }}「<strong>{{ confirmDelete.name }}</strong>」？
-        </span>
-      </div>
-      <p v-if="confirmDelete.type === 'list' && confirmDelete.taskCount > 0" class="confirm-dialog__desc">
-        清单下的 {{ confirmDelete.taskCount }} 个任务将移动到「收件箱」。
-      </p>
-      <p v-else-if="confirmDelete.type === 'list'" class="confirm-dialog__desc">
-        清单为空，将直接删除。
-      </p>
-      <p v-else-if="confirmDelete.type === 'tag'" class="confirm-dialog__desc">
-        标签将被删除，任务不受影响。
-      </p>
-      <div class="confirm-dialog__footer">
-        <a-button @click="cancelDelete">取消</a-button>
-        <a-button status="danger" type="primary" @click="confirmDeleteAction">删除</a-button>
-      </div>
-    </div>
-  </a-modal>
+    <template #title>
+      删除{{ confirmDelete?.type === "list" ? "清单" : "标签" }}
+      「<strong>{{ confirmDelete?.name }}</strong>」？
+    </template>
+    <template v-if="confirmDelete?.type === 'list' && confirmDelete.taskCount > 0">
+      清单下的 {{ confirmDelete.taskCount }} 个任务将移动到「收件箱」。
+    </template>
+    <template v-else-if="confirmDelete?.type === 'list'">
+      清单为空，将直接删除。
+    </template>
+    <template v-else-if="confirmDelete?.type === 'tag'">
+      标签将被删除，任务不受影响。
+    </template>
+  </ConfirmDialog>
 
   <!-- 新建清单弹窗（QuickAdd 风格：裸 input + 属性 trigger + 回车提交） -->
   <a-modal
