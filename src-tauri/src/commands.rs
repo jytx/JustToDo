@@ -454,8 +454,17 @@ async fn resolve_sort_pref(
         _ => None,
     };
     if let Some(row) = row_opt {
-        let f: Option<String> = row.try_get("sort_field").ok();
-        let d: Option<String> = row.try_get("sort_dir").ok();
+        // 注意：DB 中 sort_field / sort_dir 可能存成空字符串 ""（历史数据），
+        // 空字符串必须视为无效值并回退到默认值 "manual"/"asc"，
+        // 否则前端 currentSort.field 变成 ""，导致 canDrag 恒为 false、任务无法拖拽。
+        let f: Option<String> = row
+            .try_get("sort_field")
+            .ok()
+            .filter(|s: &String| !s.is_empty());
+        let d: Option<String> = row
+            .try_get("sort_dir")
+            .ok()
+            .filter(|s: &String| !s.is_empty());
         if let (Some(f), Some(d)) = (f, d) {
             return Ok((f, d));
         }

@@ -109,31 +109,8 @@ function onDragStart(e: DragEvent) {
   }
   e.dataTransfer!.setData("text/plain", props.node.id);
   e.dataTransfer!.effectAllowed = "move";
-
-  // 自定义拖拽幽灵图：创建一个简洁的小卡片
-  const ghost = document.createElement("div");
-  ghost.textContent = props.node.name;
-  ghost.style.cssText = `
-    position: absolute;
-    top: -1000px;
-    left: -1000px;
-    padding: 4px 12px;
-    background: var(--jt-primary);
-    color: #fff;
-    font-size: 13px;
-    border-radius: 6px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-    max-width: 200px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  `;
-  document.body.appendChild(ghost);
-  e.dataTransfer!.setDragImage(ghost, 10, 10);
-
-  // 拖拽结束后移除幽灵元素
-  setTimeout(() => document.body.removeChild(ghost), 0);
-
+  // 不设置自定义 setDragImage，让浏览器默认用整个清单项的半透明截图作为拖拽视觉，
+  // 体现"整行被移动"的效果（而不是只有文字的小卡片）。
   isDragging.value = true;
 }
 
@@ -143,10 +120,13 @@ function onDragEnd() {
 }
 
 function onDragOver(e: DragEvent) {
-  // 收件箱位置固定，不接受其他清单的 before/after drop
-  if (props.node.id === "inbox") return;
+  // 始终 preventDefault + 设 dropEffect="move"，保证整个侧边栏区域都显示
+  // "可移动"光标，避免鼠标经过 inbox 时光标闪烁成禁止/加号。
+  // inbox 是否真正接受 drop 由 onDrop 里的业务判断决定。
   e.preventDefault();
   e.dataTransfer!.dropEffect = "move";
+  // 收件箱位置固定，不参与落点高亮（仅作过路）
+  if (props.node.id === "inbox") return;
 
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const y = e.clientY - rect.top;
@@ -162,6 +142,14 @@ function onDragOver(e: DragEvent) {
     if (y < h * 0.5) dragOver.value = "before";
     else dragOver.value = "after";
   }
+}
+
+/** dragenter：拖拽进入元素时立即锁定 dropEffect="move"，
+ *  消除"刚拖起来那一瞬间"光标闪成默认 +/copy 的现象（react-dnd issue #414）。
+ *  dragenter 到首个 dragover 之间存在光标未定窗口，必须在此显式声明。 */
+function onDragEnter(e: DragEvent) {
+  e.preventDefault();
+  e.dataTransfer!.dropEffect = "move";
 }
 
 function onDragLeave(e: DragEvent) {
@@ -226,6 +214,7 @@ function onDrop(e: DragEvent) {
       :draggable="canDrag ? 'true' : 'false'"
       @dragstart="onDragStart"
       @dragend="onDragEnd"
+      @dragenter="onDragEnter"
       @dragover="onDragOver"
       @dragleave="onDragLeave"
       @drop="onDrop"
@@ -289,6 +278,7 @@ function onDrop(e: DragEvent) {
       :draggable="canDrag ? 'true' : 'false'"
       @dragstart="onDragStart"
       @dragend="onDragEnd"
+      @dragenter="onDragEnter"
       @dragover="onDragOver"
       @dragleave="onDragLeave"
       @drop="onDrop"
@@ -402,6 +392,14 @@ function onDrop(e: DragEvent) {
 }
 .list-node__row[draggable="true"]:active {
   cursor: grabbing;
+}
+
+/* 不可拖拽行（收件箱 inbox）—— 在渲染层彻底阻止拖拽。
+ * WKWebView (macOS) 中 draggable="false" 的元素其子文本节点仍默认可被
+ * 原生拖拽，可能导致原生拖拽会话异常。-webkit-user-drag: none 是 WebKit
+ * 专用属性，在渲染层阻止元素及其子元素启动拖拽，作为防御性保护。 */
+.list-node__row[draggable="false"] {
+  -webkit-user-drag: none;
 }
 
 /* drag-inside：放入目录 —— 用更深的 inset 阴影区别于排序提示 */

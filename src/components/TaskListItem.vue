@@ -45,17 +45,9 @@ function onDragStart(e: DragEvent) {
   }
   e.dataTransfer!.setData("text/plain", props.task.id);
   e.dataTransfer!.effectAllowed = "move";
-
-  // 自定义拖拽幽灵图：带任务标题的小卡片
-  // 注意：必须显式调用 setDragImage —— 某些 webview（Tauri wkwebview）
-  // 若不设置自定义图像，浏览器默认拖动半透明视觉可能不被渲染，
-  // 进而影响用户对「拖起来了」的体感。先保留此段以稳定原生窗口行为。
-  const ghost = document.createElement("div");
-  ghost.textContent = props.task.title;
-  ghost.style.cssText = `position:absolute;top:-1000px;left:-1000px;padding:5px 12px;background:var(--jt-primary,#4F46E5);color:#fff;font-size:13px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.2);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;`;
-  document.body.appendChild(ghost);
-  e.dataTransfer!.setDragImage(ghost, 15, 12);
-  setTimeout(() => document.body.removeChild(ghost), 0);
+  e.dataTransfer!.dropEffect = "move";
+  // 不设置自定义 setDragImage，让浏览器默认用整个任务项的半透明截图作为拖拽视觉，
+  // 体现"整行被移动"的效果（而不是只有文字的小卡片）。
 }
 
 function onDragEnd() {
@@ -63,10 +55,22 @@ function onDragEnd() {
 }
 
 function onDragOver(e: DragEvent) {
-  if (!canDrag.value) return;
+  // 始终 preventDefault + 设 dropEffect="move"，保证整个列表区域都显示
+  // "可移动"光标，避免鼠标在可拖/不可拖行之间移动时光标闪烁成禁止/加号。
+  // 是否真正执行 reorder 由 onDrop 里的业务判断决定。
   e.preventDefault();
   e.dataTransfer!.dropEffect = "move";
+  // 不可拖拽的行不参与落点高亮（仅作过路），但仍 preventDefault 避免光标闪烁
+  if (!canDrag.value) return;
   dragOver.value = computeDropPosition(e);
+}
+
+/** dragenter：拖拽进入元素时立即锁定 dropEffect="move"，
+ *  消除"刚拖起来那一瞬间"光标闪成默认 +/copy 的现象（react-dnd issue #414）。
+ *  dragenter 到首个 dragover 之间存在光标未定窗口，必须在此显式声明。 */
+function onDragEnter(e: DragEvent) {
+  e.preventDefault();
+  e.dataTransfer!.dropEffect = "move";
 }
 
 /** 计算拖拽放置位置：与 SidebarListNode 保持一致 —— 上 1/3 为 before，下 2/3 为 after */
@@ -230,6 +234,7 @@ function onCtxDelete(): void {
       @click="$emit('select')"
       @dragstart="onDragStart"
       @dragend="onDragEnd"
+      @dragenter="onDragEnter"
       @dragover="onDragOver"
       @dragleave="onDragLeave"
       @drop="onDrop"
@@ -394,6 +399,14 @@ function onCtxDelete(): void {
 }
 .task-item[draggable="true"]:active {
   cursor: grabbing;
+}
+
+/* 不可拖拽行（已完成任务 / 非手动排序）—— 在渲染层彻底阻止拖拽。
+ * WKWebView (macOS) 中 draggable="false" 的元素其子文本节点仍默认可被
+ * 原生拖拽，可能导致原生拖拽会话异常。-webkit-user-drag: none 是 WebKit
+ * 专用属性，在渲染层阻止元素及其子元素启动拖拽，作为防御性保护。 */
+.task-item[draggable="false"] {
+  -webkit-user-drag: none;
 }
 
 .task-item__expand {
