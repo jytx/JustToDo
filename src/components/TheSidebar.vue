@@ -33,14 +33,90 @@ import * as db from "@/api/db";
 
 const props = defineProps<{
   collapsed?: boolean;
+  /** 受控宽度（展开态生效；收起态固定走 CSS 的 48px） */
+  width?: number;
 }>();
 
 const emit = defineEmits<{
   "update:collapsed": [value: boolean];
+  "update:width": [value: number];
 }>();
 
+/** 侧边栏宽度边界：最小 = 收起态宽度，最大避免挤压主区域 */
+const SIDEBAR_MIN_WIDTH: number = 48;
+const SIDEBAR_MAX_WIDTH: number = 480;
+/** 默认展开宽度（点击展开图标恢复到此值） */
+const SIDEBAR_DEFAULT_WIDTH: number = 240;
+
+/** 把宽度限制在 [最小, 最大] 区间（纯函数） */
+function clampWidth(w: number): number {
+  return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, w));
+}
+
 function toggleCollapsed() {
-  emit("update:collapsed", !props.collapsed);
+  const nextCollapsed = !props.collapsed;
+  emit("update:collapsed", nextCollapsed);
+  // 由收起 → 展开时，恢复默认宽度
+  if (!nextCollapsed) {
+    emit("update:width", SIDEBAR_DEFAULT_WIDTH);
+  }
+}
+
+/** 拖拽中标志：临时关闭 width 过渡，避免宽度滞后鼠标 */
+const isResizing = ref(false);
+
+/** 判定"真正开始拖拽"的位移阈值（px）。小于此值视为单纯点击，不改变任何状态，
+ *  避免收起态下点一下手柄就意外展开。 */
+const DRAG_THRESHOLD: number = 3;
+
+/** 拖拽调宽 —— 范式参考 TaskDetailPanel.startResize，方向相反（侧边栏在左）。
+ *  - mousedown 不改变状态；只有移动超过阈值才算"开始拖拽"
+ *  - 起点若是收起态，首次真正拖动时才退出收起（从 48px 起算跟随鼠标）
+ *  - 拖到最小宽度 48px 时，吸附为收起态 */
+function startResize(e: MouseEvent) {
+  e.preventDefault();
+  const startX: number = e.clientX;
+  const startWidth: number = props.collapsed
+    ? SIDEBAR_MIN_WIDTH
+    : props.width ?? SIDEBAR_DEFAULT_WIDTH;
+  /** 是否已跨过阈值、进入真正的拖拽（首次跨过时退出收起态） */
+  let dragStarted: boolean = false;
+
+  function onMouseMove(ev: MouseEvent) {
+    const delta: number = ev.clientX - startX;
+    // 未跨过阈值：单纯点击抖动，不改变状态
+    if (!dragStarted && Math.abs(delta) < DRAG_THRESHOLD) return;
+    // 首次跨过阈值：若是收起态，先退出收起（从 48px 起算跟随鼠标）
+    if (!dragStarted) {
+      dragStarted = true;
+      isResizing.value = true;
+      if (props.collapsed) {
+        emit("update:collapsed", false);
+      }
+    }
+    const newWidth = clampWidth(startWidth + delta);
+    if (newWidth <= SIDEBAR_MIN_WIDTH) {
+      // 吸附收起
+      emit("update:width", SIDEBAR_MIN_WIDTH);
+      emit("update:collapsed", true);
+    } else {
+      emit("update:collapsed", false);
+      emit("update:width", newWidth);
+    }
+  }
+
+  function onMouseUp() {
+    document.removeEventListener("mousemove", onMouseMove);
+    document.removeEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    isResizing.value = false;
+  }
+
+  document.addEventListener("mousemove", onMouseMove);
+  document.addEventListener("mouseup", onMouseUp);
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
 }
 
 const route = useRoute();
@@ -594,7 +670,11 @@ onMounted(async () => {
 </script>
 
 <template>
-  <aside class="sidebar" :class="{ 'sidebar--collapsed': collapsed }">
+  <aside
+    class="sidebar"
+    :class="{ 'sidebar--collapsed': collapsed, 'sidebar--resizing': isResizing }"
+    :style="!collapsed && width ? { width: width + 'px' } : {}"
+  >
     <div class="sidebar__header">
       <a-button
         class="sidebar__collapse-btn"
@@ -800,6 +880,9 @@ onMounted(async () => {
       <!-- 习惯区块已移除 —— 习惯入口已上移到 AppRail，TheSidebar 只承担任务二级导航 -->
       </template>
     </nav>
+
+    <!-- 拖拽调宽手柄（贴右边缘；双击切换收起/展开，收起态也保留可拖拽重新展开） -->
+    <div class="sidebar__resizer" @mousedown="startResize" @dblclick="toggleCollapsed" />
   </aside>
 
   <!-- 收起态 hover tooltip（Teleport 到 body，避开 sidebar overflow:hidden 裁剪） -->
@@ -1186,10 +1269,32 @@ onMounted(async () => {
   border-right: 1px solid var(--jt-border);
   transition: width 0.2s ease;
   overflow: hidden;
+  position: relative; /* 拖拽手柄绝对定位的基准 */
 }
 
 .sidebar--collapsed {
   width: 48px;
+}
+
+/* 拖拽调宽手柄：贴右边缘，跨在边框上（一半在内一半在外） */
+.sidebar__resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -3px;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 10;
+  transition: background-color 0.15s ease;
+}
+
+.sidebar__resizer:hover {
+  background-color: color-mix(in srgb, var(--jt-primary) 30%, transparent);
+}
+
+/* 拖拽期间关闭 width 过渡，避免宽度滞后鼠标 */
+.sidebar--resizing {
+  transition: none !important;
 }
 
 /* 收起态：nav 不再隐藏，改为渲染垂直图标列（见模板侧 collapsed 分支） */
