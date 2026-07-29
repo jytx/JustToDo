@@ -362,13 +362,16 @@ function onCtxDelete(): void {
   background-color: var(--jt-surface-hover);
 }
 
-/* 选中状态 */
+/* 选中状态 —— 与侧边栏清单 .list-node--active 完全对齐：
+ *  - 底色用 --jt-accent-soft；hover 时叠 15% primary 加深
+ *  - 加 !important 压过 .task-item:hover，否则选中行悬停时
+ *    会被 --jt-surface-hover 浅灰覆盖，表现为"看不出选中"。 */
 .task-item--selected {
-  background-color: var(--jt-accent-soft);
+  background-color: var(--jt-accent-soft) !important;
 }
 
 .task-item--selected:hover {
-  background-color: color-mix(in srgb, var(--jt-primary) 15%, var(--jt-accent-soft));
+  background-color: color-mix(in srgb, var(--jt-primary) 15%, var(--jt-accent-soft)) !important;
 }
 
 /* 键盘导航焦点状态（虚线边框，区别于选中的背景色） */

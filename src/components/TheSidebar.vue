@@ -1642,9 +1642,17 @@ onMounted(async () => {
   background-color: var(--jt-surface-hover);
 }
 
+/* 选中状态（路由激活） —— 加 !important 压过 .sidebar__item:hover，
+ * 否则鼠标悬停在选中项上时，背景会被 --jt-surface-hover 浅灰覆盖，
+ * 表现为"点击后没底色、鼠标移开才显示强调色"。
+ * 与清单 .list-node--active 的处理完全一致。 */
 .sidebar__item--active {
-  background-color: var(--jt-accent-soft);
+  background-color: var(--jt-accent-soft) !important;
   color: var(--jt-primary);
+}
+
+.sidebar__item--active:hover {
+  background-color: color-mix(in srgb, var(--jt-primary) 15%, var(--jt-accent-soft)) !important;
 }
 
 /* 标签 / 习惯拖拽悬停时显示蓝色描边（视觉提示落点） */
