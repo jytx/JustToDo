@@ -683,24 +683,6 @@ onBeforeUnmount(() => {
         </Popover>
       </a-tooltip>
 
-      <!-- 附件（点击打开抽屉查看附件列表；抽屉内可删除，
-           上传入口仍在 footer 更多菜单里） -->
-      <a-tooltip
-        :content="task.attachments.length ? `附件 (${task.attachments.length})` : '附件'"
-        position="bottom"
-      >
-        <PropertyChip
-          :active="attachmentDrawerVisible || task.attachments.length > 0"
-          icon-only
-          @click="attachmentDrawerVisible = !attachmentDrawerVisible"
-        >
-          <template #icon>
-            <icon-attachment :size="14" />
-          </template>
-          {{ task.attachments.length }}
-        </PropertyChip>
-      </a-tooltip>
-
       <!-- 标签 -->
       <a-tooltip :content="tagLabel" position="bottom">
         <Popover v-model:visible="tagVisible" placement="bottom-left">
@@ -736,6 +718,25 @@ onBeforeUnmount(() => {
             />
           </div>
         </Popover>
+      </a-tooltip>
+
+      <!-- 附件（点击打开抽屉查看附件列表；
+           颜色与其他 chip 一致：默认 --jt-text-tertiary，
+           active 仅在抽屉打开中（不再因为有附件就高亮，避免视觉抢眼）） -->
+      <a-tooltip
+        :content="task.attachments.length ? `附件 (${task.attachments.length})` : '附件'"
+        position="bottom"
+      >
+        <PropertyChip
+          :active="attachmentDrawerVisible"
+          icon-only
+          @click="attachmentDrawerVisible = !attachmentDrawerVisible"
+        >
+          <template #icon>
+            <icon-attachment :size="14" />
+          </template>
+          {{ task.attachments.length }}
+        </PropertyChip>
       </a-tooltip>
 
       <!-- 行末：添加检查项（用 margin-left: auto 推至行最右，替代原"更多"按钮位置） -->
