@@ -365,6 +365,7 @@ pub fn run() {
             commands::reveal_attachment,
             commands::copy_attachment_path,
             commands::task_get_tags,
+            commands::task_get_tags_batch,
             commands::task_add_tag,
             commands::task_remove_tag,
             commands::task_get_by_tag,

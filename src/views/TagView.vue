@@ -4,14 +4,20 @@ import { computed, watch, onMounted } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { useTagStore } from "@/stores/tag";
 import { formatPageDate } from "@/utils/date";
+import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import type { Priority } from "@/types";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
+import ContextMenu from "@/components/ContextMenu.vue";
+import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 
 const props = defineProps<{ id: string }>();
 
 const taskStore = useTaskStore();
 const tagStore = useTagStore();
+
+// 面板右键菜单：新建任务归属收件箱（与 AddTaskBar 行为一致）
+const { ctxMenu, onContextMenu, onCreateTask } = useTaskPanelContextMenu(() => "inbox");
 
 const currentTag = computed(() => tagStore.tags.find((t) => t.id === props.id));
 const pageTitle = computed(() => `# ${currentTag.value?.name ?? "标签"}`);
@@ -44,7 +50,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="tag-view">
+  <div class="tag-view" @contextmenu="onContextMenu">
     <header class="tag-view__header">
       <h1 class="tag-view__title">{{ pageTitle }}</h1>
       <p class="tag-view__subtitle">
@@ -108,6 +114,14 @@ onMounted(async () => {
       <p class="tag-view__empty-title">这个标签还没有任务</p>
       <p class="tag-view__empty-hint">在上方添加新任务</p>
     </div>
+
+    <!-- 面板右键菜单：新建任务 -->
+    <ContextMenu v-model:visible="ctxMenu.visible" :x="ctxMenu.x" :y="ctxMenu.y">
+      <MenuPopoverItem @click="onCreateTask">
+        <icon-plus :size="15" />
+        <span>新建任务</span>
+      </MenuPopoverItem>
+    </ContextMenu>
   </div>
 </template>
 

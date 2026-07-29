@@ -121,6 +121,20 @@ pub struct Tag {
     pub position: i64,
 }
 
+/// 任务-标签关联条目（批量查询接口用）。
+/// 扁平结构：一条记录 = 一个任务的一个标签关联。
+/// 前端拿到后按 task_id 分组成 taskId → Tag[] 映射。
+/// 注意：字段命名带 tag_ 前缀，避免与 task 自身字段歧义；
+/// Tauri 序列化保持 snake_case，前端对应同名字段读取。
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TaskTagLink {
+    pub task_id: String,
+    pub tag_id: String,
+    pub tag_name: String,
+    pub tag_created_at: String,
+    pub tag_position: i64,
+}
+
 /// 创建任务的参数
 #[derive(Debug, Deserialize)]
 pub struct CreateTaskInput {

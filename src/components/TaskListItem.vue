@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 任务列表项 —— 支持树形递归（子任务嵌套展开）
 // 含：展开箭头、复选框、标题、优先级色点、截止日期、hover 操作菜单
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, reactive } from "vue";
 import type { Task } from "@/types";
 import { PRIORITY_COLORS } from "@/types";
 import { formatDueDate } from "@/utils/date";
@@ -9,6 +9,7 @@ import { useTaskStore } from "@/stores/task";
 import TaskCheckbox from "./TaskCheckbox.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
+import ContextMenu from "./ContextMenu.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -131,6 +132,9 @@ const childSubtasks = computed(() =>
   taskStore.getCachedSubtasks(props.task.id),
 );
 
+// ─── 任务标签（从 store 缓存读取，用于任务项显示） ───────────────────────────────
+const taskTags = computed(() => taskStore.taskTagMap[props.task.id] ?? []);
+
 /** 是否有子任务（需要先加载才知道）——先假设可能有，首次展开时加载 */
 const hasSubtasksLoaded = computed(() => props.task.id in taskStore.subtaskCache);
 const childCount = computed(() => childSubtasks.value.length);
@@ -163,6 +167,51 @@ function onDelete() {
   menuOpen.value = false;
   taskStore.requestDelete(props.task.id);
 }
+
+// ─── 右键菜单 ──────────────────────────────────────
+/** 右键菜单状态：可见性 + 鼠标坐标 */
+const ctxMenu = reactive<{ visible: boolean; x: number; y: number }>({
+  visible: false,
+  x: 0,
+  y: 0,
+});
+
+/** 打开右键菜单：记录鼠标坐标 */
+function onContextMenu(e: MouseEvent): void {
+  ctxMenu.x = e.clientX;
+  ctxMenu.y = e.clientY;
+  ctxMenu.visible = true;
+}
+
+/** 新建同级任务：与当前任务同一父级、同一清单。
+ *  - 当前是顶层任务（parentId=null）→ 新建顶层任务
+ *  - 当前是子任务（parentId 非空）→ 新建同父子任务
+ *  走「空标题 + 选中打开详情面板」范式，让用户直接输入标题。 */
+async function onCtxAddSiblingTask(): Promise<void> {
+  ctxMenu.visible = false;
+  const created = await taskStore.createTask({
+    title: "",
+    listId: props.task.listId,
+    parentId: props.task.parentId,
+  });
+  taskStore.selectTask(created.id);
+}
+
+/** 新建子任务：在当前任务下创建下级任务。
+ *  复用 TaskDetailPanel.addSubtask 的范式：createSubtask(空标题) → 刷新子任务 → 选中。 */
+async function onCtxAddSubtask(): Promise<void> {
+  ctxMenu.visible = false;
+  await taskStore.createSubtask(props.task, "");
+  await taskStore.loadSubtasks(props.task.id);
+  const sub = taskStore.subtasks[taskStore.subtasks.length - 1];
+  if (sub) taskStore.selectTask(sub.id);
+}
+
+/** 删除任务（走现有的删除确认弹窗） */
+function onCtxDelete(): void {
+  ctxMenu.visible = false;
+  taskStore.requestDelete(props.task.id);
+}
 </script>
 
 <template>
@@ -187,6 +236,7 @@ function onDelete() {
       @dragover="onDragOver"
       @dragleave="onDragLeave"
       @drop="onDrop"
+      @contextmenu.prevent.stop="onContextMenu($event)"
     >
       <!-- 展开箭头（无子任务时不显示） -->
       <span
@@ -211,6 +261,14 @@ function onDelete() {
 
       <div class="task-item__body">
         <span class="task-item__title">{{ task.title }}</span>
+        <!-- 标签 chips（独立一行，显示在标题下方） -->
+        <div v-if="taskTags.length" class="task-item__tags">
+          <span
+            v-for="tag in taskTags"
+            :key="tag.id"
+            class="task-item__tag"
+          >{{ tag.name }}</span>
+        </div>
         <div v-if="task.recurrenceFreq || childCount || dueInfo" class="task-item__meta">
           <span v-if="task.recurrenceFreq" class="task-item__recurrence" title="重复任务">
             <icon-refresh :size="12" />
@@ -268,6 +326,22 @@ function onDelete() {
         @select="taskStore.selectTask(sub.id)"
       />
     </div>
+
+    <!-- 右键菜单：新建同级任务 / 新建子任务 / 删除任务 -->
+    <ContextMenu v-model:visible="ctxMenu.visible" :x="ctxMenu.x" :y="ctxMenu.y">
+      <MenuPopoverItem @click="onCtxAddSiblingTask">
+        <icon-plus :size="15" />
+        <span>新建任务</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem @click="onCtxAddSubtask">
+        <icon-branch :size="15" />
+        <span>新建子任务</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem danger @click="onCtxDelete">
+        <icon-delete :size="15" />
+        <span>删除任务</span>
+      </MenuPopoverItem>
+    </ContextMenu>
   </div>
 </template>
 
@@ -394,6 +468,30 @@ function onDelete() {
 .task-item--done .task-item__title {
   text-decoration: line-through;
   color: var(--jt-text-tertiary);
+}
+
+/* 标签 chips 行（标题下方独立一行） */
+.task-item__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+/* 单个标签 chip —— 轻量视觉，不抢标题焦点 */
+.task-item__tag {
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: 4px;
+  background-color: var(--jt-accent-soft);
+  color: var(--jt-text-secondary);
+  white-space: nowrap;
+}
+
+/* 已完成任务的标签弱化（与标题删除线一致的处理） */
+.task-item--done .task-item__tag {
+  opacity: 0.5;
 }
 
 .task-item__meta {

@@ -1626,6 +1626,47 @@ pub async fn task_get_tags(
         .collect())
 }
 
+/// 批量查询多个任务的标签关联。
+/// 一条 SQL 查询全部，返回扁平的 TaskTagLink 数组（每条 = 一个任务的一个标签），
+/// 前端按 task_id 分组成映射。空入参直接返回空数组，避免生成非法的 `IN ()`。
+#[tauri::command]
+pub async fn task_get_tags_batch(
+    pool: State<'_, sqlx::SqlitePool>,
+    task_ids: Vec<String>,
+) -> CmdResult<Vec<crate::models::TaskTagLink>> {
+    if task_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    // 动态构造占位符：$1, $2, ...（sqlx 用 $N 而非 ?）
+    let placeholders: Vec<String> = (1..=task_ids.len()).map(|i| format!("${i}")).collect();
+    let sql = format!(
+        "SELECT tt.task_id, t.id, t.name, t.created_at, t.position
+         FROM task_tags tt JOIN tags t ON t.id = tt.tag_id
+         WHERE tt.task_id IN ({})
+         ORDER BY t.position ASC, t.created_at ASC",
+        placeholders.join(", ")
+    );
+    let mut query = sqlx::query(&sql);
+    for id in &task_ids {
+        query = query.bind(id);
+    }
+    let rows = query
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| format!("批量查询任务标签失败: {}", e))?;
+
+    Ok(rows
+        .iter()
+        .map(|r| crate::models::TaskTagLink {
+            task_id: r.get("task_id"),
+            tag_id: r.get("id"),
+            tag_name: r.get("name"),
+            tag_created_at: r.get("created_at"),
+            tag_position: r.get("position"),
+        })
+        .collect())
+}
+
 #[tauri::command]
 pub async fn task_add_tag(
     pool: State<'_, sqlx::SqlitePool>,

@@ -247,6 +247,8 @@ async function addExistingTag(tagId: string) {
   if (!task.value || !tagId) return;
   await db.addTaskTag(task.value.id, tagId);
   await loadTaskTags();
+  // 同步刷新任务列表项的标签缓存
+  await taskStore.refreshTaskTags(task.value.id);
 }
 
 async function createNewTag(name: string) {
@@ -258,12 +260,16 @@ async function createNewTag(name: string) {
   }
   await db.addTaskTag(task.value.id, tag.id);
   await loadTaskTags();
+  // 同步刷新任务列表项的标签缓存
+  await taskStore.refreshTaskTags(task.value.id);
 }
 
 async function removeTaskTag(tagId: string) {
   if (!task.value) return;
   await db.removeTaskTag(task.value.id, tagId);
   await loadTaskTags();
+  // 同步刷新任务列表项的标签缓存
+  await taskStore.refreshTaskTags(task.value.id);
 }
 
 // ─── 弹层显隐状态 ───────────────────────────────
