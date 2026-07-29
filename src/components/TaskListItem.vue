@@ -19,13 +19,19 @@ const props = withDefaults(
     /** 是否显示清单色点（智能视图跨清单时用） */
     showListDot?: boolean;
     listColor?: string;
+    /** 是否正在被拖拽（由父视图传入，用于源行半透明） */
+    dragging?: boolean;
   }>(),
-  { depth: 0, showListDot: false },
+  { depth: 0, showListDot: false, dragging: false },
 );
 
 const emit = defineEmits<{
   select: [];
   reorder: [draggedId: string, targetId: string, position: "before" | "after"];
+  /** 拖拽开始：通知父视图记录 draggingId（FLIP 实时让位用） */
+  dragstart: [taskId: string];
+  /** 拖拽结束：通知父视图持久化最终顺序 */
+  dragend: [];
 }>();
 
 // ─── 拖拽排序（仅根任务 depth=0 且未完成 且 当前为手动排序模式时启用） ──────────────
@@ -46,12 +52,16 @@ function onDragStart(e: DragEvent) {
   e.dataTransfer!.setData("text/plain", props.task.id);
   e.dataTransfer!.effectAllowed = "move";
   e.dataTransfer!.dropEffect = "move";
+  // 通知父视图记录 draggingId（FLIP 实时让位用）
+  emit("dragstart", props.task.id);
   // 不设置自定义 setDragImage，让浏览器默认用整个任务项的半透明截图作为拖拽视觉，
   // 体现"整行被移动"的效果（而不是只有文字的小卡片）。
 }
 
 function onDragEnd() {
   dragOver.value = null;
+  // 通知父视图持久化最终顺序（WKWebView 的 drop 不可靠，以 dragend 为准）
+  emit("dragend");
 }
 
 function onDragOver(e: DragEvent) {
@@ -218,7 +228,7 @@ function onCtxDelete(): void {
 </script>
 
 <template>
-  <div class="task-tree-node">
+  <div class="task-tree-node" :data-task-id="task.id">
     <!-- 当前任务行 -->
     <div
       ref="itemRef"
@@ -228,6 +238,7 @@ function onCtxDelete(): void {
         'task-item--selected': isSelected,
         'task-item--focused': isFocused,
         'task-item--drag-over': dragOver === 'before' || dragOver === 'after',
+        'task-item--dragging': dragging,
       }"
       :style="{ paddingLeft: depth * 20 + 'px' }"
       :draggable="canDrag ? 'true' : 'false'"
@@ -399,6 +410,11 @@ function onCtxDelete(): void {
 }
 .task-item[draggable="true"]:active {
   cursor: grabbing;
+}
+
+/* 拖拽中的源行：半透明留在原位（与模板卡片 .tpl-card--dragging 一致） */
+.task-item--dragging {
+  opacity: 0.4;
 }
 
 /* 不可拖拽行（已完成任务 / 非手动排序）—— 在渲染层彻底阻止拖拽。

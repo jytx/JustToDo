@@ -891,6 +891,48 @@ export const useTaskStore = defineStore("task", () => {
     }
   }
 
+  /**
+   * 按指定 id 顺序持久化未完成任务的排序（拖拽 FLIP 实时让位的终态持久化）。
+   *
+   * 与 reorderTasks 的区别：
+   * - reorderTasks 接收 draggedId/targetId/position，内部计算新顺序（旧流程，drop 触发）
+   * - persistTaskOrder 接收最终 id 顺序，直接按此顺序重排（新流程，dragover 实时让位 + dragend 持久化）
+   *
+   * 流程：
+   * 1. 按 orderedIds 重排 currentTasks 中的未完成任务（已完成任务保持原位）
+   * 2. 重算 sort_order（间隔 1000）
+   * 3. 写库
+   *
+   * @param orderedIds 未完成任务的最终顺序（id 数组）
+   * @returns 持久化是否成功（失败时调用方负责回滚 localOrder）
+   */
+  async function persistTaskOrder(orderedIds: string[]): Promise<boolean> {
+    const idToTask = new Map(currentTasks.value.map((t) => [t.id, t]));
+    // 按 orderedIds 重排未完成项；已完成项追加在末尾保持原相对顺序
+    const reorderedOpen: Task[] = [];
+    for (const id of orderedIds) {
+      const t = idToTask.get(id);
+      if (t && !t.done) reorderedOpen.push(t);
+    }
+    const doneTasks = currentTasks.value.filter((t) => t.done);
+
+    // 重算 sort_order（间隔 1000）
+    const updates: [string, number][] = reorderedOpen.map((t, i) => [t.id, i * 1000]);
+    for (const [id, sortOrder] of updates) {
+      const task = idToTask.get(id);
+      if (task) task.sortOrder = sortOrder;
+    }
+    currentTasks.value = [...reorderedOpen, ...doneTasks];
+
+    try {
+      await db.reorderTasks(updates);
+      return true;
+    } catch (e) {
+      console.error("[TaskStore] 排序持久化失败:", e);
+      return false;
+    }
+  }
+
   return {
     currentListId,
     currentTagId,
@@ -928,6 +970,7 @@ export const useTaskStore = defineStore("task", () => {
     cancelDelete,
     confirmDelete,
     reorderTasks,
+    persistTaskOrder,
     selectTask,
     loadSubtasks,
     loadSubtasksToCache,

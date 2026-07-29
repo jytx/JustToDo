@@ -6,6 +6,7 @@ import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import { formatPageDate } from "@/utils/date";
 import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
+import { useTaskDragReorder } from "@/composables/useTaskDragReorder";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
@@ -23,6 +24,17 @@ const currentList = computed(() => listStore.getById(props.id));
 
 const pageTitle = computed(() => currentList.value?.name ?? "清单");
 const openCount = computed(() => taskStore.openTasks.length);
+
+// 拖拽实时让位（FLIP 动画）—— 仅未完成区启用
+const {
+  containerRef: openContainerRef,
+  draggingId,
+  orderedTasks,
+  onTaskDragStart,
+  onContainerDragOver,
+  onContainerDrop,
+  onTaskDragEnd,
+} = useTaskDragReorder(() => taskStore.openTasks);
 
 // 切换清单时重新加载任务
 watch(
@@ -84,13 +96,25 @@ onMounted(async () => {
           :header="`未完成 · ${taskStore.openTasks.length}`"
           class="list-view__collapse-header"
         >
-          <TaskListItem
-            v-for="task in taskStore.openTasks"
-            :key="task.id"
-            :task="task"
-            @select="taskStore.selectTask(task.id)"
-            @reorder="(draggedId: string, targetId: string, pos: 'before' | 'after') => taskStore.reorderTasks(draggedId, targetId, pos)"
-          />
+          <!-- 外层 div 挂容器级 dragover/drop（FLIP 实时让位）；
+               TransitionGroup 做 FLIP 动画，task-flip-move 让位过渡 -->
+          <div
+            ref="openContainerRef"
+            @dragover="onContainerDragOver"
+            @drop="onContainerDrop"
+          >
+            <TransitionGroup name="task-flip" tag="div">
+              <TaskListItem
+                v-for="task in orderedTasks"
+                :key="task.id"
+                :task="task"
+                :dragging="draggingId === task.id"
+                @select="taskStore.selectTask(task.id)"
+                @dragstart="onTaskDragStart"
+                @dragend="onTaskDragEnd"
+              />
+            </TransitionGroup>
+          </div>
         </a-collapse-item>
 
         <a-collapse-item
@@ -170,6 +194,12 @@ onMounted(async () => {
 /* 去掉 Arco Collapse 内容区默认左侧缩进，任务行自带内边距 */
 .list-view__collapse :deep(.arco-collapse-item-content) {
   padding-left: 0;
+}
+
+/* === TransitionGroup FLIP 动画（拖拽实时让位）===
+   关键：.task-flip-move 让位置变化的元素平滑过渡（"挤走"效果）。 */
+.task-flip-move {
+  transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .list-view__collapse-header {
