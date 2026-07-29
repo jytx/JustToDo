@@ -18,7 +18,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "unstable"] }
+# features 说明：
+# - protocol-asset: 启用 asset:// 协议，用于加载本地图片附件
+# - unstable: 使用 Tauri 的实验性 API
+# - devtools: 启用 DevTools 相关 API（open_devtools / close_devtools / is_devtools_open），
+#   debug 构建默认开启，release 构建需显式声明，以便「帮助→切换控制台」菜单在生产包中仍可用
+tauri = { version = "2", features = ["protocol-asset", "unstable", "devtools"] }
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
