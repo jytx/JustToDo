@@ -144,7 +144,14 @@ function onNavigationKeydown(e: KeyboardEvent) {
   }
 
   // 2. ESC：关闭详情面板
+  //    若详情面板内有任意浮层（chip 浮窗 / 菜单 / 确认弹窗）打开，
+  //    先让浮层自己关（逐层关闭语义），本轮不关详情面板。
+  //    （右键菜单、附件预览不在详情面板内，由各自捕获监听器 stopImmediatePropagation 拦截）
   if (e.key === "Escape") {
+    if (taskStore.hasDetailOverlay) {
+      e.preventDefault();
+      return;
+    }
     if (taskStore.detailOpen) {
       e.preventDefault();
       taskStore.selectTask(null);

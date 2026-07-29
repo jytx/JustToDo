@@ -5,7 +5,7 @@
 // 视频：<video controls>
 // 音频：<audio controls>
 // PDF：<iframe>（webview 原生 PDF 渲染）
-import { ref, computed, watch, onMounted } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -34,16 +34,26 @@ const viewMode = ref<ViewMode>("rendered");
 const renderedHtml = ref("");
 
 // 按 ESC 关闭
+// —— 关键：用捕获阶段（capture = true）注册 + stopImmediatePropagation，
+//   确保预览弹窗优先于 AppLayout 的冒泡阶段 ESC 监听器拦截事件。
+//   否则按 ESC 会同时关闭预览弹窗和任务详情面板（用户只想关预览）。
 function onKeydown(e: KeyboardEvent) {
   if (e.key === "Escape") {
     e.preventDefault();
+    e.stopImmediatePropagation();
     emit("close");
   }
 }
 
 onMounted(() => {
-  window.addEventListener("keydown", onKeydown);
+  // capture: true → 捕获阶段，DOM 规范保证先于所有冒泡监听器触发
+  window.addEventListener("keydown", onKeydown, true);
   loadContent();
+});
+
+onBeforeUnmount(() => {
+  // 预览关闭时移除监听器，避免重复挂载导致 ESC 被多次响应（监听器泄漏）
+  window.removeEventListener("keydown", onKeydown, true);
 });
 
 watch(

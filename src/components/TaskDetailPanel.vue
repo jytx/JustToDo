@@ -295,6 +295,26 @@ const deleteConfirmVisible = ref(false);
 /** 附件下拉浮窗（chips 行点 📎 触发） */
 const attachmentDrawerVisible = ref(false);
 
+/** 汇报「详情面板是否有任意浮层打开」到 task store。
+ *  AppLayout 的 ESC 守卫据此实现逐层关闭：有浮层时只关浮层，不关详情面板。
+ *  采用显式状态汇总，避开 Arco popover 关闭动画期间 DOM 节点残留导致检测失真。 */
+watch(
+  [
+    reminderVisible,
+    recurrenceVisible,
+    priorityVisible,
+    tagVisible,
+    listVisible,
+    moreVisible,
+    formatToolbarVisible,
+    deleteConfirmVisible,
+    attachmentDrawerVisible,
+  ],
+  (states) => {
+    taskStore.setDetailOverlay(states.some(Boolean));
+  },
+);
+
 /** 切换任务时关闭附件浮窗，避免跨任务残留视图 */
 watch(
   () => task.value?.id,
@@ -571,6 +591,8 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect();
   resizeObserver = null;
   if (resizeTimer) clearTimeout(resizeTimer);
+  // 详情面板卸载时复位浮层标记，避免 AppLayout ESC 守卫读到残留 true
+  taskStore.setDetailOverlay(false);
 });
 </script>
 

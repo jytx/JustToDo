@@ -128,9 +128,19 @@ function onScroll() {
   if (props.visible) updatePosition();
 }
 
+/** ESC 关闭浮层。
+ *  不做 stopPropagation：AppLayout 的 ESC 守卫会通过 .popover-content 检测到本浮层
+ *  仍在 DOM 中而 return（不关详情面板），二者通过 DOM 状态协同，实现「逐层关闭」。 */
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape" && props.visible) {
+    emit("update:visible", false);
+  }
+}
+
 onBeforeUnmount(() => {
   document.removeEventListener("mousedown", onDocumentClick);
   document.removeEventListener("scroll", onScroll, true);
+  document.removeEventListener("keydown", onKeydown);
 });
 
 watch(
@@ -139,9 +149,11 @@ watch(
     if (v) {
       document.addEventListener("mousedown", onDocumentClick);
       document.addEventListener("scroll", onScroll, true);
+      document.addEventListener("keydown", onKeydown);
     } else {
       document.removeEventListener("mousedown", onDocumentClick);
       document.removeEventListener("scroll", onScroll, true);
+      document.removeEventListener("keydown", onKeydown);
     }
   },
   { immediate: true },

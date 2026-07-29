@@ -14,7 +14,7 @@
 //   - AttachmentSection 是多场景复用组件（详情面板主区等），侵入它会让其他场景凭空多个"+"
 //   - 这里通过 :deep() 隐藏嵌套 AttachmentSection 的 header，浮窗独占自绘 header
 
-import { computed } from "vue";
+import { computed, onMounted, onBeforeUnmount } from "vue";
 import AttachmentSection from "@/components/AttachmentSection.vue";
 import { useAttachmentUpload } from "@/composables/useAttachmentUpload";
 import type { Attachment } from "@/types";
@@ -35,6 +35,19 @@ const { pickFiles: pickAttachmentFiles, uploading } = useAttachmentUpload(
   () => props.taskId,
 );
 
+/** ESC 关闭浮窗。
+ *  Arco a-popover 原生不响应 ESC，这里补一个监听。
+ *  不做 stopPropagation：AppLayout 的 ESC 守卫会通过 .arco-popover-popup 检测到
+ *  本浮窗仍在 DOM 中而 return（不关详情面板），实现「逐层关闭」。 */
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape" && props.visible) {
+    emit("update:visible", false);
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
+
 async function onAddClick() {
   await pickAttachmentFiles();
 }
@@ -44,7 +57,7 @@ const visible = computed(() => props.visible);
 
 <template>
   <a-popover
-    :visible="visible"
+    :popup-visible="visible"
     :show-arrow="true"
     :arrow-style="{ backgroundColor: 'transparent' }"
     :content-style="{ padding: 0, border: 'none', background: 'transparent', boxShadow: 'none' }"
@@ -52,7 +65,7 @@ const visible = computed(() => props.visible);
     position="bottom"
     trigger="click"
     :popup-visible-async="false"
-    @update:visible="(v: boolean) => emit('update:visible', v)"
+    @update:popup-visible="(v: boolean) => emit('update:visible', v)"
   >
     <!-- a-popover 的 trigger 是默认 slot（PropertyChip 直接放这里作为触发元素） -->
     <slot />

@@ -20,7 +20,7 @@
 //     </ChipPopover>
 //   </a-tooltip>
 
-import { computed } from "vue";
+import { computed, onMounted, onBeforeUnmount } from "vue";
 
 const props = defineProps<{
   /** v-model:visible */
@@ -36,11 +36,24 @@ const popoverVisible = computed({
   get: () => props.visible,
   set: (v) => emit("update:visible", v),
 });
+
+/** ESC 关闭浮窗。
+ *  Arco a-popover 原生不响应 ESC，这里补一个监听。
+ *  不做 stopPropagation：AppLayout 的 ESC 守卫会通过 .arco-popover-popup 检测到
+ *  本浮窗仍在 DOM 中而 return（不关详情面板），实现「逐层关闭」。 */
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape" && props.visible) {
+    emit("update:visible", false);
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 </script>
 
 <template>
   <a-popover
-    v-model:visible="popoverVisible"
+    v-model:popup-visible="popoverVisible"
     :show-arrow="true"
     :arrow-style="{ backgroundColor: 'transparent' }"
     :content-style="{ padding: 0, border: 'none', background: 'transparent', boxShadow: 'none' }"

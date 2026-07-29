@@ -84,6 +84,17 @@ export const useTaskStore = defineStore("task", () => {
   /** 详情面板是否展开 */
   const detailOpen = computed(() => selectedTaskId.value !== null);
 
+  /** 详情面板内是否有任意浮层（chip 浮窗 / 菜单 / 确认弹窗 等）打开。
+   *  由 TaskDetailPanel 集中汇报（watch 各浮窗 visible 状态）。
+   *  用于 ESC「逐层关闭」：有浮层时 AppLayout 不关详情面板，让浮层自己关。
+   *  采用显式状态追踪而非 DOM 检测，避开 Arco popover 关闭动画期间节点残留的时序问题。 */
+  const hasDetailOverlay = ref(false);
+
+  /** 汇总更新详情面板浮层状态（TaskDetailPanel 在浮窗开关时调用） */
+  function setDetailOverlay(open: boolean): void {
+    hasDetailOverlay.value = open;
+  }
+
   /** 预加载所有根任务的子任务计数到缓存（用于列表初始判断有无子任务） */
   async function preloadSubtaskCounts() {
     const newCache: Record<string, Task[]> = {};
@@ -950,6 +961,8 @@ export const useTaskStore = defineStore("task", () => {
     doneTasks,
     selectedTask,
     detailOpen,
+    hasDetailOverlay,
+    setDetailOverlay,
     listCounts,
     tagCounts,
     smartCounts,
