@@ -10,7 +10,9 @@
 import Popover from "./Popover.vue";
 
 defineProps<{
-  visible: boolean;
+  /** 是否可见。可选：调用方对 reactive 对象取值（如 menuOpen[id]）在 key 未初始化时
+   *  会得到 undefined，可选类型避免 Vue 必填 Boolean 校验告警。 */
+  visible?: boolean;
   /** 默认 bottom-right（与原 Arco position="br" 等价） */
   placement?:
     | "bottom-left"

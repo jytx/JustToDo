@@ -5,11 +5,14 @@
 //     <template #trigger><button @click="visible = !visible">打开</button></template>
 //     <div class="my-popup">...</div>
 //   </Popover>
-import { ref, watch, onBeforeUnmount, nextTick } from "vue";
+import { ref, computed, watch, onBeforeUnmount, nextTick } from "vue";
 
 const props = withDefaults(
   defineProps<{
-    visible: boolean;
+    /** 弹层是否可见。声明为可选：调用方对 reactive 对象取值（如 menuOpen[id]）
+     *  在 key 未初始化时会得到 undefined，可选类型避免 Vue 的必填 Boolean 校验告警。
+     *  组件内统一通过 open（规范化为 boolean）使用。 */
+    visible?: boolean;
     /** 弹层相对 trigger 的偏移（px） */
     offset?: number;
     /** 弹层位置 */
@@ -27,6 +30,9 @@ const props = withDefaults(
 const emit = defineEmits<{
   "update:visible": [value: boolean];
 }>();
+
+/** 规范化 visible：undefined / null 一律视作 false，得到确定的 boolean */
+const open = computed(() => props.visible === true);
 
 const triggerRef = ref<HTMLElement | null>(null);
 const popupRef = ref<HTMLElement | null>(null);
@@ -103,7 +109,7 @@ function updatePosition() {
 }
 
 watch(
-  () => props.visible,
+  () => open.value,
   async (v) => {
     if (v) {
       await nextTick();
@@ -113,7 +119,7 @@ watch(
 );
 
 function onDocumentClick(e: MouseEvent) {
-  if (!props.visible) return;
+  if (!open.value) return;
   const target = e.target as Node;
   if (
     triggerRef.value?.contains(target) ||
@@ -125,14 +131,14 @@ function onDocumentClick(e: MouseEvent) {
 }
 
 function onScroll() {
-  if (props.visible) updatePosition();
+  if (open.value) updatePosition();
 }
 
 /** ESC 关闭浮层。
  *  不做 stopPropagation：AppLayout 的 ESC 守卫会通过 .popover-content 检测到本浮层
  *  仍在 DOM 中而 return（不关详情面板），二者通过 DOM 状态协同，实现「逐层关闭」。 */
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === "Escape" && props.visible) {
+  if (e.key === "Escape" && open.value) {
     emit("update:visible", false);
   }
 }
@@ -144,7 +150,7 @@ onBeforeUnmount(() => {
 });
 
 watch(
-  () => props.visible,
+  () => open.value,
   (v) => {
     if (v) {
       document.addEventListener("mousedown", onDocumentClick);
@@ -165,7 +171,7 @@ watch(
     <slot name="trigger" />
   </span>
   <Teleport to="body">
-    <div v-if="visible" ref="popupRef" :style="popupStyle" class="popover-content">
+    <div v-if="open" ref="popupRef" :style="popupStyle" class="popover-content">
       <slot />
     </div>
   </Teleport>
