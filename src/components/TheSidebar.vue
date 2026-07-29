@@ -300,8 +300,7 @@ async function confirmDeleteAction() {
     if (route.name === "tag" && route.params.id === id) {
       router.push("/all");
     }
-    await db.deleteTag(id);
-    await tagStore.loadTags();
+    await tagStore.deleteTag(id);
     // 删标签后刷新角标（标签计数可能变化）
     await taskStore.refreshCounts();
   }
