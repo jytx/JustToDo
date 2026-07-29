@@ -38,7 +38,7 @@ const emit = defineEmits<{
     :arrow-style="{ backgroundColor: 'transparent' }"
     :content-style="{ padding: 0, border: 'none', background: 'transparent', boxShadow: 'none' }"
     :popup-style="{ padding: 0 }"
-    position="bl"
+    position="bottom"
     trigger="click"
     :popup-visible-async="false"
     @update:visible="(v: boolean) => emit('update:visible', v)"

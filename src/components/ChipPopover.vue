@@ -45,7 +45,7 @@ const popoverVisible = computed({
     :arrow-style="{ backgroundColor: 'transparent' }"
     :content-style="{ padding: 0, border: 'none', background: 'transparent', boxShadow: 'none' }"
     :popup-style="{ padding: 0 }"
-    position="bl"
+    position="bottom"
     trigger="click"
   >
     <!-- a-popover 的 trigger 是默认 slot -->
