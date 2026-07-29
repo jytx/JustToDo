@@ -23,7 +23,7 @@ import DueDateChip from "./DueDateChip.vue";
 import ReminderPopover from "./ReminderPopover.vue";
 import RecurrencePopover from "./RecurrencePopover.vue";
 import ListDragHandle from "./ListDragHandle.vue";
-import AttachmentDrawer from "./AttachmentDrawer.vue";
+import AttachmentPopover from "./AttachmentPopover.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import { useAttachmentUpload } from "@/composables/useAttachmentUpload";
 import * as db from "@/api/db";
@@ -291,10 +291,10 @@ const moreVisible = ref(false);
 const formatToolbarVisible = ref(false);
 /** 删除二次确认弹窗 */
 const deleteConfirmVisible = ref(false);
-/** 附件抽屉（chips 行点 📎 触发） */
+/** 附件下拉浮窗（chips 行点 📎 触发） */
 const attachmentDrawerVisible = ref(false);
 
-/** 切换任务时关闭附件抽屉，避免跨任务残留视图 */
+/** 切换任务时关闭附件浮窗，避免跨任务残留视图 */
 watch(
   () => task.value?.id,
   () => {
@@ -720,23 +720,28 @@ onBeforeUnmount(() => {
         </Popover>
       </a-tooltip>
 
-      <!-- 附件（点击打开抽屉查看附件列表；
+      <!-- 附件（点击弹出下拉浮窗查看附件列表，带箭头指向 chip；
            颜色与其他 chip 一致：默认 --jt-text-tertiary，
-           active 仅在抽屉打开中（不再因为有附件就高亮，避免视觉抢眼）） -->
+           active 仅在浮窗打开中（不再因为有附件就高亮，避免视觉抢眼）） -->
       <a-tooltip
         :content="task.attachments.length ? `附件 (${task.attachments.length})` : '附件'"
         position="bottom"
       >
-        <PropertyChip
-          :active="attachmentDrawerVisible"
-          icon-only
-          @click="attachmentDrawerVisible = !attachmentDrawerVisible"
+        <AttachmentPopover
+          v-model:visible="attachmentDrawerVisible"
+          :task-id="task.id"
+          :attachments="task.attachments"
         >
-          <template #icon>
-            <icon-attachment :size="14" />
-          </template>
-          {{ task.attachments.length }}
-        </PropertyChip>
+          <PropertyChip
+            :active="attachmentDrawerVisible"
+            icon-only
+          >
+            <template #icon>
+              <icon-attachment :size="14" />
+            </template>
+            {{ task.attachments.length }}
+          </PropertyChip>
+        </AttachmentPopover>
       </a-tooltip>
 
       <!-- 行末：添加检查项（用 margin-left: auto 推至行最右，替代原"更多"按钮位置） -->
@@ -985,13 +990,7 @@ onBeforeUnmount(() => {
       <template #title>删除任务「<strong>{{ task?.title }}</strong>」？</template>
     </ConfirmDialog>
 
-    <!-- 附件抽屉（chips 行 📎 点击触发；只读列表 + 单附件删除） -->
-    <AttachmentDrawer
-      v-if="task"
-      v-model:visible="attachmentDrawerVisible"
-      :task-id="task.id"
-      :attachments="task.attachments"
-    />
+    <!-- 附件浮窗（chips 行 📎 点击触发；下拉带箭头，嵌 AttachmentSection） -->
   </div>
   </Transition>
 </template>
