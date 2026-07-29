@@ -56,8 +56,10 @@ const emit = defineEmits<{
 <style scoped>
 .att-popover {
   /* 浮窗外观：圆角、表面背景、与详情面板 chips 行其它浮层一致 */
-  width: 320px;
-  max-height: 360px;
+  width: 360px;
+  /* 固定 max-height：内容少时自适应收缩，内容多时滚动。
+   * 8 行可见（每项 ~56px + header 32px ≈ 480）。 */
+  max-height: 480px;
   overflow-y: auto;
   background: var(--jt-surface);
   border: 1px solid var(--jt-border);
