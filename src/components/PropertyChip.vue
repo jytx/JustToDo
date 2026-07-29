@@ -116,4 +116,7 @@ function onClick(e: MouseEvent) {
   gap: 4px;
   min-width: 0;
 }
+
+/* PropertyChip 自带的 hover 提示走 :title(原生浏览器 title)+ 父级 Arco a-tooltip(已具备浮层样式),
+ * 此处不再 CSS 自绘伪元素（实测 :hover::before / :has(:hover) 在 Tauri webview 中行为不可靠） */
 </style>
