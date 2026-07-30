@@ -116,13 +116,19 @@ async function applyTemplate(tplId: string) {
   const tpl = templateStore.templates.find((t) => t.id === tplId);
   if (!tpl) return;
   try {
-    await templateStore.applyTemplate({
-      id: tpl.id,
-      name: tpl.name,
-      title: tpl.title,
-      note: tpl.note,
-      kind: tpl.kind,
-    });
+    // 笔记模板落到当前清单/笔记本（保持 UI 直觉）；
+    // 任务模板仍走全局默认清单，避免覆盖用户设定的"任务模板默认清单"
+    const targetListId = tpl.kind === "note" ? props.listId : undefined;
+    await templateStore.applyTemplate(
+      {
+        id: tpl.id,
+        name: tpl.name,
+        title: tpl.title,
+        note: tpl.note,
+        kind: tpl.kind,
+      },
+      targetListId,
+    );
     Message.success(isNote.value ? "已创建笔记" : "已创建任务");
     // 应用模板后收起属性行（条目已创建并打开详情面板）
     focused.value = false;

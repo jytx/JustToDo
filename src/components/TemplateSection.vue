@@ -12,8 +12,9 @@
 // · drop 时调 templateStore.reorderTemplates 持久化
 // · dragend 时若未 drop（拖出区域）则恢复快照
 import { ref, computed, watch } from "vue";
+import { useRoute } from "vue-router";
 import { Message } from "@arco-design/web-vue";
-import type { Template } from "@/types";
+import type { Template, TaskKind } from "@/types";
 import { useTemplateStore } from "@/stores/template";
 import { useListStore } from "@/stores/list";
 import { useSettingsStore } from "@/stores/settings";
@@ -26,6 +27,31 @@ import TemplateRenameModal from "./TemplateRenameModal.vue";
 const templateStore = useTemplateStore();
 const listStore = useListStore();
 const settings = useSettingsStore();
+const route = useRoute();
+
+/**
+ * 解析模板应用时的落地清单 id。
+ * 必须在组件 setup 顶层调用 useRoute()（不能在 store action 内读 route）。
+ *
+ * 笔记优先级：当前 notebook 路由 → 设置项 templateDefaultNoteId → default-notebook
+ * 任务优先级：设置项 templateDefaultListId → inbox
+ */
+function resolveTemplateListId(kind: TaskKind | undefined): string {
+  if (kind !== "note") {
+    return settings.templateDefaultListId || "inbox";
+  }
+  const routeId =
+    route.name === "notebook" && typeof route.params.id === "string"
+      ? route.params.id
+      : null;
+  if (routeId) {
+    const cur = listStore.getById(routeId);
+    if (cur && !cur.isFolder && cur.kind === "note") {
+      return cur.id;
+    }
+  }
+  return settings.templateDefaultNoteId || "default-notebook";
+}
 
 /** 默认设置面板是否展开（本地状态，无需持久化） */
 const settingsExpanded = ref(true);
@@ -73,13 +99,16 @@ function openEdit(tpl: Template) {
 // ─── 直接应用模板（不打开编辑弹窗，用模板当前内容创建条目；按模板 kind 落地）───
 async function applyDirectly(tpl: Template) {
   try {
-    await templateStore.applyTemplate({
-      id: tpl.id,
-      name: tpl.name,
-      title: tpl.title,
-      note: tpl.note,
-      kind: tpl.kind,
-    });
+    await templateStore.applyTemplate(
+      {
+        id: tpl.id,
+        name: tpl.name,
+        title: tpl.title,
+        note: tpl.note,
+        kind: tpl.kind,
+      },
+      resolveTemplateListId(tpl.kind),
+    );
     Message.success(tpl.kind === "note" ? "已创建笔记" : "已创建任务");
   } catch (e) {
     Message.error("应用模板失败：" + String(e));

@@ -5,12 +5,10 @@
 
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import { useRoute } from "vue-router";
 import type { Template, TemplateForm, Task, TaskKind } from "@/types";
 import * as db from "@/api/db";
 import { useTaskStore } from "@/stores/task";
 import { useSettingsStore } from "@/stores/settings";
-import { useListStore } from "@/stores/list";
 import { replacePlaceholders } from "@/utils/template";
 
 export const useTemplateStore = defineStore("template", () => {
@@ -129,11 +127,19 @@ export const useTemplateStore = defineStore("template", () => {
    * 入参 form.id === null 表示新建模式（先创建模板拿到 id）
    * 返回新建的 Task 对象（笔记也是 Task 类型，kind='note'），供调用方做后续 UI 反馈
    *
-   * 落地清单策略：
-   * - 任务模板（kind='task'）→ 全局默认清单（settings.templateDefaultListId || 'inbox'）
-   * - 笔记模板（kind='note'）→ 当前笔记本（/notebook/:id）或默认笔记本（default-notebook）
+   * 落地清单策略（按优先级）：
+   * 1. 调用方传入 targetListId（最优先：UI 上下文中已经选好清单/笔记本）
+   * 2. 笔记模板（kind='note'）→ 设置项 templateDefaultNoteId（兜底 default-notebook）
+   * 3. 任务模板（kind='task'）→ 设置项 templateDefaultListId（兜底 inbox）
+   *
+   * 不在 store 内读 route：store action 运行时已脱离组件 setup 上下文，
+   * useRoute() 会拿到 undefined，导致 route.name 崩溃。
+   * 路由判断应由调用方组件完成（仅在 setup 顶层合法）。
    */
-  async function applyTemplate(form: TemplateForm): Promise<Task> {
+  async function applyTemplate(
+    form: TemplateForm,
+    targetListId?: string,
+  ): Promise<Task> {
     if (!form.name.trim()) {
       throw new Error("模板名称不能为空");
     }
@@ -156,33 +162,13 @@ export const useTemplateStore = defineStore("template", () => {
       });
     }
 
-    // 2. 解析落地清单
+    // 2. 解析落地清单：调用方已选清单 > 设置项默认 > 内置兜底
     const settings = useSettingsStore();
-    const route = useRoute();
-    let listId: string;
-    if (kind === "note") {
-      // 笔记落地优先级：
-      // 1. 当前路由是 notebook 且 params.id 指向笔记本 → 落到当前笔记本
-      // 2. 否则使用设置项"笔记模板默认笔记本"（用户可在设置页调整）
-      // 3. 最后兜底 default-notebook（首次启动/设置项缺失）
-      const routeName = route.name as string;
-      const routeId = route.params.id as string | undefined;
-      const listStore = useListStore();
-      const cur =
-        routeName === "notebook" && routeId
-          ? listStore.getById(routeId)
-          : undefined;
-      if (cur && cur.kind === "note") {
-        listId = cur.id;
-      } else {
-        listId =
-          settings.templateDefaultNoteId ||
-          (listStore.getById("default-notebook") ? "default-notebook" : "default-notebook");
-      }
-    } else {
-      // 任务：全局默认清单
-      listId = settings.templateDefaultListId || "inbox";
-    }
+    const listId =
+      targetListId ||
+      (kind === "note"
+        ? settings.templateDefaultNoteId || "default-notebook"
+        : settings.templateDefaultListId || "inbox");
 
     // 2.5 占位符替换：{{date_cn}} 等替换为实际值（仅作用于新建条目，不改模板本身）
     const resolvedTitle = replacePlaceholders(form.title || form.name);

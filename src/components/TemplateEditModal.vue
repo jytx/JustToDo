@@ -5,9 +5,12 @@
 // · 「应用模板」走 templateStore.applyTemplate（内部含保存逻辑）
 // · 「取消」直接关弹窗（MVP 不做"放弃改动"二次确认）
 import { ref, watch, computed } from "vue";
+import { useRoute } from "vue-router";
 import { Message } from "@arco-design/web-vue";
 import type { Template, TemplateForm } from "@/types";
 import { useTemplateStore } from "@/stores/template";
+import { useListStore } from "@/stores/list";
+import { useSettingsStore } from "@/stores/settings";
 import RichTextEditor from "./RichTextEditor.vue";
 import RichTextToolbar from "./RichTextToolbar.vue";
 import Popover from "./Popover.vue";
@@ -26,8 +29,33 @@ const emit = defineEmits<{
 }>();
 
 const templateStore = useTemplateStore();
+const listStore = useListStore();
+const settings = useSettingsStore();
+const route = useRoute();
 
 const isEdit = computed(() => props.template !== null);
+
+/**
+ * 解析模板应用时的落地清单 id（必须在 setup 顶层 useRoute 后才能用）。
+ * 笔记优先级：当前 notebook 路由 → 设置项 templateDefaultNoteId → default-notebook
+ * 任务优先级：设置项 templateDefaultListId → inbox
+ */
+function resolveTemplateListId(): string {
+  if (form.value.kind !== "note") {
+    return settings.templateDefaultListId || "inbox";
+  }
+  const routeId =
+    route.name === "notebook" && typeof route.params.id === "string"
+      ? route.params.id
+      : null;
+  if (routeId) {
+    const cur = listStore.getById(routeId);
+    if (cur && !cur.isFolder && cur.kind === "note") {
+      return cur.id;
+    }
+  }
+  return settings.templateDefaultNoteId || "default-notebook";
+}
 
 /** 表单状态：每次 visible 打开时根据 template 重置（kind 默认 'task'） */
 const form = ref<TemplateForm>({
@@ -122,8 +150,8 @@ async function onApply() {
   if (!validate()) return;
   applying.value = true;
   try {
-    await templateStore.applyTemplate(form.value);
-    Message.success("已创建任务");
+    await templateStore.applyTemplate(form.value, resolveTemplateListId());
+    Message.success(isNote.value ? "已创建笔记" : "已创建任务");
     emit("applied");
     close();
   } catch (e) {

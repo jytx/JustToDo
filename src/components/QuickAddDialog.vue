@@ -101,13 +101,17 @@ async function applyTemplate(tplId: string) {
   const tpl = templateStore.templates.find((t) => t.id === tplId);
   if (!tpl) return;
   try {
-    await templateStore.applyTemplate({
-      id: tpl.id,
-      name: tpl.name,
-      title: tpl.title,
-      note: tpl.note,
-      kind: tpl.kind,
-    });
+    // 落到用户当前选中的清单/笔记本（selectedListId 在 setup 顶层已解析）
+    await templateStore.applyTemplate(
+      {
+        id: tpl.id,
+        name: tpl.name,
+        title: tpl.title,
+        note: tpl.note,
+        kind: tpl.kind,
+      },
+      selectedListId.value,
+    );
     Message.success(isNoteMode.value ? "已创建笔记" : "已创建任务");
     open.value = false;
   } catch (e) {
