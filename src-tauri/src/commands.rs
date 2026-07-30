@@ -79,6 +79,10 @@ fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
             .ok()
             .and_then(|s| serde_json::from_str::<Vec<Attachment>>(&s).ok())
             .unwrap_or_default(),
+        // kind 用 try_get 容错（极旧库可能无此列，缺省视为 'task'）
+        kind: row
+            .try_get::<String, _>("kind")
+            .unwrap_or_else(|_| "task".to_string()),
     }
 }
 
@@ -87,7 +91,7 @@ fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
 #[tauri::command]
 pub async fn list_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<TaskList>> {
     let rows = sqlx::query(
-        "SELECT id, name, color, position, created_at, parent_id, is_folder, archived FROM lists ORDER BY position ASC, created_at ASC"
+        "SELECT id, name, color, position, created_at, parent_id, is_folder, archived, kind FROM lists ORDER BY position ASC, created_at ASC"
     )
     .fetch_all(pool.inner())
     .await
@@ -104,6 +108,7 @@ pub async fn list_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<Ta
             parent_id: r.get("parent_id"),
             is_folder: r.get::<i32, _>("is_folder") != 0,
             archived: r.get::<i32, _>("archived") != 0,
+            kind: r.try_get("kind").unwrap_or_else(|_| "task".to_string()),
         })
         .collect())
 }
@@ -115,14 +120,17 @@ pub async fn list_create(
     color: String,
     parent_id: Option<String>,
     is_folder: Option<bool>,
+    kind: Option<String>,
 ) -> CmdResult<TaskList> {
     let id = uuid();
     let ts = now();
     let position = chrono::Utc::now().timestamp_millis();
     let is_folder_val = if is_folder.unwrap_or(false) { 1 } else { 0 };
+    // kind 不传默认 'task'（待办清单/目录）；'note' = 笔记本/笔记本目录
+    let kind_val = kind.unwrap_or_else(|| "task".to_string());
 
     sqlx::query(
-        "INSERT INTO lists (id, name, color, position, created_at, parent_id, is_folder) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        "INSERT INTO lists (id, name, color, position, created_at, parent_id, is_folder, kind) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
     )
     .bind(&id)
     .bind(&name)
@@ -131,6 +139,7 @@ pub async fn list_create(
     .bind(&ts)
     .bind(&parent_id)
     .bind(is_folder_val)
+    .bind(&kind_val)
     .execute(pool.inner())
     .await
     .map_err(|e| format!("创建清单失败: {}", e))?;
@@ -144,6 +153,7 @@ pub async fn list_create(
         parent_id,
         is_folder: is_folder_val != 0,
         archived: false,
+        kind: kind_val,
     })
 }
 
@@ -152,9 +162,12 @@ pub async fn list_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdRe
     if id == "inbox" {
         return Err("收件箱不能删除".to_string());
     }
+    if id == "default-notebook" {
+        return Err("默认笔记本不能删除".to_string());
+    }
 
-    // 查询被删项的 parent_id（用于提升子项）
-    let row = sqlx::query("SELECT parent_id, is_folder FROM lists WHERE id = $1")
+    // 查询被删项的 parent_id / is_folder / kind（kind 决定条目迁移目标）
+    let row = sqlx::query("SELECT parent_id, is_folder, kind FROM lists WHERE id = $1")
         .bind(&id)
         .fetch_optional(pool.inner())
         .await
@@ -163,6 +176,7 @@ pub async fn list_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdRe
     if let Some(row) = row {
         let parent_id: Option<String> = row.get("parent_id");
         let is_folder: bool = row.get::<i32, _>("is_folder") != 0;
+        let kind: String = row.try_get("kind").unwrap_or_else(|_| "task".to_string());
 
         if is_folder {
             // 删除目录：把子项的 parent_id 提升到被删目录的 parent_id
@@ -173,13 +187,21 @@ pub async fn list_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdRe
                 .await
                 .map_err(|e| format!("迁移子项失败: {}", e))?;
         } else {
-            // 删除清单：把任务迁移到收件箱
-            sqlx::query("UPDATE tasks SET list_id = 'inbox', updated_at = $1 WHERE list_id = $2")
+            // 删除清单/笔记本：把其下条目迁移到对应的默认容器
+            // - kind='task' → 收件箱（inbox）
+            // - kind='note' → 默认笔记本（default-notebook）
+            let fallback_list = if kind == "note" {
+                "default-notebook"
+            } else {
+                "inbox"
+            };
+            sqlx::query("UPDATE tasks SET list_id = $1, updated_at = $2 WHERE list_id = $3")
+                .bind(fallback_list)
                 .bind(now())
                 .bind(&id)
                 .execute(pool.inner())
                 .await
-                .map_err(|e| format!("迁移任务失败: {}", e))?;
+                .map_err(|e| format!("迁移条目失败: {}", e))?;
         }
     }
 
@@ -244,46 +266,73 @@ pub async fn list_move(
     Ok(())
 }
 
-/// 归档 / 取消归档整棵子树（id 自身 + 所有后代清单与子目录）。
-/// archived=true → 整树隐藏进归档区；archived=false → 整树恢复。
+/// 归档整棵子树（id 自身 + 所有后代清单与子目录），archived 列置 1。
 /// 任务本身**不动**（list_id 不变），仅随归属清单一起在主页隐藏。
 /// - inbox 硬保护（与 delete/rename/move 同样不允许）
 /// - 用 SQLite WITH RECURSIVE 一次 SQL 找出整棵子树，避免多条往返
 #[tauri::command]
-pub async fn list_archive_tree(
-    pool: State<'_, sqlx::SqlitePool>,
-    id: String,
-    archived: bool,
-) -> CmdResult<()> {
+pub async fn list_archive_tree(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdResult<()> {
     if id == "inbox" {
         return Err("收件箱不能归档".to_string());
     }
-    if !archived {
-        // 取消归档：额外校验目标存在（避免脏前端调错）
-        let row = sqlx::query("SELECT id FROM lists WHERE id = $1")
-            .bind(&id)
-            .fetch_optional(pool.inner())
-            .await
-            .map_err(|e| format!("查询失败: {}", e))?;
-        if row.is_none() {
-            return Err("清单不存在".to_string());
-        }
-    }
-    let archived_val: i32 = if archived { 1 } else { 0 };
     sqlx::query(
         "WITH RECURSIVE subtree(id) AS (
              SELECT id FROM lists WHERE id = $1
              UNION ALL
              SELECT l.id FROM lists l JOIN subtree s ON l.parent_id = s.id
          )
-         UPDATE lists SET archived = $2
+         UPDATE lists SET archived = 1
          WHERE id IN (SELECT id FROM subtree)",
     )
     .bind(&id)
-    .bind(archived_val)
     .execute(pool.inner())
     .await
     .map_err(|e| format!("归档清单失败: {}", e))?;
+    Ok(())
+}
+
+/// 取消归档：仅把 id 自身 + 祖先链上的"被归档"项批量置 0。
+/// 设计原因：归档是以树为单位操作的，但取消归档可以挑某个子项恢复。
+/// 如果只置 id 自身为 0 而不动其祖先，会出现"父级 archived=1、子项 archived=0"的中间态——
+/// 这时子项在侧边栏主页与归档区都找不到（成为"孤儿"）。
+/// 修复：让取消归档自动顺带把 archived 祖先链一并恢复，使该子项能回到原父级正常显示。
+/// - 后代不动（仍 archived=1，归档区可见，与其他兄弟同处）
+/// - 同级兄弟不动（仍 archived=1）
+/// - 遇到第一个 archived=0 的祖先即停（再上层是另一棵 active 树，不卷入）
+#[tauri::command]
+pub async fn list_unarchive_tree(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdResult<()> {
+    if id == "inbox" {
+        return Err("收件箱不能取消归档".to_string());
+    }
+    // 校验目标存在
+    let row = sqlx::query("SELECT id FROM lists WHERE id = $1")
+        .bind(&id)
+        .fetch_optional(pool.inner())
+        .await
+        .map_err(|e| format!("查询失败: {}", e))?;
+    if row.is_none() {
+        return Err("清单不存在".to_string());
+    }
+    // 沿 parent **向上**溯，仅爬"archived=1"的祖先，遇到 archived=0 即停——
+    // 这条策略与"整树恢复"对称：恢复 X 自身 + 把所有 archived 父级（即祖先链）
+    // 一起置 0，使 X 能回到原父级正常显示。
+    // 关键 SQL：JOIN 条件必须是 l.parent_id = c.id（找 X 的"父亲"，再找"父亲的父亲"），
+    // 而**不能**是 c.parent_id = l.id（后者会让 X 同级也被错误纳入，等效"整树恢复"反语义版本）。
+    sqlx::query(
+        "WITH RECURSIVE chain(id) AS (
+             SELECT id FROM lists WHERE id = $1
+             UNION ALL
+             SELECT l.id FROM lists l
+             JOIN chain c ON l.parent_id = c.id
+             WHERE l.archived = 1
+         )
+         UPDATE lists SET archived = 0
+         WHERE id IN (SELECT id FROM chain) AND archived = 1",
+    )
+    .bind(&id)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| format!("取消归档失败: {}", e))?;
     Ok(())
 }
 
@@ -331,13 +380,15 @@ pub async fn task_count_by_list(
 }
 
 /// 统计各标签的未完成根任务数量（供侧边栏显示）
+/// 注意：标签全局共用（任务和笔记都可打标签），但角标只统计待办（kind='task'），
+/// 笔记无"未完成"概念，不进角标计数。
 #[tauri::command]
 pub async fn task_count_by_tag(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<(String, i64)>> {
     let rows = sqlx::query(
         "SELECT tt.tag_id, COUNT(*) as cnt
          FROM task_tags tt
          JOIN tasks t ON t.id = tt.task_id
-         WHERE t.parent_id IS NULL AND t.done = 0
+         WHERE t.parent_id IS NULL AND t.done = 0 AND t.kind = 'task'
          GROUP BY tt.tag_id",
     )
     .fetch_all(pool.inner())
@@ -386,8 +437,9 @@ pub async fn task_count_smart_view(
         .fetch_one(pool.inner())
         .await
     } else {
+        // all 视图：统计全部未完成根待办（笔记无日期，不属于"全部待办"，按 kind 过滤）
         sqlx::query_scalar(
-            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0"
+            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0 AND kind = 'task'"
         )
         .fetch_one(pool.inner())
         .await
@@ -395,6 +447,33 @@ pub async fn task_count_smart_view(
     .map_err(|e| format!("统计智能视图任务失败: {}", e))?;
 
     Ok(count)
+}
+
+/// 统计各笔记本的条目数量（供侧边栏显示）
+/// 与 task_count_by_list 的区别：
+/// - 只统计笔记（kind='note'），不统计待办
+/// - 不按 done 过滤（笔记无完成概念，done 恒为 0）
+/// - 归属已归档笔记本的笔记不计入角标
+#[tauri::command]
+pub async fn note_count_by_list(
+    pool: State<'_, sqlx::SqlitePool>,
+) -> CmdResult<Vec<(String, i64)>> {
+    let rows = sqlx::query(
+        "SELECT t.list_id, COUNT(*) as cnt
+         FROM tasks t
+         WHERE t.parent_id IS NULL
+           AND t.kind = 'note'
+           AND t.list_id NOT IN (SELECT id FROM lists WHERE archived = 1)
+         GROUP BY t.list_id",
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("统计笔记数量失败: {}", e))?;
+
+    Ok(rows
+        .iter()
+        .map(|r| (r.get::<String, _>("list_id"), r.get::<i64, _>("cnt")))
+        .collect())
 }
 
 #[tauri::command]
@@ -541,7 +620,7 @@ pub async fn task_get_smart_view(
             _ => ("manual".to_string(), "asc".to_string()),
         };
         format!(
-            "SELECT * FROM tasks WHERE parent_id IS NULL ORDER BY done ASC, {}",
+            "SELECT * FROM tasks WHERE parent_id IS NULL AND kind = 'task' ORDER BY done ASC, {}",
             order_by_clause(&sf, &sd)
         )
     };
@@ -586,10 +665,12 @@ pub async fn task_create(
     let recurrence_end_at = input.recurrence_end_at.clone();
     let recurrence_count = input.recurrence_count;
     let remind_offset_minutes = input.remind_offset_minutes;
+    // kind 不传默认 'task'（待办）；'note' = 笔记（复用 tasks 表，但无日期/完成/重复/提醒）
+    let kind = input.kind.clone().unwrap_or_else(|| "task".to_string());
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, recurrence_freq, recurrence_interval, recurrence_end_at, recurrence_count, remind_offset_minutes)
-         VALUES ($1, $2, '', $3, $4, $5, $6, $7, 0, $8, $9, $10, NULL, $11, $12, $13, $14, $15)",
+        "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, recurrence_freq, recurrence_interval, recurrence_end_at, recurrence_count, remind_offset_minutes, kind)
+         VALUES ($1, $2, '', $3, $4, $5, $6, $7, 0, $8, $9, $10, NULL, $11, $12, $13, $14, $15, $16)",
     )
     .bind(&id)
     .bind(&input.title)
@@ -606,6 +687,7 @@ pub async fn task_create(
     .bind(&recurrence_end_at)
     .bind(recurrence_count)
     .bind(&remind_offset_minutes)
+    .bind(&kind)
     .execute(pool.inner())
     .await
     .map_err(|e| format!("创建任务失败: {}", e))?;
@@ -633,6 +715,7 @@ pub async fn task_create(
         notified_at: None,
         checklist: Vec::new(),
         attachments: Vec::new(),
+        kind,
     })
 }
 

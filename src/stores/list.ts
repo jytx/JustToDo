@@ -1,9 +1,10 @@
 // 清单 store —— 管理清单与目录的加载、创建、树形结构、归档
 // 遵循 AGENTS.md：store 作为唯一数据源，组件只读取不缓存
+// 清单（kind='task'）与笔记本（kind='note'）共用 lists 表，靠 kind 隔离成两棵独立树。
 
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import type { List } from "@/types";
+import type { List, TaskKind } from "@/types";
 import * as db from "@/api/db";
 
 /** 带子节点的树形清单 */
@@ -26,6 +27,32 @@ function collectSubtreeIds(lists: List[], rootId: string): string[] {
   return ids;
 }
 
+/** 子树构建（纯函数）。归档区与主页区用同一份算法，但选用不同的"可见父级"集合：
+ *
+ *  1. archiveListTree / archiveNoteListTree：父级集合 = archived 项自己（active 父级不算）
+ *     ——归档区只关心 archived 项之间的嵌套关系；active 父级会把 archived 子项"切开"独立显示。
+ *     例如：active 父级"工作"→ archived 子目录"啊"→ archived 子清单 222/333/444。
+ *     归档区里"啊"作为顶层根目录展示（不再挂在"工作"名下），222/333/444 仍挂在"啊"下。
+ *     这样"啊"永远能在归档区可见，与 active 父级"工作"是否被归档独立。
+ *
+ *  2. listTree / noteListTree：父级集合 = active 项
+ *     ——主页：active 子项挂在 active 父级下；若父级 archived 而子项 active（中间态），
+ *     视为父级缺失，子项自然升至根级或祖父级展示，避免"数据没了"孤儿态。
+ */
+function buildArchiveTree(flat: List[], visibleIds: Set<string>): ListTreeNode[] {
+  const byParent: Record<string, List[]> = {};
+  for (const l of flat) {
+    const key = l.parentId !== null && visibleIds.has(l.parentId) ? l.parentId : "__root__";
+    (byParent[key] ??= []).push(l);
+  }
+  const build = (parentId: string | null): ListTreeNode[] => {
+    const key = parentId ?? "__root__";
+    const children = byParent[key] ?? [];
+    return children.map((l) => ({ ...l, children: build(l.id) }));
+  };
+  return build(null);
+}
+
 export const useListStore = defineStore("list", () => {
   const lists = ref<List[]>([]);
   const loading = ref(false);
@@ -41,35 +68,50 @@ export const useListStore = defineStore("list", () => {
   /** 未归档清单/目录（首页可见） */
   const activeLists = computed(() => sortedLists.value.filter((l) => !l.archived));
 
-  /** 将扁平数组构建为树形结构（仅未归档项；归档项由 archiveListTree 独立渲染） */
-  const listTree = computed<ListTreeNode[]>(() => {
-    const build = (parentId: string | null): ListTreeNode[] => {
-      return activeLists.value
-        .filter((l) => l.parentId === parentId)
-        .map((l) => ({ ...l, children: build(l.id) }));
-    };
-    return build(null);
-  });
+  // === 按 kind 拆分：清单（task）与笔记本（note）两棵独立树 ===
+  /** 未归档清单/目录（kind='task'） */
+  const taskLists = computed(() => activeLists.value.filter((l) => l.kind !== "note"));
+  /** 未归档笔记本/笔记本目录（kind='note'） */
+  const noteLists = computed(() => activeLists.value.filter((l) => l.kind === "note"));
 
-  /** 归档子树（按 parentId 重组，仅含 archived=true 的节点）
-   *  关键：根级判定 = parentId 缺省为 null **或** parentId 自身也是 archived 项
-   *  ——这样归档子清单、归档子目录都能在归档区渲染（不会因父级未归档被吞） */
-  const archiveListTree = computed<ListTreeNode[]>(() => {
-    const archivedIds = new Set(archivedLists.value.map((l) => l.id));
-    // 按 parentId 分桶（仅归档集合内部）
-    const byParent: Record<string, List[]> = {};
-    for (const l of archivedLists.value) {
-      const key =
-        l.parentId !== null && archivedIds.has(l.parentId) ? l.parentId : "__root__";
-      (byParent[key] ??= []).push(l);
-    }
-    const build = (parentId: string | null): ListTreeNode[] => {
-      const key = parentId ?? "__root__";
-      const children = byParent[key] ?? [];
-      return children.map((l) => ({ ...l, children: build(l.id) }));
-    };
-    return build(null);
-  });
+  /** 清单树（仅 kind='task' 的未归档项）
+   *  注意：仅按 active 父级嵌套还不够——
+   *  若父级已归档而子项未归档（用户曾因某种历史操作造成"中间态"），
+   *  子项在 UI 上将"消失"（找不到父级可挂）。为此镜像 archiveListTree 的"父级存在即挂下"
+   *  逻辑：把不在 activeLists 内的父级当作不存在，子项直接挂到根级，保证可见性。 */
+  const listTree = computed<ListTreeNode[]>(() =>
+    buildArchiveTree(taskLists.value, activeListIds.value),
+  );
+
+  /** 笔记本树（仅 kind='note' 的未归档项；同 listTree 思路防"中间态孤儿"） */
+  const noteListTree = computed<ListTreeNode[]>(() =>
+    buildArchiveTree(noteLists.value, activeListIds.value),
+  );
+
+  /** 未归档 id 集合，用于 listTree 的父级存在性判定（避免 active 子项因 archived 父级"消失"） */
+  const activeListIds = computed(() => new Set(activeLists.value.map((l) => l.id)));
+  /** 已归档 id 集合：归档区在自身 archived 项之间保持嵌套；
+   *  active 祖先不再纳入"父级可见集合"——确保 archived 子项总能脱离 active 父级独立展示 */
+  const archivedListIds = computed(() => new Set(archivedLists.value.map((l) => l.id)));
+
+  /** 已归档清单（kind='task'） */
+  const archivedTaskLists = computed(() =>
+    archivedLists.value.filter((l) => l.kind !== "note"),
+  );
+  /** 已归档笔记本（kind='note'） */
+  const archivedNoteLists = computed(() =>
+    archivedLists.value.filter((l) => l.kind === "note"),
+  );
+
+  /** 清单归档子树 */
+  const archiveListTree = computed<ListTreeNode[]>(() =>
+    buildArchiveTree(archivedTaskLists.value, archivedListIds.value),
+  );
+
+  /** 笔记本归档子树 */
+  const archiveNoteListTree = computed<ListTreeNode[]>(() =>
+    buildArchiveTree(archivedNoteLists.value, archivedListIds.value),
+  );
 
   /** 获取某目录下的直接子项 */
   function getChildren(parentId: string | null): List[] {
@@ -94,6 +136,8 @@ export const useListStore = defineStore("list", () => {
     color: string;
     parentId?: string | null;
     isFolder?: boolean;
+    /** 容器类型：不传默认 'task'（清单/目录）；'note' = 笔记本/笔记本目录 */
+    kind?: TaskKind;
   }) {
     const list = await db.createList(params);
     lists.value.push(list);
@@ -104,16 +148,25 @@ export const useListStore = defineStore("list", () => {
     return lists.value.find((l) => l.id === id);
   }
 
-  /** 根据 "A/B/C" 路径查找或创建多级目录，返回最末级目录 ID */
-  async function ensureFolderPath(path: string, color: string): Promise<string | null> {
+  /** 根据 "A/B/C" 路径查找或创建多级目录，返回最末级目录 ID。
+   *  kind 决定创建的目录属于清单树还是笔记本树（两棵树独立，不互通）。 */
+  async function ensureFolderPath(
+    path: string,
+    color: string,
+    kind: TaskKind = "task",
+  ): Promise<string | null> {
     const segments = path.split("/").map((s) => s.trim()).filter(Boolean);
     if (segments.length === 0) return null;
 
     let parentId: string | null = null;
     for (const seg of segments) {
-      // 查找同级是否已有同名目录
+      // 查找同级是否已有同名同 kind 目录
       const existing = lists.value.find(
-        (l) => l.parentId === parentId && l.isFolder && l.name === seg,
+        (l) =>
+          l.parentId === parentId &&
+          l.isFolder &&
+          l.name === seg &&
+          (l.kind ?? "task") === kind,
       );
       if (existing) {
         parentId = existing.id;
@@ -123,6 +176,7 @@ export const useListStore = defineStore("list", () => {
           color,
           parentId,
           isFolder: true,
+          kind,
         });
         parentId = folder.id;
       }
@@ -135,8 +189,25 @@ export const useListStore = defineStore("list", () => {
    * @param id 被移动的节点 ID
    * @param targetParentId 目标父级 ID（null = 根级）
    * @param targetIndex 在目标父级子列表中的插入位置（0 = 最前）
+   *
+   * 跨 kind 防护：清单与笔记本是两棵独立树，禁止互相移动（避免目录树混淆）。
+   * 目标父级存在时，被移动节点 kind 必须等于目标父级 kind；目标为根级时放行。
    */
   async function moveNode(id: string, targetParentId: string | null, targetIndex: number) {
+    // 跨 kind 防护
+    const movingNode = lists.value.find((l) => l.id === id);
+    if (movingNode && targetParentId !== null) {
+      const target = lists.value.find((l) => l.id === targetParentId);
+      if (target) {
+        const nodeKind = movingNode.kind ?? "task";
+        const targetKind = target.kind ?? "task";
+        if (nodeKind !== targetKind) {
+          console.warn("[listStore] 拒绝跨 kind 移动：清单与笔记本不可互相拖拽");
+          return;
+        }
+      }
+    }
+
     // 获取目标父级的子列表（移动前）
     const siblings = sortedLists.value.filter(
       (l) => l.parentId === targetParentId && l.id !== id,
@@ -173,7 +244,7 @@ export const useListStore = defineStore("list", () => {
   /** 归档整棵子树（自身 + 所有后代）。调 db 完成持久化后就地更新 lists.value 的 archived 字段，
    *  不调 loadLists：避免一次额外 round-trip。任务本身不动（list_id 不变）。 */
   async function archiveTree(id: string): Promise<void> {
-    await db.setListArchived(id, true);
+    await db.archiveListTree(id);
     const ids = collectSubtreeIds(lists.value, id);
     for (const nid of ids) {
       const node = lists.value.find((l) => l.id === nid);
@@ -181,14 +252,12 @@ export const useListStore = defineStore("list", () => {
     }
   }
 
-  /** 取消归档整棵子树（自身 + 所有后代），与 archiveTree 对称。 */
+  /** 取消归档：后端自动顺带恢复祖先链上的已归档项（避免"父级仍归档、子项已恢复"孤儿态）。
+   *  本地无法精确预测被后端改动的祖先集合，因此重新 loadLists 同步状态。
+   *  同时刷新 task counts（取消归档后主页可能重新计入该清单的任务数）。 */
   async function unarchiveTree(id: string): Promise<void> {
-    await db.setListArchived(id, false);
-    const ids = collectSubtreeIds(lists.value, id);
-    for (const nid of ids) {
-      const node = lists.value.find((l) => l.id === nid);
-      if (node) node.archived = false;
-    }
+    await db.unarchiveListTree(id);
+    await loadLists();
   }
 
   return {
@@ -196,8 +265,15 @@ export const useListStore = defineStore("list", () => {
     sortedLists,
     archivedLists,
     activeLists,
+    // 按 kind 拆分的两棵独立树
+    taskLists,
+    noteLists,
     listTree,
+    noteListTree,
     archiveListTree,
+    archiveNoteListTree,
+    archivedTaskLists,
+    archivedNoteLists,
     loading,
     error,
     loadLists,

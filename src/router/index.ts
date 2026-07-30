@@ -39,6 +39,12 @@ const routes: RouteRecordRaw[] = [
     props: true,
   },
   {
+    path: "/notebook/:id",
+    name: "notebook",
+    component: () => import("@/views/NoteView.vue"),
+    props: true,
+  },
+  {
     path: "/settings",
     name: "settings",
     component: () => import("@/views/SettingsView.vue"),

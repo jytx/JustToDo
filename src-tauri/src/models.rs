@@ -68,6 +68,10 @@ pub struct Task {
     pub checklist: Vec<ChecklistItem>,
     /// 附件列表（与 note 富文本分离；migration 018 默认 "[]"）
     pub attachments: Vec<Attachment>,
+    /// 实体类型：'task' 待办 | 'note' 笔记（migration 023 默认 'task'）
+    /// 笔记复用 tasks 表的全部基础设施，但 due/done/recurrence/remind 恒为默认值
+    #[serde(default)]
+    pub kind: String,
 }
 
 /// 任务模板 —— "任务参数预设"，独立于 tasks 表
@@ -114,6 +118,10 @@ pub struct TaskList {
     /// 旧数据迁移时此列缺省为 0（未归档）
     #[serde(default)]
     pub archived: bool,
+    /// 容器类型：'task' 清单/目录 | 'note' 笔记本/笔记本目录（migration 023 默认 'task'）
+    /// 清单与笔记本共用 lists 表，靠 kind 隔离成两棵独立树
+    #[serde(default)]
+    pub kind: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -153,6 +161,8 @@ pub struct CreateTaskInput {
     pub recurrence_end_at: Option<String>,
     pub recurrence_count: Option<i32>,
     pub remind_offset_minutes: Option<i32>,
+    /// 实体类型：不传默认 'task'（待办）；'note' = 笔记
+    pub kind: Option<String>,
 }
 
 /// 更新任务的参数（所有字段可选）

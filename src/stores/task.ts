@@ -3,7 +3,7 @@
 
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import type { Task, Priority, SortField, SortDir, ChecklistItem, Attachment } from "@/types";
+import type { Task, Priority, SortField, SortDir, ChecklistItem, Attachment, TaskKind } from "@/types";
 import { categorizeAttachmentType } from "@/types";
 import * as db from "@/api/db";
 import type { SmartViewId, Tag } from "@/api/db";
@@ -47,24 +47,28 @@ export const useTaskStore = defineStore("task", () => {
   /** 待删除任务的 ID（用于确认对话框） */
   const pendingDeleteId = ref<string | null>(null);
 
-  /** 侧边栏任务数量（清单 + 标签 + 智能视图） */
+  /** 侧边栏任务数量（清单 + 标签 + 智能视图 + 笔记本） */
   const listCounts = ref<Record<string, number>>({});
   const tagCounts = ref<Record<string, number>>({});
   const smartCounts = ref<Record<string, number>>({});
+  /** 笔记本条目数量（key = 笔记本 id；笔记无完成概念，不区分 done） */
+  const noteCounts = ref<Record<string, number>>({});
 
   /** 刷新侧边栏任务数量 */
   async function refreshCounts() {
     try {
-      const [listC, tagC, today, upcoming, all] = await Promise.all([
+      const [listC, tagC, today, upcoming, all, noteC] = await Promise.all([
         db.getCountsByList(),
         db.getCountsByTag(),
         db.getSmartViewCount("today"),
         db.getSmartViewCount("upcoming"),
         db.getSmartViewCount("all"),
+        db.getNoteCountsByList(),
       ]);
       listCounts.value = listC;
       tagCounts.value = tagC;
       smartCounts.value = { today, upcoming, all };
+      noteCounts.value = noteC;
     } catch {
       // 静默失败
     }
@@ -344,6 +348,8 @@ export const useTaskStore = defineStore("task", () => {
     priority?: Priority;
     dueStartAt?: string | null;
     dueEndAt?: string | null;
+    /** 实体类型：不传默认 'task'（待办）；'note' = 笔记（无日期/完成/重复/提醒） */
+    kind?: TaskKind;
   }) {
     // 自动今天兜底：
     // - 开关开启
@@ -351,9 +357,12 @@ export const useTaskStore = defineStore("task", () => {
     // - 调用方未提供任何日期（两个字段都为 null/undefined）
     // 满足全部条件时，把 dueStartAt/dueEndAt 都填为本地"今天 00:00" ~ "今天 23:59:59"。
     // 注意：父任务的子任务不参与此逻辑，避免无意中改变子任务语义。
+    // 笔记（kind='note'）也无日期兜底——笔记无日期概念。
     let { dueStartAt, dueEndAt } = params;
+    const isNote = params.kind === "note";
     if (
       !params.parentId &&
+      !isNote &&
       dueStartAt == null &&
       dueEndAt == null &&
       settings.newTasksDueToday
@@ -817,12 +826,13 @@ export const useTaskStore = defineStore("task", () => {
     return subtaskCache.value[parentId] ?? [];
   }
 
-  /** 创建子任务 */
+  /** 创建子任务/子笔记（继承父级 kind，保证父子类型一致） */
   async function createSubtask(parentTask: Task, title: string) {
     const sub = await db.createTask({
       title,
       listId: parentTask.listId,
       parentId: parentTask.id,
+      kind: parentTask.kind,
     });
     subtasks.value = [...subtasks.value, sub];
     // 同步更新缓存（无论是否已加载过，都确保缓存有最新数据）
@@ -966,6 +976,7 @@ export const useTaskStore = defineStore("task", () => {
     listCounts,
     tagCounts,
     smartCounts,
+    noteCounts,
     refreshCounts,
     loadTasks,
     loadSmartView,

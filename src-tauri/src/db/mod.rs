@@ -171,6 +171,9 @@ pub async fn init_pool(
     // 022: list_schedules 加 leaf_type（生成项类型，与频率解耦）
     run_migration_022(&pool).await?;
 
+    // 023: tasks/lists 加 kind 字段（区分待办/笔记、清单/笔记本）+ 预置默认笔记本
+    run_migration_023(&pool).await?;
+
     Ok(pool)
 }
 
@@ -186,8 +189,13 @@ async fn run_migration_020(pool: &SqlitePool) -> Result<(), String> {
 /// 的类型应由用户显式指定。加列后按原推断规则回填存量数据，升级后用户可自行调整。
 /// 回填 UPDATE 天然幂等（重复执行结果一致）。
 async fn run_migration_022(pool: &SqlitePool) -> Result<(), String> {
-    add_column_if_missing(pool, "list_schedules", "leaf_type", "TEXT NOT NULL DEFAULT 'list'")
-        .await?;
+    add_column_if_missing(
+        pool,
+        "list_schedules",
+        "leaf_type",
+        "TEXT NOT NULL DEFAULT 'list'",
+    )
+    .await?;
     // 回填：保留原 freq 推断行为
     sqlx::query(
         "UPDATE list_schedules SET leaf_type = 'folder' \
@@ -196,6 +204,29 @@ async fn run_migration_022(pool: &SqlitePool) -> Result<(), String> {
     .execute(pool)
     .await
     .map_err(|e| format!("回填 leaf_type 失败: {}", e))?;
+    Ok(())
+}
+
+/// 迁移 023：tasks / lists 加 kind 字段 + 预置默认笔记本
+///
+/// - tasks.kind：'task'（待办，默认）| 'note'（笔记）。笔记复用 tasks 表全部基础设施，
+///   但 due/done/completed/recurrence/remind 恒为默认值（由应用层保证）。
+/// - lists.kind：'task'（清单/目录，默认）| 'note'（笔记本/笔记本目录）。清单与笔记本
+///   共用 lists 表，靠 kind 隔离成两棵独立树（前端 moveNode 拦截跨 kind 移动）。
+/// - 预置「默认笔记本」（id='default-notebook'），与 inbox 对称：删除笔记本时其下笔记
+///   迁移到此（避免数据丢失）。INSERT OR IGNORE 天然幂等。
+///
+/// 存量数据无需回填：DEFAULT 'task' 对旧记录自动生效。
+async fn run_migration_023(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "tasks", "kind", "TEXT NOT NULL DEFAULT 'task'").await?;
+    add_column_if_missing(pool, "lists", "kind", "TEXT NOT NULL DEFAULT 'task'").await?;
+    sqlx::query(
+        "INSERT OR IGNORE INTO lists (id, name, color, position, created_at, kind) \
+         VALUES ('default-notebook', '默认笔记本', '#6B7280', 0, '2026-07-10T00:00:00Z', 'note')",
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("预置默认笔记本失败: {}", e))?;
     Ok(())
 }
 

@@ -46,6 +46,8 @@ const emit = defineEmits<{
 }>();
 
 const task = computed(() => taskStore.selectedTask);
+/** 当前选中条目是否为笔记（kind='note'）：隐藏日期/提醒/重复/复选框 */
+const isNote = computed(() => task.value?.kind === "note");
 const titleDraft = ref("");
 const noteDraft = ref("");
 
@@ -493,7 +495,7 @@ const sortedChecklist = computed(() => {
   return [...task.value.checklist].sort((a, b) => a.order - b.order);
 });
 
-/** 创建任务副本 */
+/** 创建任务/笔记副本（保留 kind，笔记副本同样无日期/完成/重复/提醒） */
 async function duplicateTask() {
   if (!task.value) return;
   const t = task.value;
@@ -504,6 +506,7 @@ async function duplicateTask() {
     priority: t.priority,
     dueStartAt: t.dueStartAt,
     dueEndAt: t.dueEndAt,
+    kind: t.kind,
   });
   if (newTask) {
     await taskStore.updateTask(newTask.id, {
@@ -602,7 +605,7 @@ onBeforeUnmount(() => {
 
     <!-- 顶部 chips 行 -->
     <div class="detail-panel__chips">
-      <div class="detail-panel__checkbox-wrap">
+      <div v-if="!isNote" class="detail-panel__checkbox-wrap">
         <TaskCheckbox
           v-if="task"
           :done="task.done"
@@ -611,18 +614,19 @@ onBeforeUnmount(() => {
         />
       </div>
 
-      <a-divider v-if="!narrow" direction="vertical" :margin="6" />
+      <a-divider v-if="!narrow && !isNote" direction="vertical" :margin="6" />
 
-      <!-- 日期（关键属性，窄屏仍显示文字） -->
+      <!-- 日期（关键属性，窄屏仍显示文字；笔记无日期，隐藏） -->
       <DueDateChip
+        v-if="!isNote"
         :start-iso="task.dueStartAt"
         :end-iso="task.dueEndAt"
         @confirm="onDateConfirm"
         @clear="onDateClear"
       />
 
-      <!-- 提醒（默认只图标 + a-tooltip 黑气泡） -->
-      <a-tooltip :content="remindLabel" position="bottom">
+      <!-- 提醒（默认只图标 + a-tooltip 黑气泡；笔记无提醒，隐藏） -->
+      <a-tooltip v-if="!isNote" :content="remindLabel" position="bottom">
         <ChipPopover v-model:visible="reminderVisible">
           <PropertyChip
             :active="task.remindOffsetMinutes != null"
@@ -644,8 +648,8 @@ onBeforeUnmount(() => {
         </ChipPopover>
       </a-tooltip>
 
-      <!-- 重复 -->
-      <a-tooltip :content="recurrenceLabel" position="bottom">
+      <!-- 重复（笔记无重复，隐藏） -->
+      <a-tooltip v-if="!isNote" :content="recurrenceLabel" position="bottom">
         <ChipPopover v-model:visible="recurrenceVisible">
           <PropertyChip
             :active="!!task.recurrenceFreq"
@@ -975,7 +979,7 @@ onBeforeUnmount(() => {
             @click="addSubtask(); moreVisible = false"
           >
             <icon-plus :size="14" />
-            <span>添加子任务</span>
+            <span>{{ isNote ? "添加子笔记" : "添加子任务" }}</span>
           </button>
           <button
             type="button"
@@ -992,7 +996,7 @@ onBeforeUnmount(() => {
             @click="askDelete(); moreVisible = false"
           >
             <icon-delete :size="14" />
-            <span>删除任务</span>
+            <span>{{ isNote ? "删除笔记" : "删除任务" }}</span>
           </button>
         </div>
       </Popover>
@@ -1004,7 +1008,7 @@ onBeforeUnmount(() => {
       @update:visible="(v) => { deleteConfirmVisible = v; }"
       @confirm="doDelete"
     >
-      <template #title>删除任务「<strong>{{ task?.title }}</strong>」？</template>
+      <template #title>删除{{ isNote ? "笔记" : "任务" }}「<strong>{{ task?.title }}</strong>」？</template>
     </ConfirmDialog>
 
     <!-- 附件浮窗（chips 行 📎 点击触发；下拉带箭头，嵌 AttachmentSection） -->

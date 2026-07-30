@@ -4,6 +4,9 @@
 /** 优先级：0 无 / 1 低 / 2 中 / 3 高 */
 export type Priority = 0 | 1 | 2 | 3;
 
+/** 实体类型：'task' 待办 | 'note' 笔记（复用 tasks 表，靠 kind 区分） */
+export type TaskKind = "task" | "note";
+
 /** 优先级常量，便于 UI 引用 */
 export const PRIORITY_NONE: Priority = 0;
 export const PRIORITY_LOW: Priority = 1;
@@ -60,6 +63,10 @@ export interface List {
   /** 是否已归档（true = 已归档，首页侧边栏隐藏，归档区可见）。
    *  旧数据缺省视为 false（未归档），Rust 端 #[serde(default)] 提供兼容。 */
   archived?: boolean;
+  /** 容器类型：'task' 清单/目录 | 'note' 笔记本/笔记本目录。
+   *  清单与笔记本共用 lists 表，靠 kind 隔离成两棵独立树。
+   *  旧数据缺省视为 'task'（清单），Rust 端 #[serde(default)] 提供兼容。 */
+  kind?: TaskKind;
 }
 
 /** 任务 —— 支持子任务嵌套（parentId 自引用） */
@@ -97,6 +104,9 @@ export interface Task {
   checklist: ChecklistItem[];
   /** 附件列表（独立于 note 富文本；文件实体存附件目录） */
   attachments: Attachment[];
+  /** 实体类型：'task' 待办 | 'note' 笔记。
+   *  笔记复用 Task 的全部字段，但 due/done/completed/recurrence/remind 恒为默认值。 */
+  kind: TaskKind;
 }
 
 /** 检查项（独立存储；后端 JSON 数组） */
@@ -308,6 +318,8 @@ export interface TaskRow {
   checklist: string;
   /** JSON 字符串（后端 Vec<Attachment> 序列化） */
   attachments: string;
+  /** 实体类型：'task' 待办 | 'note' 笔记 */
+  kind: TaskKind;
 }
 
 /** 清单数据库原始行 */
@@ -319,6 +331,8 @@ export interface ListRow {
   created_at: string;
   parent_id: string | null;
   is_folder: number;
+  /** 容器类型：'task' 清单/目录 | 'note' 笔记本/笔记本目录 */
+  kind: TaskKind;
 }
 
 /** 将数据库行转换为前端 Task 接口 */
@@ -346,6 +360,7 @@ export function mapTaskRow(row: TaskRow): Task {
     notifiedAt: row.notified_at,
     checklist: parseChecklist(row.checklist),
     attachments: parseAttachments(row.attachments),
+    kind: row.kind,
   };
 }
 
@@ -381,6 +396,7 @@ export function mapListRow(row: ListRow): List {
     createdAt: row.created_at,
     parentId: row.parent_id,
     isFolder: row.is_folder === 1,
+    kind: row.kind,
   };
 }
 

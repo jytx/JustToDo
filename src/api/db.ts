@@ -3,7 +3,7 @@
 // 这样绕过了 plugin-sql 前端 API 的 IPC 问题，走标准 invoke 通道
 
 import { invoke } from "@tauri-apps/api/core";
-import type { List, Task, Priority, RecurrenceFreq, ChecklistItem, Template, Attachment, AttachmentType } from "@/types";
+import type { List, Task, Priority, RecurrenceFreq, ChecklistItem, Template, Attachment, AttachmentType, TaskKind } from "@/types";
 
 // ─── 类型（与 Rust models.rs 对应）──────────────────────
 
@@ -33,6 +33,8 @@ interface TaskList {
   parent_id: string | null;
   is_folder: boolean;
   archived: number;
+  /** 容器类型：'task' 清单/目录 | 'note' 笔记本/笔记本目录 */
+  kind: TaskKind;
 }
 
 interface CreateTaskInput {
@@ -47,6 +49,8 @@ interface CreateTaskInput {
   recurrenceEndAt?: string | null;
   recurrenceCount?: number | null;
   remindOffsetMinutes?: number | null;
+  /** 实体类型：不传默认 'task'（待办）；'note' = 笔记 */
+  kind?: TaskKind;
 }
 
 interface UpdateTaskInput {
@@ -82,6 +86,7 @@ export async function getLists(): Promise<List[]> {
     parentId: r.parent_id,
     isFolder: r.is_folder,
     archived: !!r.archived,
+    kind: r.kind,
   }));
 }
 
@@ -90,12 +95,15 @@ export async function createList(params: {
   color: string;
   parentId?: string | null;
   isFolder?: boolean;
+  /** 容器类型：不传默认 'task'（清单/目录）；'note' = 笔记本/笔记本目录 */
+  kind?: TaskKind;
 }): Promise<List> {
   const r = await invoke<TaskList>("list_create", {
     name: params.name,
     color: params.color,
     parentId: params.parentId ?? null,
     isFolder: params.isFolder ?? false,
+    kind: params.kind ?? "task",
   });
   return {
     id: r.id,
@@ -106,6 +114,7 @@ export async function createList(params: {
     parentId: r.parent_id,
     isFolder: r.is_folder,
     archived: !!r.archived,
+    kind: r.kind,
   };
 }
 
@@ -122,13 +131,19 @@ export async function moveList(id: string, parentId: string | null, position?: n
 }
 
 /**
- * 归档/取消归档整棵子树（自身 + 所有后代清单/子目录）
- * - archived=true → 归档整树（首页侧边栏隐藏，归档区可见）
- * - archived=false → 取消归档，整树恢复
+ * 归档整棵子树（自身 + 所有后代清单/子目录），隐藏到归档区
  * 任务本身不动（list_id 不变），仅随清单一起在首页隐藏
  */
-export async function setListArchived(id: string, archived: boolean): Promise<void> {
-  await invoke<void>("list_archive_tree", { id, archived });
+export async function archiveListTree(id: string): Promise<void> {
+  await invoke<void>("list_archive_tree", { id });
+}
+
+/**
+ * 取消归档：后端自动顺带恢复祖先链上的已归档项，避免"父级仍归档、子项已恢复"的孤儿态
+ * （详情见 Rust list_unarchive_tree 注释）
+ */
+export async function unarchiveListTree(id: string): Promise<void> {
+  await invoke<void>("list_unarchive_tree", { id });
 }
 
 export async function reorderLists(items: [string, number][]): Promise<void> {
@@ -161,6 +176,8 @@ interface RustTask {
   notified_at: string | null;
   checklist: ChecklistItem[];
   attachments: Attachment[];
+  /** 实体类型：'task' 待办 | 'note' 笔记 */
+  kind: TaskKind;
 }
 
 function mapTask(r: RustTask): Task {
@@ -187,6 +204,7 @@ function mapTask(r: RustTask): Task {
     notifiedAt: r.notified_at,
     checklist: r.checklist,
     attachments: r.attachments,
+    kind: r.kind,
   };
 }
 
@@ -258,6 +276,16 @@ export async function getCountsByTag(): Promise<Record<string, number>> {
 /** 统计智能视图的未完成根任务数量 */
 export async function getSmartViewCount(view: SmartViewId): Promise<number> {
   return await invoke<number>("task_count_smart_view", { view });
+}
+
+/** 统计各笔记本的笔记条目数量（不区分 done，笔记无完成概念） */
+export async function getNoteCountsByList(): Promise<Record<string, number>> {
+  const rows = await invoke<[string, number][]>("note_count_by_list");
+  const map: Record<string, number> = {};
+  for (const [id, cnt] of rows) {
+    map[id] = cnt;
+  }
+  return map;
 }
 
 export async function getSmartViewTasks(

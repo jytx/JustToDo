@@ -25,6 +25,9 @@ const props = defineProps<{
   expandedChain: CascadeChainItem[];
   /** 当前层级深度（根级 = 0），用于决定 left 偏移 */
   depth: number;
+  /** 节点类型：'task'（默认）清单目录 | 'note' 笔记本目录。
+   *  决定子项跳转前缀（/list vs /notebook）与计数来源。 */
+  kind?: "task" | "note";
 }>();
 
 const emit = defineEmits<{
@@ -36,6 +39,17 @@ const emit = defineEmits<{
 
 const router = useRouter();
 const taskStore = useTaskStore();
+
+/** 是否笔记本目录（kind='note'）：决定路由前缀与计数来源 */
+const isNote = computed(() => props.kind === "note");
+/** 路由前缀：清单 → /list，笔记本 → /notebook */
+const routePrefix = computed(() => (isNote.value ? "/notebook" : "/list"));
+
+/** 子项计数：清单用 listCounts，笔记本用 noteCounts */
+function childCount(id: string): number {
+  const map = isNote.value ? taskStore.noteCounts : taskStore.listCounts;
+  return map[id] ?? 0;
+}
 
 /** 下一级展开项（链中 depth+1 位置）；存在则渲染递归子面板 */
 const childExpanded = computed<CascadeChainItem | null>(() => {
@@ -60,9 +74,9 @@ function onFolderClick(e: MouseEvent, folder: ListTreeNode) {
   emit("expand", folder, rect.top + rect.height / 2, props.depth);
 }
 
-/** 点击子清单：路由跳转 + 通知父级关闭级联 */
+/** 点击子清单/子笔记本：按 kind 路由跳转 + 通知父级关闭级联 */
 function onListClick(listId: string) {
-  router.push(`/list/${listId}`);
+  router.push(`${routePrefix.value}/${listId}`);
   emit("select", listId);
 }
 </script>
@@ -103,11 +117,11 @@ function onListClick(listId: string) {
 
           <span class="rail-cascade__name">{{ child.name }}</span>
 
-          <!-- 子清单的未完成数 -->
+          <!-- 子清单/子笔记本的条目数 -->
           <span
-            v-if="!child.isFolder && taskStore.listCounts[child.id]"
+            v-if="!child.isFolder && childCount(child.id)"
             class="rail-cascade__count"
-          >{{ taskStore.listCounts[child.id] }}</span>
+          >{{ childCount(child.id) }}</span>
 
           <!-- 子目录的展开提示箭头 -->
           <icon-right
@@ -127,6 +141,7 @@ function onListClick(listId: string) {
       :left="left + 184"
       :expanded-chain="expandedChain"
       :depth="depth + 1"
+      :kind="kind"
       @expand="(f, top, d) => emit('expand', f, top, d)"
       @select="(id) => emit('select', id)"
     />

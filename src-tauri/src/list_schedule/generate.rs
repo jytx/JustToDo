@@ -86,13 +86,14 @@ pub async fn ensure_scheduled_path(
         let is_folder = if is_leaf { leaf_is_folder } else { true };
 
         // 查找同名同父级的已有项（同时取 is_folder 检查类型是否冲突）
-        let existing: Option<(String, i64)> =
-            sqlx::query_as("SELECT id, is_folder FROM lists WHERE parent_id IS ? AND name = ? LIMIT 1")
-                .bind(&parent_id)
-                .bind(seg)
-                .fetch_optional(pool)
-                .await
-                .map_err(|e| format!("查询清单失败: {}", e))?;
+        let existing: Option<(String, i64)> = sqlx::query_as(
+            "SELECT id, is_folder FROM lists WHERE parent_id IS ? AND name = ? LIMIT 1",
+        )
+        .bind(&parent_id)
+        .bind(seg)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("查询清单失败: {}", e))?;
 
         match existing {
             // 已存在：复用，但校验类型是否匹配（防止两条计划路径重叠时类型错乱）

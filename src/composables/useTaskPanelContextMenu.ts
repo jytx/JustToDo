@@ -11,6 +11,7 @@
 
 import { reactive } from "vue";
 import { useTaskStore } from "@/stores/task";
+import type { TaskKind } from "@/types";
 
 /** 右键菜单的坐标 + 可见性状态 */
 interface CtxMenuState {
@@ -40,9 +41,13 @@ function isOnTaskItem(target: EventTarget | null): boolean {
 
 /**
  * 任务主面板右键菜单
- * @param resolveListId 返回新建任务归属的清单 ID（各视图自行决定）
+ * @param resolveListId 返回新建条目归属的清单/笔记本 ID（各视图自行决定）
+ * @param kind 新建条目类型：'task'（默认）或 'note'（笔记本视图用）
  */
-export function useTaskPanelContextMenu(resolveListId: () => string) {
+export function useTaskPanelContextMenu(
+  resolveListId: () => string,
+  kind: TaskKind = "task",
+) {
   const taskStore = useTaskStore();
   const ctxMenu = reactive<CtxMenuState>({ visible: false, x: 0, y: 0 });
 
@@ -56,13 +61,15 @@ export function useTaskPanelContextMenu(resolveListId: () => string) {
     ctxMenu.visible = true;
   }
 
-  /** 「新建任务」菜单项：创建主任务（parentId=null），空标题 + 选中打开详情面板 */
+  /** 「新建」菜单项：创建主条目（parentId=null），空标题 + 选中打开详情面板。
+   *  kind='note' 时创建笔记（笔记本视图）。 */
   async function onCreateTask(): Promise<void> {
     ctxMenu.visible = false;
     const created = await taskStore.createTask({
       title: "",
       listId: resolveListId(),
       parentId: null,
+      kind,
     });
     taskStore.selectTask(created.id);
   }

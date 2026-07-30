@@ -135,6 +135,8 @@ const quickAdd = useQuickAdd();
 const sectionCollapsed = ref<Record<string, boolean>>({
   smart: false,
   lists: false,
+  /** 笔记本区（与清单对称，独立成区） */
+  notebooks: false,
   tags: false,
   /** 归档折叠区默认收起（用户进入归档较少） */
   archive: true,
@@ -156,6 +158,13 @@ const confirmDelete = ref<{
   name: string;
   taskCount: number;
 } | null>(null);
+
+/** 删除确认对话框中目标清单/笔记本的 kind（决定文案：清单/任务/收件箱 vs 笔记本/笔记/默认笔记本） */
+const confirmDeleteListKind = computed<"task" | "note">(() => {
+  if (!confirmDelete.value || confirmDelete.value.type !== "list") return "task";
+  const node = listStore.getById(confirmDelete.value.id);
+  return node?.kind === "note" ? "note" : "task";
+});
 
 /** 编辑清单/目录弹窗 */
 const showEditDialog = ref(false);
@@ -188,12 +197,17 @@ const newSubFolderParentId = ref<string | null>(null);
 const newSubFolderNameInputRef = ref<HTMLInputElement | null>(null);
 /** 子目录颜色（与新建清单一致，默认橙色） */
 const newSubFolderColor = ref("#F59E0B");
+/** 子目录类型：继承自父目录的 kind（清单目录 vs 笔记本目录） */
+const newSubFolderKind = ref<"task" | "note">("task");
 
-/** 从目录菜单发起"添加子目录"：仅打开弹窗，不立即创建 */
+/** 从目录菜单发起"添加子目录"：仅打开弹窗，不立即创建。
+ *  子目录 kind 继承自父目录（保证两棵独立树不混淆）。 */
 function onAddSubFolder(parent: { id: string }) {
+  const parentNode = listStore.getById(parent.id);
   newSubFolderParentId.value = parent.id;
   newSubFolderName.value = "";
   newSubFolderColor.value = "#F59E0B";
+  newSubFolderKind.value = parentNode?.kind === "note" ? "note" : "task";
   showCreateSubFolderDialog.value = true;
   nextTick(() => {
     newSubFolderNameInputRef.value?.focus();
@@ -209,21 +223,40 @@ async function confirmNewSubFolder() {
     color: newSubFolderColor.value,
     parentId: newSubFolderParentId.value,
     isFolder: true,
+    kind: newSubFolderKind.value,
   });
   showCreateSubFolderDialog.value = false;
 }
 
-/** 从目录行的 + 按钮发起"在该目录下新建清单"：
- *  把当前目录路径预填到新建清单弹窗的目录字段，复用现有 showCreateDialog。
+/** 从目录行的 + 按钮发起"在该目录下新建清单/笔记本"：
+ *  把当前目录路径预填到新建弹窗的目录字段，复用现有 showCreateDialog。
+ *  kind 继承自父目录（保证叶节点与目录同属一棵树）。
  *  注意：startNewList 会清空 newListFolder，所以这里在它之后再覆盖路径。 */
 function onAddListInFolder(folder: { id: string }) {
-  startNewList();
+  const folderNode = listStore.getById(folder.id);
+  const kind: "task" | "note" = folderNode?.kind === "note" ? "note" : "task";
+  startNewList(kind);
   newListFolder.value = buildFolderPath(folder.id);
+}
+
+/** 笔记本菜单"新建笔记"：在指定笔记本下创建空笔记并打开详情面板。
+ *  笔记不走 QuickAddDialog（它强依赖日期），改为空标题 + 选中详情范式。 */
+async function onAddNote(notebookId: string): Promise<void> {
+  const created = await taskStore.createTask({
+    title: "",
+    listId: notebookId,
+    parentId: null,
+    kind: "note",
+  });
+  // 跳转到对应笔记本视图，让用户在上下文中编辑
+  router.push(`/notebook/${notebookId}`);
+  taskStore.selectTask(created.id);
 }
 
 async function askDeleteList(list: { id: string; name: string }) {
   if (list.id === "inbox") return; // 收件箱不可删
-  // 统计任务数
+  if (list.id === "default-notebook") return; // 默认笔记本不可删
+  // 统计条目数（清单统计任务，笔记本统计笔记；底层都是 getTasksByList）
   const allTasks = await db.getTasksByList(list.id);
   confirmDelete.value = {
     type: "list",
@@ -313,21 +346,25 @@ function cancelDelete() {
   confirmDelete.value = null;
 }
 
-/** 新建清单弹窗 */
+/** 新建清单/笔记本弹窗（kind 决定创建的是清单还是笔记本） */
 const showCreateDialog = ref(false);
 const newListName = ref("");
 const newListNameInputRef = ref<HTMLInputElement | null>(null);
 /** 目录路径字符串，支持 "A/B" 多级（可输入已有目录路径名以提示筛选） */
 const newListFolder = ref("");
 const selectedColor = ref('#10B981');
+/** 新建容器的类型：'task' 清单/目录 | 'note' 笔记本/笔记本目录 */
+const newListKind = ref<"task" | "note">("task");
 
 /** 8 种预定义颜色 —— 引用共享常量（utils/colors.ts） */
 // LIST_COLORS 由 @/utils/colors 导入，此处不再重复定义
 
-function startNewList() {
+/** 打开新建弹窗。kind 决定创建清单还是笔记本（两棵独立树互不混淆） */
+function startNewList(kind: "task" | "note" = "task") {
   newListName.value = "";
   newListFolder.value = "";
   selectedColor.value = '#10B981';
+  newListKind.value = kind;
   showCreateDialog.value = true;
   // 等 modal 渲染完后自动 focus
   nextTick(() => {
@@ -500,14 +537,14 @@ async function confirmNewList() {
     return;
   }
 
-  // 处理目录路径（支持 "A/B" 创建多级目录）
+  // 处理目录路径（支持 "A/B" 创建多级目录；kind 保证目录与叶节点同属一棵树）
   let parentId: string | null = null;
   const folderPath = newListFolder.value.trim();
   if (folderPath) {
-    parentId = await listStore.ensureFolderPath(folderPath, selectedColor.value);
+    parentId = await listStore.ensureFolderPath(folderPath, selectedColor.value, newListKind.value);
   }
 
-  await listStore.createList({ name, color: selectedColor.value, parentId });
+  await listStore.createList({ name, color: selectedColor.value, parentId, kind: newListKind.value });
   showCreateDialog.value = false;
 }
 
@@ -516,15 +553,21 @@ async function confirmNewList() {
 const activeListId = computed(() => route.params.id as string);
 const activeRouteName = computed(() => route.name as string);
 
-/** 收起态用：根级清单/目录（扁平，不含嵌套子项；仅未归档） */
+/** 收起态用：根级清单/目录（扁平，不含嵌套子项；仅未归档；kind='task'） */
 const rootLists = computed(() =>
-  listStore.activeLists.filter((l) => l.parentId === null),
+  listStore.activeLists.filter((l) => l.parentId === null && l.kind !== "note"),
 );
 
-/** 收起态用：清单/目录是否处于 active 态。
- *  目录 active 当其任意未归档子清单被选中；清单 active 当自身被选中。 */
-function isListActive(node: { id: string; isFolder: boolean }): boolean {
-  if (activeRouteName.value !== "list") return false;
+/** 收起态用：根级笔记本/笔记本目录（扁平，仅未归档；kind='note'） */
+const rootNoteLists = computed(() =>
+  listStore.activeLists.filter((l) => l.parentId === null && l.kind === "note"),
+);
+
+/** 收起态用：清单/笔记本是否处于 active 态。
+ *  目录 active 当其任意未归档子项被选中；叶节点 active 当自身被选中。
+ *  routeName 区分清单（'list'）与笔记本（'notebook'）。 */
+function isListActive(node: { id: string; isFolder: boolean }, routeName: string): boolean {
+  if (activeRouteName.value !== routeName) return false;
   if (!node.isFolder) return activeListId.value === node.id;
   return listStore.activeLists.some(
     (l) => l.parentId === node.id && l.id === activeListId.value,
@@ -584,43 +627,50 @@ function tagTip(tag: { id: string; name: string }): string {
 }
 
 /* === 收起态：目录级联浮动面板 === */
-/** 展开链项：目录 id + 该级面板的垂直锚点 */
+/** 展开链项：目录 id + 该级面板的垂直锚点 + kind（决定从哪棵树取节点） */
 interface CascadeItem {
   id: string;
   anchorTop: number;
+  /** 'task' 清单目录 | 'note' 笔记本目录（决定级联面板从哪棵树取子节点） */
+  kind: "task" | "note";
 }
 
 /** 当前展开的目录链（从根目录开始）；空数组 = 无面板 */
 const cascadeChain = ref<CascadeItem[]>([]);
 
-/** 第一级面板要展开的根目录节点（展开链第 0 项） */
+/** 第一级面板要展开的根目录节点（展开链第 0 项；按 kind 从对应树取） */
 const cascadeRootFolder = computed<ListTreeNode | null>(() => {
   const rootItem = cascadeChain.value[0];
   if (!rootItem) return null;
-  return listStore.listTree.find((n) => n.id === rootItem.id) ?? null;
+  const tree = rootItem.kind === "note" ? listStore.noteListTree : listStore.listTree;
+  return tree.find((n) => n.id === rootItem.id) ?? null;
 });
 
-/** 点击 rail 上的清单/目录按钮：
- *  - 目录：打开级联面板（重置展开链为 [该目录]）
- *  - 清单：路由跳转 */
-function onRailListClick(e: MouseEvent, node: { id: string; isFolder: boolean }) {
+/** 点击 rail 上的清单/笔记本按钮：
+ *  - 目录：打开级联面板（重置展开链为 [该目录]，kind 决定级联从哪棵树取节点）
+ *  - 叶节点：按 kind 路由跳转（/list 或 /notebook） */
+function onRailListClick(e: MouseEvent, node: { id: string; isFolder: boolean; kind?: string }) {
+  const kind: "task" | "note" = node.kind === "note" ? "note" : "task";
+  const prefix = kind === "note" ? "/notebook" : "/list";
   if (!node.isFolder) {
-    router.push(`/list/${node.id}`);
+    router.push(`${prefix}/${node.id}`);
     return;
   }
-  // 找到目录节点（rail 渲染的是根级，从 listTree 取）
-  const folder = listStore.listTree.find((n) => n.id === node.id);
+  // 找到目录节点（rail 渲染的是根级，按 kind 从对应树取）
+  const tree = kind === "note" ? listStore.noteListTree : listStore.listTree;
+  const folder = tree.find((n) => n.id === node.id);
   if (!folder) return;
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  cascadeChain.value = [{ id: folder.id, anchorTop: rect.top + rect.height / 2 }];
+  cascadeChain.value = [{ id: folder.id, anchorTop: rect.top + rect.height / 2, kind }];
 }
 
 /** 级联面板内展开子目录：
  *  parentDepth = 被点击 folder 所在面板的深度；
- *  新链 = 截断到 parentDepth（含）+ push 新目录及其锚点 */
+ *  新链 = 截断到 parentDepth（含）+ push 新目录及其锚点（kind 继承父级） */
 function onCascadeExpand(folder: ListTreeNode, anchorTop: number, parentDepth: number) {
+  const parentKind = cascadeChain.value[parentDepth]?.kind ?? "task";
   const next = cascadeChain.value.slice(0, parentDepth + 1);
-  next.push({ id: folder.id, anchorTop });
+  next.push({ id: folder.id, anchorTop, kind: parentKind });
   cascadeChain.value = next;
 }
 
@@ -738,13 +788,19 @@ function onCtxDeleteTag(tag: Tag): void {
   askDeleteTag(tag);
 }
 
+/** 归档前若当前正浏览被归档节点，跳到一个安全页（避免停留在已归档节点）。
+ *  清单跳「全部」智能视图；笔记本跳「默认笔记本」。 */
+function redirectAwayIfActive(node: ListTreeNode): void {
+  const routeName = node.kind === "note" ? "notebook" : "list";
+  if (route.name === routeName && route.params.id === node.id) {
+    router.push(node.kind === "note" ? "/notebook/default-notebook" : "/all");
+  }
+}
+
 /** 归档整棵子树（首页右键菜单调用）：先关菜单再调 store；若是当前激活路由则跳走 */
 async function onCtxArchive(node: ListTreeNode): Promise<void> {
   closeCtxMenu();
-  // 若当前正是这个被归档清单，跳到全部视图
-  if (route.name === "list" && route.params.id === node.id) {
-    router.push("/all");
-  }
+  redirectAwayIfActive(node);
   await listStore.archiveTree(node.id);
   // 主页角标已由 Rust 端的 task_count_by_list 自动过滤，但需要触发前端重新拉
   await taskStore.refreshCounts();
@@ -760,9 +816,7 @@ async function onCtxUnarchive(node: ListTreeNode): Promise<void> {
 /** SidebarListNode hover 三点菜单触发的归档：
  *  与 onCtxArchive 同流程（路由跳转 + store + refreshCounts），不关菜单（hover 菜单已自己关） */
 async function onHoverArchive(node: ListTreeNode): Promise<void> {
-  if (route.name === "list" && route.params.id === node.id) {
-    router.push("/all");
-  }
+  redirectAwayIfActive(node);
   await listStore.archiveTree(node.id);
   await taskStore.refreshCounts();
 }
@@ -825,7 +879,7 @@ onMounted(async () => {
           type="button"
           class="sidebar__rail-item"
           :class="{
-            'sidebar__rail-item--active': isListActive(node),
+            'sidebar__rail-item--active': isListActive(node, 'list'),
             'sidebar__rail-cascade-trigger': node.isFolder,
             'sidebar__rail-item--cascade-open': node.isFolder && cascadeChain[0]?.id === node.id,
           }"
@@ -848,6 +902,39 @@ onMounted(async () => {
             v-if="!node.isFolder && taskStore.listCounts[node.id]"
             class="sidebar__rail-badge"
           >{{ taskStore.listCounts[node.id] }}</span>
+        </button>
+
+        <!-- 笔记本分隔线 + 笔记本/笔记本目录按钮（kind='note'，与清单两棵独立树） -->
+        <div v-if="rootNoteLists.length > 0" class="sidebar__rail-divider" />
+        <button
+          v-for="node in rootNoteLists"
+          :key="node.id"
+          type="button"
+          class="sidebar__rail-item"
+          :class="{
+            'sidebar__rail-item--active': isListActive(node, 'notebook'),
+            'sidebar__rail-cascade-trigger': node.isFolder,
+            'sidebar__rail-item--cascade-open': node.isFolder && cascadeChain[0]?.id === node.id,
+          }"
+          @click="onRailListClick($event, node)"
+          @mouseenter="showRailTip($event, listTip(node))"
+          @mousemove="cancelHideRailTip"
+          @mouseleave="hideRailTip"
+        >
+          <icon-folder
+            v-if="node.isFolder"
+            :size="18"
+            :style="{ color: node.color }"
+          />
+          <span
+            v-else
+            class="sidebar__rail-dot"
+            :style="{ backgroundColor: node.color }"
+          />
+          <span
+            v-if="!node.isFolder && taskStore.noteCounts[node.id]"
+            class="sidebar__rail-badge"
+          >{{ taskStore.noteCounts[node.id] }}</span>
         </button>
 
         <!-- 归档入口 —— 仅当有归档项时才显示分隔线 + 图标 -->
@@ -914,7 +1001,7 @@ onMounted(async () => {
           <icon-right v-else :size="12" class="sidebar__toggle-icon" />
           <span>清单</span>
         </div>
-        <a-button size="mini" type="text" title="新建清单" @click.stop="startNewList">
+        <a-button size="mini" type="text" title="新建清单" @click.stop="startNewList('task')">
           <template #icon><icon-plus :size="16" /></template>
         </a-button>
       </div>
@@ -926,11 +1013,43 @@ onMounted(async () => {
           :key="node.id"
           :node="node"
           :depth="0"
+          kind="task"
           @edit="(n: any) => startEditList(n)"
           @delete="(n: any) => askDeleteList(n)"
           @addFolder="(n: ListTreeNode) => onAddSubFolder(n)"
           @addList="(n: ListTreeNode) => onAddListInFolder(n)"
           @addTask="(n: ListTreeNode) => quickAdd.open(n.id)"
+          @archive="(n: ListTreeNode) => onHoverArchive(n)"
+          @move="onListMove"
+          @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
+        />
+      </div>
+
+      <!-- 笔记本（与清单对称，kind='note' 独立成区，两棵树互不混淆） -->
+      <div class="sidebar__subheader sidebar__subheader--toggle">
+        <div class="sidebar__subheader-left" @click="toggleSection('notebooks')">
+          <icon-down v-if="!sectionCollapsed.notebooks" :size="12" class="sidebar__toggle-icon" />
+          <icon-right v-else :size="12" class="sidebar__toggle-icon" />
+          <span>笔记本</span>
+        </div>
+        <a-button size="mini" type="text" title="新建笔记本" @click.stop="startNewList('note')">
+          <template #icon><icon-plus :size="16" /></template>
+        </a-button>
+      </div>
+
+      <!-- 树形笔记本渲染（复用 SidebarListNode，kind='note' 控制路由/计数/文案） -->
+      <div v-show="!sectionCollapsed.notebooks" class="sidebar__list-tree">
+        <SidebarListNode
+          v-for="node in listStore.noteListTree"
+          :key="node.id"
+          :node="node"
+          :depth="0"
+          kind="note"
+          @edit="(n: any) => startEditList(n)"
+          @delete="(n: any) => askDeleteList(n)"
+          @addFolder="(n: ListTreeNode) => onAddSubFolder(n)"
+          @addList="(n: ListTreeNode) => onAddListInFolder(n)"
+          @addTask="(n: ListTreeNode) => onAddNote(n.id)"
           @archive="(n: ListTreeNode) => onHoverArchive(n)"
           @move="onListMove"
           @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
@@ -946,14 +1065,27 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 归档树渲染 -->
+      <!-- 归档树渲染（按 kind 分两组：清单归档 + 笔记本归档） -->
       <div v-show="!sectionCollapsed.archive" class="sidebar__list-tree">
+        <!-- 归档清单 -->
         <SidebarListNode
           v-for="node in listStore.archiveListTree"
           :key="node.id"
           :node="node"
           :depth="0"
           :readonly="true"
+          kind="task"
+          @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
+        />
+        <!-- 归档笔记本（与归档清单用细分隔，仅当存在笔记本归档时显示小标题） -->
+        <div v-if="listStore.archiveNoteListTree.length > 0" class="sidebar__archive-subgroup">笔记本</div>
+        <SidebarListNode
+          v-for="node in listStore.archiveNoteListTree"
+          :key="node.id"
+          :node="node"
+          :depth="0"
+          :readonly="true"
+          kind="note"
           @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
         />
         <div v-if="listStore.archivedLists.length === 0" class="sidebar__item sidebar__item--disabled">
@@ -1053,6 +1185,7 @@ onMounted(async () => {
     :left="112"
     :expanded-chain="cascadeChain"
     :depth="0"
+    :kind="cascadeChain[0].kind"
     @expand="onCascadeExpand"
     @select="onCascadeSelect"
   />
@@ -1064,14 +1197,14 @@ onMounted(async () => {
     @confirm="confirmDeleteAction"
   >
     <template #title>
-      删除{{ confirmDelete?.type === "list" ? "清单" : "标签" }}
+      删除{{ confirmDelete?.type === "list" ? (confirmDeleteListKind === "note" ? "笔记本" : "清单") : "标签" }}
       「<strong>{{ confirmDelete?.name }}</strong>」？
     </template>
     <template v-if="confirmDelete?.type === 'list' && confirmDelete.taskCount > 0">
-      清单下的 {{ confirmDelete.taskCount }} 个任务将移动到「收件箱」。
+      {{ confirmDeleteListKind === "note" ? "笔记本" : "清单" }}下的 {{ confirmDelete.taskCount }} 个{{ confirmDeleteListKind === "note" ? "笔记" : "任务" }}将移动到「{{ confirmDeleteListKind === "note" ? "默认笔记本" : "收件箱" }}」。
     </template>
     <template v-else-if="confirmDelete?.type === 'list'">
-      清单为空，将直接删除。
+      {{ confirmDeleteListKind === "note" ? "笔记本" : "清单" }}为空，将直接删除。
     </template>
     <template v-else-if="confirmDelete?.type === 'tag'">
       标签将被删除，任务不受影响。
@@ -1093,7 +1226,7 @@ onMounted(async () => {
           ref="newListNameInputRef"
           v-model="newListName"
           class="sidebar-create__input"
-          placeholder="清单名称"
+          :placeholder="newListKind === 'note' ? '笔记本名称' : '清单名称'"
           @keydown.enter="confirmNewList"
           @keydown.escape.stop="showCreateDialog = false"
         />
@@ -1929,6 +2062,16 @@ onMounted(async () => {
 .sidebar__list-tree {
   display: flex;
   flex-direction: column;
+}
+
+/* 归档区「笔记本」小标题（区分归档清单与归档笔记本两组） */
+.sidebar__archive-subgroup {
+  padding: 8px 16px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--jt-text-tertiary);
 }
 </style>
 

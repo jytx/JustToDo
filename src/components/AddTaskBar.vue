@@ -13,9 +13,14 @@ import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
 import DueDateChip from "./DueDateChip.vue";
 
-defineProps<{
+const props = defineProps<{
   listId: string;
+  /** 实体类型：'task'（默认）渲染完整属性行；'note' 隐藏日期/模板，placeholder 改为笔记 */
+  kind?: "task" | "note";
 }>();
+
+/** 笔记模式：隐藏日期/模板，placeholder 改为「添加笔记」 */
+const isNote = computed(() => props.kind === "note");
 
 const emit = defineEmits<{
   add: [payload: { title: string; priority: Priority; dueStartAt: string | null; dueEndAt: string | null }];
@@ -165,7 +170,7 @@ function onDateClose() {
       ref="inputRef"
       v-model="title"
       class="add-task-bar__input"
-      placeholder="添加任务"
+      :placeholder="isNote ? '添加笔记' : '添加任务'"
       @focus="focused = true"
       @blur="handleBlur"
       @keydown.enter="submit"
@@ -199,8 +204,8 @@ function onDateClose() {
         </MenuPopoverItem>
       </MenuPopover>
 
-      <!-- 模板快捷入口：popover 弹模板列表，选某项直接应用模板创建任务 -->
-      <MenuPopover v-model:visible="showTemplateMenu">
+      <!-- 模板快捷入口：popover 弹模板列表，选某项直接应用模板创建任务（笔记模式隐藏） -->
+      <MenuPopover v-if="!isNote" v-model:visible="showTemplateMenu">
         <template #trigger>
           <a-button
             type="text"
@@ -223,6 +228,7 @@ function onDateClose() {
       </MenuPopover>
 
       <DueDateChip
+        v-if="!isNote"
         compact
         :start-iso="dueStartAt"
         :end-iso="dueEndAt"

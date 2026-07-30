@@ -36,10 +36,15 @@ const emit = defineEmits<{
 
 // ─── 拖拽排序（仅根任务 depth=0 且未完成 且 当前为手动排序模式时启用） ──────────────
 const taskStore = useTaskStore();
+
+/** 笔记（kind='note'）：无完成/日期/重复概念，UI 隐藏这些区块。
+ *  笔记仍可拖拽排序（复用任务的拖拽逻辑，仅去掉 done 限制）。 */
+const isNote = computed(() => props.task.kind === "note");
+
 const canDrag = computed(
   () =>
     props.depth === 0 &&
-    !props.task.done &&
+    (isNote.value || !props.task.done) &&
     taskStore.currentSort.field === "manual",
 );
 const dragOver = ref<"before" | "after" | null>(null);
@@ -206,6 +211,7 @@ async function onCtxAddSiblingTask(): Promise<void> {
     title: "",
     listId: props.task.listId,
     parentId: props.task.parentId,
+    kind: props.task.kind,
   });
   taskStore.selectTask(created.id);
 }
@@ -263,7 +269,11 @@ function onCtxDelete(): void {
       <!-- 无子任务时占位，保持缩进对齐 -->
       <span v-else class="task-item__expand-placeholder" />
 
-      <TaskCheckbox :done="task.done" @toggle="doToggle" />
+      <!-- 复选框（笔记无完成概念，隐藏） -->
+      <TaskCheckbox v-if="!isNote" :done="task.done" @toggle="doToggle" />
+
+      <!-- 笔记图标徽章（区分于任务；标签/搜索视图中任务和笔记全局共用） -->
+      <icon-file v-else :size="14" class="task-item__note-icon" />
 
       <!-- 清单色点（智能视图） -->
       <span
@@ -323,7 +333,7 @@ function onCtxDelete(): void {
           </template>
           <MenuPopoverItem danger @click="onDelete">
             <icon-delete :size="15" />
-            <span>删除任务</span>
+            <span>{{ isNote ? "删除笔记" : "删除任务" }}</span>
           </MenuPopoverItem>
         </MenuPopover>
       </div>
@@ -340,19 +350,19 @@ function onCtxDelete(): void {
       />
     </div>
 
-    <!-- 右键菜单：新建同级任务 / 新建子任务 / 删除任务 -->
+    <!-- 右键菜单：新建同级 / 新建子项 / 删除（文案随 kind：任务/笔记） -->
     <ContextMenu v-model:visible="ctxMenu.visible" :x="ctxMenu.x" :y="ctxMenu.y">
       <MenuPopoverItem @click="onCtxAddSiblingTask">
         <icon-plus :size="15" />
-        <span>新建任务</span>
+        <span>{{ isNote ? "新建笔记" : "新建任务" }}</span>
       </MenuPopoverItem>
       <MenuPopoverItem @click="onCtxAddSubtask">
         <icon-branch :size="15" />
-        <span>新建子任务</span>
+        <span>{{ isNote ? "新建子笔记" : "新建子任务" }}</span>
       </MenuPopoverItem>
       <MenuPopoverItem danger @click="onCtxDelete">
         <icon-delete :size="15" />
-        <span>删除任务</span>
+        <span>{{ isNote ? "删除笔记" : "删除任务" }}</span>
       </MenuPopoverItem>
     </ContextMenu>
   </div>
@@ -457,6 +467,12 @@ function onCtxDelete(): void {
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+/* 笔记图标徽章（替代复选框位置，与复选框等宽对齐） */
+.task-item__note-icon {
+  flex-shrink: 0;
+  color: var(--jt-text-tertiary);
 }
 
 .task-item__body {

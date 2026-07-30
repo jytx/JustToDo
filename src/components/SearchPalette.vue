@@ -121,7 +121,7 @@ function getDueInfo(dueStartAt: string | null, dueEndAt: string | null) {
         </div>
 
         <div v-else>
-          <div class="search-palette__section-title">任务</div>
+          <div class="search-palette__section-title">条目</div>
           <div
             v-for="(task, i) in results"
             :key="task.id"
@@ -130,12 +130,15 @@ function getDueInfo(dueStartAt: string | null, dueEndAt: string | null) {
             @click="selectResult(i)"
             @mouseenter="selectedIndex = i"
           >
-            <icon-check-square :size="16" />
+            <!-- 图标按 kind 区分：任务 ✓ / 笔记 📄 -->
+            <icon-check-square v-if="task.kind !== 'note'" :size="16" />
+            <icon-file v-else :size="16" />
             <div class="search-palette__result-body">
               <span class="search-palette__result-title">{{ task.title }}</span>
               <span class="search-palette__result-meta">
                 {{ getListName(task.listId) }}
-                <template v-if="getDueInfo(task.dueStartAt, task.dueEndAt)">
+                <!-- 笔记无日期，不显示截止信息 -->
+                <template v-if="task.kind !== 'note' && getDueInfo(task.dueStartAt, task.dueEndAt)">
                   · {{ getDueInfo(task.dueStartAt, task.dueEndAt)?.text }}
                 </template>
               </span>

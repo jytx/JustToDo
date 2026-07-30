@@ -30,11 +30,21 @@ const props = defineProps<{
    * 默认 false
    */
   readonly?: boolean;
+  /** 节点类型：'task'（默认，清单/目录）| 'note'（笔记本/笔记本目录）。
+   *  决定路由前缀（/list vs /notebook）、计数来源、菜单文案。 */
+  kind?: "task" | "note";
 }>();
 
 const taskStore = useTaskStore();
 const router = useRouter();
 const route = useRoute();
+
+/** 是否为笔记本节点（kind='note'）：影响路由、计数、菜单文案 */
+const isNote = computed(() => props.kind === "note");
+/** 对应的路由名与路径前缀 */
+const routeName = computed(() => (isNote.value ? "notebook" : "list"));
+// routePrefix 保留供后续扩展使用（暂未在模板内直接使用 —— 兼容路由前缀）
+const routePrefix = computed(() => (isNote.value ? "/notebook" : "/list"));
 
 /**
  * 计算树节点左侧缩进。
@@ -46,9 +56,12 @@ function getNodePaddingLeft(depth: number): string {
   return `${baseIndent + depth * levelIndent}px`;
 }
 
-/** 当前清单项是否处于路由激活态（仅清单，非目录） */
+/** 当前清单/笔记本项是否处于路由激活态（仅叶节点，非目录） */
 const isActive = computed(
-  () => !props.node.isFolder && route.name === "list" && route.params.id === props.node.id,
+  () =>
+    !props.node.isFolder &&
+    route.name === routeName.value &&
+    route.params.id === props.node.id,
 );
 
 const expanded = ref(true);
@@ -86,10 +99,10 @@ const folderMenuOpen = ref(false);
 /** 清单行更多菜单（独立 ref） */
 const listMenuOpen = ref(false);
 
-/** 点击清单行 → 路由跳转 */
+/** 点击清单/笔记本行 → 路由跳转（按 kind 决定前缀） */
 function goToList() {
   if (!props.node.isFolder) {
-    router.push(`/list/${props.node.id}`);
+    router.push(`${routePrefix.value}/${props.node.id}`);
   }
 }
 
@@ -99,8 +112,10 @@ function goToList() {
 const dragOver = ref<"before" | "after" | "inside" | null>(null);
 const isDragging = ref(false);
 
-/** 是否可拖动（inbox 不可拖） */
-const canDrag = computed(() => props.node.id !== "inbox");
+/** 是否可拖动（inbox / default-notebook 位置固定，不可拖） */
+const canDrag = computed(
+  () => props.node.id !== "inbox" && props.node.id !== "default-notebook",
+);
 
 function onDragStart(e: DragEvent) {
   if (!canDrag.value) {
@@ -125,8 +140,8 @@ function onDragOver(e: DragEvent) {
   // inbox 是否真正接受 drop 由 onDrop 里的业务判断决定。
   e.preventDefault();
   e.dataTransfer!.dropEffect = "move";
-  // 收件箱位置固定，不参与落点高亮（仅作过路）
-  if (props.node.id === "inbox") return;
+  // 收件箱 / 默认笔记本位置固定，不参与落点高亮（仅作过路）
+  if (props.node.id === "inbox" || props.node.id === "default-notebook") return;
 
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const y = e.clientY - rect.top;
@@ -160,8 +175,8 @@ function onDragLeave(e: DragEvent) {
 }
 
 function onDrop(e: DragEvent) {
-  // 收件箱位置固定，不接受其他清单的 drop
-  if (props.node.id === "inbox") {
+  // 收件箱 / 默认笔记本位置固定，不接受其他节点的 drop
+  if (props.node.id === "inbox" || props.node.id === "default-notebook") {
     e.preventDefault();
     e.stopPropagation();
     return;
@@ -230,11 +245,11 @@ function onDrop(e: DragEvent) {
         :style="{ color: node.color }"
       />
       <span class="list-node__name">{{ node.name }}</span>
-      <!-- 在该目录下新建清单（hover 才显示）；只读模式（归档区）隐藏 -->
+      <!-- 在该目录下新建清单/笔记本（hover 才显示）；只读模式（归档区）隐藏 -->
       <button
         v-if="!readonly"
         class="list-node__add-btn"
-        title="在此目录下新建清单"
+        :title="isNote ? '在此目录下新建笔记本' : '在此目录下新建清单'"
         @click.stop="emit('addList', node)"
       >
         <icon-plus :size="14" />
@@ -291,8 +306,11 @@ function onDrop(e: DragEvent) {
         :style="{ backgroundColor: node.color }"
       />
       <span class="list-node__title">{{ node.name }}</span>
-      <span v-if="taskStore.listCounts[node.id]" class="list-node__count">{{ taskStore.listCounts[node.id] }}</span>
-      <MenuPopover v-if="!readonly && node.id !== 'inbox'" v-model:visible="listMenuOpen">
+      <span v-if="(isNote ? taskStore.noteCounts : taskStore.listCounts)[node.id]" class="list-node__count">{{ (isNote ? taskStore.noteCounts : taskStore.listCounts)[node.id] }}</span>
+      <MenuPopover
+        v-if="!readonly && node.id !== 'inbox' && node.id !== 'default-notebook'"
+        v-model:visible="listMenuOpen"
+      >
         <template #trigger>
           <button class="list-node__menu-btn" @click.stop.prevent="listMenuOpen = !listMenuOpen">
             <icon-more :size="16" />
@@ -300,20 +318,20 @@ function onDrop(e: DragEvent) {
         </template>
         <MenuPopoverItem @click="onMenuClick('addTask')">
           <icon-plus :size="15" />
-          <span>新建任务</span>
+          <span>{{ isNote ? "新建笔记" : "新建任务" }}</span>
         </MenuPopoverItem>
         <MenuPopoverItem @click="onMenuClick('edit')">
           <icon-edit :size="15" />
-          <span>编辑清单</span>
+          <span>{{ isNote ? "编辑笔记本" : "编辑清单" }}</span>
         </MenuPopoverItem>
         <MenuPopoverItem danger @click="onMenuClick('delete')">
           <icon-delete :size="15" />
-          <span>删除清单</span>
+          <span>{{ isNote ? "删除笔记本" : "删除清单" }}</span>
         </MenuPopoverItem>
         <!-- 归档：仅主页（未归档）显示 -->
         <MenuPopoverItem v-if="!node.archived" @click="onMenuClick('archive')">
           <icon-archive :size="15" />
-          <span>归档清单</span>
+          <span>{{ isNote ? "归档笔记本" : "归档清单" }}</span>
         </MenuPopoverItem>
       </MenuPopover>
     </div>
@@ -326,6 +344,7 @@ function onDrop(e: DragEvent) {
         :node="child"
         :depth="depth + 1"
         :readonly="readonly"
+        :kind="kind"
         @edit="(n: ListTreeNode) => $emit('edit', n)"
         @delete="(n: ListTreeNode) => $emit('delete', n)"
         @addFolder="(n: ListTreeNode) => $emit('addFolder', n)"
