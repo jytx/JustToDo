@@ -28,10 +28,17 @@ const badgeText = computed(() =>
   globalOpenCount.value > 99 ? "99+" : String(globalOpenCount.value),
 );
 
-/** 任务族路由（智能视图 / 清单 / 标签）共享同一个 active 态 */
+/** 任务族路由（智能视图 / 清单 / 笔记本 / 标签）共享同一个 active 态 */
 const isTasksActive = computed(() => {
   const name = route.name as string;
-  return name === "today" || name === "upcoming" || name === "all" || name === "list" || name === "tag";
+  return (
+    name === "today" ||
+    name === "upcoming" ||
+    name === "all" ||
+    name === "list" ||
+    name === "notebook" ||
+    name === "tag"
+  );
 });
 
 const isHabitsActive = computed(() => route.name === "habits");

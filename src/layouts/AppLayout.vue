@@ -39,10 +39,11 @@ const sidebarCollapsed = ref(false);
 const sidebarWidth = ref(240);
 const panelWidth = ref(480);
 
-/** 是否显示排序按钮（清单/标签/全部视图） */
+/** 是否显示排序按钮（清单/笔记本/标签/全部视图） */
 const showSortButton = computed(() => {
   return (
     route.name === "list" ||
+    route.name === "notebook" ||
     route.name === "tag" ||
     route.name === "all"
   );
@@ -55,7 +56,8 @@ const showGlobalActions = computed(() => {
 });
 
 /** TheSidebar 只在 AppRail 选中"任务"族路由时显示
- * （日历/习惯/设置 都让 TheSidebar 隐藏，让主区域占满宽度） */
+ * （日历/习惯/设置 都让 TheSidebar 隐藏，让主区域占满宽度）
+ * notebook（笔记本视图）属于任务族，侧边栏需常驻 */
 const showTaskSidebar = computed(() => {
   const name = route.name as string;
   return (
@@ -63,6 +65,7 @@ const showTaskSidebar = computed(() => {
     name === "upcoming" ||
     name === "all" ||
     name === "list" ||
+    name === "notebook" ||
     name === "tag"
   );
 });
