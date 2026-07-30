@@ -297,7 +297,7 @@ function onCtxDelete(): void {
             <icon-refresh :size="12" />
           </span>
           <span v-if="hasSubtasksLoaded && childCount" class="task-item__subtasks">
-            └ {{ childDoneCount }}/{{ childCount }} 个子任务
+            └ {{ childDoneCount }}/{{ childCount }} 个{{ isNote ? "子笔记" : "子任务" }}
           </span>
           <span
             v-if="dueInfo"
