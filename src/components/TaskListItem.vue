@@ -402,24 +402,28 @@ function onCtxDelete(): void {
   border-radius: 8px;
   cursor: pointer;
   transition: background-color 0.15s ease;
+  /* 裁切贴底的子任务进度条，使其两端自动贴合本行的 8px 圆角，
+   * 呈现"行底边的彩色加粗版"效果，弧度与任务行一致。
+   * 菜单浮层（MenuPopover）已 teleport 到 body，不受此裁切影响。 */
+  overflow: hidden;
 }
 
 /* 子任务进度条 —— 用任务行底边作为进度可视化（替代独立的文字计数）
  * 设计：
  *  - 无子任务：不渲染，行底完全透明（保持原样）
- *  - 有子任务：底边一条浅色「轨道」（满宽）
+ *  - 有子任务：底边一条浅色「轨道」（满宽，铺满行底）
  *  - 部分完成：轨道上叠一条按 doneCount/totalCount 比例的深色「填充」
  *  - 全部完成：填充满宽（100%），整体变深
- * 用绝对定位而非 border-bottom，避免与行圆角/选中底色冲突。
+ * 横向铺满 + 贴底，由父级 .task-item 的 overflow:hidden + 8px 圆角
+ * 自动裁切两端，弧度与任务行一致。
  * 宽度比例通过 CSS 变量 --jt-subtask-progress 注入（如 "33%"）。 */
 .task-item__subtask-bar {
   position: absolute;
-  left: 12px; /* 与 padding 水平对齐 */
-  right: 12px;
-  bottom: 3px;
-  height: 2px;
-  border-radius: 1px;
-  background-color: color-mix(in srgb, var(--jt-text-tertiary) 20%, transparent);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background-color: color-mix(in srgb, var(--jt-text-tertiary) 22%, transparent);
   overflow: hidden;
   pointer-events: none; /* 不拦截行点击 */
 }
@@ -429,7 +433,6 @@ function onCtxDelete(): void {
   height: 100%;
   width: var(--jt-subtask-progress, 0%);
   background-color: var(--jt-primary);
-  border-radius: 1px;
   transition: width 0.25s ease, background-color 0.25s ease;
 }
 
