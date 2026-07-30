@@ -22,6 +22,7 @@ export const SETTINGS_KEYS = {
   startupView: "startup_view",
   zoomLevel: "zoom_level",
   templateDefaultListId: "template_default_list_id",
+  templateDefaultNoteId: "template_default_note_id",
   dailyReminderTimes: "daily_reminder_times",
 } as const;
 
@@ -41,6 +42,8 @@ const DEFAULT_STARTUP_VIEW: StartupView = "today";
 
 /** 模板应用时的默认目标清单 id（'inbox' 是预置不可删清单） */
 const DEFAULT_TEMPLATE_LIST_ID = "inbox";
+/** 笔记模板默认笔记本：默认指向 migration 023 预置的"默认笔记本" */
+const DEFAULT_TEMPLATE_NOTE_ID = "default-notebook";
 
 /** 窗口缩放级别上下限（与 Rust 端 menu.rs 保持一致） */
 const ZOOM_MIN = 0.5;
@@ -131,6 +134,8 @@ export const useSettingsStore = defineStore("settings", () => {
   const startupView = ref<StartupView>(DEFAULT_STARTUP_VIEW);
   const zoomLevel = ref<number>(DEFAULT_ZOOM_LEVEL);
   const templateDefaultListId = ref<string>(DEFAULT_TEMPLATE_LIST_ID);
+  /** 笔记模板默认笔记本：笔记模板应用时（非笔记本视图）的兜底目标 */
+  const templateDefaultNoteId = ref<string>(DEFAULT_TEMPLATE_NOTE_ID);
   /** 每日固定时点提醒时刻列表（HH:mm，24h 制，字典序升序） */
   const dailyReminderTimes = ref<string[]>([]);
 
@@ -175,7 +180,7 @@ export const useSettingsStore = defineStore("settings", () => {
     if (initialized.value || loading.value) return;
     loading.value = true;
     try {
-      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, dailyTimesRaw] = await Promise.all([
+      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw] = await Promise.all([
         db.getSetting(SETTINGS_KEYS.themeMode).catch(() => null),
         db.getSetting(SETTINGS_KEYS.accentColor).catch(() => null),
         db.getSetting(SETTINGS_KEYS.newTasksDueToday).catch(() => null),
@@ -183,6 +188,7 @@ export const useSettingsStore = defineStore("settings", () => {
         db.getSetting(SETTINGS_KEYS.startupView).catch(() => null),
         db.getSetting(SETTINGS_KEYS.zoomLevel).catch(() => null),
         db.getSetting(SETTINGS_KEYS.templateDefaultListId).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.templateDefaultNoteId).catch(() => null),
         db.getSetting(SETTINGS_KEYS.dailyReminderTimes).catch(() => null),
       ]);
 
@@ -193,6 +199,8 @@ export const useSettingsStore = defineStore("settings", () => {
       const startup = parseStartupView(startupRaw);
       const zoom = parseZoomLevel(zoomRaw);
       const tplList = parseTemplateListId(tplListRaw);
+      // 笔记模板默认笔记本：空值回落 default-notebook（与任务清单回落 inbox 对称）
+      const tplNote = tplNoteRaw && tplNoteRaw.trim() ? tplNoteRaw : DEFAULT_TEMPLATE_NOTE_ID;
       const dailyTimes = parseDailyReminderTimes(dailyTimesRaw);
 
       themeMode.value = mode;
@@ -202,6 +210,7 @@ export const useSettingsStore = defineStore("settings", () => {
       startupView.value = startup;
       zoomLevel.value = zoom;
       templateDefaultListId.value = tplList;
+      templateDefaultNoteId.value = tplNote ?? DEFAULT_TEMPLATE_NOTE_ID;
       dailyReminderTimes.value = dailyTimes;
 
       // 先应用强调色（不依赖模式），再应用主题
@@ -295,6 +304,17 @@ async function setTemplateDefaultListId(v: string): Promise<void> {
   const ok = await persist(SETTINGS_KEYS.templateDefaultListId, v, prev);
   if (!ok) {
     templateDefaultListId.value = prev;
+  }
+}
+
+/** 修改笔记模板默认笔记本并持久化 */
+async function setTemplateDefaultNoteId(v: string): Promise<void> {
+  if (!v || !v.trim()) return;
+  const prev = templateDefaultNoteId.value;
+  templateDefaultNoteId.value = v;
+  const ok = await persist(SETTINGS_KEYS.templateDefaultNoteId, v, prev);
+  if (!ok) {
+    templateDefaultNoteId.value = prev;
   }
 }
 
@@ -412,6 +432,7 @@ async function setDailyReminderTimes(times: readonly string[]): Promise<void> {
     startupView,
     zoomLevel,
     templateDefaultListId,
+    templateDefaultNoteId,
     dailyReminderTimes,
     initialized,
     loading,
@@ -424,6 +445,7 @@ async function setDailyReminderTimes(times: readonly string[]): Promise<void> {
     setRecurrenceCheckInterval,
     setStartupView,
     setTemplateDefaultListId,
+    setTemplateDefaultNoteId,
     setDailyReminderTimes,
     cycleTheme,
     zoomIn,

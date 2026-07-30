@@ -30,16 +30,31 @@ const settings = useSettingsStore();
 /** 默认设置面板是否展开（本地状态，无需持久化） */
 const settingsExpanded = ref(true);
 
-/** 清单下拉选项：仅展示未归档的真实清单（非目录），按 position 排序
+/** 分组折叠状态（本地状态，刷新重置即可） */
+const taskGroupExpanded = ref(true);
+const noteGroupExpanded = ref(true);
+
+/** 任务模板下拉选项：仅展示未归档的真实清单（非目录），按 position 排序
  *  （模板生成的"默认清单"应是主页可见清单，不推荐归档项） */
 const listOptions = computed(() =>
   listStore.activeLists
-    .filter((l) => !l.isFolder)
+    .filter((l) => !l.isFolder && l.kind !== "note")
+    .map((l) => ({ value: l.id, label: l.name })),
+);
+
+/** 笔记模板下拉选项：仅展示未归档的真实笔记本（kind='note'） */
+const noteListOptions = computed(() =>
+  listStore.activeLists
+    .filter((l) => !l.isFolder && l.kind === "note")
     .map((l) => ({ value: l.id, label: l.name })),
 );
 
 function onListChange(v: string) {
   settings.setTemplateDefaultListId(v);
+}
+
+function onNoteChange(v: string) {
+  settings.setTemplateDefaultNoteId(v);
 }
 
 // ─── 编辑弹窗 ───
@@ -271,11 +286,12 @@ async function onGridDrop(e: DragEvent) {
         </span>
       </button>
       <div v-if="settingsExpanded" class="tpl-section__settings-body">
+        <!-- 任务模板默认清单 -->
         <div class="tpl-section__settings-row">
           <div>
             <div class="tpl-section__settings-label">任务模板默认清单</div>
             <div class="tpl-section__settings-hint">
-              任务模板应用此默认清单；笔记模板自动落到当前笔记本或默认笔记本
+              任务模板应用此清单或默认清单
             </div>
           </div>
           <SelectPopover
@@ -283,6 +299,21 @@ async function onGridDrop(e: DragEvent) {
             :options="listOptions"
             :width="160"
             @update:model-value="onListChange"
+          />
+        </div>
+        <!-- 笔记模板默认笔记本（与任务清单分开设置） -->
+        <div class="tpl-section__settings-row">
+          <div>
+            <div class="tpl-section__settings-label">笔记模板默认笔记本</div>
+            <div class="tpl-section__settings-hint">
+              笔记模板自动落到当前笔记本或默认笔记本
+            </div>
+          </div>
+          <SelectPopover
+            :model-value="settings.templateDefaultNoteId"
+            :options="noteListOptions"
+            :width="160"
+            @update:model-value="onNoteChange"
           />
         </div>
       </div>
@@ -315,46 +346,58 @@ async function onGridDrop(e: DragEvent) {
       @drop="onGridDrop"
     >
       <TransitionGroup name="tpl-flip" tag="div" class="tpl-section__grid-inner">
-        <!-- 任务模板组（仅当存在任务模板时显示分组标题） -->
-        <div
+        <!-- 任务模板组（点击分组标题可折叠；卡片只在展开时渲染） -->
+        <button
           v-if="taskTemplatesInOrder.length > 0"
           key="__group_task__"
+          type="button"
           class="tpl-section__group-header"
+          @click="taskGroupExpanded = !taskGroupExpanded"
         >
-          任务模板 · {{ taskTemplatesInOrder.length }}
-        </div>
-        <TemplateCard
-          v-for="tpl in taskTemplatesInOrder"
-          :key="tpl.id"
-          :data-id="tpl.id"
-          :template="tpl"
-          @edit="openEdit"
-          @apply="applyDirectly"
-          @rename="openRename"
-          @delete="confirmDelete"
-          @dragstart="onCardDragStart"
-          @dragend="onCardDragEnd"
-        />
-        <!-- 笔记模板组（仅当存在笔记模板时显示分组标题） -->
-        <div
+          <span>任务模板 · {{ taskTemplatesInOrder.length }}</span>
+          <icon-down v-if="taskGroupExpanded" :size="12" />
+          <icon-right v-else :size="12" />
+        </button>
+        <template v-if="taskGroupExpanded">
+          <TemplateCard
+            v-for="tpl in taskTemplatesInOrder"
+            :key="tpl.id"
+            :data-id="tpl.id"
+            :template="tpl"
+            @edit="openEdit"
+            @apply="applyDirectly"
+            @rename="openRename"
+            @delete="confirmDelete"
+            @dragstart="onCardDragStart"
+            @dragend="onCardDragEnd"
+          />
+        </template>
+        <!-- 笔记模板组（独立折叠状态） -->
+        <button
           v-if="noteTemplatesInOrder.length > 0"
           key="__group_note__"
+          type="button"
           class="tpl-section__group-header"
+          @click="noteGroupExpanded = !noteGroupExpanded"
         >
-          笔记模板 · {{ noteTemplatesInOrder.length }}
-        </div>
-        <TemplateCard
-          v-for="tpl in noteTemplatesInOrder"
-          :key="tpl.id"
-          :data-id="tpl.id"
-          :template="tpl"
-          @edit="openEdit"
-          @apply="applyDirectly"
-          @rename="openRename"
-          @delete="confirmDelete"
-          @dragstart="onCardDragStart"
-          @dragend="onCardDragEnd"
-        />
+          <span>笔记模板 · {{ noteTemplatesInOrder.length }}</span>
+          <icon-down v-if="noteGroupExpanded" :size="12" />
+          <icon-right v-else :size="12" />
+        </button>
+        <template v-if="noteGroupExpanded">
+          <TemplateCard
+            v-for="tpl in noteTemplatesInOrder"
+            :key="tpl.id"
+            :data-id="tpl.id"
+            :template="tpl"
+            @edit="openEdit"
+            @apply="applyDirectly"
+            @rename="openRename"
+            @delete="confirmDelete"
+            @dragstart="onCardDragStart"
+            @dragend="onCardDragEnd"
+          />
+        </template>
       </TransitionGroup>
     </div>
 
@@ -460,16 +503,32 @@ async function onGridDrop(e: DragEvent) {
   display: contents;
 }
 
-/* 分组标题：跨整行（grid-column 1 / -1），不参与拖拽定位 */
+/* 分组标题：跨整行（grid-column 1 / -1），不参与拖拽定位
+   是可点击 button：右侧箭头指示折叠/展开状态，hover 给出可点击反馈 */
 .tpl-section__group-header {
   grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--jt-text-tertiary);
-  padding: 4px 0 2px;
+  padding: 6px 8px;
   margin-top: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.tpl-section__group-header:hover {
+  background-color: var(--jt-surface-hover);
+  color: var(--jt-text-secondary);
 }
 
 .tpl-section__group-header:first-child {

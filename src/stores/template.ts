@@ -161,7 +161,10 @@ export const useTemplateStore = defineStore("template", () => {
     const route = useRoute();
     let listId: string;
     if (kind === "note") {
-      // 笔记：当前笔记本（/notebook/:id）优先；否则默认笔记本
+      // 笔记落地优先级：
+      // 1. 当前路由是 notebook 且 params.id 指向笔记本 → 落到当前笔记本
+      // 2. 否则使用设置项"笔记模板默认笔记本"（用户可在设置页调整）
+      // 3. 最后兜底 default-notebook（首次启动/设置项缺失）
       const routeName = route.name as string;
       const routeId = route.params.id as string | undefined;
       const listStore = useListStore();
@@ -169,7 +172,13 @@ export const useTemplateStore = defineStore("template", () => {
         routeName === "notebook" && routeId
           ? listStore.getById(routeId)
           : undefined;
-      listId = cur && cur.kind === "note" ? cur.id : "default-notebook";
+      if (cur && cur.kind === "note") {
+        listId = cur.id;
+      } else {
+        listId =
+          settings.templateDefaultNoteId ||
+          (listStore.getById("default-notebook") ? "default-notebook" : "default-notebook");
+      }
     } else {
       // 任务：全局默认清单
       listId = settings.templateDefaultListId || "inbox";
