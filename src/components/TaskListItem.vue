@@ -7,7 +7,6 @@ import { PRIORITY_COLORS } from "@/types";
 import { formatDueDate } from "@/utils/date";
 import { useTaskStore } from "@/stores/task";
 import TaskCheckbox from "./TaskCheckbox.vue";
-import SubtaskProgress from "./SubtaskProgress.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
 import ContextMenu from "./ContextMenu.vue";
@@ -163,6 +162,18 @@ const childDoneCount = computed(() =>
   childSubtasks.value.filter((t) => t.done).length,
 );
 
+/** 子任务进度百分比（0–100，用于底边进度条的填充宽度）。
+ *  无子任务时为 0，渲染层用 hasSubtasks 控制是否显示底边。 */
+const childProgress = computed(() => {
+  if (childCount.value <= 0) return 0;
+  return Math.round((childDoneCount.value / childCount.value) * 100);
+});
+
+/** 是否显示底边进度条（有子任务才显示） */
+const hasSubtaskProgress = computed(
+  () => hasSubtasksLoaded.value && childCount.value > 0,
+);
+
 async function toggleExpand() {
   expanded.value = !expanded.value;
 }
@@ -246,8 +257,13 @@ function onCtxDelete(): void {
         'task-item--focused': isFocused,
         'task-item--drag-over': dragOver === 'before' || dragOver === 'after',
         'task-item--dragging': dragging,
+        'task-item--has-subtasks': hasSubtaskProgress,
+        'task-item--subtasks-done': hasSubtaskProgress && childProgress >= 100,
       }"
-      :style="{ paddingLeft: depth * 20 + 'px' }"
+      :style="{
+        paddingLeft: depth * 20 + 'px',
+        '--jt-subtask-progress': childProgress + '%',
+      }"
       :draggable="canDrag ? 'true' : 'false'"
       @click="$emit('select')"
       @dragstart="onDragStart"
@@ -293,16 +309,10 @@ function onCtxDelete(): void {
             class="task-item__tag"
           >{{ tag.name }}</span>
         </div>
-        <div v-if="task.recurrenceFreq || childCount || dueInfo" class="task-item__meta">
+        <div v-if="task.recurrenceFreq || dueInfo" class="task-item__meta">
           <span v-if="task.recurrenceFreq" class="task-item__recurrence" title="重复任务">
             <icon-refresh :size="12" />
           </span>
-          <SubtaskProgress
-            v-if="hasSubtasksLoaded && childCount"
-            :done-count="childDoneCount"
-            :total-count="childCount"
-            :label="isNote ? '子笔记' : '子任务'"
-          />
           <span
             v-if="dueInfo"
             class="task-item__due"
@@ -340,6 +350,11 @@ function onCtxDelete(): void {
             <span>{{ isNote ? "删除笔记" : "删除任务" }}</span>
           </MenuPopoverItem>
         </MenuPopover>
+      </div>
+
+      <!-- 子任务进度条（贴底，仅当有子任务时渲染；详见 .task-item__subtask-bar） -->
+      <div v-if="hasSubtaskProgress" class="task-item__subtask-bar">
+        <div class="task-item__subtask-bar-fill" />
       </div>
     </div>
 
@@ -379,6 +394,7 @@ function onCtxDelete(): void {
 }
 
 .task-item {
+  position: relative; /* 子任务进度条（绝对定位贴底）的定位基准 */
   display: flex;
   align-items: center;
   gap: 8px;
@@ -386,6 +402,40 @@ function onCtxDelete(): void {
   border-radius: 8px;
   cursor: pointer;
   transition: background-color 0.15s ease;
+}
+
+/* 子任务进度条 —— 用任务行底边作为进度可视化（替代独立的文字计数）
+ * 设计：
+ *  - 无子任务：不渲染，行底完全透明（保持原样）
+ *  - 有子任务：底边一条浅色「轨道」（满宽）
+ *  - 部分完成：轨道上叠一条按 doneCount/totalCount 比例的深色「填充」
+ *  - 全部完成：填充满宽（100%），整体变深
+ * 用绝对定位而非 border-bottom，避免与行圆角/选中底色冲突。
+ * 宽度比例通过 CSS 变量 --jt-subtask-progress 注入（如 "33%"）。 */
+.task-item__subtask-bar {
+  position: absolute;
+  left: 12px; /* 与 padding 水平对齐 */
+  right: 12px;
+  bottom: 3px;
+  height: 2px;
+  border-radius: 1px;
+  background-color: color-mix(in srgb, var(--jt-text-tertiary) 20%, transparent);
+  overflow: hidden;
+  pointer-events: none; /* 不拦截行点击 */
+}
+
+/* 填充条：宽度 = 已完成子任务占比，主色；全完成时整体变绿 */
+.task-item__subtask-bar-fill {
+  height: 100%;
+  width: var(--jt-subtask-progress, 0%);
+  background-color: var(--jt-primary);
+  border-radius: 1px;
+  transition: width 0.25s ease, background-color 0.25s ease;
+}
+
+/* 全部子任务完成：填充变绿，强化完成语义 */
+.task-item--subtasks-done .task-item__subtask-bar-fill {
+  background-color: var(--jt-success);
 }
 
 .task-item:hover {
