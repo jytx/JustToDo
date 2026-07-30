@@ -171,11 +171,19 @@ const showEditDialog = ref(false);
 
 function startEditList(list: { id: string; name: string; color: string }) {
   if (list.id === "inbox") return;
+  if (list.id === "default-notebook") return;
   editingList.value = { id: list.id, name: list.name, color: list.color };
   editListName.value = list.name;
   editListColor.value = list.color;
   showEditDialog.value = true;
 }
+
+/** 编辑弹窗目标节点的 kind（决定 placeholder：清单名称 vs 笔记本名称） */
+const editingListKind = computed<"task" | "note">(() => {
+  if (!editingList.value) return "task";
+  const node = listStore.getById(editingList.value.id);
+  return node?.kind === "note" ? "note" : "task";
+});
 
 async function saveListEdit() {
   if (!editingList.value) return;
@@ -776,10 +784,14 @@ function onCtxDeleteList(node: ListTreeNode): void {
   closeCtxMenu();
   askDeleteList(node);
 }
-/** 清单右键：新建任务 —— 复用现有 hover 菜单的处理函数 */
+/** 清单/笔记本右键：新建条目 —— 笔记本走 onAddNote（建笔记），清单走 quickAdd（建任务） */
 function onCtxAddTask(node: ListTreeNode): void {
   closeCtxMenu();
-  quickAdd.open(node.id);
+  if (node.kind === "note") {
+    onAddNote(node.id);
+  } else {
+    quickAdd.open(node.id);
+  }
 }
 /** 标签右键：编辑 / 删除 —— 复用现有 hover 菜单的处理函数 */
 function onCtxEditTag(tag: Tag): void {
@@ -1291,7 +1303,7 @@ onMounted(async () => {
         <input
           v-model="editListName"
           class="sidebar-create__input"
-          placeholder="清单名称"
+          :placeholder="editingListKind === 'note' ? '笔记本名称' : '清单名称'"
           @keydown.enter="saveListEdit"
           @keydown.escape.stop="showEditDialog = false"
         />
@@ -1564,37 +1576,39 @@ onMounted(async () => {
         </MenuPopoverItem>
       </template>
     </template>
-    <!-- 清单：未归档 显示 新建任务 / 编辑 / 删除 / 归档 ；已归档 仅显示 取消归档 -->
+    <!-- 清单/笔记本：未归档 显示 新建条目 / 编辑 / 删除 / 归档 ；已归档 仅显示 取消归档。
+         文案按 node.kind 区分（清单→任务/清单，笔记本→笔记/笔记本）。
+         inbox / default-notebook 受保护，隐藏编辑/删除/归档（仅留新建）。 -->
     <template v-else-if="ctxMenu.target?.kind === 'list'">
       <template v-if="!ctxMenu.target.node.archived">
         <MenuPopoverItem
-          v-if="ctxMenu.target.node.id !== 'inbox'"
+          v-if="ctxMenu.target.node.id !== 'inbox' && ctxMenu.target.node.id !== 'default-notebook'"
           @click="onCtxAddTask(ctxMenu.target.node)"
         >
           <icon-plus :size="15" />
-          <span>新建任务</span>
+          <span>{{ ctxMenu.target.node.kind === "note" ? "新建笔记" : "新建任务" }}</span>
         </MenuPopoverItem>
         <MenuPopoverItem
-          v-if="ctxMenu.target.node.id !== 'inbox'"
+          v-if="ctxMenu.target.node.id !== 'inbox' && ctxMenu.target.node.id !== 'default-notebook'"
           @click="onCtxEdit(ctxMenu.target.node)"
         >
           <icon-edit :size="15" />
-          <span>编辑清单</span>
+          <span>{{ ctxMenu.target.node.kind === "note" ? "编辑笔记本" : "编辑清单" }}</span>
         </MenuPopoverItem>
         <MenuPopoverItem
-          v-if="ctxMenu.target.node.id !== 'inbox'"
+          v-if="ctxMenu.target.node.id !== 'inbox' && ctxMenu.target.node.id !== 'default-notebook'"
           danger
           @click="onCtxDeleteList(ctxMenu.target.node)"
         >
           <icon-delete :size="15" />
-          <span>删除清单</span>
+          <span>{{ ctxMenu.target.node.kind === "note" ? "删除笔记本" : "删除清单" }}</span>
         </MenuPopoverItem>
         <MenuPopoverItem
-          v-if="ctxMenu.target.node.id !== 'inbox'"
+          v-if="ctxMenu.target.node.id !== 'inbox' && ctxMenu.target.node.id !== 'default-notebook'"
           @click="onCtxArchive(ctxMenu.target.node)"
         >
           <icon-archive :size="15" />
-          <span>归档清单</span>
+          <span>{{ ctxMenu.target.node.kind === "note" ? "归档笔记本" : "归档清单" }}</span>
         </MenuPopoverItem>
       </template>
       <template v-else>
