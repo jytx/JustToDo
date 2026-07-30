@@ -304,12 +304,62 @@ pub fn run() {
 
             // 帮助 → 切换控制台（DevTools）
             if menu::is_help_event(&event) {
-                if let Some(window) = app.get_webview_window("main") {
-                    if window.is_devtools_open() {
-                        window.close_devtools();
-                    } else {
-                        window.open_devtools();
+                match event.id().as_ref() {
+                    // 切换开发者工具
+                    menu::HELP_TOGGLE_DEVTOOLS_ID => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            if window.is_devtools_open() {
+                                window.close_devtools();
+                            } else {
+                                window.open_devtools();
+                            }
+                        }
                     }
+                    // 进程级重启应用（彻底退出后由系统重新拉起）
+                    menu::HELP_RESTART_APP_ID => {
+                        println!("[JustToDo] 用户请求重启应用");
+                        app.restart();
+                    }
+                    // 打开数据目录（SQLite 数据库 / 附件配置所在）
+                    menu::HELP_OPEN_DATA_DIR_ID => {
+                        match app.path().app_data_dir() {
+                            Ok(dir) => {
+                                if let Err(e) = menu::open_in_file_manager(&dir) {
+                                    eprintln!("[JustToDo] 打开数据目录失败: {}", e);
+                                }
+                            }
+                            Err(e) => eprintln!("[JustToDo] 获取数据目录失败: {}", e),
+                        }
+                    }
+                    // 打开日志目录（Tauri app_log_dir；不存在则创建）
+                    menu::HELP_OPEN_LOG_DIR_ID => {
+                        match app.path().app_log_dir() {
+                            Ok(dir) => {
+                                if let Err(e) = menu::open_in_file_manager(&dir) {
+                                    eprintln!("[JustToDo] 打开日志目录失败: {}", e);
+                                }
+                            }
+                            Err(e) => eprintln!("[JustToDo] 获取日志目录失败: {}", e),
+                        }
+                    }
+                    // 打开附件目录（复用 commands 的解析逻辑，含用户自定义路径）
+                    menu::HELP_OPEN_ATTACHMENT_DIR_ID => {
+                        match app.path().app_data_dir() {
+                            Ok(app_data_dir) => {
+                                match commands::get_attachment_path_sync(&app_data_dir) {
+                                    Ok(dir) => {
+                                        let path = std::path::PathBuf::from(&dir);
+                                        if let Err(e) = menu::open_in_file_manager(&path) {
+                                            eprintln!("[JustToDo] 打开附件目录失败: {}", e);
+                                        }
+                                    }
+                                    Err(e) => eprintln!("[JustToDo] 解析附件目录失败: {}", e),
+                                }
+                            }
+                            Err(e) => eprintln!("[JustToDo] 获取 app data 目录失败: {}", e),
+                        }
+                    }
+                    _ => {}
                 }
                 return;
             }

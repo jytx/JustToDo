@@ -17,6 +17,14 @@ pub const ZOOM_RESET_ID: &str = "zoom_reset";
 pub const WINDOW_CENTER_ID: &str = "window_center";
 /// 切换开发者工具（控制台）
 pub const HELP_TOGGLE_DEVTOOLS_ID: &str = "help_toggle_devtools";
+/// 进程级重启应用（彻底退出后由系统重新拉起，重跑 setup/migration）
+pub const HELP_RESTART_APP_ID: &str = "help_restart_app";
+/// 在系统文件管理器中打开数据目录（SQLite 数据库所在）
+pub const HELP_OPEN_DATA_DIR_ID: &str = "help_open_data_dir";
+/// 在系统文件管理器中打开日志目录
+pub const HELP_OPEN_LOG_DIR_ID: &str = "help_open_log_dir";
+/// 在系统文件管理器中打开附件目录
+pub const HELP_OPEN_ATTACHMENT_DIR_ID: &str = "help_open_attachment_dir";
 
 /// 缩放步长与上下限（与浏览器一致）
 pub const ZOOM_STEP: f64 = 1.2;
@@ -36,9 +44,54 @@ pub fn is_window_op_event(event: &MenuEvent) -> bool {
     matches!(event.id().as_ref(), WINDOW_CENTER_ID)
 }
 
-/// 判断某个菜单事件是否是帮助类自定义项（如切换控制台）
+/// 判断某个菜单事件是否是帮助类自定义项（切换控制台 / 重启 / 打开各类目录）
 pub fn is_help_event(event: &MenuEvent) -> bool {
-    matches!(event.id().as_ref(), HELP_TOGGLE_DEVTOOLS_ID)
+    matches!(
+        event.id().as_ref(),
+        HELP_TOGGLE_DEVTOOLS_ID
+            | HELP_RESTART_APP_ID
+            | HELP_OPEN_DATA_DIR_ID
+            | HELP_OPEN_LOG_DIR_ID
+            | HELP_OPEN_ATTACHMENT_DIR_ID
+    )
+}
+
+/// 在系统文件管理器中打开一个目录（跨平台）。
+///
+/// 与 commands.rs::reveal_attachment 定位「文件」不同，这里定位「目录」：
+/// - macOS：`open <dir>` 直接在 Finder 打开该目录
+/// - Windows：`explorer <dir>` 打开该目录
+/// - Linux：`xdg-open <dir>` 交给桌面环境默认文件管理器
+///
+/// 返回值用于上层打日志；目录不存在时返回错误，调用方负责提示。
+pub fn open_in_file_manager(dir: &std::path::Path) -> Result<(), String> {
+    if !dir.exists() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("创建目录失败: {}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(dir)
+            .spawn()
+            .map_err(|e| format!("打开 Finder 失败: {}", e))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg(dir)
+            .spawn()
+            .map_err(|e| format!("打开资源管理器失败: {}", e))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(dir)
+            .spawn()
+            .map_err(|e| format!("打开文件管理器失败: {}", e))?;
+    }
+
+    Ok(())
 }
 
 // ─── 原生菜单构造 ────────────────────────────────────────────
@@ -144,6 +197,40 @@ fn build_help_submenu(app: &AppHandle<Wry>) -> tauri::Result<Submenu<Wry>> {
         "切换控制台",
         true,
         Some("F12"),
+    )?)?;
+    sub.append(&PredefinedMenuItem::separator(app)?)?;
+    // 重启应用（进程级，彻底退出后重新启动）
+    sub.append(&MenuItem::with_id(
+        app,
+        HELP_RESTART_APP_ID,
+        "重启应用",
+        true,
+        None::<&str>,
+    )?)?;
+    sub.append(&PredefinedMenuItem::separator(app)?)?;
+    // 打开数据目录（SQLite 数据库所在）
+    sub.append(&MenuItem::with_id(
+        app,
+        HELP_OPEN_DATA_DIR_ID,
+        "打开数据目录",
+        true,
+        None::<&str>,
+    )?)?;
+    // 打开日志目录
+    sub.append(&MenuItem::with_id(
+        app,
+        HELP_OPEN_LOG_DIR_ID,
+        "打开日志目录",
+        true,
+        None::<&str>,
+    )?)?;
+    // 打开附件目录
+    sub.append(&MenuItem::with_id(
+        app,
+        HELP_OPEN_ATTACHMENT_DIR_ID,
+        "打开附件目录",
+        true,
+        None::<&str>,
     )?)?;
     Ok(sub)
 }

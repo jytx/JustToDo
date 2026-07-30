@@ -1484,26 +1484,31 @@ pub async fn set_attachment_dir(app: AppHandle, path: String) -> CmdResult<Strin
 /// 获取当前附件存储路径（读配置或返回默认）
 #[tauri::command]
 pub async fn get_attachment_path(app: AppHandle) -> CmdResult<String> {
-    let config_path = app
+    let app_data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("获取 app data 目录失败: {}", e))?
-        .join("attachment_path.txt");
+        .map_err(|e| format!("获取 app data 目录失败: {}", e))?;
+    get_attachment_path_sync(&app_data_dir)
+}
+
+/// 获取附件目录的同步核心（纯函数：仅读传入的 app_data_dir，不访问 Tauri 全局状态）。
+///
+/// 解析规则：优先读 app_data_dir/attachment_path.txt 中用户自定义路径，
+/// 不存在或失效则回退到默认的 app_data_dir/attachments（并自动创建）。
+/// 抽出此同步核心，让 #[tauri::command] 的 async 版本与菜单事件可共享同一份逻辑。
+pub(crate) fn get_attachment_path_sync(app_data_dir: &std::path::Path) -> CmdResult<String> {
+    let config_path = app_data_dir.join("attachment_path.txt");
 
     if config_path.exists() {
-        let path =
+        let path_str =
             std::fs::read_to_string(&config_path).map_err(|e| format!("读取配置失败: {}", e))?;
-        if std::path::Path::new(&path).exists() {
-            return Ok(path);
+        if std::path::Path::new(&path_str).exists() {
+            return Ok(path_str);
         }
     }
 
     // 返回默认路径
-    let default = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("获取 app data 目录失败: {}", e))?
-        .join("attachments");
+    let default = app_data_dir.join("attachments");
     std::fs::create_dir_all(&default).map_err(|e| format!("创建默认附件目录失败: {}", e))?;
     Ok(default.to_string_lossy().to_string())
 }
