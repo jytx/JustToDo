@@ -85,6 +85,8 @@ pub struct SchedulePreview {
 #[derive(Debug, Deserialize)]
 pub struct HolidayCnDay {
     pub date: String,
+    // JSON 原始字段为 camelCase 的 isOffDay，需 rename 对齐
+    #[serde(rename = "isOffDay")]
     pub is_off_day: bool,
     pub name: String,
 }

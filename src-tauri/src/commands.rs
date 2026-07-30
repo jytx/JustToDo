@@ -2200,7 +2200,7 @@ pub async fn task_check_reminders(
 //   去重靠 daily_reminder_log (log_date, log_time) 主键。
 //
 // 应用场景：用户配置 09:00 / 17:00 两个时刻，每天 09:00、17:00 各发一条：
-//   「每日提醒
+//   「任务速览
 //    7月23日 周四
 //    69 过期任务
 //    立即查看今天的任务」
