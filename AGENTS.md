@@ -183,3 +183,6 @@ cargo fmt
 （lists 表加 `kind` 字段，与清单为两棵独立树）。笔记保留富文本/标签/子笔记/附件/拖拽排序/归档，
 去掉起止时间/完成/重复/提醒。标签与全局搜索在任务与笔记间全局共用。预置「默认笔记本」
 （id='default-notebook'，类似 inbox）。详见 `discuss/note-feature-design.md`。
+
+## Git要求
+1. 每次修改完代码后,都要把代码提交一版上去
