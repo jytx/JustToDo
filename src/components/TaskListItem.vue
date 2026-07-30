@@ -7,6 +7,7 @@ import { PRIORITY_COLORS } from "@/types";
 import { formatDueDate } from "@/utils/date";
 import { useTaskStore } from "@/stores/task";
 import TaskCheckbox from "./TaskCheckbox.vue";
+import SubtaskProgress from "./SubtaskProgress.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
 import ContextMenu from "./ContextMenu.vue";
@@ -296,9 +297,12 @@ function onCtxDelete(): void {
           <span v-if="task.recurrenceFreq" class="task-item__recurrence" title="重复任务">
             <icon-refresh :size="12" />
           </span>
-          <span v-if="hasSubtasksLoaded && childCount" class="task-item__subtasks">
-            └ {{ childDoneCount }}/{{ childCount }} 个{{ isNote ? "子笔记" : "子任务" }}
-          </span>
+          <SubtaskProgress
+            v-if="hasSubtasksLoaded && childCount"
+            :done-count="childDoneCount"
+            :total-count="childCount"
+            :label="isNote ? '子笔记' : '子任务'"
+          />
           <span
             v-if="dueInfo"
             class="task-item__due"
@@ -524,11 +528,6 @@ function onCtxDelete(): void {
   margin-top: 4px;
   font-size: 12px;
   color: var(--jt-text-secondary);
-}
-
-.task-item__subtasks {
-  display: flex;
-  align-items: center;
 }
 
 .task-item__recurrence {
