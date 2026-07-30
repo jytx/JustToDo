@@ -350,6 +350,8 @@ export const useTaskStore = defineStore("task", () => {
     dueEndAt?: string | null;
     /** 实体类型：不传默认 'task'（待办）；'note' = 笔记（无日期/完成/重复/提醒） */
     kind?: TaskKind;
+    /** 创建时一并关联的标签 ID 列表（前端逐条调 db.addTaskTag；后端无批量接口） */
+    tagIds?: string[];
   }) {
     // 自动今天兜底：
     // - 开关开启
@@ -378,8 +380,19 @@ export const useTaskStore = defineStore("task", () => {
     } else {
       subtasks.value.push(task);
     }
-    // 新建任务默认无标签，补一个空数组到缓存，保持 taskTagMap 与 currentTasks 同步
-    taskTagMap.value = { ...taskTagMap.value, [task.id]: [] };
+    // 关联标签（前端逐条写入，后端 task_tags 无批量接口）。
+    // 关联后用权威的 getTaskTags 回填缓存，保证列表项 / 详情面板立即显示标签。
+    const tagIds = params.tagIds ?? [];
+    if (tagIds.length > 0) {
+      for (const tagId of tagIds) {
+        await db.addTaskTag(task.id, tagId);
+      }
+      const tags = await db.getTaskTags(task.id);
+      taskTagMap.value = { ...taskTagMap.value, [task.id]: tags };
+    } else {
+      // 新建任务默认无标签，补一个空数组到缓存，保持 taskTagMap 与 currentTasks 同步
+      taskTagMap.value = { ...taskTagMap.value, [task.id]: [] };
+    }
     refreshCounts();
     // 通知日历视图刷新（create 不区分是否带日期，全通知；视图自己按当前 range 决定是否可见）
     notifyTaskChanged();

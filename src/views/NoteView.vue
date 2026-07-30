@@ -79,6 +79,7 @@ onMounted(async () => {
               listId: props.id,
               priority: payload.priority,
               kind: 'note',
+              tagIds: payload.tagIds,
             })
         "
       />

@@ -14,6 +14,7 @@ import { todayRange } from "@/utils/date";
 import { PRIORITY_LABELS, PRIORITY_COLORS, type Priority } from "@/types";
 import PriorityDot from "./PriorityDot.vue";
 import DueDateChip from "./DueDateChip.vue";
+import TagSelectPopover from "./TagSelectPopover.vue";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -69,6 +70,8 @@ const priority = ref<Priority>(0);
 const selectedListId = ref("inbox");
 const dueStartAt = ref<string | null>(null);
 const dueEndAt = ref<string | null>(null);
+/** 选中的标签 ID 数组 —— submit 时随 createTask 一起提交 */
+const selectedTagIds = ref<string[]>([]);
 const inputRef = ref<HTMLInputElement | null>(null);
 const feedback = ref<string | null>(null);
 /** 优先级 / 清单 / 模板 popup 开关 —— 点击选项后立即关闭 */
@@ -190,6 +193,7 @@ watch(open, async (isOpen) => {
     title.value = "";
     priority.value = 0;
     selectedListId.value = resolveDefaultListId();
+    selectedTagIds.value = [];
     // 初始日期：外部默认 > 自动今天开关 > 空
     const [initStart, initEnd] = resolveInitialDueRange();
     dueStartAt.value = initStart;
@@ -256,6 +260,7 @@ async function submit(keepOpen: boolean) {
     // 笔记无日期概念，不传 dueStartAt/dueEndAt
     ...(isNoteMode.value ? {} : { dueStartAt: dueStartAt.value, dueEndAt: dueEndAt.value }),
     kind: isNoteMode.value ? "note" : "task",
+    tagIds: [...selectedTagIds.value],
   });
 
   feedback.value = `已添加到「${selectedListName.value}」`;
@@ -263,6 +268,7 @@ async function submit(keepOpen: boolean) {
   if (keepOpen) {
     title.value = "";
     priority.value = 0;
+    selectedTagIds.value = [];
     const [resetStart, resetEnd] = resolveInitialDueRange();
     dueStartAt.value = resetStart;
     dueEndAt.value = resetEnd;
@@ -427,6 +433,9 @@ function onKeyDown(e: KeyboardEvent) {
           @confirm="(s, e) => { dueStartAt = s; dueEndAt = e; }"
           @clear="() => { dueStartAt = null; dueEndAt = null; }"
         />
+
+        <!-- 标签：点开选已有/新建，已选以小 chip 平铺；弹层朝上开（与日期一致） -->
+        <TagSelectPopover v-model:selectedTagIds="selectedTagIds" placement="top-left" />
 
         <span class="quick-add__spacer" />
       </div>

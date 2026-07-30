@@ -12,6 +12,7 @@ import PriorityDot from "./PriorityDot.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
 import DueDateChip from "./DueDateChip.vue";
+import TagSelectPopover from "./TagSelectPopover.vue";
 
 const props = defineProps<{
   listId: string;
@@ -28,7 +29,7 @@ const availableTemplates = computed(() =>
 );
 
 const emit = defineEmits<{
-  add: [payload: { title: string; priority: Priority; dueStartAt: string | null; dueEndAt: string | null }];
+  add: [payload: { title: string; priority: Priority; dueStartAt: string | null; dueEndAt: string | null; tagIds: string[] }];
 }>();
 
 const settings = useSettingsStore();
@@ -66,6 +67,10 @@ const showPriorityMenu = ref(false);
 const [initialStart, initialEnd] = defaultDueRange();
 const dueStartAt = ref<string | null>(initialStart);
 const dueEndAt = ref<string | null>(initialEnd);
+/** 选中的标签 ID 数组 —— submit 时随 payload 一起提交，由父视图透传给 createTask */
+const selectedTagIds = ref<string[]>([]);
+/** 标签下拉弹层是否打开 —— handleBlur 据此在打开时保持输入框聚焦 */
+const tagPopoverVisible = ref(false);
 
 const inputRef = ref<HTMLInputElement | null>(null);
 
@@ -96,6 +101,7 @@ function submit() {
     priority: priority.value,
     dueStartAt: dueStartAt.value,
     dueEndAt: dueEndAt.value,
+    tagIds: [...selectedTagIds.value],
   });
   // 重置（保持面板打开便于连续录入）
   title.value = "";
@@ -103,6 +109,7 @@ function submit() {
   const [resetStart, resetEnd] = defaultDueRange();
   dueStartAt.value = resetStart;
   dueEndAt.value = resetEnd;
+  selectedTagIds.value = [];
 }
 
 /**
@@ -151,8 +158,8 @@ function handleBlur() {
     if (document.activeElement === inputRef.value) {
       return;
     }
-    // 如果优先级/模板下拉还开着，保持聚焦
-    if (showPriorityMenu.value || showTemplateMenu.value) {
+    // 如果优先级/模板/标签下拉还开着，保持聚焦
+    if (showPriorityMenu.value || showTemplateMenu.value || tagPopoverVisible.value) {
       focused.value = true;
       return;
     }
@@ -247,6 +254,13 @@ function onDateClose() {
         :end-iso="dueEndAt"
         @confirm="(s, e) => { dueStartAt = s; dueEndAt = e; onDateClose(); }"
         @clear="() => { dueStartAt = null; dueEndAt = null; onDateClose(); }"
+      />
+
+      <!-- 标签：点开选已有/新建，已选以小 chip 平铺在属性行 -->
+      <TagSelectPopover
+        v-model:selectedTagIds="selectedTagIds"
+        variant="text"
+        @open-change="(v) => (tagPopoverVisible = v)"
       />
 
       <span class="add-task-bar__hint font-mono">⏎</span>

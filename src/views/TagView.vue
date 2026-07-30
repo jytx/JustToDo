@@ -35,14 +35,15 @@ const {
   onTaskDragEnd,
 } = useTaskDragReorder(() => taskStore.openTasks);
 
-// 添加任务到当前标签（直接加到收件箱，未来可扩展为标签关联）
-async function onAdd(payload: { title: string; priority: Priority; dueStartAt: string | null; dueEndAt: string | null }) {
+// 添加任务（直接加到收件箱）；用户在添加栏选择的标签随 payload.tagIds 一并关联
+async function onAdd(payload: { title: string; priority: Priority; dueStartAt: string | null; dueEndAt: string | null; tagIds: string[] }) {
   await taskStore.createTask({
     title: payload.title,
     listId: 'inbox',
     priority: payload.priority,
     dueStartAt: payload.dueStartAt,
     dueEndAt: payload.dueEndAt,
+    tagIds: payload.tagIds,
   });
 }
 

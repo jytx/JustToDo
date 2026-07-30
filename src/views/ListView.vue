@@ -76,6 +76,7 @@ onMounted(async () => {
               priority: payload.priority,
               dueStartAt: payload.dueStartAt,
               dueEndAt: payload.dueEndAt,
+              tagIds: payload.tagIds,
             })
         "
       />
