@@ -7,6 +7,7 @@ import { useSettingsStore } from "@/stores/settings";
 import { useTaskStore } from "@/stores/task";
 import { useHabitStore } from "@/stores/habit";
 import { useTemplateStore } from "@/stores/template";
+import { useListScheduleStore } from "@/stores/listSchedule";
 import { useRoute } from "vue-router";
 import { SORT_FIELDS, SORT_FIELD_LABELS, type SortField } from "@/types";
 import AppRail from "@/components/AppRail.vue";
@@ -29,6 +30,7 @@ const listStore = useListStore();
 const taskStore = useTaskStore();
 const habitStore = useHabitStore();
 const templateStore = useTemplateStore();
+const listScheduleStore = useListScheduleStore();
 const route = useRoute();
 const quickAdd = useQuickAdd();
 
@@ -198,6 +200,10 @@ onMounted(() => {
   // 预加载模板列表（设置页模板 section 直接读 store）
   templateStore.loadTemplates().catch((e) => {
     console.error("[AppLayout] 预加载 templates 失败:", e);
+  });
+  // 预加载清单生成计划列表（设置页「清单生成计划」section 直接读 store）
+  listScheduleStore.loadSchedules().catch((e) => {
+    console.error("[AppLayout] 预加载 list schedules 失败:", e);
   });
   // 预加载清单列表（模板 section 的「默认清单」下拉、搜索结果等都依赖；
   // 之前是各 ListView/SmartView onMounted 时 lazy 加载，用户直达设置页时会空）

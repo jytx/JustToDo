@@ -34,6 +34,7 @@ import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import ContextMenu from "./ContextMenu.vue";
 import TeleportPopper from "./TeleportPopper.vue";
 import * as db from "@/api/db";
+import { LIST_COLORS } from "@/utils/colors";
 
 const props = defineProps<{
   collapsed?: boolean;
@@ -320,11 +321,8 @@ const newListNameInputRef = ref<HTMLInputElement | null>(null);
 const newListFolder = ref("");
 const selectedColor = ref('#10B981');
 
-/** 8 种预定义颜色 */
-const LIST_COLORS = [
-  '#EF4444', '#F59E0B', '#EAB308', '#10B981',
-  '#3B82F6', '#8B5CF6', '#EC4899', '#6B7280',
-];
+/** 8 种预定义颜色 —— 引用共享常量（utils/colors.ts） */
+// LIST_COLORS 由 @/utils/colors 导入，此处不再重复定义
 
 function startNewList() {
   newListName.value = "";

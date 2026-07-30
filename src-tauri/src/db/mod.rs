@@ -11,6 +11,7 @@ pub const MIGRATIONS_014: &str = include_str!("migrations/014_templates.sql");
 pub const MIGRATIONS_015: &str = include_str!("migrations/015_templates_date_cn.sql");
 pub const MIGRATIONS_016: &str = include_str!("migrations/016_templates_placeholders.sql");
 pub const MIGRATIONS_017: &str = include_str!("migrations/017_daily_reminder_log.sql");
+pub const MIGRATIONS_021: &str = include_str!("migrations/021_list_schedules.sql");
 
 /// 检查表中是否存在某列
 async fn column_exists(pool: &SqlitePool, table: &str, column: &str) -> Result<bool, String> {
@@ -71,7 +72,10 @@ async fn run_migration_003(pool: &SqlitePool) -> Result<(), String> {
 ///
 /// `app_data_dir`: 应用数据目录路径。仅 migration 019 需要（用它定位附件目录来移动磁盘文件）。
 /// 传 None 时跳过 019（用于不涉及附件迁移的纯 DB 初始化场景，当前无此调用，保留扩展性）。
-pub async fn init_pool(db_path: &str, app_data_dir: Option<&std::path::Path>) -> Result<SqlitePool, String> {
+pub async fn init_pool(
+    db_path: &str,
+    app_data_dir: Option<&std::path::Path>,
+) -> Result<SqlitePool, String> {
     let options = SqliteConnectOptions::from_str(db_path)
         .map_err(|e| format!("无效的数据库路径: {}", e))?
         .create_if_missing(true);
@@ -158,12 +162,40 @@ pub async fn init_pool(db_path: &str, app_data_dir: Option<&std::path::Path>) ->
     // 020: lists 表加 archived（清单/目录归档位，0=未归档 1=已归档）
     run_migration_020(&pool).await?;
 
+    // 021: 清单生成计划 + 节假日缓存（纯 SQL 建表，幂等）
+    sqlx::query(MIGRATIONS_021)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("执行迁移 021_list_schedules 失败: {}", e))?;
+
+    // 022: list_schedules 加 leaf_type（生成项类型，与频率解耦）
+    run_migration_022(&pool).await?;
+
     Ok(pool)
 }
 
 /// 迁移 020：清单/目录归档状态（与 018 同模式：单列添加 + DEFAULT 0）
 async fn run_migration_020(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "lists", "archived", "INTEGER NOT NULL DEFAULT 0").await?;
+    Ok(())
+}
+
+/// 迁移 022：list_schedules 加 leaf_type（生成项类型，与频率解耦）
+///
+/// 之前由 freq 自动推断（monthly/yearly→目录，其余→清单），但"月目录""日清单"
+/// 的类型应由用户显式指定。加列后按原推断规则回填存量数据，升级后用户可自行调整。
+/// 回填 UPDATE 天然幂等（重复执行结果一致）。
+async fn run_migration_022(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "list_schedules", "leaf_type", "TEXT NOT NULL DEFAULT 'list'")
+        .await?;
+    // 回填：保留原 freq 推断行为
+    sqlx::query(
+        "UPDATE list_schedules SET leaf_type = 'folder' \
+         WHERE freq IN ('monthly', 'yearly') AND leaf_type = 'list'",
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("回填 leaf_type 失败: {}", e))?;
     Ok(())
 }
 
@@ -318,13 +350,7 @@ async fn run_migration_012(pool: &SqlitePool) -> Result<(), String> {
 
 /// 迁移 013：habits 加 icon 字段（emoji 字符，默认 🏆）
 async fn run_migration_013(pool: &SqlitePool) -> Result<(), String> {
-    add_column_if_missing(
-        pool,
-        "habits",
-        "icon",
-        "TEXT NOT NULL DEFAULT '🏆'",
-    )
-    .await?;
+    add_column_if_missing(pool, "habits", "icon", "TEXT NOT NULL DEFAULT '🏆'").await?;
     Ok(())
 }
 
@@ -350,10 +376,7 @@ fn m19_categorize(file_name: &str) -> &'static str {
     if matches!(ext.as_str(), "mp4" | "mov" | "webm" | "ogv" | "mkv") {
         return "videos";
     }
-    if matches!(
-        ext.as_str(),
-        "mp3" | "wav" | "m4a" | "ogg" | "flac" | "aac"
-    ) {
+    if matches!(ext.as_str(), "mp3" | "wav" | "m4a" | "ogg" | "flac" | "aac") {
         return "audios";
     }
     if matches!(
@@ -362,7 +385,10 @@ fn m19_categorize(file_name: &str) -> &'static str {
     ) {
         return "docs";
     }
-    if matches!(ext.as_str(), "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz") {
+    if matches!(
+        ext.as_str(),
+        "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz"
+    ) {
         return "archives";
     }
     "others"
@@ -392,7 +418,10 @@ fn m19_read_attachment_dir(app_data_dir: &std::path::Path) -> std::path::PathBuf
 /// - 安全：逐条处理，rename 成功后才更新 DB；单条失败跳过并记日志，不阻断整体
 /// - 写回：每个任务的 attachments 数组若有变更，整体 UPDATE 一次
 /// - created_at 格式："YYYY-MM-DDTHH:mm:ss"，取前 10 位去掉 `-` 得 YYYYMMDD
-async fn run_migration_019(pool: &SqlitePool, app_data_dir: &std::path::Path) -> Result<(), String> {
+async fn run_migration_019(
+    pool: &SqlitePool,
+    app_data_dir: &std::path::Path,
+) -> Result<(), String> {
     // 该 migration 既读 attachment_path.txt，也可能因 attachments 列不存在（旧版）而失败。
     // 如果 attachments 列不存在（018 没跑），直接跳过 —— 说明是全新或过旧的库，无附件可迁移。
     let has_attachments_col = column_exists(pool, "tasks", "attachments").await?;
@@ -448,10 +477,7 @@ async fn run_migration_019(pool: &SqlitePool, app_data_dir: &std::path::Path) ->
                 .get("originalName")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            let created_at = obj
-                .get("createdAt")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let created_at = obj.get("createdAt").and_then(|v| v.as_str()).unwrap_or("");
 
             // 推导日期目录：created_at 前 10 位 "YYYY-MM-DD" → "YYYYMMDD"
             // 格式不符则用当前日期兜底（尽量不丢文件）
@@ -490,10 +516,7 @@ async fn run_migration_019(pool: &SqlitePool, app_data_dir: &std::path::Path) ->
             // 移动文件
             match std::fs::rename(&old_path, &new_path) {
                 Ok(_) => {
-                    obj.insert(
-                        "storedName".to_string(),
-                        serde_json::Value::String(new_rel),
-                    );
+                    obj.insert("storedName".to_string(), serde_json::Value::String(new_rel));
                     changed = true;
                     migrated_count += 1;
                 }

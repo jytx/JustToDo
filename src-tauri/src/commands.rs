@@ -7,16 +7,17 @@ use tauri::State;
 
 use crate::models::*;
 
-type CmdResult<T> = Result<T, String>;
+pub(crate) type CmdResult<T> = Result<T, String>;
 
 // ─── 工具函数 ────────────────────────────────────────────
 
-fn uuid() -> String {
+/// 生成 UUID v4 字符串（crate 内可见，供 list_schedule 等模块复用）
+pub(crate) fn uuid() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
 /// 当前本地时间字面量（"YYYY-MM-DDTHH:mm:ss"），与前端 toLocalIso 输出格式一致
-fn now() -> String {
+pub(crate) fn now() -> String {
     format_local_naive(chrono::Local::now().naive_local())
 }
 
@@ -317,7 +318,7 @@ pub async fn task_count_by_list(
          WHERE t.parent_id IS NULL
            AND t.done = 0
            AND t.list_id NOT IN (SELECT id FROM lists WHERE archived = 1)
-         GROUP BY t.list_id"
+         GROUP BY t.list_id",
     )
     .fetch_all(pool.inner())
     .await
@@ -1454,14 +1455,8 @@ pub async fn get_attachment_fullpath(app: AppHandle, filename: String) -> CmdRes
 
 /// 合法的附件磁盘分类目录名（白名单，杜绝路径穿越）
 /// 与前端 ATTACHMENT_TYPE_DIRS 保持一致
-const ATTACHMENT_CATEGORY_DIRS: [&str; 6] = [
-    "images",
-    "videos",
-    "audios",
-    "docs",
-    "archives",
-    "others",
-];
+const ATTACHMENT_CATEGORY_DIRS: [&str; 6] =
+    ["images", "videos", "audios", "docs", "archives", "others"];
 
 /// 保存任意类型附件到附件目录，返回相对路径（YYYYMMDD/<category>/<uuid>.<ext>）
 ///
@@ -1491,7 +1486,11 @@ pub async fn save_attachment(
     let dir = get_attachment_path(app.clone()).await?;
     let id = uuid();
     // ext 已由前端小写化处理；为空时用 bin 兜底，避免拼出 "uuid." 这样的文件名
-    let safe_ext = if ext.is_empty() { "bin".to_string() } else { ext };
+    let safe_ext = if ext.is_empty() {
+        "bin".to_string()
+    } else {
+        ext
+    };
 
     // 拼相对子路径：YYYYMMDD/<category>/<uuid>.<ext>
     let today = chrono::Local::now().format("%Y%m%d").to_string();
@@ -1500,14 +1499,12 @@ pub async fn save_attachment(
 
     // 确保子目录存在（create_dir_all 幂等，已有不报错）
     if let Some(parent) = filepath.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("创建附件目录失败: {}", e))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建附件目录失败: {}", e))?;
     }
 
     use std::io::Write;
     let bytes = base64_decode(&data)?;
-    let mut file =
-        std::fs::File::create(&filepath).map_err(|e| format!("创建文件失败: {}", e))?;
+    let mut file = std::fs::File::create(&filepath).map_err(|e| format!("创建文件失败: {}", e))?;
     file.write_all(&bytes)
         .map_err(|e| format!("写入文件失败: {}", e))?;
 
@@ -1532,8 +1529,7 @@ pub async fn delete_attachment(app: AppHandle, stored_name: String) -> CmdResult
 pub async fn read_attachment_text(app: AppHandle, stored_name: String) -> CmdResult<String> {
     let dir = get_attachment_path(app).await?;
     let filepath = PathBuf::from(&dir).join(&stored_name);
-    let meta = std::fs::metadata(&filepath)
-        .map_err(|e| format!("读取附件信息失败: {}", e))?;
+    let meta = std::fs::metadata(&filepath).map_err(|e| format!("读取附件信息失败: {}", e))?;
     if meta.len() > 2 * 1024 * 1024 {
         return Err("文件超过 2MB，请使用系统默认程序打开".to_string());
     }
@@ -1598,7 +1594,9 @@ pub async fn copy_attachment_path(app: AppHandle, stored_name: String) -> CmdRes
                 .write_all(path_str.as_bytes())
                 .map_err(|e| format!("写入剪贴板失败: {}", e))?;
         }
-        child.wait().map_err(|e| format!("pbcopy 等待失败: {}", e))?;
+        child
+            .wait()
+            .map_err(|e| format!("pbcopy 等待失败: {}", e))?;
     }
     #[cfg(target_os = "windows")]
     {
@@ -2119,7 +2117,7 @@ pub async fn task_check_reminders(
 //   去重靠 daily_reminder_log (log_date, log_time) 主键。
 //
 // 应用场景：用户配置 09:00 / 17:00 两个时刻，每天 09:00、17:00 各发一条：
-//   「即时通知
+//   「每日提醒
 //    7月23日 周四
 //    69 过期任务
 //    立即查看今天的任务」
@@ -2303,17 +2301,12 @@ pub async fn task_daily_reminder_scan_inner(
         .map_err(|e| format!("统计未来 7 天任务失败: {}", e))?;
 
         // 5. 组装通知文案（中文）
-        //    标题始终为「即时通知」
+        //    标题始终为「任务速览」
         //    正文：日期 + 三段计数（0 段省略）+ 行动号召
         //    全部为 0 时退化为「暂无未完成任务」
         let weekday_cn = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
             [now.weekday().num_days_from_monday() as usize];
-        let date_label = format!(
-            "{}月{}日 {}",
-            now.month(),
-            now.day(),
-            weekday_cn,
-        );
+        let date_label = format!("{}月{}日 {}", now.month(), now.day(), weekday_cn,);
 
         let mut lines: Vec<String> = Vec::new();
         if count_overdue > 0 {
@@ -2333,7 +2326,7 @@ pub async fn task_daily_reminder_scan_inner(
         };
 
         let summary = DailySummary {
-            title: "即时通知".to_string(),
+            title: "任务速览".to_string(),
             body,
         };
         on_emit(&summary);

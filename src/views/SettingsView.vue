@@ -12,10 +12,12 @@ import {
   IconStorage,
   IconInfoCircle,
   IconCopy,
+  IconCalendar,
 } from "@arco-design/web-vue/es/icon";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import TemplateSection from "@/components/TemplateSection.vue";
+import ListScheduleSection from "@/components/ListScheduleSection.vue";
 import { isValidHHmm } from "@/utils/date";
 
 const settingsStore = useSettingsStore();
@@ -36,6 +38,7 @@ const sections = [
   { id: "appearance", icon: IconSkin, label: "外观" },
   { id: "shortcuts", icon: IconBulb, label: "快捷键" },
   { id: "templates", icon: IconCopy, label: "模板" },
+  { id: "schedule", icon: IconCalendar, label: "清单生成计划" },
   { id: "data", icon: IconStorage, label: "数据" },
   { id: "about", icon: IconInfoCircle, label: "关于" },
 ];
@@ -426,6 +429,12 @@ async function changeAttachmentPath() {
         <div v-if="activeSection === 'templates'" class="settings-section">
           <h2 class="settings-section__title">模板</h2>
           <TemplateSection />
+        </div>
+
+        <!-- 清单生成计划 -->
+        <div v-if="activeSection === 'schedule'" class="settings-section">
+          <h2 class="settings-section__title">清单生成计划</h2>
+          <ListScheduleSection />
         </div>
 
         <!-- 数据 -->

@@ -3,6 +3,7 @@
 
 mod commands;
 mod db;
+mod list_schedule;
 mod menu;
 mod models;
 
@@ -108,6 +109,12 @@ pub fn run() {
                             Ok(_) => {}
                             Err(e) => println!("[JustToDo] 扫描提醒失败: {}", e),
                         }
+                        // 清单生成计划：按规则自动建清单/目录
+                        match list_schedule::list_schedule_tick(&pool_clone).await {
+                            Ok(n) if n > 0 => println!("[JustToDo] 生成了 {} 个计划清单", n),
+                            Ok(_) => {}
+                            Err(e) => println!("[JustToDo] 清单生成计划 tick 失败: {}", e),
+                        }
                         // 读当前间隔（秒）
                         let secs = interval_clone.load(Ordering::Relaxed);
                         tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
@@ -150,10 +157,7 @@ pub fn run() {
                                             .body(&summary.body)
                                             .show();
                                         if let Err(e) = res {
-                                            eprintln!(
-                                                "[JustToDo] 每日提醒通知失败：{}",
-                                                e
-                                            );
+                                            eprintln!("[JustToDo] 每日提醒通知失败：{}", e);
                                         }
                                     },
                                 )
@@ -189,10 +193,7 @@ pub fn run() {
                                             .body(&summary.body)
                                             .show();
                                         if let Err(e) = res {
-                                            eprintln!(
-                                                "[JustToDo] 每日提醒通知失败：{}",
-                                                e
-                                            );
+                                            eprintln!("[JustToDo] 每日提醒通知失败：{}", e);
                                         }
                                     },
                                 )
@@ -206,6 +207,28 @@ pub fn run() {
                                 }
                             }
                             Err(e) => println!("[JustToDo] 读取 daily_reminder_times 失败: {}", e),
+                        }
+                    }
+                });
+            }
+
+            // 启动时获取法定节假日缓存（当年 + 明年），失败发通知降级
+            {
+                let pool_clone = pool.clone();
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tauri_plugin_notification::NotificationExt;
+                    match list_schedule::holiday::ensure_holiday_cache(&pool_clone).await {
+                        Ok(_) => println!("[JustToDo] 节假日缓存已就绪"),
+                        Err(errs) => {
+                            let msg = errs.join("; ");
+                            eprintln!("[JustToDo] 节假日数据获取失败: {}", msg);
+                            let _ = app_handle
+                                .notification()
+                                .builder()
+                                .title("节假日数据未更新")
+                                .body(format!("已按普通工作日处理。原因：{}", msg))
+                                .show();
                         }
                     }
                 });
@@ -375,6 +398,12 @@ pub fn run() {
             commands::template_update,
             commands::template_delete,
             commands::template_reorder,
+            list_schedule::list_schedule_get_all,
+            list_schedule::list_schedule_create,
+            list_schedule::list_schedule_update,
+            list_schedule::list_schedule_delete,
+            list_schedule::list_schedule_run_now,
+            list_schedule::list_schedule_preview,
         ]);
 
     // 仅在开发模式下启用 MCP 插件（用于 AI 辅助 GUI 测试，不影响 release 构建）

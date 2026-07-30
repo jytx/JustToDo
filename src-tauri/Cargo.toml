@@ -40,3 +40,7 @@ uuid = { version = "1", features = ["v4"] }
 tauri-plugin-mcp = { git = "https://github.com/P3GLEG/tauri-plugin-mcp" }
 tauri-plugin-dialog = "2.7.1"
 
+# HTTP 客户端 —— 仅用于拉取法定节假日数据（NateScarlet/holiday-cn）
+# rustls-tls：避免引入 OpenSSL 系统依赖，跨平台编译更稳
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+

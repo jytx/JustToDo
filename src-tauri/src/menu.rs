@@ -5,10 +5,8 @@
 //
 // 缩放的实际驱动在 Rust 端完成（window.set_zoom），前端按钮/快捷键通过 invoke 调用命令。
 
-use tauri::menu::{
-    AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu,
-};
 use tauri::menu::MenuEvent;
+use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
 /// 自定义菜单项 id —— on_menu_event 中据此分发
@@ -56,7 +54,11 @@ fn build_app_submenu(app: &AppHandle<Wry>) -> tauri::Result<Submenu<Wry>> {
         ..Default::default()
     };
     let sub = Submenu::new(app, "JustToDo", true)?;
-    sub.append(&PredefinedMenuItem::about(app, Some("关于 JustToDo"), Some(about_meta))?)?;
+    sub.append(&PredefinedMenuItem::about(
+        app,
+        Some("关于 JustToDo"),
+        Some(about_meta),
+    )?)?;
     sub.append(&PredefinedMenuItem::separator(app)?)?;
     sub.append(&PredefinedMenuItem::services(app, Some("服务"))?)?;
     sub.append(&PredefinedMenuItem::separator(app)?)?;
@@ -84,14 +86,26 @@ fn build_edit_submenu(app: &AppHandle<Wry>) -> tauri::Result<Submenu<Wry>> {
 fn build_view_submenu(app: &AppHandle<Wry>) -> tauri::Result<Submenu<Wry>> {
     let sub = Submenu::new(app, "视图", true)?;
     sub.append(&MenuItem::with_id(
-        app, ZOOM_IN_ID, "放大", true, Some("CmdOrCtrl+Plus"),
+        app,
+        ZOOM_IN_ID,
+        "放大",
+        true,
+        Some("CmdOrCtrl+Plus"),
     )?)?;
     sub.append(&MenuItem::with_id(
-        app, ZOOM_OUT_ID, "缩小", true, Some("CmdOrCtrl+Minus"),
+        app,
+        ZOOM_OUT_ID,
+        "缩小",
+        true,
+        Some("CmdOrCtrl+Minus"),
     )?)?;
     sub.append(&PredefinedMenuItem::separator(app)?)?;
     sub.append(&MenuItem::with_id(
-        app, ZOOM_RESET_ID, "实际大小", true, Some("CmdOrCtrl+Zero"),
+        app,
+        ZOOM_RESET_ID,
+        "实际大小",
+        true,
+        Some("CmdOrCtrl+Zero"),
     )?)?;
     Ok(sub)
 }
@@ -108,7 +122,11 @@ fn build_window_submenu(app: &AppHandle<Wry>) -> tauri::Result<Submenu<Wry>> {
     sub.append(&PredefinedMenuItem::separator(app)?)?;
     // 居中（Tauri 无预定义项，自定义实现）
     sub.append(&MenuItem::with_id(
-        app, WINDOW_CENTER_ID, "居中", true, None::<&str>,
+        app,
+        WINDOW_CENTER_ID,
+        "居中",
+        true,
+        None::<&str>,
     )?)?;
     sub.append(&PredefinedMenuItem::separator(app)?)?;
     // 关闭窗口
@@ -121,7 +139,11 @@ fn build_help_submenu(app: &AppHandle<Wry>) -> tauri::Result<Submenu<Wry>> {
     let sub = Submenu::new(app, "帮助", true)?;
     // 切换开发者工具（控制台）—— 调试用，点击后打开/关闭 webview DevTools
     sub.append(&MenuItem::with_id(
-        app, HELP_TOGGLE_DEVTOOLS_ID, "切换控制台", true, Some("F12"),
+        app,
+        HELP_TOGGLE_DEVTOOLS_ID,
+        "切换控制台",
+        true,
+        Some("F12"),
     )?)?;
     Ok(sub)
 }
