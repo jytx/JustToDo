@@ -202,31 +202,43 @@ async function saveListEdit() {
   editingList.value = null;
 }
 
-/** 新建子目录弹窗状态 —— 点击"添加子目录"后打开，回车才真正创建（ESC 可取消） */
+/** 新建子目录弹窗状态 —— 点击"添加子目录"后打开，回车才真正创建（ESC 可取消）
+ *  通用入口：根级（parentId=null）和子级（parentId=<父目录 id>）共用同一弹窗。 */
 const showCreateSubFolderDialog = ref(false);
 const newSubFolderName = ref("");
 const newSubFolderParentId = ref<string | null>(null);
 const newSubFolderNameInputRef = ref<HTMLInputElement | null>(null);
 /** 子目录颜色（与新建清单一致，默认橙色） */
 const newSubFolderColor = ref("#F59E0B");
-/** 子目录类型：继承自父目录的 kind（清单目录 vs 笔记本目录） */
+/** 子目录类型：继承自父目录的 kind（清单目录 vs 笔记本目录），根级时由 subheader 传入 */
 const newSubFolderKind = ref<"task" | "note">("task");
 
-/** 从目录菜单发起"添加子目录"：仅打开弹窗，不立即创建。
- *  子目录 kind 继承自父目录（保证两棵独立树不混淆）。 */
-function onAddSubFolder(parent: { id: string }) {
-  const parentNode = listStore.getById(parent.id);
-  newSubFolderParentId.value = parent.id;
+/** 通用"打开新建目录弹窗"入口：
+ *  - parentId=null：根级目录（清单 subheader / 笔记本 subheader 触发），kind 由调用方指定
+ *  - parentId=<id>：在指定目录下新建子目录，kind 继承自父目录
+ *  仅打开弹窗，不立即创建；提交走 confirmNewSubFolder。 */
+function openCreateFolderDialog(opts: {
+  parentId: string | null;
+  kind: "task" | "note";
+}): void {
+  newSubFolderParentId.value = opts.parentId;
   newSubFolderName.value = "";
   newSubFolderColor.value = "#F59E0B";
-  newSubFolderKind.value = parentNode?.kind === "note" ? "note" : "task";
+  newSubFolderKind.value = opts.kind;
   showCreateSubFolderDialog.value = true;
   nextTick(() => {
     newSubFolderNameInputRef.value?.focus();
   });
 }
 
-/** 回车创建子目录（名字必填：空名保持弹窗打开，不做任何事） */
+/** 根级新建目录：subheader 的 + 按钮 / 右键菜单触发；
+ *  kind 由 subheader 决定（清单区→'task'，笔记本区→'note'） */
+function addRootFolder(kind: "task" | "note"): void {
+  openCreateFolderDialog({ parentId: null, kind });
+}
+
+/** 回车创建目录（名字必填：空名保持弹窗打开，不做任何事）。
+ *  根级 / 子级共用：根据 parentId 是否为 null 决定；listStore.createList 已完整支持两种场景。 */
 async function confirmNewSubFolder() {
   const name = newSubFolderName.value.trim();
   if (!name) return; // 名字必填：空名不创建、不关闭弹窗
@@ -367,6 +379,14 @@ const newListFolder = ref("");
 const selectedColor = ref('#10B981');
 /** 新建容器的类型：'task' 清单/目录 | 'note' 笔记本/笔记本目录 */
 const newListKind = ref<"task" | "note">("task");
+
+/** subheader 的 + 按钮 popover 开关：'lists' = 清单 subheader, 'notebooks' = 笔记本 subheader
+ *  同一时刻只可能开一个；用户点击菜单项或外部自动关闭。 */
+const subheaderMenuOpen = ref<"lists" | "notebooks" | null>(null);
+/** 关闭 subheader popover（菜单项点击后调用） */
+function closeSubheaderMenu(): void {
+  subheaderMenuOpen.value = null;
+}
 
 /** 8 种预定义颜色 —— 引用共享常量（utils/colors.ts） */
 // LIST_COLORS 由 @/utils/colors 导入，此处不再重复定义
@@ -783,7 +803,11 @@ function closeCtxMenu(): void {
 /** 目录右键菜单项 —— 复用现有 hover 菜单的处理函数 */
 function onCtxAddFolder(node: ListTreeNode): void {
   closeCtxMenu();
-  onAddSubFolder(node);
+  // 子级场景：parentId=node.id，kind 继承父目录
+  openCreateFolderDialog({
+    parentId: node.id,
+    kind: node.kind === "note" ? "note" : "task",
+  });
 }
 function onCtxEdit(node: ListTreeNode): void {
   closeCtxMenu();
@@ -1019,15 +1043,39 @@ onMounted(async () => {
       </router-link>
 
       <!-- 清单 -->
-      <div class="sidebar__subheader sidebar__subheader--toggle">
+      <div
+        class="sidebar__subheader sidebar__subheader--toggle"
+        @contextmenu.prevent="subheaderMenuOpen = 'lists'"
+      >
         <div class="sidebar__subheader-left" @click="toggleSection('lists')">
           <icon-down v-if="!sectionCollapsed.lists" :size="12" class="sidebar__toggle-icon" />
           <icon-right v-else :size="12" class="sidebar__toggle-icon" />
           <span>清单</span>
         </div>
-        <a-button size="mini" type="text" title="新建清单" @click.stop="startNewList('task')">
-          <template #icon><icon-plus :size="16" /></template>
-        </a-button>
+        <MenuPopover
+          :visible="subheaderMenuOpen === 'lists'"
+          @update:visible="(v) => subheaderMenuOpen = v ? 'lists' : null"
+          placement="bottom-right"
+        >
+          <template #trigger>
+            <a-button
+              size="mini"
+              type="text"
+              title="新建清单或目录"
+              @click.stop="subheaderMenuOpen = 'lists'"
+            >
+              <template #icon><icon-plus :size="16" /></template>
+            </a-button>
+          </template>
+          <MenuPopoverItem @click="startNewList('task'); closeSubheaderMenu()">
+            <icon-plus :size="15" />
+            <span>新建清单</span>
+          </MenuPopoverItem>
+          <MenuPopoverItem @click="addRootFolder('task'); closeSubheaderMenu()">
+            <icon-folder :size="15" />
+            <span>新建目录</span>
+          </MenuPopoverItem>
+        </MenuPopover>
       </div>
 
       <!-- 树形清单渲染 -->
@@ -1040,7 +1088,7 @@ onMounted(async () => {
           kind="task"
           @edit="(n: any) => startEditList(n)"
           @delete="(n: any) => askDeleteList(n)"
-          @addFolder="(n: ListTreeNode) => onAddSubFolder(n)"
+          @addFolder="(n: ListTreeNode) => openCreateFolderDialog({ parentId: n.id, kind: n.kind === 'note' ? 'note' : 'task' })"
           @addList="(n: ListTreeNode) => onAddListInFolder(n)"
           @addTask="(n: ListTreeNode) => quickAdd.open(n.id)"
           @archive="(n: ListTreeNode) => onHoverArchive(n)"
@@ -1050,15 +1098,39 @@ onMounted(async () => {
       </div>
 
       <!-- 笔记本（与清单对称，kind='note' 独立成区，两棵树互不混淆） -->
-      <div class="sidebar__subheader sidebar__subheader--toggle">
+      <div
+        class="sidebar__subheader sidebar__subheader--toggle"
+        @contextmenu.prevent="subheaderMenuOpen = 'notebooks'"
+      >
         <div class="sidebar__subheader-left" @click="toggleSection('notebooks')">
           <icon-down v-if="!sectionCollapsed.notebooks" :size="12" class="sidebar__toggle-icon" />
           <icon-right v-else :size="12" class="sidebar__toggle-icon" />
           <span>笔记本</span>
         </div>
-        <a-button size="mini" type="text" title="新建笔记本" @click.stop="startNewList('note')">
-          <template #icon><icon-plus :size="16" /></template>
-        </a-button>
+        <MenuPopover
+          :visible="subheaderMenuOpen === 'notebooks'"
+          @update:visible="(v) => subheaderMenuOpen = v ? 'notebooks' : null"
+          placement="bottom-right"
+        >
+          <template #trigger>
+            <a-button
+              size="mini"
+              type="text"
+              title="新建笔记本或目录"
+              @click.stop="subheaderMenuOpen = 'notebooks'"
+            >
+              <template #icon><icon-plus :size="16" /></template>
+            </a-button>
+          </template>
+          <MenuPopoverItem @click="startNewList('note'); closeSubheaderMenu()">
+            <icon-plus :size="15" />
+            <span>新建笔记本</span>
+          </MenuPopoverItem>
+          <MenuPopoverItem @click="addRootFolder('note'); closeSubheaderMenu()">
+            <icon-folder :size="15" />
+            <span>新建目录</span>
+          </MenuPopoverItem>
+        </MenuPopover>
       </div>
 
       <!-- 树形笔记本渲染（复用 SidebarListNode，kind='note' 控制路由/计数/文案） -->
@@ -1071,7 +1143,7 @@ onMounted(async () => {
           kind="note"
           @edit="(n: any) => startEditList(n)"
           @delete="(n: any) => askDeleteList(n)"
-          @addFolder="(n: ListTreeNode) => onAddSubFolder(n)"
+          @addFolder="(n: ListTreeNode) => openCreateFolderDialog({ parentId: n.id, kind: n.kind === 'note' ? 'note' : 'task' })"
           @addList="(n: ListTreeNode) => onAddListInFolder(n)"
           @addTask="(n: ListTreeNode) => onAddNote(n.id)"
           @archive="(n: ListTreeNode) => onHoverArchive(n)"
@@ -1450,7 +1522,7 @@ onMounted(async () => {
           ref="newSubFolderNameInputRef"
           v-model="newSubFolderName"
           class="sidebar-create__input"
-          placeholder="子目录名称"
+          :placeholder="newSubFolderParentId === null ? '目录名称' : '子目录名称'"
           @keydown.enter="confirmNewSubFolder"
           @keydown.escape.stop="showCreateSubFolderDialog = false"
         />
