@@ -207,6 +207,12 @@ body[arco-theme='dark'] {
   color: var(--jt-text-primary);
 }
 
+/* === Modal 弹窗 body 上下内边距收紧 === */
+.arco-modal-body {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
 /* === step +/- 按钮 === */
 .arco-input-number-step {
   color: var(--jt-text-secondary);

@@ -172,8 +172,8 @@ function onKeydownEnter(e: KeyboardEvent) {
           />
         </div>
 
-        <!-- 路径模板 -->
-        <div class="ls-edit__attr">
+        <!-- 路径模板（input 弹性占满剩余宽度）-->
+        <div class="ls-edit__attr ls-edit__attr--path">
           <span class="ls-edit__attr-label">
             路径模板
             <a-tooltip position="right" mini>
@@ -281,6 +281,14 @@ function onKeydownEnter(e: KeyboardEvent) {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+/* 路径模板行：label 固定宽不收缩，input 弹性占满剩余宽度 */
+.ls-edit__attr--path {
+  min-width: 0;
+}
+.ls-edit__attr--path .ls-edit__input--path {
+  flex: 1;
+  min-width: 0;
 }
 .ls-edit__attr-label {
   font-size: 13px;
