@@ -35,6 +35,17 @@ const settings = useSettingsStore();
 const templateStore = useTemplateStore();
 const route = useRoute();
 
+/** 笔记模式：当前在笔记本视图，或外部指定的默认清单是笔记本。
+ *  笔记模式下：placeholder 改笔记、清单下拉只显示笔记本、隐藏日期/模板、创建时传 kind='note'。
+ *  判断优先级：外部 defaultListId 指向笔记本 > 当前路由是 notebook。 */
+const isNoteMode = computed(() => {
+  if (props.defaultListId) {
+    const node = listStore.getById(props.defaultListId);
+    if (node && node.kind === "note") return true;
+  }
+  return route.name === "notebook";
+});
+
 /** 计算本次新建的初始日期范围。
  *  优先级：外部传入的 defaultStart/End > 开关开启时预填今天 > null。 */
 function resolveInitialDueRange(): [string | null, string | null] {
@@ -146,8 +157,9 @@ function resolveDefaultListId(): string {
       }
     }
   }
-  // 2) 当前路由清单
-  if (route.name === "list" && typeof route.params.id === "string") {
+  // 2) 当前路由清单/笔记本（list 或 notebook）
+  const routeName = route.name as string;
+  if ((routeName === "list" || routeName === "notebook") && typeof route.params.id === "string") {
     const node = listStore.getById(route.params.id);
     if (node) {
       if (node.isFolder) {
@@ -193,21 +205,25 @@ const priorityColor = computed(() => {
 });
 
 const selectedListName = computed(
-  () => listStore.getById(selectedListId.value)?.name ?? "收件箱",
+  () => listStore.getById(selectedListId.value)?.name ?? (isNoteMode.value ? "默认笔记本" : "收件箱"),
 );
 const selectedListColor = computed(
   () => listStore.getById(selectedListId.value)?.color ?? null,
 );
 
-/** 仅未归档真实清单（排除目录）—— 任务只能附加到清单，不能附加到目录；
- *  归档清单不能选作任务归属（避免误把任务塞进归档） */
+/** 仅未归档真实清单/笔记本（排除目录）—— 条目只能附加到清单/笔记本，不能附加到目录；
+ *  归档项不能选作归属（避免误把条目塞进归档）。
+ *  按 isNoteMode 过滤 kind：笔记模式只列笔记本，任务模式只列清单。 */
 const actualLists = computed(() =>
-  listStore.activeLists.filter((l) => !l.isFolder),
+  listStore.activeLists.filter(
+    (l) => !l.isFolder && (isNoteMode.value ? l.kind === "note" : l.kind !== "note"),
+  ),
 );
 
-/** 在真实清单里查找第一个（按 sortOrder） */
+/** 在真实清单/笔记本里查找第一个（按 sortOrder）。
+ *  笔记模式无笔记本时兜底为默认笔记本；任务模式兜底为收件箱。 */
 function firstActualListId(): string {
-  return actualLists.value[0]?.id ?? "inbox";
+  return actualLists.value[0]?.id ?? (isNoteMode.value ? "default-notebook" : "inbox");
 }
 
 async function submit(keepOpen: boolean) {
@@ -226,8 +242,9 @@ async function submit(keepOpen: boolean) {
     title: trimmed,
     listId: targetListId,
     priority: priority.value,
-    dueStartAt: dueStartAt.value,
-    dueEndAt: dueEndAt.value,
+    // 笔记无日期概念，不传 dueStartAt/dueEndAt
+    ...(isNoteMode.value ? {} : { dueStartAt: dueStartAt.value, dueEndAt: dueEndAt.value }),
+    kind: isNoteMode.value ? "note" : "task",
   });
 
   feedback.value = `已添加到「${selectedListName.value}」`;
@@ -280,7 +297,7 @@ function onKeyDown(e: KeyboardEvent) {
           v-model="title"
           @keydown="onKeyDown"
           class="quick-add__input"
-          placeholder="添加任务，按 Enter 保存"
+          :placeholder="isNoteMode ? '添加笔记，按 Enter 保存' : '添加任务，按 Enter 保存'"
         />
       </div>
 
@@ -356,8 +373,9 @@ function onKeyDown(e: KeyboardEvent) {
           </template>
         </a-trigger>
 
-        <!-- 模板 —— 选某项直接应用模板创建任务（走全局默认清单）-->
+        <!-- 模板 —— 选某项直接应用模板创建任务（走全局默认清单）；笔记模式隐藏 -->
         <a-trigger
+          v-if="!isNoteMode"
           v-model:popup-visible="templatePopupVisible"
           trigger="click"
           position="bl"
@@ -387,9 +405,10 @@ function onKeyDown(e: KeyboardEvent) {
           </template>
         </a-trigger>
 
-        <!-- 日期 —— 与详情面板一致的 DueDateChip
+        <!-- 日期 —— 与详情面板一致的 DueDateChip；笔记模式隐藏（笔记无日期）
    chip 在弹窗底部属性行，弹层朝上开避免超出窗口顶部 -->
         <DueDateChip
+          v-if="!isNoteMode"
           compact
           placement="top-left"
           :start-iso="dueStartAt"
