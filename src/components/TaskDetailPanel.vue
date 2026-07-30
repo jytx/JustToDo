@@ -162,11 +162,15 @@ async function setPriority(p: Priority) {
 }
 
 // ─── 清单 ─────────────────────────────────────────
-/** 任务可移动到的清单下拉选项：仅未归档项
- *  （归档清单不应作为移动目标，避免任务"消失"在归档区但主页角标却不减） */
-const listOptions = computed(() =>
-  listStore.activeLists.map((l) => ({ id: l.id, name: l.name, color: l.color })),
-);
+/** 条目可移动到的清单下拉选项：仅未归档项（归档清单不应作为移动目标，
+ *  避免任务"消失"在归档区但主页角标却不减）；按当前 task.kind 隔离两棵树
+ *  （笔记详情面板只列笔记本/笔记本目录；任务详情面板只列清单/目录）。
+ *  task 切换时自动重算。 */
+const listOptions = computed(() => {
+  const kind = task.value?.kind === "note" ? "note" : "task";
+  const source = kind === "note" ? listStore.noteLists : listStore.taskLists;
+  return source.map((l) => ({ id: l.id, name: l.name, color: l.color }));
+});
 const currentList = computed(() =>
   listOptions.value.find((l) => l.id === task.value?.listId) ?? null,
 );
