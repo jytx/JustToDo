@@ -755,10 +755,15 @@ const ctxMenu = reactive<{
 });
 
 /** 打开右键菜单：记录坐标与目标类型。由各行的 @contextmenu.prevent 调用。
- *  收件箱（kind=list, id=inbox）不可归档 / 编辑 / 删除 —— 菜单项全部屏蔽会变成"空弹窗"，
- *  这里直接不弹出，避免把菜单容器渲染给用户看一个白窗。 */
+ *  受保护节点（收件箱 inbox / 默认笔记本 default-notebook）不可新建 / 归档 / 编辑 / 删除 ——
+ *  菜单项全部屏蔽会变成"空弹窗"，这里直接不弹出，避免把菜单容器渲染给用户看一个白窗。 */
 function openCtxMenu(e: MouseEvent, target: CtxTarget): void {
-  if (target.kind === "list" && target.node.id === "inbox") return;
+  if (
+    target.kind === "list" &&
+    (target.node.id === "inbox" || target.node.id === "default-notebook")
+  ) {
+    return;
+  }
   ctxMenu.x = e.clientX;
   ctxMenu.y = e.clientY;
   ctxMenu.target = target;
@@ -1578,35 +1583,22 @@ onMounted(async () => {
     </template>
     <!-- 清单/笔记本：未归档 显示 新建条目 / 编辑 / 删除 / 归档 ；已归档 仅显示 取消归档。
          文案按 node.kind 区分（清单→任务/清单，笔记本→笔记/笔记本）。
-         inbox / default-notebook 受保护，隐藏编辑/删除/归档（仅留新建）。 -->
+         inbox / default-notebook 受保护，右键不弹菜单（在 openCtxMenu 拦截），故此处无需再判 id。 -->
     <template v-else-if="ctxMenu.target?.kind === 'list'">
       <template v-if="!ctxMenu.target.node.archived">
-        <MenuPopoverItem
-          v-if="ctxMenu.target.node.id !== 'inbox' && ctxMenu.target.node.id !== 'default-notebook'"
-          @click="onCtxAddTask(ctxMenu.target.node)"
-        >
+        <MenuPopoverItem @click="onCtxAddTask(ctxMenu.target.node)">
           <icon-plus :size="15" />
           <span>{{ ctxMenu.target.node.kind === "note" ? "新建笔记" : "新建任务" }}</span>
         </MenuPopoverItem>
-        <MenuPopoverItem
-          v-if="ctxMenu.target.node.id !== 'inbox' && ctxMenu.target.node.id !== 'default-notebook'"
-          @click="onCtxEdit(ctxMenu.target.node)"
-        >
+        <MenuPopoverItem @click="onCtxEdit(ctxMenu.target.node)">
           <icon-edit :size="15" />
           <span>{{ ctxMenu.target.node.kind === "note" ? "编辑笔记本" : "编辑清单" }}</span>
         </MenuPopoverItem>
-        <MenuPopoverItem
-          v-if="ctxMenu.target.node.id !== 'inbox' && ctxMenu.target.node.id !== 'default-notebook'"
-          danger
-          @click="onCtxDeleteList(ctxMenu.target.node)"
-        >
+        <MenuPopoverItem danger @click="onCtxDeleteList(ctxMenu.target.node)">
           <icon-delete :size="15" />
           <span>{{ ctxMenu.target.node.kind === "note" ? "删除笔记本" : "删除清单" }}</span>
         </MenuPopoverItem>
-        <MenuPopoverItem
-          v-if="ctxMenu.target.node.id !== 'inbox' && ctxMenu.target.node.id !== 'default-notebook'"
-          @click="onCtxArchive(ctxMenu.target.node)"
-        >
+        <MenuPopoverItem @click="onCtxArchive(ctxMenu.target.node)">
           <icon-archive :size="15" />
           <span>{{ ctxMenu.target.node.kind === "note" ? "归档笔记本" : "归档清单" }}</span>
         </MenuPopoverItem>
