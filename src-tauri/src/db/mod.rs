@@ -174,6 +174,9 @@ pub async fn init_pool(
     // 023: tasks/lists 加 kind 字段（区分待办/笔记、清单/笔记本）+ 预置默认笔记本
     run_migration_023(&pool).await?;
 
+    // 024: templates 加 kind 字段（区分任务模板/笔记模板）
+    run_migration_024(&pool).await?;
+
     Ok(pool)
 }
 
@@ -237,6 +240,16 @@ async fn run_migration_023(pool: &SqlitePool) -> Result<(), String> {
     .execute(pool)
     .await
     .map_err(|e| format!("修复笔记 kind 失败: {}", e))?;
+    Ok(())
+}
+
+/// 迁移 024：templates 加 kind 字段（区分任务模板/笔记模板）
+///
+/// - templates.kind：'task'（任务模板，默认）| 'note'（笔记模板）。笔记模板复用
+///   templates 表全部字段（name/title/note），应用时落地到当前笔记本或默认笔记本。
+/// - 存量模板（4 个内置 + 用户自建）无需回填：DEFAULT 'task' 对旧记录自动生效。
+async fn run_migration_024(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "templates", "kind", "TEXT NOT NULL DEFAULT 'task'").await?;
     Ok(())
 }
 

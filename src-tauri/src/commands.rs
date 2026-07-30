@@ -2510,7 +2510,7 @@ pub async fn set_setting(
 // 模板是"任务参数预设"，独立于 tasks 表。
 // 应用模板由前端编排：taskStore.createTask + db.updateTask(note)。
 
-/// 从行数据提取 Template（is_builtin 是 0/1 整数）
+/// 从行数据提取 Template（is_builtin 是 0/1 整数；kind 用 try_get 容错旧库）
 fn row_to_template(row: &sqlx::sqlite::SqliteRow) -> Template {
     Template {
         id: row.get("id"),
@@ -2521,13 +2521,14 @@ fn row_to_template(row: &sqlx::sqlite::SqliteRow) -> Template {
         position: row.get("position"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
+        kind: row.try_get("kind").unwrap_or_else(|_| "task".to_string()),
     }
 }
 
 #[tauri::command]
 pub async fn template_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<Template>> {
     let rows = sqlx::query(
-        "SELECT id, name, title, note, is_builtin, position, created_at, updated_at FROM templates ORDER BY position ASC, created_at ASC",
+        "SELECT id, name, title, note, is_builtin, position, created_at, updated_at, kind FROM templates ORDER BY position ASC, created_at ASC",
     )
     .fetch_all(pool.inner())
     .await
@@ -2549,9 +2550,11 @@ pub async fn template_create(
         .await
         .map_err(|e| format!("查询模板 position 失败: {}", e))?;
     let position = max_pos + 1000;
+    // kind 不传默认 'task'（任务模板）；'note' = 笔记模板
+    let kind = input.kind.unwrap_or_else(|| "task".to_string());
 
     sqlx::query(
-        "INSERT INTO templates (id, name, title, note, is_builtin, position, created_at, updated_at) VALUES ($1, $2, $3, $4, 0, $5, $6, $7)",
+        "INSERT INTO templates (id, name, title, note, is_builtin, position, created_at, updated_at, kind) VALUES ($1, $2, $3, $4, 0, $5, $6, $7, $8)",
     )
     .bind(&id)
     .bind(&input.name)
@@ -2560,6 +2563,7 @@ pub async fn template_create(
     .bind(position)
     .bind(&ts)
     .bind(&ts)
+    .bind(&kind)
     .execute(pool.inner())
     .await
     .map_err(|e| format!("创建模板失败: {}", e))?;
@@ -2573,6 +2577,7 @@ pub async fn template_create(
         position,
         created_at: ts.clone(),
         updated_at: ts,
+        kind,
     })
 }
 
@@ -2606,6 +2611,15 @@ pub async fn template_update(
     if let Some(note) = &input.note {
         sqlx::query("UPDATE templates SET note = $1, updated_at = $2 WHERE id = $3")
             .bind(note)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新模板失败: {}", e))?;
+    }
+    if let Some(kind) = &input.kind {
+        sqlx::query("UPDATE templates SET kind = $1, updated_at = $2 WHERE id = $3")
+            .bind(kind)
             .bind(&ts)
             .bind(&id)
             .execute(pool.inner())

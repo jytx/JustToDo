@@ -140,6 +140,10 @@ const sectionCollapsed = ref<Record<string, boolean>>({
   tags: false,
   /** 归档折叠区默认收起（用户进入归档较少） */
   archive: true,
+  /** 归档下二级分组：清单归档 / 笔记归档，可独立展开/收起。
+   *  仅在归档区展开后可见；默认展开（用户进入归档就是要看内容） */
+  archiveTask: false,
+  archiveNote: false,
 });
 
 function toggleSection(key: string) {
@@ -1085,29 +1089,52 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 归档树渲染（按 kind 分两组：清单归档 + 笔记本归档） -->
+      <!-- 归档树渲染（按 kind 分两组，各组独立展开/收起；某组无归档项则不显示该组） -->
       <div v-show="!sectionCollapsed.archive" class="sidebar__list-tree">
-        <!-- 归档清单 -->
-        <SidebarListNode
-          v-for="node in listStore.archiveListTree"
-          :key="node.id"
-          :node="node"
-          :depth="0"
-          :readonly="true"
-          kind="task"
-          @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
-        />
-        <!-- 归档笔记本（与归档清单用细分隔，仅当存在笔记本归档时显示小标题） -->
-        <div v-if="listStore.archiveNoteListTree.length > 0" class="sidebar__archive-subgroup">笔记本</div>
-        <SidebarListNode
-          v-for="node in listStore.archiveNoteListTree"
-          :key="node.id"
-          :node="node"
-          :depth="0"
-          :readonly="true"
-          kind="note"
-          @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
-        />
+        <!-- 归档清单二级分组（仅当有清单归档时才出现） -->
+        <template v-if="listStore.archiveListTree.length > 0">
+          <div
+            class="sidebar__archive-group"
+            @click="toggleSection('archiveTask')"
+          >
+            <icon-down v-if="!sectionCollapsed.archiveTask" :size="12" class="sidebar__toggle-icon" />
+            <icon-right v-else :size="12" class="sidebar__toggle-icon" />
+            <span>清单</span>
+            <span class="sidebar__archive-group-count">{{ listStore.archiveListTree.length }}</span>
+          </div>
+          <SidebarListNode
+            v-show="!sectionCollapsed.archiveTask"
+            v-for="node in listStore.archiveListTree"
+            :key="node.id"
+            :node="node"
+            :depth="0"
+            :readonly="true"
+            kind="task"
+            @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
+          />
+        </template>
+        <!-- 归档笔记本二级分组（仅当有笔记本归档时才出现） -->
+        <template v-if="listStore.archiveNoteListTree.length > 0">
+          <div
+            class="sidebar__archive-group"
+            @click="toggleSection('archiveNote')"
+          >
+            <icon-down v-if="!sectionCollapsed.archiveNote" :size="12" class="sidebar__toggle-icon" />
+            <icon-right v-else :size="12" class="sidebar__toggle-icon" />
+            <span>笔记本</span>
+            <span class="sidebar__archive-group-count">{{ listStore.archiveNoteListTree.length }}</span>
+          </div>
+          <SidebarListNode
+            v-show="!sectionCollapsed.archiveNote"
+            v-for="node in listStore.archiveNoteListTree"
+            :key="node.id"
+            :node="node"
+            :depth="0"
+            :readonly="true"
+            kind="note"
+            @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
+          />
+        </template>
         <div v-if="listStore.archivedLists.length === 0" class="sidebar__item sidebar__item--disabled">
           <icon-archive :size="16" class="sidebar__item-icon" />
           <span class="sidebar__item-title">归档区为空</span>
@@ -2076,13 +2103,33 @@ onMounted(async () => {
   flex-direction: column;
 }
 
-/* 归档区「笔记本」小标题（区分归档清单与归档笔记本两组） */
-.sidebar__archive-subgroup {
-  padding: 8px 16px 2px;
-  font-size: 11px;
+/* 归档区二级分组（清单 / 笔记本）：可展开/收起的子标题行，
+ * 风格与 sidebar__subheader 一致但更轻：左侧缩进 4px、字号略小、带数量角标 */
+.sidebar__archive-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 0 8px 0 12px;
+  min-height: 28px;
+  font-size: 12px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  user-select: none;
+  border-radius: 6px;
+}
+
+.sidebar__archive-group:hover {
+  color: var(--jt-text-secondary);
+  background-color: var(--jt-surface-hover);
+}
+
+.sidebar__archive-group-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
   color: var(--jt-text-tertiary);
 }
 </style>

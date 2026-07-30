@@ -55,7 +55,7 @@ function openEdit(tpl: Template) {
   editModalVisible.value = true;
 }
 
-// ─── 直接应用模板（不打开编辑弹窗，用模板当前内容创建任务）───
+// ─── 直接应用模板（不打开编辑弹窗，用模板当前内容创建条目；按模板 kind 落地）───
 async function applyDirectly(tpl: Template) {
   try {
     await templateStore.applyTemplate({
@@ -63,8 +63,9 @@ async function applyDirectly(tpl: Template) {
       name: tpl.name,
       title: tpl.title,
       note: tpl.note,
+      kind: tpl.kind,
     });
-    Message.success("已创建任务");
+    Message.success(tpl.kind === "note" ? "已创建笔记" : "已创建任务");
   } catch (e) {
     Message.error("应用模板失败：" + String(e));
   }
@@ -138,6 +139,15 @@ const orderedTemplates = computed<Template[]>(() => {
     .map((id) => map.get(id))
     .filter((t): t is Template => t !== undefined);
 });
+
+/** 分组渲染用：按 kind 拆分已排序的模板列表。任务在前、笔记在后。
+ *  拖拽仍走单一 localOrder（用户可跨组拖拽调整位置），分组仅是视觉分组。 */
+const taskTemplatesInOrder = computed(() =>
+  orderedTemplates.value.filter((t) => t.kind !== "note"),
+);
+const noteTemplatesInOrder = computed(() =>
+  orderedTemplates.value.filter((t) => t.kind === "note"),
+);
 
 function onCardDragStart(tpl: Template, _e: DragEvent) {
   draggingId.value = tpl.id;
@@ -263,9 +273,9 @@ async function onGridDrop(e: DragEvent) {
       <div v-if="settingsExpanded" class="tpl-section__settings-body">
         <div class="tpl-section__settings-row">
           <div>
-            <div class="tpl-section__settings-label">应用模板时创建到</div>
+            <div class="tpl-section__settings-label">任务模板默认清单</div>
             <div class="tpl-section__settings-hint">
-              所有模板应用此默认清单（可在清单管理中新建更多）
+              任务模板应用此默认清单；笔记模板自动落到当前笔记本或默认笔记本
             </div>
           </div>
           <SelectPopover
@@ -295,7 +305,8 @@ async function onGridDrop(e: DragEvent) {
     <!-- 外层 div 挂 dragover/drop（避免 TransitionGroup tag=div 事件绑定兼容问题）；
          根据鼠标坐标统一计算落位，不依赖进入某张卡的精确事件，间隙/边缘也能识别。
          内层 TransitionGroup 用 display:contents 让卡片直接参与外层 grid 布局，
-         不引入多余的层级。 -->
+         不引入多余的层级。
+         按 kind 分组渲染（任务模板/笔记模板），组内拖拽 + 跨组拖拽均支持。 -->
     <div
       v-else
       ref="gridRef"
@@ -304,8 +315,36 @@ async function onGridDrop(e: DragEvent) {
       @drop="onGridDrop"
     >
       <TransitionGroup name="tpl-flip" tag="div" class="tpl-section__grid-inner">
+        <!-- 任务模板组（仅当存在任务模板时显示分组标题） -->
+        <div
+          v-if="taskTemplatesInOrder.length > 0"
+          key="__group_task__"
+          class="tpl-section__group-header"
+        >
+          任务模板 · {{ taskTemplatesInOrder.length }}
+        </div>
         <TemplateCard
-          v-for="tpl in orderedTemplates"
+          v-for="tpl in taskTemplatesInOrder"
+          :key="tpl.id"
+          :data-id="tpl.id"
+          :template="tpl"
+          @edit="openEdit"
+          @apply="applyDirectly"
+          @rename="openRename"
+          @delete="confirmDelete"
+          @dragstart="onCardDragStart"
+          @dragend="onCardDragEnd"
+        />
+        <!-- 笔记模板组（仅当存在笔记模板时显示分组标题） -->
+        <div
+          v-if="noteTemplatesInOrder.length > 0"
+          key="__group_note__"
+          class="tpl-section__group-header"
+        >
+          笔记模板 · {{ noteTemplatesInOrder.length }}
+        </div>
+        <TemplateCard
+          v-for="tpl in noteTemplatesInOrder"
           :key="tpl.id"
           :data-id="tpl.id"
           :template="tpl"
@@ -419,6 +458,22 @@ async function onGridDrop(e: DragEvent) {
    不引入额外层级（保证 grid 自适应列数正常工作）*/
 .tpl-section__grid-inner {
   display: contents;
+}
+
+/* 分组标题：跨整行（grid-column 1 / -1），不参与拖拽定位 */
+.tpl-section__group-header {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--jt-text-tertiary);
+  padding: 4px 0 2px;
+  margin-top: 4px;
+}
+
+.tpl-section__group-header:first-child {
+  margin-top: 0;
 }
 
 /* === TransitionGroup FLIP 动画（拖拽实时让位）===

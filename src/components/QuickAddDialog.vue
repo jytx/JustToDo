@@ -36,7 +36,8 @@ const templateStore = useTemplateStore();
 const route = useRoute();
 
 /** 笔记模式：当前在笔记本视图，或外部指定的默认清单是笔记本。
- *  笔记模式下：placeholder 改笔记、清单下拉只显示笔记本、隐藏日期/模板、创建时传 kind='note'。
+ *  笔记模式下：placeholder 改笔记、清单下拉只显示笔记本、隐藏日期、模板列表只列笔记模板，
+ *  创建时传 kind='note'。
  *  判断优先级：外部 defaultListId 指向笔记本 > 当前路由是 notebook。 */
 const isNoteMode = computed(() => {
   if (props.defaultListId) {
@@ -45,6 +46,11 @@ const isNoteMode = computed(() => {
   }
   return route.name === "notebook";
 });
+
+/** 当前模式下可用的模板列表（任务模式列任务模板，笔记模式列笔记模板） */
+const availableTemplates = computed(() =>
+  isNoteMode.value ? templateStore.noteTemplates : templateStore.taskTemplates,
+);
 
 /** 计算本次新建的初始日期范围。
  *  优先级：外部传入的 defaultStart/End > 开关开启时预填今天 > null。 */
@@ -87,8 +93,8 @@ function templateIcon(tpl: { id: string }): string {
 }
 
 /**
- * 快捷应用模板：用模板当前内容直接创建任务（走全局默认清单）
- * 应用后关闭快速添加弹窗（任务已创建并打开详情面板）
+ * 快捷应用模板：用模板当前内容直接创建条目（任务走全局默认清单，笔记走当前笔记本/默认笔记本）
+ * 应用后关闭快速添加弹窗（条目已创建并打开详情面板）
  */
 async function applyTemplate(tplId: string) {
   templatePopupVisible.value = false;
@@ -100,8 +106,9 @@ async function applyTemplate(tplId: string) {
       name: tpl.name,
       title: tpl.title,
       note: tpl.note,
+      kind: tpl.kind,
     });
-    Message.success("已创建任务");
+    Message.success(isNoteMode.value ? "已创建笔记" : "已创建任务");
     open.value = false;
   } catch (e) {
     Message.error("应用模板失败：" + String(e));
@@ -373,9 +380,9 @@ function onKeyDown(e: KeyboardEvent) {
           </template>
         </a-trigger>
 
-        <!-- 模板 —— 选某项直接应用模板创建任务（走全局默认清单）；笔记模式隐藏 -->
+        <!-- 模板 —— 选某项直接应用模板创建条目（任务走全局默认清单，笔记走当前笔记本/默认笔记本）。
+             列表按当前 kind 过滤：任务模式只列任务模板，笔记模式只列笔记模板。 -->
         <a-trigger
-          v-if="!isNoteMode"
           v-model:popup-visible="templatePopupVisible"
           trigger="click"
           position="bl"
@@ -384,7 +391,7 @@ function onKeyDown(e: KeyboardEvent) {
           <button
             type="button"
             class="quick-add__trigger"
-            :disabled="templateStore.templates.length === 0"
+            :disabled="availableTemplates.length === 0"
           >
             <icon-copy :size="14" />
             <span>模板</span>
@@ -392,7 +399,7 @@ function onKeyDown(e: KeyboardEvent) {
           <template #content>
             <div class="quick-add__popup quick-add__popup--list">
               <button
-                v-for="tpl in templateStore.sortedTemplates"
+                v-for="tpl in availableTemplates"
                 :key="tpl.id"
                 type="button"
                 class="quick-add__popup-item"
@@ -548,6 +555,11 @@ function onKeyDown(e: KeyboardEvent) {
 }
 .quick-add-modal .arco-modal-body {
   padding: 0;
+}
+
+/* Modal 头部高度收紧到 35px（与极简风一致） */
+.quick-add-modal .arco-modal-header {
+  height: 35px;
 }
 
 .quick-add__trigger--icon {

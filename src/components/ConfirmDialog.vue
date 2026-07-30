@@ -14,6 +14,7 @@
 //     <template #title>删除任务「<strong>{{ name }}</strong>」？</template>
 //     此操作无法撤销。
 //   </ConfirmDialog>
+import { watch, onUnmounted } from "vue";
 import { IconExclamationCircle } from "@arco-design/web-vue/es/icon";
 
 interface Props {
@@ -33,7 +34,7 @@ interface Props {
   maskClosable?: boolean;
 }
 
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   desc: "",
   confirmText: "删除",
   cancelText: "取消",
@@ -62,6 +63,48 @@ function onConfirm() {
   // 不自动关闭：交由调用方在异步操作完成后通过 v-model:visible 关闭
   // （避免删除失败时弹窗提前消失，错误信息无处依附）
 }
+
+/**
+ * 弹窗可见时监听全局 keydown：
+ * - Enter → 触发确认（与点击「确认」按钮等价）
+ * - Esc   → 触发取消（a-modal 的 @cancel 已处理 Esc，这里无需重复）
+ *
+ * 排除以下场景，把 Enter 交给元素自身处理，避免误触发删除：
+ * - 输入框聚焦（input/textarea/contentEditable）：Enter 用于换行/提交标题等
+ * - 按钮聚焦：Arco 按钮聚焦时 Enter 会触发其 click（如聚焦「取消」按 Enter 应取消，而非确认）
+ * loading 时也忽略，避免异步删除期间重复触发。
+ */
+function onKeydown(e: KeyboardEvent) {
+  if (e.key !== "Enter") return;
+  if (props.loading) return;
+  const active = document.activeElement;
+  if (
+    active &&
+    (active.tagName === "INPUT" ||
+      active.tagName === "TEXTAREA" ||
+      active.tagName === "BUTTON" ||
+      (active as HTMLElement).isContentEditable)
+  ) {
+    return;
+  }
+  e.preventDefault();
+  onConfirm();
+}
+
+watch(
+  () => props.visible,
+  (open) => {
+    if (open) {
+      window.addEventListener("keydown", onKeydown);
+    } else {
+      window.removeEventListener("keydown", onKeydown);
+    }
+  },
+);
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKeydown);
+});
 </script>
 
 <template>

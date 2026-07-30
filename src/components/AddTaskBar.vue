@@ -19,8 +19,13 @@ const props = defineProps<{
   kind?: "task" | "note";
 }>();
 
-/** 笔记模式：隐藏日期/模板，placeholder 改为「添加笔记」 */
+/** 笔记模式：隐藏日期，placeholder 改为「添加笔记」，模板列表只列笔记模板 */
 const isNote = computed(() => props.kind === "note");
+
+/** 当前模式下可用的模板列表（任务模式列任务模板，笔记模式列笔记模板） */
+const availableTemplates = computed(() =>
+  isNote.value ? templateStore.noteTemplates : templateStore.taskTemplates,
+);
 
 const emit = defineEmits<{
   add: [payload: { title: string; priority: Priority; dueStartAt: string | null; dueEndAt: string | null }];
@@ -101,9 +106,9 @@ function submit() {
 }
 
 /**
- * 快捷应用模板：用模板当前内容直接创建任务（走全局默认清单）
+ * 快捷应用模板：用模板当前内容直接创建条目（任务走全局默认清单，笔记走当前笔记本/默认笔记本）。
  *
- * 与设置页「应用模板」语义一致：占位符替换 + 创建任务 + 写 note + 打开详情。
+ * 与设置页「应用模板」语义一致：占位符替换 + 创建条目 + 写 note + 打开详情。
  * 不走 AddTaskBar 的 emit add（add 只传 title/priority/due，不带 note）。
  */
 async function applyTemplate(tplId: string) {
@@ -116,9 +121,10 @@ async function applyTemplate(tplId: string) {
       name: tpl.name,
       title: tpl.title,
       note: tpl.note,
+      kind: tpl.kind,
     });
-    Message.success("已创建任务");
-    // 应用模板后收起属性行（任务已创建并打开详情面板）
+    Message.success(isNote.value ? "已创建笔记" : "已创建任务");
+    // 应用模板后收起属性行（条目已创建并打开详情面板）
     focused.value = false;
   } catch (e) {
     Message.error("应用模板失败：" + String(e));
@@ -204,13 +210,14 @@ function onDateClose() {
         </MenuPopoverItem>
       </MenuPopover>
 
-      <!-- 模板快捷入口：popover 弹模板列表，选某项直接应用模板创建任务（笔记模式隐藏） -->
-      <MenuPopover v-if="!isNote" v-model:visible="showTemplateMenu">
+      <!-- 模板快捷入口：popover 弹模板列表，选某项直接应用模板创建条目。
+           列表按当前 kind 过滤：任务模式只列任务模板，笔记模式只列笔记模板。 -->
+      <MenuPopover v-model:visible="showTemplateMenu">
         <template #trigger>
           <a-button
             type="text"
             size="mini"
-            :disabled="templateStore.templates.length === 0"
+            :disabled="availableTemplates.length === 0"
             @click="showTemplateMenu = !showTemplateMenu"
           >
             <template #icon><icon-copy /></template>
@@ -218,7 +225,7 @@ function onDateClose() {
           </a-button>
         </template>
         <MenuPopoverItem
-          v-for="tpl in templateStore.sortedTemplates"
+          v-for="tpl in availableTemplates"
           :key="tpl.id"
           @click="applyTemplate(tpl.id)"
         >

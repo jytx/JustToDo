@@ -87,6 +87,10 @@ pub struct Template {
     pub position: i64,
     pub created_at: String,
     pub updated_at: String,
+    /// 实体类型：'task' 任务模板（默认）| 'note' 笔记模板（migration 024）
+    /// 笔记模板应用时落地到当前笔记本或默认笔记本（不走全局默认清单）
+    #[serde(default)]
+    pub kind: String,
 }
 
 /// 创建模板的参数（id/时间戳由 Rust 端生成）
@@ -95,6 +99,8 @@ pub struct CreateTemplateInput {
     pub name: String,
     pub title: String,
     pub note: String,
+    /// 实体类型：不传默认 'task'；'note' = 笔记模板
+    pub kind: Option<String>,
 }
 
 /// 更新模板的参数（所有字段可选；与 UpdateTaskInput 同模式）
@@ -103,6 +109,8 @@ pub struct UpdateTemplateInput {
     pub name: Option<String>,
     pub title: Option<String>,
     pub note: Option<String>,
+    /// 实体类型：传 Some('note')/'task' 更新；None = 不改
+    pub kind: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

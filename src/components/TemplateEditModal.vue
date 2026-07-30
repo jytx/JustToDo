@@ -29,10 +29,25 @@ const templateStore = useTemplateStore();
 
 const isEdit = computed(() => props.template !== null);
 
-/** 表单状态：每次 visible 打开时根据 template 重置 */
-const form = ref<TemplateForm>({ id: null, name: "", title: "", note: "" });
+/** 表单状态：每次 visible 打开时根据 template 重置（kind 默认 'task'） */
+const form = ref<TemplateForm>({
+  id: null,
+  name: "",
+  title: "",
+  note: "",
+  kind: "task",
+});
 const applying = ref(false);
 const saving = ref(false);
+
+/** 笔记模式时改文案：「任务标题」→「笔记标题」、「备注」占位符不变 */
+const isNote = computed(() => form.value.kind === "note");
+const titleFieldLabel = computed(() => (isNote.value ? "笔记标题" : "任务标题"));
+const titleFieldPlaceholder = computed(() =>
+  isNote.value
+    ? "应用模板时新笔记的标题（可留空，默认用模板名）"
+    : "应用模板时新任务的标题（可留空，默认用模板名）",
+);
 
 /** RichTextEditor 实例引用（用于把 editor 传给工具条）*/
 const richTextRef = ref<InstanceType<typeof RichTextEditor> | null>(null);
@@ -50,9 +65,10 @@ watch(
           name: props.template.name,
           title: props.template.title,
           note: props.template.note,
+          kind: props.template.kind === "note" ? "note" : "task",
         };
       } else {
-        form.value = { id: null, name: "", title: "", note: "" };
+        form.value = { id: null, name: "", title: "", note: "", kind: "task" };
       }
     }
   },
@@ -141,13 +157,29 @@ async function onApply() {
         />
       </section>
 
-      <!-- 任务标题分区 -->
+      <!-- 类型选择：任务模板 vs 笔记模板（编辑现有模板时禁用，kind 不可改） -->
       <section class="tpl-edit__field">
-        <label class="tpl-edit__field-label">任务标题</label>
+        <label class="tpl-edit__field-label">类型</label>
+        <a-radio-group
+          v-model="form.kind"
+          type="button"
+          :disabled="isEdit"
+        >
+          <a-radio value="task">任务</a-radio>
+          <a-radio value="note">笔记</a-radio>
+        </a-radio-group>
+        <span class="tpl-edit__field-hint">
+          {{ isEdit ? "模板类型创建后不可修改" : "任务模板应用到任务，笔记模板应用到笔记" }}
+        </span>
+      </section>
+
+      <!-- 标题分区（任务/笔记文案按 kind 区分） -->
+      <section class="tpl-edit__field">
+        <label class="tpl-edit__field-label">{{ titleFieldLabel }}</label>
         <input
           v-model="form.title"
           class="tpl-edit__field-input"
-          placeholder="应用模板时新任务的标题（可留空，默认用模板名）"
+          :placeholder="titleFieldPlaceholder"
           maxlength="120"
         />
       </section>

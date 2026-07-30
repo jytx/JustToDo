@@ -414,6 +414,9 @@ export interface Template {
   position: number;
   createdAt: string;
   updatedAt: string;
+  /** 实体类型：'task' 任务模板（默认）| 'note' 笔记模板。
+   *  笔记模板应用时落地到当前笔记本或默认笔记本（不走全局默认清单）。 */
+  kind: TaskKind;
 }
 
 /** 模板编辑表单（弹窗内 v-model 绑定用；id 为 null 表示新建模式） */
@@ -422,4 +425,6 @@ export interface TemplateForm {
   name: string;
   title: string;
   note: string;
+  /** 实体类型：不传默认 'task'；'note' = 笔记模板 */
+  kind?: TaskKind;
 }

@@ -657,6 +657,8 @@ interface RustTemplate {
   position: number;
   created_at: string;
   updated_at: string;
+  /** 实体类型：'task' 任务模板（默认）| 'note' 笔记模板 */
+  kind: TaskKind;
 }
 
 /** Rust 行 → 前端 camelCase */
@@ -670,6 +672,7 @@ function mapTemplate(r: RustTemplate): Template {
     position: r.position,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    kind: r.kind,
   };
 }
 
@@ -682,11 +685,14 @@ export async function createTemplate(params: {
   name: string;
   title: string;
   note: string;
+  /** 实体类型：不传默认 'task'；'note' = 笔记模板 */
+  kind?: TaskKind;
 }): Promise<Template> {
   const input = {
     name: params.name,
     title: params.title,
     note: params.note,
+    kind: params.kind ?? "task",
   };
   const r = await invoke<RustTemplate>("template_create", { input });
   return mapTemplate(r);
@@ -694,12 +700,13 @@ export async function createTemplate(params: {
 
 export async function updateTemplate(
   id: string,
-  fields: { name?: string; title?: string; note?: string },
+  fields: { name?: string; title?: string; note?: string; kind?: TaskKind },
 ): Promise<void> {
   const input: Record<string, unknown> = {
     name: fields.name,
     title: fields.title,
     note: fields.note,
+    kind: fields.kind,
   };
   await invoke<void>("template_update", { id, input });
 }
