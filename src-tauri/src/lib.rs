@@ -315,6 +315,15 @@ pub fn run() {
                             }
                         }
                     }
+                    // 重新加载界面（仅刷新 webview，不退出 Rust 进程）
+                    menu::HELP_RELOAD_ID => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            println!("[JustToDo] 重新加载界面（webview reload）");
+                            if let Err(e) = window.eval("location.reload()") {
+                                eprintln!("[JustToDo] 重新加载界面失败: {}", e);
+                            }
+                        }
+                    }
                     // 进程级重启应用（彻底退出后由系统重新拉起）
                     menu::HELP_RESTART_APP_ID => {
                         println!("[JustToDo] 用户请求重启应用");
@@ -324,6 +333,7 @@ pub fn run() {
                     menu::HELP_OPEN_DATA_DIR_ID => {
                         match app.path().app_data_dir() {
                             Ok(dir) => {
+                                println!("[JustToDo] 打开数据目录: {}", dir.display());
                                 if let Err(e) = menu::open_in_file_manager(&dir) {
                                     eprintln!("[JustToDo] 打开数据目录失败: {}", e);
                                 }
@@ -335,6 +345,7 @@ pub fn run() {
                     menu::HELP_OPEN_LOG_DIR_ID => {
                         match app.path().app_log_dir() {
                             Ok(dir) => {
+                                println!("[JustToDo] 打开日志目录: {}", dir.display());
                                 if let Err(e) = menu::open_in_file_manager(&dir) {
                                     eprintln!("[JustToDo] 打开日志目录失败: {}", e);
                                 }

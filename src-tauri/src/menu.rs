@@ -17,6 +17,8 @@ pub const ZOOM_RESET_ID: &str = "zoom_reset";
 pub const WINDOW_CENTER_ID: &str = "window_center";
 /// 切换开发者工具（控制台）
 pub const HELP_TOGGLE_DEVTOOLS_ID: &str = "help_toggle_devtools";
+/// 重新加载界面（仅刷新 webview，不退出 Rust 进程）
+pub const HELP_RELOAD_ID: &str = "help_reload";
 /// 进程级重启应用（彻底退出后由系统重新拉起，重跑 setup/migration）
 pub const HELP_RESTART_APP_ID: &str = "help_restart_app";
 /// 在系统文件管理器中打开数据目录（SQLite 数据库所在）
@@ -44,11 +46,12 @@ pub fn is_window_op_event(event: &MenuEvent) -> bool {
     matches!(event.id().as_ref(), WINDOW_CENTER_ID)
 }
 
-/// 判断某个菜单事件是否是帮助类自定义项（切换控制台 / 重启 / 打开各类目录）
+/// 判断某个菜单事件是否是帮助类自定义项（切换控制台 / 重载 / 重启 / 打开各类目录）
 pub fn is_help_event(event: &MenuEvent) -> bool {
     matches!(
         event.id().as_ref(),
         HELP_TOGGLE_DEVTOOLS_ID
+            | HELP_RELOAD_ID
             | HELP_RESTART_APP_ID
             | HELP_OPEN_DATA_DIR_ID
             | HELP_OPEN_LOG_DIR_ID
@@ -58,12 +61,14 @@ pub fn is_help_event(event: &MenuEvent) -> bool {
 
 /// 在系统文件管理器中打开一个目录（跨平台）。
 ///
-/// 与 commands.rs::reveal_attachment 定位「文件」不同，这里定位「目录」：
-/// - macOS：`open <dir>` 直接在 Finder 打开该目录
+/// 与 commands.rs::reveal_attachment 定位「文件」一致，这里定位「目录」。
+/// 实测 macOS 上 `open <dir>`（隐式用默认程序打开）依赖 LaunchServices 注册，
+/// 当 LS 数据库异常时会报 "executable is missing" 而失败。改用 `open -R <dir>`
+/// （reveal 定位模式）走独立路径，直接让 Finder 高亮选中目录，更稳定且体验更好。
+///
+/// - macOS：`open -R <dir>` 在 Finder 中定位（高亮）目录
 /// - Windows：`explorer <dir>` 打开该目录
 /// - Linux：`xdg-open <dir>` 交给桌面环境默认文件管理器
-///
-/// 返回值用于上层打日志；目录不存在时返回错误，调用方负责提示。
 pub fn open_in_file_manager(dir: &std::path::Path) -> Result<(), String> {
     if !dir.exists() {
         std::fs::create_dir_all(dir).map_err(|e| format!("创建目录失败: {}", e))?;
@@ -71,24 +76,34 @@ pub fn open_in_file_manager(dir: &std::path::Path) -> Result<(), String> {
 
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
+        let status = std::process::Command::new("open")
+            .arg("-R")
             .arg(dir)
-            .spawn()
-            .map_err(|e| format!("打开 Finder 失败: {}", e))?;
+            .status()
+            .map_err(|e| format!("启动 open 失败: {}", e))?;
+        if !status.success() {
+            return Err(format!("open -R 退出码非 0: {}", status));
+        }
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("explorer.exe")
+        let status = std::process::Command::new("explorer.exe")
             .arg(dir)
-            .spawn()
-            .map_err(|e| format!("打开资源管理器失败: {}", e))?;
+            .status()
+            .map_err(|e| format!("启动 explorer 失败: {}", e))?;
+        if !status.success() {
+            return Err(format!("explorer 退出码非 0: {}", status));
+        }
     }
     #[cfg(target_os = "linux")]
     {
-        std::process::Command::new("xdg-open")
+        let status = std::process::Command::new("xdg-open")
             .arg(dir)
-            .spawn()
-            .map_err(|e| format!("打开文件管理器失败: {}", e))?;
+            .status()
+            .map_err(|e| format!("启动 xdg-open 失败: {}", e))?;
+        if !status.success() {
+            return Err(format!("xdg-open 退出码非 0: {}", status));
+        }
     }
 
     Ok(())
@@ -199,6 +214,14 @@ fn build_help_submenu(app: &AppHandle<Wry>) -> tauri::Result<Submenu<Wry>> {
         Some("F12"),
     )?)?;
     sub.append(&PredefinedMenuItem::separator(app)?)?;
+    // 重新加载界面（仅刷新 webview，前端重载；比重启轻量，适合前端卡住时快速恢复）
+    sub.append(&MenuItem::with_id(
+        app,
+        HELP_RELOAD_ID,
+        "重新加载界面",
+        true,
+        Some("CmdOrCtrl+R"),
+    )?)?;
     // 重启应用（进程级，彻底退出后重新启动）
     sub.append(&MenuItem::with_id(
         app,
