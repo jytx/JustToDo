@@ -746,8 +746,11 @@ const ctxMenu = reactive<{
   target: null,
 });
 
-/** 打开右键菜单：记录坐标与目标类型。由各行的 @contextmenu.prevent 调用。 */
+/** 打开右键菜单：记录坐标与目标类型。由各行的 @contextmenu.prevent 调用。
+ *  收件箱（kind=list, id=inbox）不可归档 / 编辑 / 删除 —— 菜单项全部屏蔽会变成"空弹窗"，
+ *  这里直接不弹出，避免把菜单容器渲染给用户看一个白窗。 */
 function openCtxMenu(e: MouseEvent, target: CtxTarget): void {
+  if (target.kind === "list" && target.node.id === "inbox") return;
   ctxMenu.x = e.clientX;
   ctxMenu.y = e.clientY;
   ctxMenu.target = target;
@@ -1586,7 +1589,10 @@ onMounted(async () => {
           <icon-delete :size="15" />
           <span>删除清单</span>
         </MenuPopoverItem>
-        <MenuPopoverItem @click="onCtxArchive(ctxMenu.target.node)">
+        <MenuPopoverItem
+          v-if="ctxMenu.target.node.id !== 'inbox'"
+          @click="onCtxArchive(ctxMenu.target.node)"
+        >
           <icon-archive :size="15" />
           <span>归档清单</span>
         </MenuPopoverItem>
