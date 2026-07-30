@@ -519,17 +519,22 @@ function buildFolderPath(folderId: string): string {
 }
 
 /** 输入提示：把已有的目录拼成完整路径，作为自动补全的数据源
- *  仅展示未归档目录（主页新建清单时不应引用归档目录名） */
+ *  仅展示未归档目录（主页新建清单时不应引用归档目录名）；
+ *  且按当前弹窗的 newListKind 隔离两棵树（清单/笔记本互不混入）。
+ *  底层 listStore 已提供 taskLists / noteLists 两棵独立树，直接用避免自己再判 kind。 */
 const folderSuggestions = computed(() => {
-  const folders = listStore.activeLists.filter((l) => l.isFolder);
-  return folders.map((f) => {
-    const path = buildFolderPath(f.id);
-    return {
-      value: path,
-      label: path, // Arco 默认按 label 字段展示，这里保持一致
-      name: path,
-    };
-  });
+  const kind = newListKind.value;
+  const source = kind === "note" ? listStore.noteLists : listStore.taskLists;
+  return source
+    .filter((l) => l.isFolder)
+    .map((f) => {
+      const path = buildFolderPath(f.id);
+      return {
+        value: path,
+        label: path, // Arco 默认按 label 字段展示，这里保持一致
+        name: path,
+      };
+    });
 });
 
 /** 选中目录项时回填到输入框（v-model 双向绑定的体现） */
