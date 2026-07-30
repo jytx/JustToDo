@@ -356,6 +356,7 @@ export async function createTask(params: CreateTaskInput): Promise<Task> {
     recurrence_end_at: params.recurrenceEndAt ?? null,
     recurrence_count: params.recurrenceCount ?? null,
     remind_offset_minutes: params.remindOffsetMinutes ?? null,
+    kind: params.kind ?? "task",
   };
   const r = await invoke<RustTask>("task_create", { input });
   return mapTask(r);

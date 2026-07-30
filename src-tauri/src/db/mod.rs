@@ -215,8 +215,9 @@ async fn run_migration_022(pool: &SqlitePool) -> Result<(), String> {
 ///   共用 lists 表，靠 kind 隔离成两棵独立树（前端 moveNode 拦截跨 kind 移动）。
 /// - 预置「默认笔记本」（id='default-notebook'），与 inbox 对称：删除笔记本时其下笔记
 ///   迁移到此（避免数据丢失）。INSERT OR IGNORE 天然幂等。
-///
-/// 存量数据无需回填：DEFAULT 'task' 对旧记录自动生效。
+/// - 数据自洽修复：把归属于 kind='note' 的 list 下的 tasks，其 kind 修正为 'note'。
+///   这一步在早期版本尤为关键——彼时前端 db.ts 的 createTask 漏传 kind，导致笔记本里
+///   创建的笔记被错误地存成 kind='task'。UPDATE 天然幂等，可重复执行。
 async fn run_migration_023(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "tasks", "kind", "TEXT NOT NULL DEFAULT 'task'").await?;
     add_column_if_missing(pool, "lists", "kind", "TEXT NOT NULL DEFAULT 'task'").await?;
@@ -227,6 +228,15 @@ async fn run_migration_023(pool: &SqlitePool) -> Result<(), String> {
     .execute(pool)
     .await
     .map_err(|e| format!("预置默认笔记本失败: {}", e))?;
+    // 数据自洽修复：笔记本（kind='note' 的 list）下的条目，kind 统一修正为 'note'
+    sqlx::query(
+        "UPDATE tasks SET kind = 'note' \
+         WHERE kind != 'note' \
+           AND list_id IN (SELECT id FROM lists WHERE kind = 'note')",
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("修复笔记 kind 失败: {}", e))?;
     Ok(())
 }
 
