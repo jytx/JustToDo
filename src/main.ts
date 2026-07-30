@@ -19,6 +19,9 @@ import "./styles/typography.css";
 import "./styles/sidebar-create.css";
 import "./styles/confirm-dialog.css";
 
+// 工具
+import { disableNativeContextMenu } from "@/utils/contextMenu";
+
 const app = createApp(App);
 const pinia = createPinia();
 app.use(pinia);
@@ -39,6 +42,12 @@ settingsStore.initialize().catch((e) => {
 });
 
 app.mount("#app");
+
+// 禁用 webview 原生右键菜单（Reload / Inspect Element / Save As 等）。
+// 仅在输入框 / 文本域 / 富文本编辑器（contentEditable）放行，保留复制粘贴等系统能力。
+// 已挂自定义右键的区域（任务项 / 侧边栏 / 面板空白区）不受影响：它们用自身的
+// @contextmenu.prevent 完成拦截，本兜底只负责「未覆盖区域」。
+window.addEventListener("contextmenu", disableNativeContextMenu);
 
 // MCP 插件前端监听器
 if (import.meta.env.DEV) {

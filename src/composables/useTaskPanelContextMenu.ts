@@ -12,24 +12,13 @@
 import { reactive } from "vue";
 import { useTaskStore } from "@/stores/task";
 import type { TaskKind } from "@/types";
+import { shouldReserveNativeMenu } from "@/utils/contextMenu";
 
 /** 右键菜单的坐标 + 可见性状态 */
 interface CtxMenuState {
   visible: boolean;
   x: number;
   y: number;
-}
-
-/** 判定右键目标是否应放行系统原生菜单（输入框/文本域/contentEditable） */
-function shouldReserveNativeMenu(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
-  if (!el) return false;
-  const tag = el.tagName;
-  return (
-    tag === "INPUT" ||
-    tag === "TEXTAREA" ||
-    el.isContentEditable === true
-  );
 }
 
 /** 判定右键是否落在任务项上（任务项有自己的右键菜单，面板菜单不重复弹出） */
