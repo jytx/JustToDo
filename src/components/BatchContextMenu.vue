@@ -92,7 +92,9 @@ async function showSubmenu(key: "list" | "tag" | "priority" | "date", triggerEl:
   // 导致首次打开时大高度子菜单（日期面板）定位错误、底部被裁。
   submenuStyle.display = true;
   await nextTick();
-  // 等 submenu DOM 渲染后，按主菜单项位置 + 子菜单实际尺寸计算
+  // 再等一帧浏览器布局完成（DatePopover 内部日历等可能延迟渲染，
+  // 仅 nextTick 不够，offsetHeight 仍偏小导致定位偏低）
+  await new Promise((r) => requestAnimationFrame(() => r(null)));
   const tr = triggerEl.getBoundingClientRect();
   const submenuEl = document.querySelector(".batch-submenu") as HTMLElement | null;
   const subW = submenuEl ? submenuEl.offsetWidth : 180;
@@ -105,10 +107,19 @@ async function showSubmenu(key: "list" | "tag" | "priority" | "date", triggerEl:
   if (left + subW > viewportW - margin) {
     left = tr.left - subW - margin;
   }
-  // 垂直：默认对齐触发项顶部；底部放不下则整体上移贴视口底边（向上收，不被裁剪）
-  let top = tr.top;
-  if (top + subH > viewportH - margin) {
+  // 垂直定位策略：
+  //  - date 子菜单高度大且内部可能动态变化，用「底部贴视口底边」策略，
+  //    面板从下往上长，无论多高都完整可见（配合面板自身 max-height 滚动）
+  //  - 其他子菜单（清单/标签/优先级）高度小，默认对齐触发项顶部，
+  //    底部放不下时再整体上移
+  let top: number;
+  if (key === "date") {
     top = Math.max(margin, viewportH - subH - margin);
+  } else {
+    top = tr.top;
+    if (top + subH > viewportH - margin) {
+      top = Math.max(margin, viewportH - subH - margin);
+    }
   }
   submenuStyle.top = top + "px";
   submenuStyle.left = left + "px";
