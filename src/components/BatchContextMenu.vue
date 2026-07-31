@@ -65,7 +65,10 @@ let closeTimer: number | null = null;
 const CLOSE_DELAY = 200;
 
 /** 计算子菜单定位：贴在主菜单项的右边缘，垂直对齐项顶部。
- *  视口右侧放不下时翻转到左侧。 */
+ *  视口边界保护：
+ *  - 水平：右侧放不下 → 翻转到触发项左侧
+ *  - 垂直：底部放不下（日期选择器等大高度子菜单）→ 整体上移贴视口底边，
+ *    保证完整可见不被裁剪 */
 async function showSubmenu(key: "list" | "tag" | "priority" | "date", triggerEl: HTMLElement): Promise<void> {
   if (closeTimer !== null) {
     clearTimeout(closeTimer);
@@ -73,18 +76,25 @@ async function showSubmenu(key: "list" | "tag" | "priority" | "date", triggerEl:
   }
   openSubmenu.value = key;
   await nextTick();
-  // 等 submenu DOM 渲染后，按主菜单项位置 + 子菜单宽度计算
+  // 等 submenu DOM 渲染后，按主菜单项位置 + 子菜单实际尺寸计算
   const tr = triggerEl.getBoundingClientRect();
   const submenuEl = document.querySelector(".batch-submenu") as HTMLElement | null;
   const subW = submenuEl ? submenuEl.offsetWidth : 180;
+  const subH = submenuEl ? submenuEl.offsetHeight : 400;
   const viewportW = document.documentElement.clientWidth;
+  const viewportH = document.documentElement.clientHeight;
   const margin = 4;
-  // 默认放右侧；右侧放不下则翻转到左侧
+  // 水平：默认放右侧；右侧放不下则翻转到左侧
   let left = tr.right + margin;
   if (left + subW > viewportW - margin) {
     left = tr.left - subW - margin;
   }
-  submenuStyle.top = tr.top + "px";
+  // 垂直：默认对齐触发项顶部；底部放不下则整体上移贴视口底边（向上收，不被裁剪）
+  let top = tr.top;
+  if (top + subH > viewportH - margin) {
+    top = Math.max(margin, viewportH - subH - margin);
+  }
+  submenuStyle.top = top + "px";
   submenuStyle.left = left + "px";
   submenuStyle.display = true;
 }
