@@ -57,6 +57,10 @@ export const useTaskStore = defineStore("task", () => {
   /** 待删除任务的 ID（用于确认对话框） */
   const pendingDeleteId = ref<string | null>(null);
 
+  /** 待批量删除的任务 ID 列表（用于批量删除确认对话框）。
+   *  与单条 pendingDeleteId 独立，避免两套确认逻辑互相干扰。 */
+  const pendingBatchDeleteIds = ref<string[] | null>(null);
+
   /** 侧边栏任务数量（清单 + 标签 + 智能视图 + 笔记本） */
   const listCounts = ref<Record<string, number>>({});
   const tagCounts = ref<Record<string, number>>({});
@@ -909,7 +913,34 @@ export const useTaskStore = defineStore("task", () => {
     exitBatchMode();
   }
 
-  /** 批量删除 */
+  /** 请求批量删除：不立即执行，先记录待删除 id 到 pendingBatchDeleteIds，
+   *  弹出确认对话框，由用户确认后再调 confirmBatchDelete 实际执行。 */
+  function requestBatchDelete(ids: string[]): void {
+    pendingBatchDeleteIds.value = [...ids];
+  }
+
+  /** 取消批量删除（关闭确认对话框） */
+  function cancelBatchDelete(): void {
+    pendingBatchDeleteIds.value = null;
+  }
+
+  /** 确认批量删除（实际执行，由确认对话框的确认按钮调用）。
+   *  执行后清空待删除状态、退出多选模式。 */
+  async function confirmBatchDelete(): Promise<void> {
+    const ids = pendingBatchDeleteIds.value;
+    if (!ids || ids.length === 0) return;
+    pendingBatchDeleteIds.value = null;
+    for (const id of ids) {
+      await db.deleteTask(id);
+    }
+    await reload(true);
+    await refreshCounts();
+    notifyTaskChanged();
+    exitBatchMode();
+  }
+
+  /** 批量删除（直接执行，无确认）。
+   *  保留供 store 内部/调试用；UI 删除入口应走 requestBatchDelete + 确认对话框。 */
   async function batchDelete(ids: string[]): Promise<void> {
     for (const id of ids) {
       await db.deleteTask(id);
@@ -1127,6 +1158,7 @@ export const useTaskStore = defineStore("task", () => {
     currentSort,
     focusedTaskId,
     pendingDeleteId,
+    pendingBatchDeleteIds,
     subtasks,
     subtaskCache,
     taskTagMap,
@@ -1192,5 +1224,8 @@ export const useTaskStore = defineStore("task", () => {
     batchToggleDone,
     batchAddTags,
     batchDelete,
+    requestBatchDelete,
+    cancelBatchDelete,
+    confirmBatchDelete,
   };
 });

@@ -127,10 +127,21 @@ const deleteModalVisible = computed({
   },
 });
 
+/** 批量删除确认对话框显示状态（双向绑定到 store.pendingBatchDeleteIds） */
+const batchDeleteModalVisible = computed({
+  get: () => !!taskStore.pendingBatchDeleteIds,
+  set: (v: boolean) => {
+    if (!v) taskStore.cancelBatchDelete();
+  },
+});
+
+/** 批量删除待确认数量（标题显示用） */
+const batchDeleteCount = computed(() => taskStore.pendingBatchDeleteIds?.length ?? 0);
+
 // ─── 键盘导航 ────────────────────────────────────────────
 function onNavigationKeydown(e: KeyboardEvent) {
-  // 0. 上下文守卫：搜索/快速添加/删除确认对话框打开时不处理
-  if (searchStore.open || quickAdd.visible.value || taskStore.pendingDeleteId) return;
+  // 0. 上下文守卫：搜索/快速添加/删除确认对话框（含批量）打开时不处理
+  if (searchStore.open || quickAdd.visible.value || taskStore.pendingDeleteId || taskStore.pendingBatchDeleteIds) return;
 
   // 1. 输入框/文本域/contentEditable 聚焦时不处理（让位给输入）
   const active = document.activeElement;
@@ -349,6 +360,16 @@ useShortcuts({
       @confirm="taskStore.confirmDelete()"
     >
       <template #title>删除任务「<strong>{{ deleteConfirmTitle }}</strong>」？</template>
+    </ConfirmDialog>
+
+    <!-- 批量删除确认对话框（多选批量菜单触发，显示数量） -->
+    <ConfirmDialog
+      v-model:visible="batchDeleteModalVisible"
+      :mask-closable="false"
+      @cancel="taskStore.cancelBatchDelete()"
+      @confirm="taskStore.confirmBatchDelete()"
+    >
+      <template #title>删除选中的 <strong>{{ batchDeleteCount }}</strong> 个任务？</template>
     </ConfirmDialog>
   </div>
 </template>

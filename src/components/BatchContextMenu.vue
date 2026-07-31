@@ -192,8 +192,9 @@ async function applyToggleDone(done: boolean): Promise<void> {
 }
 
 async function applyDelete(): Promise<void> {
+  // 不直接执行，先请求确认（弹确认对话框），由用户确认后实际删除
   onVisibleChange(false);
-  await taskStore.batchDelete([...taskStore.batchSelectedIds]);
+  taskStore.requestBatchDelete([...taskStore.batchSelectedIds]);
 }
 </script>
 
