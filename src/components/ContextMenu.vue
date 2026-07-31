@@ -88,9 +88,22 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-/** 滚动时关闭（避免定位错乱） */
-function onScroll() {
-  if (props.visible) emit("update:visible", false);
+/** 滚动时关闭（避免定位错乱）。
+ *  但菜单内部容器（如批量菜单里可滚动的清单/标签列表）的滚动不算"页面滚动"，
+ *  判定滚动目标若在菜单自身内部，则保持打开，仅外部滚动才关闭。
+ *  注意：批量菜单的级联子菜单通过 Teleport 到 body，不在 popupRef 内，
+ *  需额外检查 .batch-submenu 容器。 */
+function onScroll(e: Event) {
+  if (!props.visible) return;
+  const target = e.target as Node | null;
+  if (!target) return;
+  // 滚动发生在一级菜单内部 → 不关闭
+  if (popupRef.value && popupRef.value.contains(target)) return;
+  // 滚动发生在批量菜单的级联子菜单内部（Teleport 出去，不在 popupRef 内）→ 不关闭
+  const submenu = document.querySelector(".batch-submenu");
+  if (submenu && submenu.contains(target)) return;
+  // 全局/页面滚动 → 关闭
+  emit("update:visible", false);
 }
 
 onBeforeUnmount(() => {
