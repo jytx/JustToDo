@@ -49,10 +49,14 @@ const isNote = computed(() => props.kind === "note");
 const selectedCount = computed(() => taskStore.batchSelectedTasks.length);
 
 /** 目标列表选项：任务 → taskLists（清单）；笔记 → noteLists（笔记本）。
- *  两棵树相互独立，必须按 kind 取数，避免跨 kind 移动。 */
+ *  两棵树相互独立，必须按 kind 取数，避免跨 kind 移动。
+ *  必须过滤掉目录（isFolder=true）：目录是容器，不直接承载任务，
+ *  任务移入目录后无法在任何视图显示，相当于数据丢失。 */
 const listOptions = computed(() => {
   const source = isNote.value ? listStore.noteLists : listStore.taskLists;
-  return source.map((l) => ({ id: l.id, name: l.name, color: l.color }));
+  return source
+    .filter((l) => !l.isFolder)
+    .map((l) => ({ id: l.id, name: l.name, color: l.color }));
 });
 
 /** 标签选项 */
