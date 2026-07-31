@@ -290,7 +290,6 @@ function onCtxEnterBatchMode(): void {
         'task-item--dragging': dragging,
         'task-item--has-subtasks': hasSubtaskProgress,
         'task-item--subtasks-done': hasSubtaskProgress && childProgress >= 100,
-        'task-item--batch-selected': batchSelected,
       }"
       :style="{
         paddingLeft: depth * 20 + 'px',
@@ -502,16 +501,6 @@ function onCtxEnterBatchMode(): void {
 }
 
 .task-item--selected:hover {
-  background-color: color-mix(in srgb, var(--jt-primary) 15%, var(--jt-accent-soft)) !important;
-}
-
-/* 批量多选选中态：行底色用 accent-soft（与单选选中视觉一致，!important 压过 hover）。
- * 圆形勾选框放在最左侧（展开箭头之前），区别于方形完成复选框。 */
-.task-item--batch-selected {
-  background-color: var(--jt-accent-soft) !important;
-}
-
-.task-item--batch-selected:hover {
   background-color: color-mix(in srgb, var(--jt-primary) 15%, var(--jt-accent-soft)) !important;
 }
 
