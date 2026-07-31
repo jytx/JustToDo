@@ -902,7 +902,9 @@ export const useTaskStore = defineStore("task", () => {
     exitBatchMode();
   }
 
-  /** 批量加标签（逐个 task × tag 关联；后端无批量接口） */
+  /** 批量加标签（逐个 task × tag 关联；后端无批量接口）。
+   *  注意：加标签不退出多选模式——用户常需连续加多个标签，
+   *  退出多选会打断连续操作。多选由 Esc/点空白/其他操作正常退出。 */
   async function batchAddTags(ids: string[], tagIds: string[]): Promise<void> {
     for (const taskId of ids) {
       for (const tagId of tagIds) {
@@ -910,7 +912,6 @@ export const useTaskStore = defineStore("task", () => {
       }
     }
     await preloadTaskTags();
-    exitBatchMode();
   }
 
   /** 请求批量删除：不立即执行，先记录待删除 id 到 pendingBatchDeleteIds，

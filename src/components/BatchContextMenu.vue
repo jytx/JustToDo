@@ -132,12 +132,13 @@ function cancelCloseSubmenu(): void {
   }
 }
 
-/** 菜单关闭时重置子菜单状态 */
+/** 菜单关闭时重置子菜单状态与已应用标签记录 */
 function onVisibleChange(v: boolean): void {
   emit("update:visible", v);
   if (!v) {
     openSubmenu.value = null;
     submenuStyle.display = false;
+    appliedTagIds.value = new Set();
     if (closeTimer !== null) {
       clearTimeout(closeTimer);
       closeTimer = null;
@@ -145,12 +146,19 @@ function onVisibleChange(v: boolean): void {
   }
 }
 
-/** 点击标签直接应用：立即把该标签加到所有选中任务，无需「应用」确认按钮。
- *  点击即生效、即关闭菜单（与移到清单/改优先级等操作体验一致）。 */
+/** 本轮已应用的标签 id（用于子菜单显示「已加」勾选，避免重复添加）。
+ *  加标签不退出多选、不关菜单，用户可连续点多个标签。 */
+const appliedTagIds = ref<Set<string>>(new Set());
+
+/** 点击标签直接应用：立即把该标签加到所有选中任务。
+ *  不关闭菜单、不退出多选——用户常需连续加多个标签，保持菜单打开方便继续操作。
+ *  已加过的标签在子菜单显示勾选标记。 */
 async function applySingleTag(id: string): Promise<void> {
+  // 已应用过的标签不重复添加
+  if (appliedTagIds.value.has(id)) return;
   const taskCount = taskStore.batchSelectedIds.size;
   const taskIds = [...taskStore.batchSelectedIds];
-  onVisibleChange(false);
+  appliedTagIds.value = new Set(appliedTagIds.value).add(id);
   await taskStore.batchAddTags(taskIds, [id]);
   Message.success(`已为 ${taskCount} 项添加标签`);
 }
@@ -304,10 +312,15 @@ async function applyDelete(): Promise<void> {
           </MenuPopoverItem>
         </template>
 
-        <!-- 加标签子菜单（点击即应用，与移到清单/改优先级体验一致） -->
+        <!-- 加标签子菜单（点击即应用，不关菜单，可连续加多个标签） -->
         <template v-else-if="openSubmenu === 'tag'">
           <div class="batch-menu__scroll">
-            <MenuPopoverItem v-for="t in tagOptions" :key="t.id" @click="applySingleTag(t.id)">
+            <MenuPopoverItem
+              v-for="t in tagOptions"
+              :key="t.id"
+              :active="appliedTagIds.has(t.id)"
+              @click="applySingleTag(t.id)"
+            >
               <icon-tag :size="14" class="batch-menu__tag-icon" />
               <span>{{ t.name }}</span>
             </MenuPopoverItem>
