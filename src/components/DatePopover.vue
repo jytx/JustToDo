@@ -559,6 +559,10 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* 面板高度上限：时间段 tab 内容更多，超出视口时内部滚动，
+   * 保证底部「清除/确定」按钮始终可达（不会被挤出可视区） */
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
 }
 
 .date-popover__tabs {
