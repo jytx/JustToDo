@@ -44,6 +44,16 @@ export const useTaskStore = defineStore("task", () => {
   /** 键盘导航焦点任务 ID（与 selectedTaskId 解耦，仅视觉高亮，不打开详情面板） */
   const focusedTaskId = ref<string | null>(null);
 
+  // ─── 批量多选状态 ──────────────────────────────
+  // 多选模式：Shift/Cmd+点击 或 右键菜单「多选」入口进入。
+  // 选中集合独立于 selectedTaskId（单选），互不影响。
+  /** 批量选中的任务 id 集合（用 Set 保证去重，ref 包裹触发响应式） */
+  const batchSelectedIds = ref<Set<string>>(new Set());
+  /** 是否处于多选模式（决定任务行是否显示勾选框、右键是否弹批量菜单） */
+  const batchMode = ref(false);
+  /** Shift 范围选的锚点任务 id（最近一次选中/取消的任务） */
+  const batchAnchorId = ref<string | null>(null);
+
   /** 待删除任务的 ID（用于确认对话框） */
   const pendingDeleteId = ref<string | null>(null);
 
@@ -768,6 +778,148 @@ export const useTaskStore = defineStore("task", () => {
     await deleteTask(id);
   }
 
+  // ─── 批量多选 action ──────────────────────────────
+  // 多选交互详见 discuss/2026-07-31-batch-operation-design.md。
+  // 进入方式：① Shift+点击范围选 ② Cmd/Ctrl+点击单点增减 ③ 右键菜单「多选」入口。
+  // 退出方式：Esc / 点击空白 / 批量操作执行完毕。
+
+  /** 进入多选模式（从右键菜单「多选」入口触发），清空旧选中 */
+  function enterBatchMode(): void {
+    batchMode.value = true;
+    batchSelectedIds.value = new Set();
+    batchAnchorId.value = null;
+  }
+
+  /** 退出多选模式，清空所有选中与锚点 */
+  function exitBatchMode(): void {
+    batchMode.value = false;
+    batchSelectedIds.value = new Set();
+    batchAnchorId.value = null;
+  }
+
+  /** Cmd/Ctrl+点击：单任务增减选（切一个）。
+   *  全部取消后自动退出多选模式。 */
+  function toggleBatchSelect(id: string): void {
+    batchMode.value = true;
+    const next = new Set(batchSelectedIds.value);
+    if (next.has(id)) {
+      next.delete(id);
+      if (next.size === 0) {
+        exitBatchMode();
+        return;
+      }
+    } else {
+      next.add(id);
+    }
+    batchSelectedIds.value = next;
+    batchAnchorId.value = id;
+  }
+
+  /** Shift+点击：范围选（从锚点到当前任务，基于 openTasks 顺序）。
+   *  无锚点或锚点不在当前列表时退化为单点选。 */
+  function rangeBatchSelect(id: string): void {
+    batchMode.value = true;
+    const tasks = openTasks.value;
+    if (!batchAnchorId.value || tasks.length === 0) {
+      toggleBatchSelect(id);
+      return;
+    }
+    const startIdx = tasks.findIndex((t) => t.id === batchAnchorId.value);
+    const endIdx = tasks.findIndex((t) => t.id === id);
+    if (startIdx === -1 || endIdx === -1) {
+      toggleBatchSelect(id);
+      return;
+    }
+    const lo = Math.min(startIdx, endIdx);
+    const hi = Math.max(startIdx, endIdx);
+    const next = new Set(batchSelectedIds.value);
+    for (let i = lo; i <= hi; i++) {
+      next.add(tasks[i].id);
+    }
+    batchSelectedIds.value = next;
+    batchAnchorId.value = id;
+  }
+
+  /** Cmd/Ctrl+A：全选当前视图未完成任务 */
+  function selectAllBatch(): void {
+    if (openTasks.value.length === 0) return;
+    batchMode.value = true;
+    batchSelectedIds.value = new Set(openTasks.value.map((t) => t.id));
+    batchAnchorId.value = openTasks.value[0].id;
+  }
+
+  /** 选中的任务对象列表（按 currentTasks 顺序，仅含当前视图可见的） */
+  const batchSelectedTasks = computed(() =>
+    currentTasks.value.filter((t) => batchSelectedIds.value.has(t.id)),
+  );
+
+  /** 选中的任务 id 数组（传给批量操作 action 用） */
+  const batchSelectedIdsArr = computed(() => Array.from(batchSelectedIds.value));
+
+  /** 判断任务是否被批量选中 */
+  function isBatchSelected(id: string): boolean {
+    return batchSelectedIds.value.has(id);
+  }
+
+  /** 批量更新字段（移清单 / 改优先级 / 改日期共用）。
+   *  直接调 db.updateTask（绕过逐次 store 同步），结束后统一 reload。
+   *  日期类字段做钳制，保证 end >= start（与单条 updateTask 一致）。 */
+  async function batchUpdateFields(
+    ids: string[],
+    fields: Parameters<typeof db.updateTask>[1],
+  ): Promise<void> {
+    // 日期钳制：fields 含 start/end 时需联合校验
+    let merged = { ...fields };
+    if (fields.dueStartAt !== undefined || fields.dueEndAt !== undefined) {
+      const [clampedStart, clampedEnd] = clampDateRange(
+        fields.dueStartAt ?? null,
+        fields.dueEndAt ?? null,
+      );
+      if (fields.dueStartAt !== undefined) merged.dueStartAt = clampedStart;
+      if (fields.dueEndAt !== undefined) merged.dueEndAt = clampedEnd;
+    }
+    for (const id of ids) {
+      await db.updateTask(id, merged);
+    }
+    await reload(true);
+    await refreshCounts();
+    notifyTaskChanged();
+    exitBatchMode();
+  }
+
+  /** 批量标记完成 / 取消完成 */
+  async function batchToggleDone(ids: string[], done: boolean): Promise<void> {
+    for (const id of ids) {
+      await db.toggleTask(id, done);
+    }
+    await reload(true);
+    await refreshCounts();
+    notifyTaskChanged();
+    exitBatchMode();
+  }
+
+  /** 批量加标签（逐个 task × tag 关联；后端无批量接口） */
+  async function batchAddTags(ids: string[], tagIds: string[]): Promise<void> {
+    for (const taskId of ids) {
+      for (const tagId of tagIds) {
+        await db.addTaskTag(taskId, tagId);
+      }
+    }
+    await preloadTaskTags();
+    exitBatchMode();
+  }
+
+  /** 批量删除 */
+  async function batchDelete(ids: string[]): Promise<void> {
+    for (const id of ids) {
+      await db.deleteTask(id);
+    }
+    await reload(true);
+    await refreshCounts();
+    notifyTaskChanged();
+    exitBatchMode();
+  }
+
   /** 点击任务：切换选中（已选中则关闭面板） */
   async function selectTask(id: string | null) {
     if (id === null || selectedTaskId.value === id) {
@@ -1024,5 +1176,21 @@ export const useTaskStore = defineStore("task", () => {
     addAttachment,
     addAttachments,
     removeAttachment,
+    // 批量多选
+    batchSelectedIds,
+    batchMode,
+    batchAnchorId,
+    batchSelectedTasks,
+    batchSelectedIdsArr,
+    enterBatchMode,
+    exitBatchMode,
+    toggleBatchSelect,
+    rangeBatchSelect,
+    selectAllBatch,
+    isBatchSelected,
+    batchUpdateFields,
+    batchToggleDone,
+    batchAddTags,
+    batchDelete,
   };
 });
