@@ -252,6 +252,7 @@ async function applyDelete(): Promise<void> {
       <div
         v-if="submenuStyle.display"
         class="batch-submenu context-menu"
+        :class="{ 'batch-submenu--date': openSubmenu === 'date' }"
         :style="{ position: 'fixed', top: submenuStyle.top, left: submenuStyle.left, zIndex: '10010' }"
         @mouseenter="cancelCloseSubmenu"
         @mouseleave="scheduleCloseSubmenu"
@@ -327,6 +328,18 @@ async function applyDelete(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* 日期子菜单：DatePopover 本身就是完整卡片（248px 白底圆角），
+ * 去掉外层菜单卡片的宽度限制/padding/背景/阴影，避免出现双重面板框。
+ * 外层仅保留透明定位容器，供 hover 保持打开与边界定位。 */
+.batch-submenu--date {
+  max-width: none;
+  width: max-content;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 /* 菜单标题：非交互，灰色小字 */
