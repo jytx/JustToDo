@@ -242,7 +242,7 @@ async function applyDelete(): Promise<void> {
       <div
         v-if="submenuStyle.display"
         class="batch-submenu context-menu"
-        :style="{ position: 'fixed', top: submenuStyle.top, left: submenuStyle.left, zIndex: '10001' }"
+        :style="{ position: 'fixed', top: submenuStyle.top, left: submenuStyle.left, zIndex: '10010' }"
         @mouseenter="cancelCloseSubmenu"
         @mouseleave="scheduleCloseSubmenu"
       >
@@ -300,6 +300,25 @@ async function applyDelete(): Promise<void> {
 </template>
 
 <style scoped>
+/* 级联子菜单容器：与一级菜单（ContextMenu 的 .context-menu）外观完全一致，
+ * 背景/圆角/padding/flex 布局保持一致；阴影更强，视觉上浮在一级菜单上方。
+ * 说明：一级菜单的 .context-menu 样式是 ContextMenu.vue 的 scoped 样式，
+ * 在本组件里复用类名匹配不到，必须在这里显式补全。 */
+.batch-submenu {
+  width: max-content;
+  min-width: 120px;
+  max-width: 220px;
+  background: var(--jt-surface);
+  border-radius: 12px;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.16),
+    0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 /* 菜单标题：非交互，灰色小字 */
 .batch-menu__title {
   font-size: 12px;
