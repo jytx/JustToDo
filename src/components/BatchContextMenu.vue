@@ -62,9 +62,6 @@ const listOptions = computed(() => {
 /** 标签选项 */
 const tagOptions = computed(() => tagStore.tags);
 
-/** 标签子菜单里勾选的标签 id（可多选，最后统一应用） */
-const selectedTagIds = ref<string[]>([]);
-
 // ── 级联子菜单状态 ──
 /** 当前展开的子菜单 key：null=无 | 'list' | 'tag' | 'priority' | 'date' */
 const openSubmenu = ref<null | "list" | "tag" | "priority" | "date">(null);
@@ -135,13 +132,12 @@ function cancelCloseSubmenu(): void {
   }
 }
 
-/** 菜单关闭时重置所有子菜单与标签勾选状态 */
+/** 菜单关闭时重置子菜单状态 */
 function onVisibleChange(v: boolean): void {
   emit("update:visible", v);
   if (!v) {
     openSubmenu.value = null;
     submenuStyle.display = false;
-    selectedTagIds.value = [];
     if (closeTimer !== null) {
       clearTimeout(closeTimer);
       closeTimer = null;
@@ -149,14 +145,14 @@ function onVisibleChange(v: boolean): void {
   }
 }
 
-/** 切换标签勾选 */
-function toggleTag(id: string): void {
-  const idx = selectedTagIds.value.indexOf(id);
-  if (idx === -1) {
-    selectedTagIds.value = [...selectedTagIds.value, id];
-  } else {
-    selectedTagIds.value = selectedTagIds.value.filter((t) => t !== id);
-  }
+/** 点击标签直接应用：立即把该标签加到所有选中任务，无需「应用」确认按钮。
+ *  点击即生效、即关闭菜单（与移到清单/改优先级等操作体验一致）。 */
+async function applySingleTag(id: string): Promise<void> {
+  const taskCount = taskStore.batchSelectedIds.size;
+  const taskIds = [...taskStore.batchSelectedIds];
+  onVisibleChange(false);
+  await taskStore.batchAddTags(taskIds, [id]);
+  Message.success(`已为 ${taskCount} 项添加标签`);
 }
 
 // ── 各批量操作处理（执行后自动关闭菜单，store action 内部会 exitBatchMode） ──
@@ -178,19 +174,6 @@ async function applyPriority(p: Priority): Promise<void> {
   onVisibleChange(false);
   await taskStore.batchUpdateFields(taskIds, { priority: p });
   Message.success(`已为 ${count} 项设置优先级「${PRIORITY_LABELS[p]}」`);
-}
-
-async function applyTags(): Promise<void> {
-  if (selectedTagIds.value.length === 0) return;
-  const taskCount = taskStore.batchSelectedIds.size;
-  const tagCount = selectedTagIds.value.length;
-  // 先保存待应用的标签 id，再关闭菜单：onVisibleChange(false) 会清空 selectedTagIds，
-  // 顺序反了会导致 ids 为空、标签不生效
-  const ids = [...selectedTagIds.value];
-  const taskIds = [...taskStore.batchSelectedIds];
-  onVisibleChange(false);
-  await taskStore.batchAddTags(taskIds, ids);
-  Message.success(`已为 ${taskCount} 项添加 ${tagCount} 个标签`);
 }
 
 async function applyDate(start: string | null, end: string | null): Promise<void> {
@@ -321,27 +304,14 @@ async function applyDelete(): Promise<void> {
           </MenuPopoverItem>
         </template>
 
-        <!-- 加标签子菜单（多选 + 应用） -->
+        <!-- 加标签子菜单（点击即应用，与移到清单/改优先级体验一致） -->
         <template v-else-if="openSubmenu === 'tag'">
           <div class="batch-menu__scroll">
-            <MenuPopoverItem v-for="t in tagOptions" :key="t.id" @click="toggleTag(t.id)">
-              <span class="batch-menu__check-slot">
-                <!-- 未选中显示标签图标（避免空荡），选中切换为勾 -->
-                <icon-tag
-                  v-if="!selectedTagIds.includes(t.id)"
-                  :size="14"
-                  class="batch-menu__tag-icon"
-                />
-                <icon-check v-else :size="14" />
-              </span>
+            <MenuPopoverItem v-for="t in tagOptions" :key="t.id" @click="applySingleTag(t.id)">
+              <icon-tag :size="14" class="batch-menu__tag-icon" />
               <span>{{ t.name }}</span>
             </MenuPopoverItem>
           </div>
-          <div class="batch-menu__divider" />
-          <MenuPopoverItem :disabled="selectedTagIds.length === 0" @click="applyTags">
-            <icon-check-circle :size="15" />
-            <span>应用到 {{ selectedCount }} 个任务</span>
-          </MenuPopoverItem>
         </template>
 
         <!-- 改截止日期子菜单（复用 DatePopover） -->
@@ -420,15 +390,7 @@ async function applyDelete(): Promise<void> {
   flex-shrink: 0;
 }
 
-/* 标签勾选占位（未选时占位保持对齐） */
-.batch-menu__check-slot {
-  display: inline-flex;
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-
-/* 标签图标：未选中时的弱化视觉，次要色，不抢文字焦点 */
+/* 标签图标：弱化视觉，次要色，不抢文字焦点 */
 .batch-menu__tag-icon {
   color: var(--jt-text-tertiary);
 }
