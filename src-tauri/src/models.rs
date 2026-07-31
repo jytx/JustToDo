@@ -1,7 +1,20 @@
 // 数据模型 —— 与前端 TS 类型一一对应
 // snake_case 字段由 serde 自动序列化为 JSON，前端直接用
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// 反序列化 Option<Option<T>>：区分三种状态
+/// - 字段缺失 → None（不更新）
+/// - JSON null → Some(None)（显式清空）
+/// - JSON 值 → Some(Some(v))（更新为 v）
+/// serde 默认会把 JSON null 反序列化成 None（丢失"清空"语义），需自定义。
+fn double_option<'de, T, D>(de: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(de).map(Some)
+}
 
 /// 检查项（独立于 note 富文本）
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -179,8 +192,11 @@ pub struct UpdateTaskInput {
     pub title: Option<String>,
     pub note: Option<String>,
     pub priority: Option<i32>,
-    pub due_start_at: Option<String>,
-    pub due_end_at: Option<String>,
+    /// Option<Option<String>> 允许显式清空日期（传 null 设为空，区分"不更新"）
+    #[serde(default, deserialize_with = "double_option")]
+    pub due_start_at: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub due_end_at: Option<Option<String>>,
     pub list_id: Option<String>,
     pub recurrence_freq: Option<Option<String>>,
     pub recurrence_interval: Option<i32>,

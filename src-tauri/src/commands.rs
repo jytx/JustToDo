@@ -754,6 +754,8 @@ pub async fn task_update(
             .await
             .map_err(|e| format!("更新任务失败: {}", e))?;
     }
+    // 日期字段为 Option<Option<String>>：Some(Some(v)) 更新为 v，
+    // Some(None) 显式清空（设 NULL），None 表示不更新（字段未传）
     if let Some(due_start_at) = &input.due_start_at {
         sqlx::query("UPDATE tasks SET due_start_at = $1, updated_at = $2 WHERE id = $3")
             .bind(due_start_at)
