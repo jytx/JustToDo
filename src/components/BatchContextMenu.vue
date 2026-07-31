@@ -11,6 +11,7 @@
 //
 // 详见 discuss/2026-07-31-batch-operation-design.md
 import { ref, computed, nextTick, reactive } from "vue";
+import { Message } from "@arco-design/web-vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
@@ -156,30 +157,40 @@ function toggleTag(id: string): void {
 
 // ── 各批量操作处理（执行后自动关闭菜单，store action 内部会 exitBatchMode） ──
 
-async function applyList(listId: string): Promise<void> {
+/** 批量移到清单/笔记本：移动后给「已移动 N 项到 XXX」提示，明确反馈 */
+async function applyList(listId: string, listName: string): Promise<void> {
+  const count = taskStore.batchSelectedIds.size;
   onVisibleChange(false);
   await taskStore.batchUpdateFields([...taskStore.batchSelectedIds], { listId });
+  Message.success(`已移动 ${count} 项到「${listName}」`);
 }
 
 async function applyPriority(p: Priority): Promise<void> {
+  const count = taskStore.batchSelectedIds.size;
   onVisibleChange(false);
   await taskStore.batchUpdateFields([...taskStore.batchSelectedIds], { priority: p });
+  Message.success(`已为 ${count} 项设置优先级「${PRIORITY_LABELS[p]}」`);
 }
 
 async function applyTags(): Promise<void> {
   if (selectedTagIds.value.length === 0) return;
+  const taskCount = taskStore.batchSelectedIds.size;
+  const tagCount = selectedTagIds.value.length;
   onVisibleChange(false);
   const ids = [...selectedTagIds.value];
   selectedTagIds.value = [];
   await taskStore.batchAddTags([...taskStore.batchSelectedIds], ids);
+  Message.success(`已为 ${taskCount} 项添加 ${tagCount} 个标签`);
 }
 
 async function applyDate(start: string | null, end: string | null): Promise<void> {
+  const count = taskStore.batchSelectedIds.size;
   onVisibleChange(false);
   await taskStore.batchUpdateFields([...taskStore.batchSelectedIds], {
     dueStartAt: start,
     dueEndAt: end,
   });
+  Message.success(start ? `已为 ${count} 项设置截止日期` : `已清除 ${count} 项的截止日期`);
 }
 
 async function clearDate(): Promise<void> {
@@ -187,8 +198,10 @@ async function clearDate(): Promise<void> {
 }
 
 async function applyToggleDone(done: boolean): Promise<void> {
+  const count = taskStore.batchSelectedIds.size;
   onVisibleChange(false);
   await taskStore.batchToggleDone([...taskStore.batchSelectedIds], done);
+  Message.success(done ? `已标记 ${count} 项为完成` : `已恢复 ${count} 项为未完成`);
 }
 
 async function applyDelete(): Promise<void> {
@@ -276,7 +289,7 @@ async function applyDelete(): Promise<void> {
         <!-- 移到清单子菜单 -->
         <template v-if="openSubmenu === 'list'">
           <div class="batch-menu__scroll">
-            <MenuPopoverItem v-for="l in listOptions" :key="l.id" @click="applyList(l.id)">
+            <MenuPopoverItem v-for="l in listOptions" :key="l.id" @click="applyList(l.id, l.name)">
               <span class="batch-menu__dot" :style="{ backgroundColor: l.color || '#6B7280' }" />
               <span>{{ l.name }}</span>
             </MenuPopoverItem>

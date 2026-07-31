@@ -70,11 +70,19 @@ watch(
   },
 );
 
-/** 点击菜单外部 → 关闭（点菜单内部由各 item 的 @click 自行关闭） */
+/** 点击菜单外部 → 关闭（点菜单内部由各 item 的 @click 自行关闭）。
+ *  注意：批量菜单的级联子菜单通过 Teleport 到 body，不在 popupRef 内，
+ *  点击子菜单项不能误判为"外部点击"而关闭一级菜单（否则子菜单项的 click
+ *  会被抢先销毁，导致 applyList 等操作不执行）。需额外检查 .batch-submenu。 */
 function onDocumentClick(e: MouseEvent) {
   if (!props.visible) return;
   const target = e.target as Node | null;
-  if (popupRef.value && target && popupRef.value.contains(target)) return;
+  if (!target) return;
+  // 点击在一级菜单内部 → 不关闭
+  if (popupRef.value && popupRef.value.contains(target)) return;
+  // 点击在批量级联子菜单内部（Teleport 出去，不在 popupRef）→ 不关闭
+  const submenu = document.querySelector(".batch-submenu");
+  if (submenu && submenu.contains(target)) return;
   emit("update:visible", false);
 }
 
