@@ -65,10 +65,14 @@ const tagOptions = computed(() => tagStore.tags);
 // ── 级联子菜单状态 ──
 /** 当前展开的子菜单 key：null=无 | 'list' | 'tag' | 'priority' | 'date' */
 const openSubmenu = ref<null | "list" | "tag" | "priority" | "date">(null);
-/** 子菜单浮层定位（相对视口，position:fixed） */
-const submenuStyle = reactive<{ display: boolean; top: string; left: string }>({
+/** 子菜单浮层定位（相对视口，position:fixed）。
+ *  top/bottom 二选一：普通子菜单用 top 对齐触发项；
+ *  date 子菜单高度大，用 bottom 贴视口底边（CSS 层面，不依赖 JS 测量高度）。
+ *  未使用的一侧用 undefined，Vue 会忽略该样式属性。 */
+const submenuStyle = reactive<{ display: boolean; top: string | undefined; bottom: string | undefined; left: string }>({
   display: false,
   top: "0px",
+  bottom: undefined,
   left: "0px",
 });
 /** 关闭子菜单的定时器（延迟关闭，避免鼠标斜向移动时误关） */
@@ -108,20 +112,22 @@ async function showSubmenu(key: "list" | "tag" | "priority" | "date", triggerEl:
     left = tr.left - subW - margin;
   }
   // 垂直定位策略：
-  //  - date 子菜单高度大且内部可能动态变化，用「底部贴视口底边」策略，
-  //    面板从下往上长，无论多高都完整可见（配合面板自身 max-height 滚动）
-  //  - 其他子菜单（清单/标签/优先级）高度小，默认对齐触发项顶部，
+  //  - date 子菜单高度大且内部日历可能延迟渲染（offsetHeight 测不准），
+  //    用 CSS bottom 贴视口底边（不依赖 JS 测量高度），面板从下往上长，
+  //    配合面板自身 max-height 滚动，确保完整可见
+  //  - 其他子菜单（清单/标签/优先级）高度小，用 top 对齐触发项顶部，
   //    底部放不下时再整体上移
-  let top: number;
   if (key === "date") {
-    top = Math.max(margin, viewportH - subH - margin);
+    submenuStyle.top = undefined;
+    submenuStyle.bottom = margin + "px";
   } else {
-    top = tr.top;
+    let top = tr.top;
     if (top + subH > viewportH - margin) {
       top = Math.max(margin, viewportH - subH - margin);
     }
+    submenuStyle.top = top + "px";
+    submenuStyle.bottom = undefined;
   }
-  submenuStyle.top = top + "px";
   submenuStyle.left = left + "px";
 }
 
@@ -305,7 +311,7 @@ async function applyDelete(): Promise<void> {
         v-if="submenuStyle.display"
         class="batch-submenu context-menu"
         :class="{ 'batch-submenu--date': openSubmenu === 'date' }"
-        :style="{ position: 'fixed', top: submenuStyle.top, left: submenuStyle.left, zIndex: '10010' }"
+        :style="{ position: 'fixed', top: submenuStyle.top, bottom: submenuStyle.bottom, left: submenuStyle.left, zIndex: '10010' }"
         @mouseenter="cancelCloseSubmenu"
         @mouseleave="scheduleCloseSubmenu"
       >
