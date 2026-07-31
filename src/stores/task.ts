@@ -914,6 +914,17 @@ export const useTaskStore = defineStore("task", () => {
     await preloadTaskTags();
   }
 
+  /** 批量移除标签（从每个选中任务上移除指定标签关联）。
+   *  与 batchAddTags 对称，用于批量菜单里 toggle 标签的「取消」分支。 */
+  async function batchRemoveTags(ids: string[], tagIds: string[]): Promise<void> {
+    for (const taskId of ids) {
+      for (const tagId of tagIds) {
+        await db.removeTaskTag(taskId, tagId);
+      }
+    }
+    await preloadTaskTags();
+  }
+
   /** 请求批量删除：不立即执行，先记录待删除 id 到 pendingBatchDeleteIds，
    *  弹出确认对话框，由用户确认后再调 confirmBatchDelete 实际执行。 */
   function requestBatchDelete(ids: string[]): void {
@@ -1224,6 +1235,7 @@ export const useTaskStore = defineStore("task", () => {
     batchUpdateFields,
     batchToggleDone,
     batchAddTags,
+    batchRemoveTags,
     batchDelete,
     requestBatchDelete,
     cancelBatchDelete,

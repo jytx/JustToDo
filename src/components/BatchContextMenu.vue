@@ -146,21 +146,29 @@ function onVisibleChange(v: boolean): void {
   }
 }
 
-/** 本轮已应用的标签 id（用于子菜单显示「已加」勾选，避免重复添加）。
- *  加标签不退出多选、不关菜单，用户可连续点多个标签。 */
+/** 本轮已应用的标签 id（用于子菜单显示「已加」勾选，支持再点取消）。
+ *  加标签不退出多选、不关菜单，用户可连续加多个标签。 */
 const appliedTagIds = ref<Set<string>>(new Set());
 
-/** 点击标签直接应用：立即把该标签加到所有选中任务。
- *  不关闭菜单、不退出多选——用户常需连续加多个标签，保持菜单打开方便继续操作。
- *  已加过的标签在子菜单显示勾选标记。 */
+/** 点击标签 toggle：未加 → 加到所有选中任务；已加 → 从所有选中任务移除。
+ *  不关闭菜单、不退出多选——用户常需连续操作多个标签。 */
 async function applySingleTag(id: string): Promise<void> {
-  // 已应用过的标签不重复添加
-  if (appliedTagIds.value.has(id)) return;
   const taskCount = taskStore.batchSelectedIds.size;
   const taskIds = [...taskStore.batchSelectedIds];
-  appliedTagIds.value = new Set(appliedTagIds.value).add(id);
-  await taskStore.batchAddTags(taskIds, [id]);
-  Message.success(`已为 ${taskCount} 项添加标签`);
+  const applied = new Set(appliedTagIds.value);
+  if (applied.has(id)) {
+    // 已加 → 取消（从选中任务移除该标签）
+    applied.delete(id);
+    appliedTagIds.value = applied;
+    await taskStore.batchRemoveTags(taskIds, [id]);
+    Message.success(`已从 ${taskCount} 项移除标签`);
+  } else {
+    // 未加 → 添加
+    applied.add(id);
+    appliedTagIds.value = applied;
+    await taskStore.batchAddTags(taskIds, [id]);
+    Message.success(`已为 ${taskCount} 项添加标签`);
+  }
 }
 
 // ── 各批量操作处理（执行后自动关闭菜单，store action 内部会 exitBatchMode） ──
