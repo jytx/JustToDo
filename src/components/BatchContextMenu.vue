@@ -1,11 +1,16 @@
 <script setup lang="ts">
 // 批量操作右键菜单 —— 多选模式下右键选中任务时弹出
 // 含 6 项操作：标记完成/取消完成、移到清单、加标签、改优先级、改截止日期、删除
-// 采用「点击进入二级面板」而非 hover 级联，改动最小，符合现有 ContextMenu 结构
-// 子菜单数据复用 listStore/taskStore/tagStore，日期复用 DatePopover
+// 子菜单（清单/标签/优先级/日期）在主菜单项 hover 时级联出现在右侧，
+// 是桌面应用标准范式（Finder/IDE），比「同位置切换+返回」更直觉。
+//
+// 级联子菜单的实现要点：
+// 1. 主菜单项 hover → 显示对应子菜单浮层，定位在主菜单项右边缘
+// 2. 鼠标在主菜单项和子菜单间移动时不能误关（用定时器延迟关闭）
+// 3. 视口右边缘放不下时，子菜单自动翻转到主菜单左侧
 //
 // 详见 discuss/2026-07-31-batch-operation-design.md
-import { ref, computed } from "vue";
+import { ref, computed, nextTick, reactive } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
@@ -34,19 +39,87 @@ const tagStore = useTagStore();
 /** 选中的任务数量（菜单标题显示用） */
 const selectedCount = computed(() => taskStore.batchSelectedTasks.length);
 
-/** 当前子面板：null=主菜单，其它值为对应二级面板 */
-const panel = ref<null | "list" | "tag" | "priority" | "date">(null);
-
-/** 清单选项（扁平，仅 task kind；笔记不进入批量操作场景） */
+/** 清单选项（扁平，仅 task kind） */
 const listOptions = computed(() =>
   listStore.taskLists.map((l) => ({ id: l.id, name: l.name, color: l.color })),
 );
 
-/** 标签选项（复用 tagStore.tags） */
+/** 标签选项 */
 const tagOptions = computed(() => tagStore.tags);
 
-/** 标签二级面板里勾选的标签 id（可多选，最后统一应用） */
+/** 标签子菜单里勾选的标签 id（可多选，最后统一应用） */
 const selectedTagIds = ref<string[]>([]);
+
+// ── 级联子菜单状态 ──
+/** 当前展开的子菜单 key：null=无 | 'list' | 'tag' | 'priority' | 'date' */
+const openSubmenu = ref<null | "list" | "tag" | "priority" | "date">(null);
+/** 子菜单浮层定位（相对视口，position:fixed） */
+const submenuStyle = reactive<{ display: boolean; top: string; left: string }>({
+  display: false,
+  top: "0px",
+  left: "0px",
+});
+/** 关闭子菜单的定时器（延迟关闭，避免鼠标斜向移动时误关） */
+let closeTimer: number | null = null;
+/** 延迟关闭毫秒数：给鼠标留出从主菜单项移动到子菜单的时间 */
+const CLOSE_DELAY = 200;
+
+/** 计算子菜单定位：贴在主菜单项的右边缘，垂直对齐项顶部。
+ *  视口右侧放不下时翻转到左侧。 */
+async function showSubmenu(key: "list" | "tag" | "priority" | "date", triggerEl: HTMLElement): Promise<void> {
+  if (closeTimer !== null) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
+  openSubmenu.value = key;
+  await nextTick();
+  // 等 submenu DOM 渲染后，按主菜单项位置 + 子菜单宽度计算
+  const tr = triggerEl.getBoundingClientRect();
+  const submenuEl = document.querySelector(".batch-submenu") as HTMLElement | null;
+  const subW = submenuEl ? submenuEl.offsetWidth : 180;
+  const viewportW = document.documentElement.clientWidth;
+  const margin = 4;
+  // 默认放右侧；右侧放不下则翻转到左侧
+  let left = tr.right + margin;
+  if (left + subW > viewportW - margin) {
+    left = tr.left - subW - margin;
+  }
+  submenuStyle.top = tr.top + "px";
+  submenuStyle.left = left + "px";
+  submenuStyle.display = true;
+}
+
+/** 延迟关闭子菜单（鼠标移出主菜单项和子菜单时触发） */
+function scheduleCloseSubmenu(): void {
+  if (closeTimer !== null) clearTimeout(closeTimer);
+  closeTimer = window.setTimeout(() => {
+    openSubmenu.value = null;
+    submenuStyle.display = false;
+    closeTimer = null;
+  }, CLOSE_DELAY);
+}
+
+/** 取消延迟关闭（鼠标进入子菜单或回到主菜单项时触发） */
+function cancelCloseSubmenu(): void {
+  if (closeTimer !== null) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
+}
+
+/** 菜单关闭时重置所有子菜单与标签勾选状态 */
+function onVisibleChange(v: boolean): void {
+  emit("update:visible", v);
+  if (!v) {
+    openSubmenu.value = null;
+    submenuStyle.display = false;
+    selectedTagIds.value = [];
+    if (closeTimer !== null) {
+      clearTimeout(closeTimer);
+      closeTimer = null;
+    }
+  }
+}
 
 /** 切换标签勾选 */
 function toggleTag(id: string): void {
@@ -58,35 +131,18 @@ function toggleTag(id: string): void {
   }
 }
 
-/** 菜单关闭时重置子面板与标签勾选（避免下次打开残留） */
-function onVisibleChange(v: boolean): void {
-  emit("update:visible", v);
-  if (!v) {
-    panel.value = null;
-    selectedTagIds.value = [];
-  }
-}
-
-/** 返回主菜单 */
-function backToMain(): void {
-  panel.value = null;
-}
-
 // ── 各批量操作处理（执行后自动关闭菜单，store action 内部会 exitBatchMode） ──
 
-/** 批量移到清单 */
 async function applyList(listId: string): Promise<void> {
   onVisibleChange(false);
   await taskStore.batchUpdateFields([...taskStore.batchSelectedIds], { listId });
 }
 
-/** 批量改优先级 */
 async function applyPriority(p: Priority): Promise<void> {
   onVisibleChange(false);
   await taskStore.batchUpdateFields([...taskStore.batchSelectedIds], { priority: p });
 }
 
-/** 批量加标签（应用当前勾选的标签后清空勾选） */
 async function applyTags(): Promise<void> {
   if (selectedTagIds.value.length === 0) return;
   onVisibleChange(false);
@@ -95,7 +151,6 @@ async function applyTags(): Promise<void> {
   await taskStore.batchAddTags([...taskStore.batchSelectedIds], ids);
 }
 
-/** 批量改截止日期（DatePopover confirm 回调） */
 async function applyDate(start: string | null, end: string | null): Promise<void> {
   onVisibleChange(false);
   await taskStore.batchUpdateFields([...taskStore.batchSelectedIds], {
@@ -104,18 +159,15 @@ async function applyDate(start: string | null, end: string | null): Promise<void
   });
 }
 
-/** 批量清除截止日期（DatePopover clear 回调） */
 async function clearDate(): Promise<void> {
   await applyDate(null, null);
 }
 
-/** 批量标记完成 / 取消完成 */
 async function applyToggleDone(done: boolean): Promise<void> {
   onVisibleChange(false);
   await taskStore.batchToggleDone([...taskStore.batchSelectedIds], done);
 }
 
-/** 批量删除 */
 async function applyDelete(): Promise<void> {
   onVisibleChange(false);
   await taskStore.batchDelete([...taskStore.batchSelectedIds]);
@@ -128,111 +180,122 @@ async function applyDelete(): Promise<void> {
     <div class="batch-menu__title">已选 {{ selectedCount }} 个任务</div>
     <div class="batch-menu__divider" />
 
-    <!-- 主面板 -->
-    <template v-if="!panel">
-      <MenuPopoverItem @click="applyToggleDone(true)">
-        <icon-check :size="15" />
-        <span>标记完成</span>
-      </MenuPopoverItem>
-      <MenuPopoverItem @click="applyToggleDone(false)">
-        <icon-refresh :size="15" />
-        <span>取消完成</span>
-      </MenuPopoverItem>
-      <MenuPopoverItem @click="panel = 'list'">
-        <icon-folder :size="15" />
-        <span>移到清单</span>
-        <icon-right class="batch-menu__arrow" :size="12" />
-      </MenuPopoverItem>
-      <MenuPopoverItem @click="panel = 'tag'">
-        <icon-tag :size="15" />
-        <span>加标签</span>
-        <icon-right class="batch-menu__arrow" :size="12" />
-      </MenuPopoverItem>
-      <MenuPopoverItem @click="panel = 'priority'">
-        <icon-fire :size="15" />
-        <span>改优先级</span>
-        <icon-right class="batch-menu__arrow" :size="12" />
-      </MenuPopoverItem>
-      <MenuPopoverItem @click="panel = 'date'">
-        <icon-calendar :size="15" />
-        <span>改截止日期</span>
-        <icon-right class="batch-menu__arrow" :size="12" />
-      </MenuPopoverItem>
-      <div class="batch-menu__divider" />
-      <MenuPopoverItem danger @click="applyDelete">
-        <icon-delete :size="15" />
-        <span>删除（{{ selectedCount }}）</span>
-      </MenuPopoverItem>
-    </template>
+    <!-- 标记完成（无子菜单） -->
+    <MenuPopoverItem @click="applyToggleDone(true)">
+      <icon-check :size="15" />
+      <span>标记完成</span>
+    </MenuPopoverItem>
+    <!-- 取消完成（无子菜单） -->
+    <MenuPopoverItem @click="applyToggleDone(false)">
+      <icon-refresh :size="15" />
+      <span>取消完成</span>
+    </MenuPopoverItem>
 
-    <!-- 二级面板：移到清单 -->
-    <template v-else-if="panel === 'list'">
-      <MenuPopoverItem @click="backToMain">
-        <icon-left :size="14" />
-        <span>返回</span>
-      </MenuPopoverItem>
-      <div class="batch-menu__divider" />
-      <div class="batch-menu__scroll">
-        <MenuPopoverItem v-for="l in listOptions" :key="l.id" @click="applyList(l.id)">
-          <span class="batch-menu__dot" :style="{ backgroundColor: l.color || '#6B7280' }" />
-          <span>{{ l.name }}</span>
-        </MenuPopoverItem>
-      </div>
-    </template>
+    <!-- 移到清单（hover 弹右侧子菜单） -->
+    <MenuPopoverItem
+      @mouseenter="(e: MouseEvent) => showSubmenu('list', e.currentTarget as HTMLElement)"
+      @mouseleave="scheduleCloseSubmenu"
+    >
+      <icon-folder :size="15" />
+      <span>移到清单</span>
+      <icon-right class="batch-menu__arrow" :size="12" />
+    </MenuPopoverItem>
 
-    <!-- 二级面板：改优先级 -->
-    <template v-else-if="panel === 'priority'">
-      <MenuPopoverItem @click="backToMain">
-        <icon-left :size="14" />
-        <span>返回</span>
-      </MenuPopoverItem>
-      <div class="batch-menu__divider" />
-      <MenuPopoverItem
-        v-for="(label, p) in PRIORITY_LABELS"
-        :key="p"
-        @click="applyPriority(Number(p) as Priority)"
+    <!-- 加标签（hover 弹右侧子菜单） -->
+    <MenuPopoverItem
+      @mouseenter="(e: MouseEvent) => showSubmenu('tag', e.currentTarget as HTMLElement)"
+      @mouseleave="scheduleCloseSubmenu"
+    >
+      <icon-tag :size="15" />
+      <span>加标签</span>
+      <icon-right class="batch-menu__arrow" :size="12" />
+    </MenuPopoverItem>
+
+    <!-- 改优先级（hover 弹右侧子菜单） -->
+    <MenuPopoverItem
+      @mouseenter="(e: MouseEvent) => showSubmenu('priority', e.currentTarget as HTMLElement)"
+      @mouseleave="scheduleCloseSubmenu"
+    >
+      <icon-fire :size="15" />
+      <span>改优先级</span>
+      <icon-right class="batch-menu__arrow" :size="12" />
+    </MenuPopoverItem>
+
+    <!-- 改截止日期（hover 弹右侧子菜单） -->
+    <MenuPopoverItem
+      @mouseenter="(e: MouseEvent) => showSubmenu('date', e.currentTarget as HTMLElement)"
+      @mouseleave="scheduleCloseSubmenu"
+    >
+      <icon-calendar :size="15" />
+      <span>改截止日期</span>
+      <icon-right class="batch-menu__arrow" :size="12" />
+    </MenuPopoverItem>
+
+    <div class="batch-menu__divider" />
+    <MenuPopoverItem danger @click="applyDelete">
+      <icon-delete :size="15" />
+      <span>删除（{{ selectedCount }}）</span>
+    </MenuPopoverItem>
+
+    <!-- 级联子菜单：Teleport 到 body，position:fixed 定位在主菜单项右侧 -->
+    <Teleport to="body">
+      <div
+        v-if="submenuStyle.display"
+        class="batch-submenu context-menu"
+        :style="{ position: 'fixed', top: submenuStyle.top, left: submenuStyle.left, zIndex: '10001' }"
+        @mouseenter="cancelCloseSubmenu"
+        @mouseleave="scheduleCloseSubmenu"
       >
-        <PriorityDot :priority="Number(p) as Priority" />
-        <span>{{ label }}</span>
-      </MenuPopoverItem>
-    </template>
+        <!-- 移到清单子菜单 -->
+        <template v-if="openSubmenu === 'list'">
+          <div class="batch-menu__scroll">
+            <MenuPopoverItem v-for="l in listOptions" :key="l.id" @click="applyList(l.id)">
+              <span class="batch-menu__dot" :style="{ backgroundColor: l.color || '#6B7280' }" />
+              <span>{{ l.name }}</span>
+            </MenuPopoverItem>
+          </div>
+        </template>
 
-    <!-- 二级面板：加标签（可多选 + 应用） -->
-    <template v-else-if="panel === 'tag'">
-      <MenuPopoverItem @click="backToMain">
-        <icon-left :size="14" />
-        <span>返回</span>
-      </MenuPopoverItem>
-      <div class="batch-menu__divider" />
-      <div class="batch-menu__scroll">
-        <MenuPopoverItem v-for="t in tagOptions" :key="t.id" @click="toggleTag(t.id)">
-          <span class="batch-menu__check-slot">
-            <icon-check v-if="selectedTagIds.includes(t.id)" :size="14" />
-          </span>
-          <span>{{ t.name }}</span>
-        </MenuPopoverItem>
+        <!-- 改优先级子菜单 -->
+        <template v-else-if="openSubmenu === 'priority'">
+          <MenuPopoverItem
+            v-for="(label, p) in PRIORITY_LABELS"
+            :key="p"
+            @click="applyPriority(Number(p) as Priority)"
+          >
+            <PriorityDot :priority="Number(p) as Priority" />
+            <span>{{ label }}</span>
+          </MenuPopoverItem>
+        </template>
+
+        <!-- 加标签子菜单（多选 + 应用） -->
+        <template v-else-if="openSubmenu === 'tag'">
+          <div class="batch-menu__scroll">
+            <MenuPopoverItem v-for="t in tagOptions" :key="t.id" @click="toggleTag(t.id)">
+              <span class="batch-menu__check-slot">
+                <icon-check v-if="selectedTagIds.includes(t.id)" :size="14" />
+              </span>
+              <span>{{ t.name }}</span>
+            </MenuPopoverItem>
+          </div>
+          <div class="batch-menu__divider" />
+          <MenuPopoverItem :disabled="selectedTagIds.length === 0" @click="applyTags">
+            <icon-check-circle :size="15" />
+            <span>应用到 {{ selectedCount }} 个任务</span>
+          </MenuPopoverItem>
+        </template>
+
+        <!-- 改截止日期子菜单（复用 DatePopover） -->
+        <template v-else-if="openSubmenu === 'date'">
+          <DatePopover
+            :start-iso="null"
+            :end-iso="null"
+            @confirm="applyDate"
+            @clear="clearDate"
+          />
+        </template>
       </div>
-      <div class="batch-menu__divider" />
-      <MenuPopoverItem :disabled="selectedTagIds.length === 0" @click="applyTags">
-        <icon-check-circle :size="15" />
-        <span>应用到 {{ selectedCount }} 个任务</span>
-      </MenuPopoverItem>
-    </template>
-
-    <!-- 二级面板：改截止日期（复用 DatePopover） -->
-    <template v-else-if="panel === 'date'">
-      <MenuPopoverItem @click="backToMain">
-        <icon-left :size="14" />
-        <span>返回</span>
-      </MenuPopoverItem>
-      <div class="batch-menu__divider" />
-      <DatePopover
-        :start-iso="null"
-        :end-iso="null"
-        @confirm="applyDate"
-        @clear="clearDate"
-      />
-    </template>
+    </Teleport>
   </ContextMenu>
 </template>
 
@@ -245,14 +308,14 @@ async function applyDelete(): Promise<void> {
   user-select: none;
 }
 
-/* 分隔线：与现有菜单视觉一致 */
+/* 分隔线 */
 .batch-menu__divider {
   height: 1px;
   background-color: var(--jt-border);
   margin: 4px 0;
 }
 
-/* 子菜单箭头：右对齐，灰色 */
+/* 子菜单箭头：右对齐，灰色，提示有下级 */
 .batch-menu__arrow {
   margin-left: auto;
   color: var(--jt-text-tertiary);
