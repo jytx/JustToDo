@@ -20,13 +20,18 @@ import MenuPopoverItem from "./MenuPopoverItem.vue";
 import DatePopover from "./DatePopover.vue";
 import PriorityDot from "./PriorityDot.vue";
 
-defineProps<{
-  visible: boolean;
-  /** 鼠标视口坐标 X（clientX） */
-  x: number;
-  /** 鼠标视口坐标 Y（clientY） */
-  y: number;
-}>();
+const props = withDefaults(
+  defineProps<{
+    visible: boolean;
+    /** 鼠标视口坐标 X（clientX） */
+    x: number;
+    /** 鼠标视口坐标 Y（clientY） */
+    y: number;
+    /** 实体类型：'task'（默认，完整菜单）| 'note'（笔记：隐藏完成/优先级/日期等任务专属项） */
+    kind?: "task" | "note";
+  }>(),
+  { kind: "task" },
+);
 
 const emit = defineEmits<{
   "update:visible": [value: boolean];
@@ -36,13 +41,18 @@ const taskStore = useTaskStore();
 const listStore = useListStore();
 const tagStore = useTagStore();
 
-/** 选中的任务数量（菜单标题显示用） */
+/** 是否笔记模式（隐藏任务专属菜单项） */
+const isNote = computed(() => props.kind === "note");
+
+/** 选中的数量（菜单标题显示用，文案随 kind） */
 const selectedCount = computed(() => taskStore.batchSelectedTasks.length);
 
-/** 清单选项（扁平，仅 task kind） */
-const listOptions = computed(() =>
-  listStore.taskLists.map((l) => ({ id: l.id, name: l.name, color: l.color })),
-);
+/** 目标列表选项：任务 → taskLists（清单）；笔记 → noteLists（笔记本）。
+ *  两棵树相互独立，必须按 kind 取数，避免跨 kind 移动。 */
+const listOptions = computed(() => {
+  const source = isNote.value ? listStore.noteLists : listStore.taskLists;
+  return source.map((l) => ({ id: l.id, name: l.name, color: l.color }));
+});
 
 /** 标签选项 */
 const tagOptions = computed(() => tagStore.tags);
@@ -189,28 +199,28 @@ async function applyDelete(): Promise<void> {
 
 <template>
   <ContextMenu :visible="visible" :x="x" :y="y" @update:visible="onVisibleChange">
-    <!-- 标题：已选任务数 -->
-    <div class="batch-menu__title">已选 {{ selectedCount }} 个任务</div>
+    <!-- 标题：已选数量（文案随 kind：任务/笔记） -->
+    <div class="batch-menu__title">已选 {{ selectedCount }} 个{{ isNote ? "笔记" : "任务" }}</div>
     <div class="batch-menu__divider" />
 
-    <!-- 标记完成（无子菜单） -->
-    <MenuPopoverItem @click="applyToggleDone(true)">
+    <!-- 标记完成（任务专属，笔记隐藏） -->
+    <MenuPopoverItem v-if="!isNote" @click="applyToggleDone(true)">
       <icon-check :size="15" />
       <span>标记完成</span>
     </MenuPopoverItem>
-    <!-- 取消完成（无子菜单） -->
-    <MenuPopoverItem @click="applyToggleDone(false)">
+    <!-- 取消完成（任务专属，笔记隐藏） -->
+    <MenuPopoverItem v-if="!isNote" @click="applyToggleDone(false)">
       <icon-refresh :size="15" />
       <span>取消完成</span>
     </MenuPopoverItem>
 
-    <!-- 移到清单（hover 弹右侧子菜单） -->
+    <!-- 移到清单/笔记本（hover 弹右侧子菜单，数据源按 kind 切换） -->
     <MenuPopoverItem
       @mouseenter="(e: MouseEvent) => showSubmenu('list', e.currentTarget as HTMLElement)"
       @mouseleave="scheduleCloseSubmenu"
     >
       <icon-folder :size="15" />
-      <span>移到清单</span>
+      <span>{{ isNote ? "移到笔记本" : "移到清单" }}</span>
       <icon-right class="batch-menu__arrow" :size="12" />
     </MenuPopoverItem>
 
@@ -224,8 +234,9 @@ async function applyDelete(): Promise<void> {
       <icon-right class="batch-menu__arrow" :size="12" />
     </MenuPopoverItem>
 
-    <!-- 改优先级（hover 弹右侧子菜单） -->
+    <!-- 改优先级（任务专属，笔记隐藏） -->
     <MenuPopoverItem
+      v-if="!isNote"
       @mouseenter="(e: MouseEvent) => showSubmenu('priority', e.currentTarget as HTMLElement)"
       @mouseleave="scheduleCloseSubmenu"
     >
@@ -234,8 +245,9 @@ async function applyDelete(): Promise<void> {
       <icon-right class="batch-menu__arrow" :size="12" />
     </MenuPopoverItem>
 
-    <!-- 改截止日期（hover 弹右侧子菜单） -->
+    <!-- 改截止日期（任务专属，笔记隐藏） -->
     <MenuPopoverItem
+      v-if="!isNote"
       @mouseenter="(e: MouseEvent) => showSubmenu('date', e.currentTarget as HTMLElement)"
       @mouseleave="scheduleCloseSubmenu"
     >

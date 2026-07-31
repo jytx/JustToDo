@@ -8,10 +8,12 @@ import { useTaskStore } from "@/stores/task";
 import { formatPageDate } from "@/utils/date";
 import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import { useTaskDragReorder } from "@/composables/useTaskDragReorder";
+import { useBatchSelect } from "@/composables/useBatchSelect";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
+import BatchContextMenu from "@/components/BatchContextMenu.vue";
 
 const props = defineProps<{ id: string }>();
 
@@ -23,6 +25,18 @@ const { ctxMenu, onContextMenu, onCreateTask } = useTaskPanelContextMenu(
   () => props.id,
   "note",
 );
+
+// 批量多选：修饰键点击转发 + 批量右键菜单状态（与 ListView 一致）
+const { batchCtxMenu, onTaskRowSelect, onBatchContextMenu } = useBatchSelect();
+
+/** 根容器右键分流：多选模式下优先弹批量菜单，否则弹面板菜单（新建笔记） */
+function onRootContextMenu(e: MouseEvent): void {
+  if (taskStore.batchMode && taskStore.batchSelectedIdsArr.length > 0) {
+    onBatchContextMenu(e);
+  } else {
+    onContextMenu(e);
+  }
+}
 
 const currentList = computed(() => listStore.getById(props.id));
 
@@ -55,7 +69,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="note-view" @contextmenu="onContextMenu">
+  <div class="note-view" @contextmenu="onRootContextMenu">
     <!-- 列表头 -->
     <header class="note-view__header">
       <h1 class="note-view__title">
@@ -96,7 +110,9 @@ onMounted(async () => {
             :key="task.id"
             :task="task"
             :dragging="draggingId === task.id"
-            @select="taskStore.selectTask(task.id)"
+            :batch-mode="taskStore.batchMode"
+            :batch-selected="taskStore.isBatchSelected(task.id)"
+            @select="(e) => onTaskRowSelect(task.id, e)"
             @dragstart="onTaskDragStart"
             @dragend="onTaskDragEnd"
           />
@@ -118,6 +134,14 @@ onMounted(async () => {
         <span>新建笔记</span>
       </MenuPopoverItem>
     </ContextMenu>
+
+    <!-- 批量操作右键菜单：多选模式下右键选中笔记时弹出（kind=note：隐藏任务专属项） -->
+    <BatchContextMenu
+      v-model:visible="batchCtxMenu.visible"
+      :x="batchCtxMenu.x"
+      :y="batchCtxMenu.y"
+      kind="note"
+    />
   </div>
 </template>
 
