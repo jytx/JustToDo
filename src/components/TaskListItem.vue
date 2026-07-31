@@ -21,12 +21,23 @@ const props = withDefaults(
     listColor?: string;
     /** 是否正在被拖拽（由父视图传入，用于源行半透明） */
     dragging?: boolean;
+    /** 是否处于批量多选模式（决定是否显示左侧勾选框） */
+    batchMode?: boolean;
+    /** 当前任务是否被批量选中（决定勾选框填充与行高亮） */
+    batchSelected?: boolean;
   }>(),
-  { depth: 0, showListDot: false, dragging: false },
+  {
+    depth: 0,
+    showListDot: false,
+    dragging: false,
+    batchMode: false,
+    batchSelected: false,
+  },
 );
 
 const emit = defineEmits<{
-  select: [];
+  /** 行点击：带出 MouseEvent，让视图层判断 Shift/Cmd 修饰键走多选还是单选 */
+  select: [e: MouseEvent];
   reorder: [draggedId: string, targetId: string, position: "before" | "after"];
   /** 拖拽开始：通知父视图记录 draggingId（FLIP 实时让位用） */
   dragstart: [taskId: string];
@@ -183,6 +194,12 @@ async function doToggle() {
   await taskStore.toggleTask(props.task.id, !props.task.done);
 }
 
+/** 行点击：把 MouseEvent 透传给视图层，由视图层按修饰键决定走多选还是单选。
+ *  TaskListItem 自身不做修饰键判断，保持单一职责（只负责展示 + 透传）。 */
+function onRowClick(e: MouseEvent): void {
+  emit("select", e);
+}
+
 // 当子任务缓存更新后，如果展开状态下子任务为空，自动收起
 watch(childCount, (n) => {
   if (n === 0 && expanded.value && hasSubtasksLoaded.value) {
@@ -206,8 +223,16 @@ const ctxMenu = reactive<{ visible: boolean; x: number; y: number }>({
   y: 0,
 });
 
-/** 打开右键菜单：记录鼠标坐标 */
+/** 右键菜单：多选模式下让事件冒泡给视图层（弹批量菜单），非多选时弹单任务菜单。
+ *  - 多选模式 + 本任务在选中集合内 → 不 stop，冒泡到视图层弹 BatchContextMenu
+ *  - 其他情况（非多选，或多选但右键的是未选中任务）→ 弹内部单任务菜单 */
 function onContextMenu(e: MouseEvent): void {
+  if (props.batchMode && props.batchSelected) {
+    // 多选且本任务已选中：让事件冒泡到视图层（模板仅 .prevent，未 .stop）
+    return;
+  }
+  // 非多选分支：阻止冒泡，弹内部单任务菜单
+  e.stopPropagation();
   ctxMenu.x = e.clientX;
   ctxMenu.y = e.clientY;
   ctxMenu.visible = true;
@@ -243,6 +268,12 @@ function onCtxDelete(): void {
   ctxMenu.visible = false;
   taskStore.requestDelete(props.task.id);
 }
+
+/** 进入多选模式：直接选中当前任务并开启多选，用户可继续勾选其他任务 */
+function onCtxEnterBatchMode(): void {
+  ctxMenu.visible = false;
+  taskStore.toggleBatchSelect(props.task.id);
+}
 </script>
 
 <template>
@@ -259,21 +290,32 @@ function onCtxDelete(): void {
         'task-item--dragging': dragging,
         'task-item--has-subtasks': hasSubtaskProgress,
         'task-item--subtasks-done': hasSubtaskProgress && childProgress >= 100,
+        'task-item--batch-selected': batchSelected,
       }"
       :style="{
         paddingLeft: depth * 20 + 'px',
         '--jt-subtask-progress': childProgress + '%',
       }"
       :draggable="canDrag ? 'true' : 'false'"
-      @click="$emit('select')"
+      @click="onRowClick"
       @dragstart="onDragStart"
       @dragend="onDragEnd"
       @dragenter="onDragEnter"
       @dragover="onDragOver"
       @dragleave="onDragLeave"
       @drop="onDrop"
-      @contextmenu.prevent.stop="onContextMenu($event)"
+      @contextmenu.prevent="onContextMenu($event)"
     >
+      <!-- 批量多选勾选框（仅 batchMode 下显示，圆形区别于方形完成框） -->
+      <span
+        v-if="batchMode"
+        class="task-item__batch-check"
+        :class="{ 'task-item__batch-check--on': batchSelected }"
+        @click.stop="emit('select', $event)"
+      >
+        <icon-check v-if="batchSelected" :size="11" style="color: #fff" />
+      </span>
+
       <!-- 展开箭头（无子任务时不显示） -->
       <span
         v-if="hasSubtasksLoaded && childCount > 0"
@@ -369,8 +411,12 @@ function onCtxDelete(): void {
       />
     </div>
 
-    <!-- 右键菜单：新建同级 / 新建子项 / 删除（文案随 kind：任务/笔记） -->
+    <!-- 右键菜单：多选 / 新建同级 / 新建子项 / 删除（文案随 kind：任务/笔记） -->
     <ContextMenu v-model:visible="ctxMenu.visible" :x="ctxMenu.x" :y="ctxMenu.y">
+      <MenuPopoverItem @click="onCtxEnterBatchMode">
+        <icon-check-circle :size="15" />
+        <span>多选</span>
+      </MenuPopoverItem>
       <MenuPopoverItem @click="onCtxAddSiblingTask">
         <icon-plus :size="15" />
         <span>{{ isNote ? "新建笔记" : "新建任务" }}</span>
@@ -455,6 +501,41 @@ function onCtxDelete(): void {
 
 .task-item--selected:hover {
   background-color: color-mix(in srgb, var(--jt-primary) 15%, var(--jt-accent-soft)) !important;
+}
+
+/* 批量多选选中态：行底色用 accent-soft（与单选选中视觉一致，!important 压过 hover）。
+ * 圆形勾选框放在最左侧（展开箭头之前），区别于方形完成复选框。 */
+.task-item--batch-selected {
+  background-color: var(--jt-accent-soft) !important;
+}
+
+.task-item--batch-selected:hover {
+  background-color: color-mix(in srgb, var(--jt-primary) 15%, var(--jt-accent-soft)) !important;
+}
+
+/* 批量勾选框：圆形（区别于方形完成框），16×16，未选空心灰圈，选中主色填充+白勾 */
+.task-item__batch-check {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--jt-text-tertiary);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-right: 2px;
+}
+
+.task-item__batch-check:hover {
+  border-color: var(--jt-primary);
+}
+
+.task-item__batch-check--on {
+  background-color: var(--jt-primary);
+  border-color: var(--jt-primary);
 }
 
 /* 键盘导航焦点状态（虚线边框，区别于选中的背景色） */
