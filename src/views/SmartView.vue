@@ -7,11 +7,13 @@ import { useTaskStore } from "@/stores/task";
 import { formatPageDate } from "@/utils/date";
 import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import { useTaskDragReorder } from "@/composables/useTaskDragReorder";
+import { useBatchSelect } from "@/composables/useBatchSelect";
 import type { SmartViewId } from "@/api/db";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
+import BatchContextMenu from "@/components/BatchContextMenu.vue";
 
 const props = defineProps<{ view: SmartViewId }>();
 
@@ -53,6 +55,18 @@ const { ctxMenu, onContextMenu, onCreateTask } = useTaskPanelContextMenu(
   () => defaultListId.value,
 );
 
+// 批量多选：修饰键点击转发 + 批量右键菜单状态
+const { batchCtxMenu, onTaskRowSelect, onBatchContextMenu } = useBatchSelect();
+
+/** 根容器右键分流：多选模式下优先弹批量菜单，否则弹面板菜单（新建任务） */
+function onRootContextMenu(e: MouseEvent): void {
+  if (taskStore.batchMode && taskStore.batchSelectedIdsArr.length > 0) {
+    onBatchContextMenu(e);
+  } else {
+    onContextMenu(e);
+  }
+}
+
 // 拖拽实时让位（FLIP 动画）—— 仅未完成区启用
 const {
   containerRef: openContainerRef,
@@ -89,7 +103,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="smart-view" @contextmenu="onContextMenu">
+  <div class="smart-view" @contextmenu="onRootContextMenu">
     <!-- 列表头 -->
     <header class="smart-view__header">
       <h1 class="smart-view__title">{{ pageTitle }}</h1>
@@ -142,8 +156,10 @@ onMounted(async () => {
                 :dragging="draggingId === task.id"
                 show-list-dot
                 :list-color="listColorMap[task.listId] || '#6B7280'"
+                :batch-mode="taskStore.batchMode"
+                :batch-selected="taskStore.isBatchSelected(task.id)"
                 @toggle="taskStore.toggleTask(task.id, !task.done)"
-                @select="taskStore.selectTask(task.id)"
+                @select="(e) => onTaskRowSelect(task.id, e)"
                 @delete="taskStore.deleteTask(task.id)"
                 @dragstart="onTaskDragStart"
                 @dragend="onTaskDragEnd"
@@ -162,8 +178,10 @@ onMounted(async () => {
             v-for="task in taskStore.doneTasks"
             :key="task.id"
             :task="task"
+            :batch-mode="taskStore.batchMode"
+            :batch-selected="taskStore.isBatchSelected(task.id)"
             @toggle="taskStore.toggleTask(task.id, !task.done)"
-            @select="taskStore.selectTask(task.id)"
+            @select="(e) => onTaskRowSelect(task.id, e)"
             @delete="taskStore.deleteTask(task.id)"
           />
         </a-collapse-item>
@@ -187,6 +205,13 @@ onMounted(async () => {
         <span>新建任务</span>
       </MenuPopoverItem>
     </ContextMenu>
+
+    <!-- 批量操作右键菜单：多选模式下右键选中任务时弹出 -->
+    <BatchContextMenu
+      v-model:visible="batchCtxMenu.visible"
+      :x="batchCtxMenu.x"
+      :y="batchCtxMenu.y"
+    />
   </div>
 </template>
 

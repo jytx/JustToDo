@@ -6,11 +6,13 @@ import { useTagStore } from "@/stores/tag";
 import { formatPageDate } from "@/utils/date";
 import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import { useTaskDragReorder } from "@/composables/useTaskDragReorder";
+import { useBatchSelect } from "@/composables/useBatchSelect";
 import type { Priority } from "@/types";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
+import BatchContextMenu from "@/components/BatchContextMenu.vue";
 
 const props = defineProps<{ id: string }>();
 
@@ -19,6 +21,18 @@ const tagStore = useTagStore();
 
 // 面板右键菜单：新建任务归属收件箱（与 AddTaskBar 行为一致）
 const { ctxMenu, onContextMenu, onCreateTask } = useTaskPanelContextMenu(() => "inbox");
+
+// 批量多选：修饰键点击转发 + 批量右键菜单状态
+const { batchCtxMenu, onTaskRowSelect, onBatchContextMenu } = useBatchSelect();
+
+/** 根容器右键分流：多选模式下优先弹批量菜单，否则弹面板菜单（新建任务） */
+function onRootContextMenu(e: MouseEvent): void {
+  if (taskStore.batchMode && taskStore.batchSelectedIdsArr.length > 0) {
+    onBatchContextMenu(e);
+  } else {
+    onContextMenu(e);
+  }
+}
 
 const currentTag = computed(() => tagStore.tags.find((t) => t.id === props.id));
 const pageTitle = computed(() => `# ${currentTag.value?.name ?? "标签"}`);
@@ -63,7 +77,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="tag-view" @contextmenu="onContextMenu">
+  <div class="tag-view" @contextmenu="onRootContextMenu">
     <header class="tag-view__header">
       <h1 class="tag-view__title">{{ pageTitle }}</h1>
       <p class="tag-view__subtitle">
@@ -104,7 +118,9 @@ onMounted(async () => {
                 :key="task.id"
                 :task="task"
                 :dragging="draggingId === task.id"
-                @select="taskStore.selectTask(task.id)"
+                :batch-mode="taskStore.batchMode"
+                :batch-selected="taskStore.isBatchSelected(task.id)"
+                @select="(e) => onTaskRowSelect(task.id, e)"
                 @dragstart="onTaskDragStart"
                 @dragend="onTaskDragEnd"
               />
@@ -122,8 +138,10 @@ onMounted(async () => {
             v-for="task in taskStore.doneTasks"
             :key="task.id"
             :task="task"
+            :batch-mode="taskStore.batchMode"
+            :batch-selected="taskStore.isBatchSelected(task.id)"
             @toggle="taskStore.toggleTask(task.id, !task.done)"
-            @select="taskStore.selectTask(task.id)"
+            @select="(e) => onTaskRowSelect(task.id, e)"
             @delete="taskStore.deleteTask(task.id)"
           />
         </a-collapse-item>
@@ -147,6 +165,13 @@ onMounted(async () => {
         <span>新建任务</span>
       </MenuPopoverItem>
     </ContextMenu>
+
+    <!-- 批量操作右键菜单：多选模式下右键选中任务时弹出 -->
+    <BatchContextMenu
+      v-model:visible="batchCtxMenu.visible"
+      :x="batchCtxMenu.x"
+      :y="batchCtxMenu.y"
+    />
   </div>
 </template>
 
