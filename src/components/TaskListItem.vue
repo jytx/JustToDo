@@ -306,16 +306,6 @@ function onCtxEnterBatchMode(): void {
       @drop="onDrop"
       @contextmenu.prevent="onContextMenu($event)"
     >
-      <!-- 批量多选勾选框（仅 batchMode 下显示，圆形区别于方形完成框） -->
-      <span
-        v-if="batchMode"
-        class="task-item__batch-check"
-        :class="{ 'task-item__batch-check--on': batchSelected }"
-        @click.stop="emit('select', $event)"
-      >
-        <icon-check v-if="batchSelected" :size="11" style="color: #fff" />
-      </span>
-
       <!-- 展开箭头（无子任务时不显示） -->
       <span
         v-if="hasSubtasksLoaded && childCount > 0"
@@ -334,6 +324,17 @@ function onCtxEnterBatchMode(): void {
       <!-- 笔记图标徽章（区分于任务；标签/搜索视图中任务和笔记全局共用。
            多选模式下同样隐藏，由批量勾选框取代） -->
       <icon-file v-else-if="!batchMode" :size="14" class="task-item__note-icon" />
+
+      <!-- 批量多选勾选框（仅 batchMode 下显示，圆形区别于方形完成框）。
+           放在展开箭头之后、复选框原位置，与平时复选框横向对齐，避免贴边。 -->
+      <span
+        v-if="batchMode"
+        class="task-item__batch-check"
+        :class="{ 'task-item__batch-check--on': batchSelected }"
+        @click.stop="emit('select', $event)"
+      >
+        <icon-check v-if="batchSelected" :size="11" style="color: #fff" />
+      </span>
 
       <!-- 清单色点（智能视图） -->
       <span
