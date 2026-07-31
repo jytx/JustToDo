@@ -75,6 +75,10 @@ async function showSubmenu(key: "list" | "tag" | "priority" | "date", triggerEl:
     closeTimer = null;
   }
   openSubmenu.value = key;
+  // 先显示再测量：v-if 依赖 submenuStyle.display，若后置则在 nextTick 时元素
+  // 尚未渲染，querySelector 拿不到真实尺寸（fallback 高度偏小），
+  // 导致首次打开时大高度子菜单（日期面板）定位错误、底部被裁。
+  submenuStyle.display = true;
   await nextTick();
   // 等 submenu DOM 渲染后，按主菜单项位置 + 子菜单实际尺寸计算
   const tr = triggerEl.getBoundingClientRect();
@@ -96,7 +100,6 @@ async function showSubmenu(key: "list" | "tag" | "priority" | "date", triggerEl:
   }
   submenuStyle.top = top + "px";
   submenuStyle.left = left + "px";
-  submenuStyle.display = true;
 }
 
 /** 延迟关闭子菜单（鼠标移出主菜单项和子菜单时触发） */
