@@ -284,7 +284,13 @@ async function applyDelete(): Promise<void> {
           <div class="batch-menu__scroll">
             <MenuPopoverItem v-for="t in tagOptions" :key="t.id" @click="toggleTag(t.id)">
               <span class="batch-menu__check-slot">
-                <icon-check v-if="selectedTagIds.includes(t.id)" :size="14" />
+                <!-- 未选中显示标签图标（避免空荡），选中切换为勾 -->
+                <icon-tag
+                  v-if="!selectedTagIds.includes(t.id)"
+                  :size="14"
+                  class="batch-menu__tag-icon"
+                />
+                <icon-check v-else :size="14" />
               </span>
               <span>{{ t.name }}</span>
             </MenuPopoverItem>
@@ -378,6 +384,11 @@ async function applyDelete(): Promise<void> {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
+}
+
+/* 标签图标：未选中时的弱化视觉，次要色，不抢文字焦点 */
+.batch-menu__tag-icon {
+  color: var(--jt-text-tertiary);
 }
 
 /* 长列表滚动（清单/标签多时） */
