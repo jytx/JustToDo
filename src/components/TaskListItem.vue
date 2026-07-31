@@ -328,11 +328,12 @@ function onCtxEnterBatchMode(): void {
       <!-- 无子任务时占位，保持缩进对齐 -->
       <span v-else class="task-item__expand-placeholder" />
 
-      <!-- 复选框（笔记无完成概念，隐藏） -->
-      <TaskCheckbox v-if="!isNote" :done="task.done" @toggle="doToggle" />
+      <!-- 复选框（笔记无完成概念，且多选模式下隐藏——由批量勾选框取代） -->
+      <TaskCheckbox v-if="!isNote && !batchMode" :done="task.done" @toggle="doToggle" />
 
-      <!-- 笔记图标徽章（区分于任务；标签/搜索视图中任务和笔记全局共用） -->
-      <icon-file v-else :size="14" class="task-item__note-icon" />
+      <!-- 笔记图标徽章（区分于任务；标签/搜索视图中任务和笔记全局共用。
+           多选模式下同样隐藏，由批量勾选框取代） -->
+      <icon-file v-else-if="!batchMode" :size="14" class="task-item__note-icon" />
 
       <!-- 清单色点（智能视图） -->
       <span
