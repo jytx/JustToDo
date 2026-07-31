@@ -160,19 +160,23 @@ function toggleTag(id: string): void {
 }
 
 // ── 各批量操作处理（执行后自动关闭菜单，store action 内部会 exitBatchMode） ──
+// 统一原则：先快照选中 id（taskIds），再 onVisibleChange(false) 关菜单，
+// 最后用快照执行。避免关闭菜单触发的状态重置影响待应用数据。
 
 /** 批量移到清单/笔记本：移动后给「已移动 N 项到 XXX」提示，明确反馈 */
 async function applyList(listId: string, listName: string): Promise<void> {
   const count = taskStore.batchSelectedIds.size;
+  const taskIds = [...taskStore.batchSelectedIds];
   onVisibleChange(false);
-  await taskStore.batchUpdateFields([...taskStore.batchSelectedIds], { listId });
+  await taskStore.batchUpdateFields(taskIds, { listId });
   Message.success(`已移动 ${count} 项到「${listName}」`);
 }
 
 async function applyPriority(p: Priority): Promise<void> {
   const count = taskStore.batchSelectedIds.size;
+  const taskIds = [...taskStore.batchSelectedIds];
   onVisibleChange(false);
-  await taskStore.batchUpdateFields([...taskStore.batchSelectedIds], { priority: p });
+  await taskStore.batchUpdateFields(taskIds, { priority: p });
   Message.success(`已为 ${count} 项设置优先级「${PRIORITY_LABELS[p]}」`);
 }
 
@@ -180,17 +184,20 @@ async function applyTags(): Promise<void> {
   if (selectedTagIds.value.length === 0) return;
   const taskCount = taskStore.batchSelectedIds.size;
   const tagCount = selectedTagIds.value.length;
-  onVisibleChange(false);
+  // 先保存待应用的标签 id，再关闭菜单：onVisibleChange(false) 会清空 selectedTagIds，
+  // 顺序反了会导致 ids 为空、标签不生效
   const ids = [...selectedTagIds.value];
-  selectedTagIds.value = [];
-  await taskStore.batchAddTags([...taskStore.batchSelectedIds], ids);
+  const taskIds = [...taskStore.batchSelectedIds];
+  onVisibleChange(false);
+  await taskStore.batchAddTags(taskIds, ids);
   Message.success(`已为 ${taskCount} 项添加 ${tagCount} 个标签`);
 }
 
 async function applyDate(start: string | null, end: string | null): Promise<void> {
   const count = taskStore.batchSelectedIds.size;
+  const taskIds = [...taskStore.batchSelectedIds];
   onVisibleChange(false);
-  await taskStore.batchUpdateFields([...taskStore.batchSelectedIds], {
+  await taskStore.batchUpdateFields(taskIds, {
     dueStartAt: start,
     dueEndAt: end,
   });
@@ -203,15 +210,17 @@ async function clearDate(): Promise<void> {
 
 async function applyToggleDone(done: boolean): Promise<void> {
   const count = taskStore.batchSelectedIds.size;
+  const taskIds = [...taskStore.batchSelectedIds];
   onVisibleChange(false);
-  await taskStore.batchToggleDone([...taskStore.batchSelectedIds], done);
+  await taskStore.batchToggleDone(taskIds, done);
   Message.success(done ? `已标记 ${count} 项为完成` : `已恢复 ${count} 项为未完成`);
 }
 
 async function applyDelete(): Promise<void> {
   // 不直接执行，先请求确认（弹确认对话框），由用户确认后实际删除
+  const taskIds = [...taskStore.batchSelectedIds];
   onVisibleChange(false);
-  taskStore.requestBatchDelete([...taskStore.batchSelectedIds]);
+  taskStore.requestBatchDelete(taskIds);
 }
 </script>
 
