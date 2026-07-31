@@ -177,6 +177,8 @@ export const useTaskStore = defineStore("task", () => {
     currentTagId.value = null;
     currentSmartView.value = null;
     focusedTaskId.value = null; // 切换视图时清空键盘焦点
+    exitBatchMode(); // 多选是当前视图的临时状态，切换视图必须清空，
+    // 否则 batchSelectedIds 里的旧 id 残留，右键批量菜单会误操作到已不可见的任务。
     if (!keepSelection) {
       selectedTaskId.value = null; selectedTaskObj.value = null; // 切换清单时关闭详情面板
     }
@@ -207,6 +209,7 @@ export const useTaskStore = defineStore("task", () => {
     currentTagId.value = tagId;
     currentSmartView.value = null;
     focusedTaskId.value = null; // 切换视图时清空键盘焦点
+    exitBatchMode(); // 多选是当前视图的临时状态，切换视图必须清空（见 loadTasks 同名注释）
     if (!keepSelection) {
       selectedTaskId.value = null; selectedTaskObj.value = null; // 切换标签时关闭详情面板
     }
@@ -236,6 +239,7 @@ export const useTaskStore = defineStore("task", () => {
     currentListId.value = "";
     currentTagId.value = null;
     focusedTaskId.value = null; // 切换视图时清空键盘焦点
+    exitBatchMode(); // 多选是当前视图的临时状态，切换视图必须清空（见 loadTasks 同名注释）
     if (!keepSelection) {
       selectedTaskId.value = null; selectedTaskObj.value = null; // 切换智能视图时关闭详情面板
     }
