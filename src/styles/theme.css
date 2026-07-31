@@ -11,6 +11,27 @@ body {
   padding: 0;
 }
 
+/* 桌面应用默认禁止文本选择（拖拽选中文字破坏桌面 UI 体验，如任务列表整片高亮）。
+ * 白名单在下方恢复：输入框/编辑器/可编辑区等需要文本操作的区域。 */
+html,
+body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 恢复文本选择白名单：
+ *  - input/textarea/可编辑元素（原生输入）
+ *  - 富文本编辑器（Tiptap 正文，.rich-text 根 + .ProseMirror 编辑区）
+ *  - 其它需要复制文本的场景由各自组件按需覆盖 */
+input,
+textarea,
+[contenteditable="true"],
+.rich-text,
+.ProseMirror {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* 根容器补回实际背景色（避免穿透到桌面） */
 #app {
   background-color: var(--color-bg-1);
