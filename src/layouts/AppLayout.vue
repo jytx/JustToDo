@@ -148,11 +148,18 @@ function onNavigationKeydown(e: KeyboardEvent) {
     return;
   }
 
-  // 2. ESC：关闭详情面板
+  // 2. ESC：退出多选 / 关闭详情面板
+  //    多选模式激活时优先退出多选（不关详情面板），语义上「逐层关闭」。
   //    若详情面板内有任意浮层（chip 浮窗 / 菜单 / 确认弹窗）打开，
   //    先让浮层自己关（逐层关闭语义），本轮不关详情面板。
   //    （右键菜单、附件预览不在详情面板内，由各自捕获监听器 stopImmediatePropagation 拦截）
   if (e.key === "Escape") {
+    // 多选模式激活：Esc 优先退出多选
+    if (taskStore.batchMode) {
+      e.preventDefault();
+      taskStore.exitBatchMode();
+      return;
+    }
     if (taskStore.hasDetailOverlay) {
       e.preventDefault();
       return;
@@ -160,6 +167,17 @@ function onNavigationKeydown(e: KeyboardEvent) {
     if (taskStore.detailOpen) {
       e.preventDefault();
       taskStore.selectTask(null);
+    }
+    return;
+  }
+
+  // 2.5 Cmd/Ctrl+A：全选当前视图未完成任务（仅任务族视图）
+  //     !shiftKey 避开已占用的 Cmd+Shift+A（快速添加）
+  //     放在输入框守卫之后，输入框内 Cmd+A 走浏览器原生全选文本
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === "a" || e.key === "A")) {
+    if (showTaskSidebar.value) {
+      e.preventDefault();
+      taskStore.selectAllBatch();
     }
     return;
   }
