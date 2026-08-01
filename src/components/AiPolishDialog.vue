@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // AI 文本润色预览弹窗
 // 左右对比布局：左原文（只读渲染）/ 右润色结果（RichTextEditor 可编辑）。
-import { computed, ref, watch } from "vue";
+import { computed, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import { marked } from "marked";
 import { IconEdit } from "@arco-design/web-vue/es/icon";
 import RichTextEditor from "@/components/RichTextEditor.vue";
@@ -77,6 +77,33 @@ function onConfirm(): void {
 function onCancel(): void {
   emit("cancel");
 }
+
+// ─── 全局 undo/redo 快捷键 ───
+// Tiptap 的 undo 只在 editor 聚焦时生效，工具栏操作后焦点可能丢失。
+// 这里在弹窗范围监听 Cmd/Ctrl+Z / Cmd+Shift+Z，手动调 editor undo/redo。
+function onKeydown(e: KeyboardEvent): void {
+  if (!props.visible || props.loading) return;
+  const isUndo = (e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey;
+  const isRedo = (e.metaKey || e.ctrlKey) && (e.key === "z" && e.shiftKey || e.key === "y");
+  if (!isUndo && !isRedo) return;
+
+  const editor = richTextEditorRef.value?.editor;
+  if (!editor) return;
+  // 只在焦点不在编辑器内时拦截（编辑器有焦点时让 Tiptap 自己处理）
+  const prosemirror = editor.view?.dom as HTMLElement | undefined;
+  if (prosemirror && prosemirror.contains(document.activeElement)) return;
+
+  e.preventDefault();
+  if (isUndo) editor.commands.undo();
+  else editor.commands.redo();
+}
+
+onMounted(() => {
+  window.addEventListener("keydown", onKeydown);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onKeydown);
+});
 </script>
 
 <template>
