@@ -413,9 +413,15 @@ function onCancel(): void {
 /* 顶部工具栏 */
 .ai-polish__toolbar {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 2px;
   margin-bottom: 8px;
+}
+/* Arco text button 图标+文字垂直居中 */
+.ai-polish__toolbar :deep(.arco-btn) {
+  display: inline-flex;
+  align-items: center;
 }
 
 /* Markdown 工具栏 */
