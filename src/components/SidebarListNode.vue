@@ -5,6 +5,7 @@ import { ref, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { ListTreeNode } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
+import { useSettingsStore } from "@/stores/settings";
 import {
   IconFolder,
   IconMore,
@@ -36,6 +37,7 @@ const props = defineProps<{
 }>();
 
 const taskStore = useTaskStore();
+const settingsStore = useSettingsStore();
 const router = useRouter();
 const route = useRoute();
 
@@ -77,6 +79,8 @@ const emit = defineEmits<{
   addTask: [node: ListTreeNode];
   /** 归档当前节点（目录或清单）；TheSidebar 调 store.archiveTree */
   archive: [node: ListTreeNode];
+  /** AI 总结当前节点（目录/清单/笔记本），与右键菜单对齐 */
+  aiSummary: [node: ListTreeNode];
   /** 拖拽放置：被拖拽的节点 ID，目标父级 ID，目标位置（before/after/inside） */
   move: [draggedId: string, targetNode: ListTreeNode, position: "before" | "after" | "inside"];
   /** 右键菜单：鼠标事件 + 当前节点（向上冒泡到 TheSidebar 统一处理） */
@@ -84,7 +88,7 @@ const emit = defineEmits<{
 }>();
 
 /** 菜单点击的 key（addFolder 仅目录菜单有，addTask 仅清单菜单有） */
-function onMenuClick(key: "edit" | "delete" | "addFolder" | "addTask" | "archive") {
+function onMenuClick(key: "edit" | "delete" | "addFolder" | "addTask" | "archive" | "aiSummary") {
   folderMenuOpen.value = false;
   listMenuOpen.value = false;
   if (key === "edit") emit("edit", props.node);
@@ -92,6 +96,7 @@ function onMenuClick(key: "edit" | "delete" | "addFolder" | "addTask" | "archive
   else if (key === "addFolder") emit("addFolder", props.node);
   else if (key === "addTask") emit("addTask", props.node);
   else if (key === "archive") emit("archive", props.node);
+  else if (key === "aiSummary") emit("aiSummary", props.node);
 }
 
 /** 目录行更多菜单（独立 ref） */
@@ -272,6 +277,10 @@ function onDrop(e: DragEvent) {
           <icon-delete :size="15" />
           <span>删除目录</span>
         </MenuPopoverItem>
+        <MenuPopoverItem v-if="settingsStore.aiEnabled && !node.archived" @click="onMenuClick('aiSummary')">
+          <icon-robot :size="15" />
+          <span>AI 总结</span>
+        </MenuPopoverItem>
         <!-- 归档：仅主页（未归档）显示。归档区由 contextmenu 触发取消归档，
              hover 菜单不暴露，避免误点导致跨树来回 -->
         <MenuPopoverItem v-if="!node.archived" @click="onMenuClick('archive')">
@@ -327,6 +336,10 @@ function onDrop(e: DragEvent) {
         <MenuPopoverItem danger @click="onMenuClick('delete')">
           <icon-delete :size="15" />
           <span>{{ isNote ? "删除笔记本" : "删除清单" }}</span>
+        </MenuPopoverItem>
+        <MenuPopoverItem v-if="settingsStore.aiEnabled && !node.archived" @click="onMenuClick('aiSummary')">
+          <icon-robot :size="15" />
+          <span>AI 总结</span>
         </MenuPopoverItem>
         <!-- 归档：仅主页（未归档）显示 -->
         <MenuPopoverItem v-if="!node.archived" @click="onMenuClick('archive')">

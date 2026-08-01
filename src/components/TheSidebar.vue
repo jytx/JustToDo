@@ -1112,6 +1112,7 @@ onMounted(async () => {
           @addList="(n: ListTreeNode) => onAddListInFolder(n)"
           @addTask="(n: ListTreeNode) => quickAdd.open(n.id)"
           @archive="(n: ListTreeNode) => onHoverArchive(n)"
+          @aiSummary="(n: ListTreeNode) => onCtxAiSummary(n)"
           @move="onListMove"
           @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
         />
@@ -1167,6 +1168,7 @@ onMounted(async () => {
           @addList="(n: ListTreeNode) => onAddListInFolder(n)"
           @addTask="(n: ListTreeNode) => onAddNote(n.id)"
           @archive="(n: ListTreeNode) => onHoverArchive(n)"
+          @aiSummary="(n: ListTreeNode) => onCtxAiSummary(n)"
           @move="onListMove"
           @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
         />
