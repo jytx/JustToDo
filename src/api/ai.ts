@@ -78,9 +78,11 @@ export interface ParsedTask {
 /** 自然语言解析结果（支持多意图路由） */
 export interface ParseTaskResult {
   ok: boolean;
-  /** 意图：create_task(建任务) | summarize_list(总结清单) | unsupported(不支持) */
-  intent?: "create_task" | "summarize_list" | "unsupported";
-  /** 成功时的解析草稿（intent=create_task 时） */
+  /** 意图：create_task | summarize_list | smart_summary | create_note | unsupported */
+  intent?: "create_task" | "summarize_list" | "smart_summary" | "create_note" | "unsupported";
+  /** smart_summary 模式：daily/weekly */
+  mode?: "daily" | "weekly";
+  /** 成功时的解析草稿（intent=create_task/create_note 时） */
   parsed?: ParsedTask;
   /** 失败时的错误/提示信息 */
   message?: string;

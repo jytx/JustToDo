@@ -3228,12 +3228,54 @@ pub async fn ai_parse_task(
         }),
     };
 
+    // 定义 smart_summary 工具（每日/周报意图）
+    let smart_summary_tool = ToolDef {
+        name: "smart_summary".into(),
+        description: "用户想查看每日小结、周报、或回顾今天/本周的任务完成情况时调用。如「总结下今天」「看看本周进展」".into(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["daily", "weekly"],
+                    "description": "daily=今天，weekly=本周"
+                }
+            },
+            "required": ["mode"]
+        }),
+    };
+
+    // 定义 create_note 工具（创建笔记意图）
+    let create_note_tool = ToolDef {
+        name: "create_note".into(),
+        description: "用户想记录想法、灵感、笔记（而非待办任务）时调用。如「记录个想法」「写个笔记」".into(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "笔记标题（核心内容）"
+                },
+                "note": {
+                    "type": "string",
+                    "description": "笔记正文（HTML 的 <p> 标签）。总结并扩充用户输入的内容"
+                },
+                "tagNames": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "标签名称列表（不含#）"
+                }
+            },
+            "required": ["title"]
+        }),
+    };
+
     let req = ChatRequest {
         messages: vec![
             ChatMessage::system { content: system_prompt },
             ChatMessage::user { content: input.clone() },
         ],
-        tools: vec![parse_tool, summarize_tool],
+        tools: vec![parse_tool, summarize_tool, smart_summary_tool, create_note_tool],
         tool_choice: ToolChoice::Auto,
         ..Default::default()
     };
@@ -3250,6 +3292,29 @@ pub async fn ai_parse_task(
                         Ok(serde_json::json!({
                             "ok": true,
                             "intent": "summarize_list",
+                        }))
+                    }
+                    "smart_summary" => {
+                        // 每日/周报意图：前端据此触发 smart 总结
+                        let mode = args.get("mode").and_then(|v| v.as_str()).unwrap_or("daily");
+                        Ok(serde_json::json!({
+                            "ok": true,
+                            "intent": "smart_summary",
+                            "mode": if mode == "weekly" { "weekly" } else { "daily" },
+                        }))
+                    }
+                    "create_note" => {
+                        // 创建笔记意图：前端据此创建笔记（kind=note）
+                        Ok(serde_json::json!({
+                            "ok": true,
+                            "intent": "create_note",
+                            "parsed": {
+                                "title": args.get("title").and_then(|v| v.as_str()).unwrap_or(""),
+                                "note": args.get("note").and_then(|v| v.as_str()).unwrap_or(""),
+                                "tagNames": args.get("tagNames").and_then(|v| v.as_array())
+                                    .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>())
+                                    .unwrap_or_default(),
+                            }
                         }))
                     }
                     _ => {

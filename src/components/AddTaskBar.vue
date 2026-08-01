@@ -169,6 +169,26 @@ async function onAiParse(): Promise<void> {
       }
       // 清空输入框（总结不是建任务）
       title.value = "";
+    } else if (res.ok && res.intent === "smart_summary") {
+      // 意图：每日/周报 → 清空 pendingSummaryScope（走 smart 模式）+ 触发总结
+      taskStore.pendingSummaryScope = null;
+      Message.info(res.mode === "weekly" ? "正在生成本周周报..." : "正在生成今日小结...");
+      title.value = "";
+    } else if (res.ok && res.intent === "create_note" && res.parsed) {
+      // 意图：创建笔记 → 创建到默认笔记本 + 写入 note + 标签
+      const p = res.parsed;
+      const tagIds = p.tagNames.length > 0 ? await resolveTagIds(p.tagNames) : [];
+      const note = await taskStore.createTask({
+        title: p.title || trimmed,
+        listId: "default-notebook",
+        kind: "note",
+        tagIds,
+      });
+      if (p.note) {
+        await taskStore.updateTask(note.id, { note: p.note });
+      }
+      Message.success("笔记已创建");
+      title.value = "";
     } else if (res.fallbackTitle) {
       Message.info(res.message ?? "暂不支持此操作，已保留原输入");
     } else {
