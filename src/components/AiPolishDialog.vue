@@ -20,29 +20,47 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** 确认替换 */
-  confirm: [];
+  /** 确认替换（传用户编辑后的文本） */
+  confirm: [text: string];
   /** 取消 */
   cancel: [];
 }>();
 
 /** 原文是否展开 */
 const showOriginal = ref(false);
-/** 润色结果渲染后的 HTML（marked 异步渲染） */
+/** 润色结果渲染后的 HTML（loading 中流式展示用） */
 const renderedPolished = ref("");
 /** 原文渲染后的 HTML */
 const renderedOriginal = ref("");
+/** 可编辑的润色结果（loading 结束后用户可手动修改，确认时用这个值） */
+const editablePolished = ref("");
 
 /** 有结果可确认（loading 结束且有内容） */
-const canConfirm = computed(() => !props.loading && props.polishedText && !props.error);
+const canConfirm = computed(() => !props.loading && editablePolished.value && !props.error);
 
-// polishedText 变化时用 marked 渲染（支持 Markdown 格式 + 流式增量）
+// polishedText 变化时：loading 中用 marked 渲染展示，结束时初始化可编辑文本
 watch(
   () => props.polishedText,
   async (val) => {
-    renderedPolished.value = val ? await marked.parse(val) : "";
+    if (props.loading) {
+      // 流式中：渲染 HTML 预览
+      renderedPolished.value = val ? await marked.parse(val) : "";
+    } else {
+      // 流式结束：初始化可编辑文本
+      editablePolished.value = val;
+    }
   },
   { immediate: true },
+);
+
+// loading 从 true→false 时，把最终结果初始化到可编辑区
+watch(
+  () => props.loading,
+  async (isLoading, wasLoading) => {
+    if (wasLoading && !isLoading && props.polishedText) {
+      editablePolished.value = props.polishedText;
+    }
+  },
 );
 
 // 原文展开时渲染
@@ -52,10 +70,10 @@ watch([() => props.originalText, showOriginal], async ([val, expanded]) => {
   }
 });
 
-/** 确认 */
+/** 确认：把用户编辑后的结果传给父组件 */
 function onConfirm(): void {
   if (!canConfirm.value) return;
-  emit("confirm");
+  emit("confirm", editablePolished.value);
 }
 
 /** 取消 */
@@ -92,17 +110,26 @@ function onCancel(): void {
       <template v-else>
         <!-- 润色结果（流式逐字显示） -->
         <div class="ai-polish__result">
+          <!-- 纯 loading（还没收到内容） -->
           <div v-if="loading && !polishedText" class="ai-polish__loading">
             <a-spin :size="20" />
             <span>AI 正在润色...</span>
           </div>
-          <template v-else>
-            <div v-if="loading" class="ai-polish__streaming-badge">
+          <!-- 流式中：渲染 HTML 预览（带转圈角标） -->
+          <template v-else-if="loading">
+            <div class="ai-polish__streaming-badge">
               <a-spin :size="12" />
             </div>
             <!-- eslint-disable-next-line vue/no-v-html -->
             <div class="ai-polish__content" v-html="renderedPolished"></div>
           </template>
+          <!-- 流式结束：可编辑 textarea，用户可手动修改 -->
+          <textarea
+            v-else
+            v-model="editablePolished"
+            class="ai-polish__textarea"
+            spellcheck="false"
+          ></textarea>
         </div>
 
         <!-- 原文对比（折叠） -->
@@ -194,6 +221,21 @@ function onCancel(): void {
   font-size: 14px;
   line-height: 1.7;
   color: var(--jt-text-primary);
+}
+
+/* 可编辑 textarea（loading 结束后用户可修改润色结果） */
+.ai-polish__textarea {
+  width: 100%;
+  min-height: 120px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--jt-text-primary);
+  resize: vertical;
+  padding: 0;
 }
 .ai-polish__content :deep(p) {
   margin: 0 0 8px;

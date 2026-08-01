@@ -98,13 +98,13 @@ async function onPolish(): Promise<void> {
   }
 }
 
-/** 确认润色：覆盖提示词文本 */
-function onPolishConfirm(): void {
-  if (!polishResult.value) return;
-  emit("update:modelValue", polishResult.value);
-  emit("change", polishResult.value);
+/** 确认润色：用用户编辑后的文本覆盖提示词 */
+function onPolishConfirm(editedText: string): void {
+  if (!editedText) return;
+  emit("update:modelValue", editedText);
+  emit("change", editedText);
   // 同步更新 textarea 显示
-  if (textareaRef.value) textareaRef.value.value = polishResult.value;
+  if (textareaRef.value) textareaRef.value.value = editedText;
   polishVisible.value = false;
 }
 

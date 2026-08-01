@@ -655,10 +655,10 @@ function getSelectionHtml(editor: any, from: number, to: number): string {
   return div.innerHTML;
 }
 
-/** 确认润色：把结果写回编辑器 */
-function onPolishConfirm(): void {
+/** 确认润色：把用户编辑后的结果写回编辑器 */
+function onPolishConfirm(editedText: string): void {
   const editor = richTextEditorRef.value?.editor;
-  if (!editor || !polishResult.value) return;
+  if (!editor || !editedText) return;
 
   if (polishHasSelection.value && polishSelectionRange) {
     // 有选区：删除选中内容，插入润色结果
@@ -667,11 +667,11 @@ function onPolishConfirm(): void {
       .chain()
       .focus()
       .deleteRange({ from, to })
-      .insertContentAt(from, polishResult.value)
+      .insertContentAt(from, editedText)
       .run();
   } else {
     // 无选区：整体替换
-    editor.commands.setContent(polishResult.value);
+    editor.commands.setContent(editedText);
   }
   // 写回后 editor 的 onUpdate 会触发 update:modelValue → 自动 saveNote
   polishVisible.value = false;
