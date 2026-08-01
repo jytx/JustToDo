@@ -106,13 +106,10 @@ function onPolishCancel(): void {
 
 <template>
   <div class="prompt-editor">
-    <!-- 富文本工具栏（常态展示） -->
+    <!-- 富文本工具栏 + AI 润色按钮（同一行） -->
     <div v-if="richTextEditorRef" class="prompt-editor__toolbar-wrap">
       <RichTextToolbar :editor="richTextEditorRef.editor" compact />
-    </div>
-
-    <!-- AI 润色按钮 -->
-    <div class="prompt-editor__polish-row">
+      <span class="prompt-editor__toolbar-spacer"></span>
       <a-button
         type="text"
         size="mini"
@@ -160,21 +157,21 @@ function onPolishCancel(): void {
 }
 
 .prompt-editor__toolbar-wrap {
+  display: flex;
+  align-items: center;
   padding: 4px 8px;
   border-bottom: 1px solid var(--jt-border);
   background-color: var(--jt-surface-hover);
+  gap: 2px;
 }
 
-.prompt-editor__polish-row {
-  display: flex;
-  justify-content: flex-end;
-  padding: 2px 8px;
-  border-bottom: 1px solid var(--jt-border);
-  background-color: var(--jt-surface-hover);
+.prompt-editor__toolbar-spacer {
+  flex: 1;
 }
 
 .prompt-editor__polish-btn {
   color: var(--jt-primary);
+  flex-shrink: 0;
 }
 .prompt-editor__polish-btn:hover {
   color: var(--jt-primary);
