@@ -1,13 +1,15 @@
 <script setup lang="ts">
-// 提示词编辑器：Markdown 工具栏 + AI 润色
-// 用于设置页 AI 提示词编辑。textarea 直接编辑（等宽字体），
-// 工具栏常态展示，点击在光标处插入 Markdown 语法。
+// 提示词编辑器：双模式 + Markdown 工具栏 + AI 润色
+// - 源码模式：textarea 编辑纯文本，工具栏插入 Markdown 语法（**加粗** 等）
+// - 预览模式：contenteditable 富文本，工具栏产生真实格式效果（execCommand）
+//   失焦时把 HTML 转回 Markdown 同步给 v-model
 import { ref, nextTick } from "vue";
+import { marked } from "marked";
 import { polishText } from "@/api/ai";
 import AiPolishDialog from "@/components/AiPolishDialog.vue";
 
 const props = defineProps<{
-  /** 提示词文本（v-model） */
+  /** 提示词文本（v-model，Markdown 格式） */
   modelValue: string;
 }>();
 const emit = defineEmits<{
@@ -16,6 +18,8 @@ const emit = defineEmits<{
   change: [v: string];
 }>();
 
+/** 当前模式：edit 源码 | preview 富文本 */
+const mode = ref<"edit" | "preview">("edit");
 /** AI 润色进行中 */
 const polishing = ref(false);
 /** 润色预览弹窗是否可见 */
@@ -27,16 +31,94 @@ const polishResult = ref("");
 /** 润色错误信息 */
 const polishError = ref("");
 
-/** textarea 元素引用（工具栏插入需要操作光标位置） */
+/** 源码模式 textarea 引用 */
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
+/** 预览模式 contenteditable 引用 */
+const richRef = ref<HTMLDivElement | null>(null);
 
-/** 输入时同步到父组件（v-model） */
+/** 切换模式 */
+function toggleMode(): void {
+  if (mode.value === "edit") {
+    // 切到预览：把 Markdown 渲染成 HTML 放入 contenteditable
+    mode.value = "preview";
+    nextTick(() => {
+      if (richRef.value) {
+        renderToRich();
+      }
+    });
+  } else {
+    // 切回源码：把 contenteditable 的 HTML 转回 Markdown
+    if (richRef.value) {
+      const md = htmlToMarkdown(richRef.value.innerHTML);
+      emit("update:modelValue", md);
+    }
+    mode.value = "edit";
+  }
+}
+
+/** 把当前 modelValue（Markdown）渲染到 contenteditable */
+async function renderToRich(): Promise<void> {
+  if (!richRef.value) return;
+  const html = props.modelValue ? await marked.parse(props.modelValue) : "";
+  richRef.value.innerHTML = html;
+}
+
+/** contenteditable 的 HTML 粗略转回 Markdown */
+function htmlToMarkdown(html: string): string {
+  const div = document.createElement("div");
+  div.innerHTML = html;
+  return nodeToMarkdown(div);
+}
+
+/** 递归把 DOM 节点转成 Markdown */
+function nodeToMarkdown(node: Node): string {
+  let result = "";
+  node.childNodes.forEach((child) => {
+    if (child.nodeType === Node.TEXT_NODE) {
+      result += child.textContent ?? "";
+    } else if (child.nodeType === Node.ELEMENT_NODE) {
+      const el = child as HTMLElement;
+      const inner = nodeToMarkdown(el);
+      const tag = el.tagName.toLowerCase();
+      if (tag === "strong" || tag === "b") result += `**${inner}**`;
+      else if (tag === "em" || tag === "i") result += `*${inner}*`;
+      else if (tag === "code") result += `\`${inner}\``;
+      else if (tag === "h1") result += `\n# ${inner}\n`;
+      else if (tag === "h2") result += `\n## ${inner}\n`;
+      else if (tag === "h3") result += `\n### ${inner}\n`;
+      else if (tag === "blockquote") result += inner.split("\n").map((l: string) => `> ${l}`).join("\n");
+      else if (tag === "ul") result += inner;
+      else if (tag === "ol") result += inner;
+      else if (tag === "li") result += `- ${inner}\n`;
+      else if (tag === "br") result += "\n";
+      else if (tag === "p" || tag === "div") result += `${inner}\n`;
+      else result += inner;
+    }
+  });
+  return result;
+}
+
+/** 预览模式：contenteditable 输入时同步 */
+function onRichInput(): void {
+  // 预览模式编辑不立即同步 Markdown，切回源码时才转换
+}
+
+/** 预览模式失焦：转回 Markdown 并保存 */
+function onRichBlur(): void {
+  if (richRef.value) {
+    const md = htmlToMarkdown(richRef.value.innerHTML);
+    emit("update:modelValue", md);
+    emit("change", md);
+  }
+}
+
+/** 输入时同步到父组件（源码模式 v-model） */
 function onInput(e: Event): void {
   const v = (e.target as HTMLTextAreaElement).value;
   emit("update:modelValue", v);
 }
 
-/** 失焦时触发 change 保存（与设置项自动保存一致） */
+/** 失焦时触发 change 保存（源码模式） */
 function onBlur(): void {
   emit("change", props.modelValue);
 }
@@ -82,13 +164,27 @@ function onPolishCancel(): void {
   polishVisible.value = false;
 }
 
-// ─── Markdown 工具栏：在 textarea 光标处插入语法 ───
+// ─── 工具栏：源码模式插入 Markdown 语法 / 预览模式用 execCommand 产生富文本 ───
 
 /**
- * 行内格式：包裹选中文本（如 **加粗**）。
- * 无选中时插入占位符（如 **文本**）并选中占位文字。
+ * 行内格式：源码模式包裹 Markdown 语法，预览模式用 execCommand。
  */
 function wrapInline(before: string, after: string, placeholder: string): void {
+  if (mode.value === "preview") {
+    // 预览模式：execCommand 产生真实格式
+    const cmdMap: Record<string, string> = { "**": "bold", "*": "italic", "`": "insertCode" };
+    const cmd = cmdMap[before];
+    if (cmd === "insertCode") {
+      // code 没有直接 execCommand，用 insertHTML
+      const sel = window.getSelection();
+      const selected = sel?.toString() || placeholder;
+      document.execCommand("insertHTML", false, `<code>${selected}</code>`);
+    } else if (cmd) {
+      document.execCommand(cmd, false);
+    }
+    richRef.value?.focus();
+    return;
+  }
   const ta = textareaRef.value;
   if (!ta) return;
   const start = ta.selectionStart;
@@ -109,6 +205,19 @@ function wrapInline(before: string, after: string, placeholder: string): void {
  * 若有选区，对选区内的每一行都加前缀（多行列表）。
  */
 function insertLinePrefix(prefix: string): void {
+  if (mode.value === "preview") {
+    // 预览模式：用 execCommand 插入对应 HTML 块
+    const headingMap: Record<string, string> = { "# ": "H1", "## ": "H2", "### ": "H3" };
+    if (headingMap[prefix]) {
+      document.execCommand("formatBlock", false, headingMap[prefix]);
+    } else if (prefix === "- " || prefix === "1. ") {
+      document.execCommand("insertUnorderedList" === "insertUnorderedList" && prefix === "1. " ? "insertOrderedList" : "insertUnorderedList");
+    } else if (prefix === "> ") {
+      document.execCommand("formatBlock", false, "BLOCKQUOTE");
+    }
+    richRef.value?.focus();
+    return;
+  }
   const ta = textareaRef.value;
   if (!ta) return;
   const start = ta.selectionStart;
@@ -157,6 +266,13 @@ function insertQuote(): void {
 }
 /** 代码块 */
 function insertCodeBlock(): void {
+  if (mode.value === "preview") {
+    const sel = window.getSelection();
+    const selected = sel?.toString() || "代码";
+    document.execCommand("insertHTML", false, `<pre><code>${selected}</code></pre><p></p>`);
+    richRef.value?.focus();
+    return;
+  }
   const ta = textareaRef.value;
   if (!ta) return;
   const start = ta.selectionStart;
@@ -173,14 +289,30 @@ function insertCodeBlock(): void {
 
 /** 下划线（Markdown 无原生语法，用 <u> 标签） */
 function insertUnderline(): void {
+  if (mode.value === "preview") {
+    document.execCommand("underline", false);
+    richRef.value?.focus();
+    return;
+  }
   wrapInline("<u>", "</u>", "下划线");
 }
 /** 删除线 */
 function insertStrike(): void {
+  if (mode.value === "preview") {
+    document.execCommand("strikeThrough", false);
+    richRef.value?.focus();
+    return;
+  }
   wrapInline("~~", "~~", "删除线");
 }
-/** 清除格式：去掉常见的 Markdown 行内标记 */
+/** 清除格式 */
 function clearFormat(): void {
+  if (mode.value === "preview") {
+    document.execCommand("removeFormat", false);
+    document.execCommand("formatBlock", false, "P");
+    richRef.value?.focus();
+    return;
+  }
   const ta = textareaRef.value;
   if (!ta) return;
   const start = ta.selectionStart;
@@ -204,10 +336,20 @@ function clearFormat(): void {
 }
 /** 待办列表 */
 function insertTaskList(): void {
+  if (mode.value === "preview") {
+    document.execCommand("insertHTML", false, '<ul><li><input type="checkbox"> </li></ul>');
+    richRef.value?.focus();
+    return;
+  }
   insertLinePrefix("- [ ] ");
 }
 /** 分隔线 */
 function insertHr(): void {
+  if (mode.value === "preview") {
+    document.execCommand("insertHorizontalRule", false);
+    richRef.value?.focus();
+    return;
+  }
   const ta = textareaRef.value;
   if (!ta) return;
   const start = ta.selectionStart;
@@ -220,8 +362,13 @@ function insertHr(): void {
     ta.setSelectionRange(start + insert.length, start + insert.length);
   });
 }
-/** 硬换行（行尾加两个空格 + 换行） */
+/** 硬换行 */
 function insertHardBreak(): void {
+  if (mode.value === "preview") {
+    document.execCommand("insertHTML", false, "<br>");
+    richRef.value?.focus();
+    return;
+  }
   const ta = textareaRef.value;
   if (!ta) return;
   const start = ta.selectionStart;
@@ -238,8 +385,15 @@ function insertHardBreak(): void {
 
 <template>
   <div class="prompt-editor">
-    <!-- 顶部工具栏：AI 润色 -->
+    <!-- 顶部工具栏：模式切换 + AI 润色 -->
     <div class="prompt-editor__toolbar">
+      <a-button type="text" size="mini" @click="toggleMode">
+        <template #icon>
+          <icon-eye v-if="mode === 'edit'" :size="14" />
+          <icon-edit v-else :size="14" />
+        </template>
+        {{ mode === "edit" ? "预览" : "编辑" }}
+      </a-button>
       <!-- AI 润色：优化提示词文本（流式替换） -->
       <a-button
         type="text"
@@ -255,8 +409,7 @@ function insertHardBreak(): void {
       </a-button>
     </div>
 
-    <!-- Markdown 工具栏（常态展示）。
-         对照任务详情面板 RichTextToolbar 的完整分组 -->
+    <!-- Markdown 工具栏（常态展示，两种模式都可用） -->
     <div class="prompt-editor__md-toolbar">
       <!-- 文本格式组 -->
       <a-button size="mini" shape="circle" type="text" title="加粗 (Cmd+B)" @click="insertBold">
@@ -318,8 +471,9 @@ function insertHardBreak(): void {
       </a-button>
     </div>
 
-    <!-- textarea（等宽字体，常态可编辑） -->
+    <!-- 源码模式：textarea（等宽字体） -->
     <textarea
+      v-if="mode === 'edit'"
       ref="textareaRef"
       class="prompt-editor__textarea"
       :value="modelValue"
@@ -327,6 +481,17 @@ function insertHardBreak(): void {
       @blur="onBlur"
       spellcheck="false"
     ></textarea>
+
+    <!-- 预览模式：可编辑富文本（contenteditable，工具栏产生真实格式） -->
+    <div
+      v-else
+      ref="richRef"
+      class="prompt-editor__rich"
+      contenteditable="true"
+      spellcheck="false"
+      @input="onRichInput"
+      @blur="onRichBlur"
+    ></div>
 
     <!-- AI 润色预览弹窗（确认后才覆盖提示词文本） -->
     <AiPolishDialog
@@ -406,6 +571,61 @@ function insertHardBreak(): void {
   line-height: 1.6;
   color: var(--jt-text-primary);
   background-color: var(--jt-surface);
+}
+
+/* 预览模式：可编辑富文本 */
+.prompt-editor__rich {
+  width: 100%;
+  min-height: 400px;
+  max-height: 600px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  outline: none;
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--jt-text-primary);
+  background-color: var(--jt-surface);
+}
+.prompt-editor__rich:empty::before {
+  content: attr(data-placeholder);
+  color: var(--jt-text-tertiary);
+}
+.prompt-editor__rich :deep(h1),
+.prompt-editor__rich :deep(h2),
+.prompt-editor__rich :deep(h3) {
+  font-weight: 600;
+  margin: 10px 0 6px;
+}
+.prompt-editor__rich :deep(h1) { font-size: 15px; }
+.prompt-editor__rich :deep(h2) { font-size: 14px; }
+.prompt-editor__rich :deep(h3) { font-size: 13px; }
+.prompt-editor__rich :deep(p) {
+  margin: 6px 0;
+}
+.prompt-editor__rich :deep(ul),
+.prompt-editor__rich :deep(ol) {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+.prompt-editor__rich :deep(code) {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background-color: var(--jt-surface-hover);
+}
+.prompt-editor__rich :deep(pre) {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background-color: var(--jt-surface-hover);
+  overflow-x: auto;
+}
+.prompt-editor__rich :deep(blockquote) {
+  margin: 6px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--jt-border);
+  color: var(--jt-text-secondary);
 }
 
 </style>
