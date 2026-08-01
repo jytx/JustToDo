@@ -148,6 +148,70 @@ function insertCodeBlock(): void {
     ta.setSelectionRange(codeStart, codeStart + 2); // 选中"代码"
   });
 }
+
+/** 下划线（Markdown 无原生语法，用 <u> 标签） */
+function insertUnderline(): void {
+  wrapInline("<u>", "</u>", "下划线");
+}
+/** 删除线 */
+function insertStrike(): void {
+  wrapInline("~~", "~~", "删除线");
+}
+/** 清除格式：去掉常见的 Markdown 行内标记 */
+function clearFormat(): void {
+  const ta = textareaRef.value;
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  const text = props.modelValue;
+  const selected = text.slice(start, end);
+  if (!selected) return;
+  // 去除常见行内标记
+  const cleaned = selected
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1")
+    .replace(/~~(.+?)~~/g, "$1")
+    .replace(/`(.+?)`/g, "$1")
+    .replace(/<u>(.+?)<\/u>/g, "$1");
+  const newText = text.slice(0, start) + cleaned + text.slice(end);
+  emit("update:modelValue", newText);
+  nextTick(() => {
+    ta.focus();
+    ta.setSelectionRange(start, start + cleaned.length);
+  });
+}
+/** 待办列表 */
+function insertTaskList(): void {
+  insertLinePrefix("- [ ] ");
+}
+/** 分隔线 */
+function insertHr(): void {
+  const ta = textareaRef.value;
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const text = props.modelValue;
+  const insert = "\n\n---\n\n";
+  const newText = text.slice(0, start) + insert + text.slice(start);
+  emit("update:modelValue", newText);
+  nextTick(() => {
+    ta.focus();
+    ta.setSelectionRange(start + insert.length, start + insert.length);
+  });
+}
+/** 硬换行（行尾加两个空格 + 换行） */
+function insertHardBreak(): void {
+  const ta = textareaRef.value;
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const text = props.modelValue;
+  const insert = "  \n";
+  const newText = text.slice(0, start) + insert + text.slice(start);
+  emit("update:modelValue", newText);
+  nextTick(() => {
+    ta.focus();
+    ta.setSelectionRange(start + insert.length, start + insert.length);
+  });
+}
 </script>
 
 <template>
@@ -167,18 +231,31 @@ function insertCodeBlock(): void {
       </a-button>
     </div>
 
-    <!-- Markdown 工具栏（仅编辑模式 + 展开时显示） -->
+    <!-- Markdown 工具栏（仅编辑模式 + 展开时显示）。
+         对照任务详情面板 RichTextToolbar 的完整分组 -->
     <div v-if="toolbarOpen && mode === 'edit'" class="prompt-editor__md-toolbar">
-      <a-button size="mini" shape="circle" type="text" title="加粗" @click="insertBold">
+      <!-- 文本格式组 -->
+      <a-button size="mini" shape="circle" type="text" title="加粗 (Cmd+B)" @click="insertBold">
         <icon-bold :size="14" />
       </a-button>
-      <a-button size="mini" shape="circle" type="text" title="斜体" @click="insertItalic">
+      <a-button size="mini" shape="circle" type="text" title="斜体 (Cmd+I)" @click="insertItalic">
         <icon-italic :size="14" />
+      </a-button>
+      <a-button size="mini" shape="circle" type="text" title="下划线" @click="insertUnderline">
+        <icon-underline :size="14" />
+      </a-button>
+      <a-button size="mini" shape="circle" type="text" title="删除线" @click="insertStrike">
+        <icon-strikethrough :size="14" />
       </a-button>
       <a-button size="mini" shape="circle" type="text" title="行内代码" @click="insertCode">
         <icon-code :size="14" />
       </a-button>
+      <a-button size="mini" shape="circle" type="text" title="清除格式" @click="clearFormat">
+        <icon-eraser :size="14" />
+      </a-button>
       <span class="prompt-editor__md-divider"></span>
+
+      <!-- 段落块组 -->
       <a-button size="mini" shape="circle" type="text" title="H1 标题" @click="insertHeading(1)">
         <span class="prompt-editor__md-label">H1</span>
       </a-button>
@@ -188,16 +265,30 @@ function insertCodeBlock(): void {
       <a-button size="mini" shape="circle" type="text" title="H3 标题" @click="insertHeading(3)">
         <span class="prompt-editor__md-label">H3</span>
       </a-button>
+      <a-button size="mini" shape="circle" type="text" title="引用" @click="insertQuote">
+        <icon-quote :size="14" />
+      </a-button>
+      <a-button size="mini" shape="circle" type="text" title="分隔线" @click="insertHr">
+        <icon-minus :size="14" />
+      </a-button>
+      <a-button size="mini" shape="circle" type="text" title="硬换行 (Shift+Enter)" @click="insertHardBreak">
+        <icon-refresh :size="14" />
+      </a-button>
       <span class="prompt-editor__md-divider"></span>
+
+      <!-- 列表组 -->
       <a-button size="mini" shape="circle" type="text" title="无序列表" @click="insertBulletList">
         <icon-list :size="14" />
       </a-button>
       <a-button size="mini" shape="circle" type="text" title="有序列表" @click="insertOrderedList">
         <icon-ordered-list :size="14" />
       </a-button>
-      <a-button size="mini" shape="circle" type="text" title="引用" @click="insertQuote">
-        <icon-quote :size="14" />
+      <a-button size="mini" shape="circle" type="text" title="待办列表" @click="insertTaskList">
+        <icon-check-square :size="14" />
       </a-button>
+      <span class="prompt-editor__md-divider"></span>
+
+      <!-- 代码块 -->
       <a-button size="mini" shape="circle" type="text" title="代码块" @click="insertCodeBlock">
         <icon-code-square :size="14" />
       </a-button>
