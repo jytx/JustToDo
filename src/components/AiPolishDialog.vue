@@ -82,7 +82,7 @@ function onCancel(): void {
 <template>
   <a-modal
     :visible="visible"
-    :width="1000"
+    :width="1200"
     :footer="false"
     :mask-closable="!loading"
     :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
