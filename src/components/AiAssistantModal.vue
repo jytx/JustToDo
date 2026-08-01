@@ -16,12 +16,15 @@ import {
 } from "@/api/ai";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
+import { useTagStore } from "@/stores/tag";
+import type { Priority } from "@/types";
 
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ "update:visible": [v: boolean] }>();
 
 const taskStore = useTaskStore();
 const listStore = useListStore();
+const tagStore = useTagStore();
 
 /** 工具定义 */
 interface AiTool {
@@ -37,8 +40,7 @@ const TOOLS: AiTool[] = [
   { value: "weekly", label: "周报", desc: "汇总本周任务完成情况", needInput: false },
   { value: "list", label: "总结当前清单", desc: "总结当前所在清单的所有任务", needInput: false },
   { value: "tasks", label: "总结选中任务", desc: "总结多选的任务", needInput: false },
-  { value: "create_task", label: "自然语言建任务", desc: '如：明天3点开会 #工作 高优', needInput: true },
-  { value: "create_note", label: "创建笔记", desc: '如：记录个想法：用 Rust 重写', needInput: true },
+  { value: "create", label: "创建条目", desc: "根据当前清单类型自动创建任务或笔记", needInput: true },
 ];
 
 /** 当前选中的工具 */
@@ -117,18 +119,47 @@ async function execute(): Promise<void> {
         else errorMsg.value = res.message ?? "生成失败";
         break;
       }
-      case "create_task":
-      case "create_note": {
+      case "create": {
         const input = userInput.value.trim();
         if (!input) {
           errorMsg.value = "请输入内容";
           break;
         }
+        // 根据当前清单类型决定建任务还是笔记
+        const listId = taskStore.currentListId;
+        const currentList = listStore.getById(listId);
+        const isNote = currentList?.kind === "note";
         const res = await parseTask(input);
-        if (res.ok && res.intent === "create_task" && res.parsed) {
-          content.value = `已创建任务「${res.parsed.title}」`;
-        } else if (res.ok && res.intent === "create_note" && res.parsed) {
-          content.value = `已创建笔记「${res.parsed.title}」`;
+        if (res.ok && res.parsed) {
+          const p = res.parsed;
+          // 标签按名匹配，不存在自动创建
+          const tagIds: string[] = [];
+          for (const name of p.tagNames) {
+            const trimmed = name.trim();
+            if (!trimmed) continue;
+            const existing = tagStore.tags.find((t) => t.name === trimmed);
+            if (existing) {
+              tagIds.push(existing.id);
+            } else {
+              const created_tag = await tagStore.createTag(trimmed);
+              if (created_tag) tagIds.push(created_tag.id);
+            }
+          }
+          // 创建到当前清单/笔记本
+          const created = await taskStore.createTask({
+            title: p.title || input,
+            listId,
+            kind: isNote ? "note" : "task",
+            priority: isNote ? undefined : (p.priority as Priority) ?? 0,
+            dueStartAt: isNote ? undefined : p.dueStartAt,
+            dueEndAt: isNote ? undefined : p.dueEndAt,
+            tagIds,
+          });
+          // 写入 note
+          if (p.note) {
+            await taskStore.updateTask(created.id, { note: p.note });
+          }
+          content.value = `已创建${isNote ? "笔记" : "任务"}「${p.title || input}」到「${currentList?.name ?? "当前"}」`;
         } else if (res.ok && res.intent === "summarize_list") {
           content.value = "检测到你想总结清单，请选择「总结当前清单」工具";
         } else if (res.ok && res.intent === "smart_summary") {
