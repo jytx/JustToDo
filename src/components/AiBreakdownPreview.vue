@@ -106,10 +106,13 @@ generate();
 
 <template>
   <div class="ai-breakdown">
-    <!-- 标题行 -->
+    <!-- 标题行（右侧关闭按钮，任何状态都能关闭预览） -->
     <div class="ai-breakdown__header">
       <icon-robot :size="14" />
       <span class="ai-breakdown__title">{{ headerText }}</span>
+      <button class="ai-breakdown__close" title="关闭" @click="onCancel">
+        <icon-close :size="12" />
+      </button>
     </div>
 
     <!-- 加载中 -->
@@ -211,6 +214,31 @@ generate();
   color: var(--jt-primary);
   font-size: 13px;
   font-weight: 500;
+}
+
+.ai-breakdown__title {
+  flex: 1;
+}
+
+/* 右上角关闭按钮（与检查项区删除按钮同款样式） */
+.ai-breakdown__close {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  transition: all 0.12s;
+}
+.ai-breakdown__close:hover {
+  color: var(--jt-text-primary);
+  background: var(--jt-surface-hover);
 }
 
 /* 加载中 */
