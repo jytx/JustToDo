@@ -271,12 +271,12 @@ function insertHardBreak(): void {
         </template>
         {{ mode === "edit" ? "预览" : "编辑" }}
       </a-button>
-      <!-- AI 润色：优化提示词文本（流式替换） -->
+      <!-- AI 润色：优化提示词文本（流式替换），预览/编辑模式都能点 -->
       <a-button
         type="text"
         size="mini"
         :loading="polishing"
-        :disabled="mode !== 'edit' || polishing"
+        :disabled="polishing"
         title="AI 润色"
         class="prompt-editor__polish-btn"
         @click="onPolish"
