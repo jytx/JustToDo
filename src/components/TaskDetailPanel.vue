@@ -567,8 +567,13 @@ async function onBreakdownConfirm(subs: ParsedSubtask[]): Promise<void> {
       await taskStore.updateTask(created.id, { note: sub.note });
     }
   }
-  // 刷新子任务缓存，主列表树形会立即显示新子任务
-  await taskStore.loadSubtasks(parent.id);
+  // 刷新两份子任务缓存：
+  // subtasks 供详情面板，subtaskCache 供主列表树形（getCachedSubtasks）。
+  // createTask 不维护 subtaskCache（与 createSubtask 不同），必须显式刷新。
+  await Promise.all([
+    taskStore.loadSubtasks(parent.id),
+    taskStore.loadSubtasksToCache(parent.id),
+  ]);
   breakdownVisible.value = false;
 }
 
