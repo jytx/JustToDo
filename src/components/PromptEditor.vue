@@ -63,11 +63,13 @@ async function renderToRich(): Promise<void> {
   richRef.value.innerHTML = html;
 }
 
-/** contenteditable 的 HTML 粗略转回 Markdown */
+/** contenteditable 的 HTML 粗略转回 Markdown，清理多余空行 */
 function htmlToMarkdown(html: string): string {
   const div = document.createElement("div");
   div.innerHTML = html;
-  return nodeToMarkdown(div);
+  const md = nodeToMarkdown(div);
+  // 清理：连续 3+ 个换行压缩为 2 个（即最多一个空行）
+  return md.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /** 递归把 DOM 节点转成 Markdown */
