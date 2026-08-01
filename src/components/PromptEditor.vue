@@ -93,7 +93,11 @@ function nodeToMarkdown(node: Node): string {
       else if (tag === "ol") result += inner;
       else if (tag === "li") result += `- ${inner}\n`;
       else if (tag === "br") result += "\n";
-      else if (tag === "p" || tag === "div") result += `${inner}\n`;
+      // p：内容后加一个换行。连续两个 <p> 自然变成两行（非空行），
+      // 因为 marked 把无空行的连续行放进同一个 <p>，有空行的才拆成多个 <p>。
+      // div 只是容器，不加额外换行。
+      else if (tag === "p") result += `${inner}\n`;
+      else if (tag === "div") result += inner;
       else result += inner;
     }
   });
