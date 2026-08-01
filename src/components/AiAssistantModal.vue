@@ -276,7 +276,6 @@ watch(
               {{ t.label }}
             </a-option>
           </a-select>
-          <span class="ai-assistant__tool-desc">{{ currentTool.desc }}</span>
         </div>
         <a-button
           v-if="!currentTool.needInput"
@@ -289,6 +288,9 @@ watch(
           生成
         </a-button>
       </div>
+
+      <!-- 工具描述（选择器下方独立一行） -->
+      <p class="ai-assistant__tool-desc">{{ currentTool.desc }}</p>
 
       <!-- 输入框（需要输入的工具才显示）：输入 + 生成按钮 -->
       <div v-if="currentTool.needInput" class="ai-assistant__input-row">
@@ -359,6 +361,7 @@ watch(
 .ai-assistant__tool-desc {
   font-size: 12px;
   color: var(--jt-text-tertiary);
+  margin: 0 0 12px;
 }
 
 .ai-assistant__input-row {
