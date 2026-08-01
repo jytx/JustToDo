@@ -360,6 +360,18 @@ body[arco-theme='dark'] .arco-btn.arco-btn-outline.arco-btn-status-danger[disabl
 }
 
 /*
+ * 无标题弹窗的关闭按钮统一靠右
+ * - Arco 默认标题栏是 flex 行：有 title 时 [title ... close]，close 自然在右；
+ *   无 title 时只剩 close 一个子元素，会贴到左侧，与有标题弹窗位置不一致。
+ * - 用 :has() 识别「标题栏内无 .arco-modal-title」的弹窗，强制 justify-content: flex-end，
+ *   使 × 落在右上角。影响所有无标题弹窗（quick-add / search-palette / sidebar-create / habit-form），
+ *   有标题弹窗（ai-assistant 等）不受影响。
+ */
+.arco-modal-header:not(:has(.arco-modal-title)) {
+  justify-content: flex-end;
+}
+
+/*
  * 日历事件（FullCalendar）样式
  * - jt-task-event 是 taskToEvent 给所有任务事件加的统一 class
  * - jt-task-event--selected 表示任务被选中（与详情面板打开态同步），

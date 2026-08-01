@@ -1346,7 +1346,8 @@ function selectHabit(id: string) {
 }
 
 /* === 新建/编辑习惯弹窗（完整表单）：去内边距，圆角由 theme.css 全局统一
-   标题栏保留，沿用 Arco 默认右上角关闭按钮，与 AI 弹窗等保持一致 === */
+   标题栏保留，沿用 Arco 默认右上角关闭按钮，与 AI 弹窗等保持一致
+   （无标题弹窗的关闭按钮靠右，由 theme.css 全局 :has 规则统一处理）=== */
 .habit-form-modal .arco-modal-body {
   padding: 0;
 }
