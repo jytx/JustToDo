@@ -30,17 +30,15 @@ interface AiTool {
   desc: string;
   /** 是否需要输入框 */
   needInput: boolean;
-  /** 打开时是否自动执行 */
-  autoRun: boolean;
 }
 
 const TOOLS: AiTool[] = [
-  { value: "daily", label: "每日小结", desc: "汇总今天完成的任务和待办", needInput: false, autoRun: true },
-  { value: "weekly", label: "周报", desc: "汇总本周任务完成情况", needInput: false, autoRun: true },
-  { value: "list", label: "总结当前清单", desc: "总结当前所在清单的所有任务", needInput: false, autoRun: true },
-  { value: "tasks", label: "总结选中任务", desc: "总结多选的任务", needInput: false, autoRun: true },
-  { value: "create_task", label: "自然语言建任务", desc: '如：明天3点开会 #工作 高优', needInput: true, autoRun: false },
-  { value: "create_note", label: "创建笔记", desc: '如：记录个想法：用 Rust 重写', needInput: true, autoRun: false },
+  { value: "daily", label: "每日小结", desc: "汇总今天完成的任务和待办", needInput: false },
+  { value: "weekly", label: "周报", desc: "汇总本周任务完成情况", needInput: false },
+  { value: "list", label: "总结当前清单", desc: "总结当前所在清单的所有任务", needInput: false },
+  { value: "tasks", label: "总结选中任务", desc: "总结多选的任务", needInput: false },
+  { value: "create_task", label: "自然语言建任务", desc: '如：明天3点开会 #工作 高优', needInput: true },
+  { value: "create_note", label: "创建笔记", desc: '如：记录个想法：用 Rust 重写', needInput: true },
 ];
 
 /** 当前选中的工具 */
@@ -175,19 +173,15 @@ async function onSaveAsNote(): Promise<void> {
   }
 }
 
-/** 工具切换 */
+/** 工具切换：清空结果，不自动执行 */
 function onToolChange(v: string): void {
   selectedTool.value = v;
   content.value = "";
   errorMsg.value = "";
   userInput.value = "";
-  // 自动执行的工具，切换后立即执行
-  if (currentTool.value.autoRun) {
-    execute();
-  }
 }
 
-// 打开时：读取入口设置的默认工具，自动执行的工具立即跑
+// 打开时：读取入口设置的默认工具，不自动执行（用户点生成按钮才跑）
 watch(
   () => props.visible,
   (v) => {
@@ -196,9 +190,6 @@ watch(
       content.value = "";
       errorMsg.value = "";
       userInput.value = "";
-      if (currentTool.value.autoRun) {
-        execute();
-      }
     }
   },
 );
@@ -226,7 +217,7 @@ watch(
         <a-select
           v-model="selectedTool"
           size="small"
-          style="width: 180px"
+          style="width: 160px"
           @change="(v: any) => onToolChange(String(v))"
         >
           <a-option v-for="t in TOOLS" :key="t.value" :value="t.value">
@@ -234,7 +225,19 @@ watch(
           </a-option>
         </a-select>
 
-        <span class="ai-assistant__tool-desc">{{ currentTool.desc }}</span>
+        <!-- 不需要输入的工具：选择器右侧直接放生成按钮 -->
+        <a-button
+          v-if="!currentTool.needInput"
+          type="primary"
+          size="small"
+          :loading="loading"
+          @click="execute"
+        >
+          <template #icon><icon-robot :size="14" /></template>
+          生成
+        </a-button>
+
+        <span v-if="!currentTool.needInput" class="ai-assistant__tool-desc">{{ currentTool.desc }}</span>
 
         <!-- 输入框（需要输入的工具才显示） -->
         <div v-if="currentTool.needInput" class="ai-assistant__input-row">
@@ -245,7 +248,8 @@ watch(
             @keydown.enter="execute"
           />
           <a-button type="primary" size="small" :loading="loading" @click="execute">
-            执行
+            <template #icon><icon-robot :size="14" /></template>
+            生成
           </a-button>
         </div>
       </div>
@@ -261,7 +265,7 @@ watch(
         <!-- 错误 -->
         <div v-else-if="errorMsg" class="ai-assistant__error">
           <p>{{ errorMsg }}</p>
-          <a-button v-if="currentTool.autoRun" type="outline" size="small" @click="execute">重试</a-button>
+          <a-button type="outline" size="small" @click="execute">重试</a-button>
         </div>
 
         <!-- 结果 -->
