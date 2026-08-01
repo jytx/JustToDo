@@ -49,9 +49,10 @@ function openSummary(): void {
   summaryVisible.value = true;
 }
 
-/** 侧边栏清单/目录 AI 总结入口：只设置 scope，不立即开弹窗。
+/** 侧边栏清单/目录 AI 总结入口：设置 scope + 显示 loading。
  *  DailySummaryModal 预检后，空则 toast，非空才开弹窗（避免闪烁）。 */
 function onAiSummary(scope: import("@/api/ai").SummaryScope): void {
+  taskStore.aiLoading = true;
   taskStore.pendingSummaryScope = scope;
 }
 
@@ -369,6 +370,12 @@ useShortcuts({
       <router-view />
     </main>
 
+    <!-- AI 总结全局 loading 遮罩（预检/生成期间显示） -->
+    <div v-if="taskStore.aiLoading" class="ai-loading-overlay">
+      <a-spin :size="32" />
+      <span class="ai-loading-overlay__text">AI 正在分析...</span>
+    </div>
+
     <!-- 任务详情面板（右） -->
     <TaskDetailPanel v-model:panel-width="panelWidth" />
 
@@ -441,5 +448,26 @@ useShortcuts({
 
 .app-layout__topbar > * {
   -webkit-app-region: no-drag;
+}
+
+/* AI 总结全局 loading 遮罩：半透明覆盖全屏，居中 spin + 文案 */
+.ai-loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background-color: rgba(0, 0, 0, 0.25);
+  z-index: 9999;
+}
+
+.ai-loading-overlay__text {
+  font-size: 13px;
+  color: var(--jt-text-secondary);
 }
 </style>

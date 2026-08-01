@@ -57,6 +57,8 @@ export const useTaskStore = defineStore("task", () => {
   /** 待打开的 AI 总结范围（跨组件传递：侧边栏/批量菜单设置 → AppLayout 弹窗读取）。
    *  SummaryScope 类型见 src/api/ai.ts；null 表示用默认的每日/周报模式。 */
   const pendingSummaryScope = ref<import("@/api/ai").SummaryScope | null>(null);
+  /** AI 总结加载中（预检/生成期间为 true，AppLayout 显示全局 loading 遮罩） */
+  const aiLoading = ref(false);
 
   /** 待删除任务的 ID（用于确认对话框） */
   const pendingDeleteId = ref<string | null>(null);
@@ -1233,6 +1235,7 @@ export const useTaskStore = defineStore("task", () => {
     batchMode,
     batchAnchorId,
     pendingSummaryScope,
+    aiLoading,
     batchSelectedTasks,
     batchSelectedIdsArr,
     enterBatchMode,

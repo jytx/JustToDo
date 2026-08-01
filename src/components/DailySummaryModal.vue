@@ -222,32 +222,37 @@ watch(
     if (!innerVisible.value) {
       // 预检场景（弹窗未开）
       generating = true;
-      const res = await generateScopeSummary(scope, false);
-      generating = false;
-      if (res.empty) {
-        const now = Date.now();
-        if (now - lastEmptyToast > 500) {
-          lastEmptyToast = now;
-          Message.info(res.message ?? "该范围暂无内容");
+      taskStore.aiLoading = true;
+      try {
+        const res = await generateScopeSummary(scope, false);
+        if (res.empty) {
+          const now = Date.now();
+          if (now - lastEmptyToast > 500) {
+            lastEmptyToast = now;
+            Message.info(res.message ?? "该范围暂无内容");
+          }
+          taskStore.pendingSummaryScope = null;
+          return;
         }
-        taskStore.pendingSummaryScope = null;
-        return;
-      }
       // 非空：存内容并打开弹窗（不再调 generate，避免重复请求）
-      if (res.ok && res.content) {
-        content.value = res.content;
-        if (res.truncated) {
-          truncatedHint.value = `（已智能裁剪至重点任务，共 ${res.count} 项）`;
+        if (res.ok && res.content) {
+          content.value = res.content;
+          if (res.truncated) {
+            truncatedHint.value = `（已智能裁剪至重点任务，共 ${res.count} 项）`;
+          }
+          innerVisible.value = true;
+          // 超阈值确认（弹窗打开后弹裁剪对话框）
+          if (typeof res.count === "number" && res.count > settingsStore.aiSummaryTruncateThreshold) {
+            askTruncate(res.count, settingsStore.aiSummaryTruncateThreshold);
+          }
+        } else {
+          // 预检失败：打开弹窗显示错误
+          errorMsg.value = res.message ?? "生成失败";
+          innerVisible.value = true;
         }
-        innerVisible.value = true;
-        // 超阈值确认（弹窗打开后弹裁剪对话框）
-        if (typeof res.count === "number" && res.count > settingsStore.aiSummaryTruncateThreshold) {
-          askTruncate(res.count, settingsStore.aiSummaryTruncateThreshold);
-        }
-      } else {
-        // 预检失败：打开弹窗显示错误
-        errorMsg.value = res.message ?? "生成失败";
-        innerVisible.value = true;
+      } finally {
+        generating = false;
+        taskStore.aiLoading = false;
       }
     } else {
       // 弹窗已开（切清单场景）：重新生成
