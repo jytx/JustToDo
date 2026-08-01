@@ -126,11 +126,12 @@ async function onSortChange(field: SortField) {
   sortMenuOpen.value = false;
 }
 
-/** 删除确认对话框标题 */
+/** 删除确认对话框标题
+ *  必须用 findTaskById 在全部数据副本（currentTasks / subtasks / subtaskCache /
+ *  selectedTask）里查，否则删除子任务时 currentTasks 取不到，标题会显示为空。 */
 const deleteConfirmTitle = computed(() => {
   if (!taskStore.pendingDeleteId) return "";
-  const t = taskStore.currentTasks.find((task) => task.id === taskStore.pendingDeleteId);
-  return t?.title ?? "";
+  return taskStore.findTaskById(taskStore.pendingDeleteId)?.title ?? "";
 });
 
 /** 删除确认对话框显示状态（双向绑定到 store.pendingDeleteId） */

@@ -1216,6 +1216,7 @@ export const useTaskStore = defineStore("task", () => {
     requestDelete,
     cancelDelete,
     confirmDelete,
+    findTaskById,
     reorderTasks,
     persistTaskOrder,
     selectTask,
