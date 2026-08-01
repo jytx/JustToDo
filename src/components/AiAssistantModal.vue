@@ -52,6 +52,8 @@ const currentTool = computed(() => TOOLS.find((t) => t.value === selectedTool.va
 const userInput = ref("");
 /** 加载状态 */
 const loading = ref(false);
+/** 流式生成中（loading 期间但有内容在逐字出现） */
+const streaming = ref(false);
 /** 生成的 Markdown 结果 */
 const content = ref("");
 /** 错误信息 */
@@ -67,16 +69,36 @@ const saveLabel = computed(() => {
   return list?.kind === "note" ? "保存到当前笔记本" : "保存到当前清单";
 });
 
-watch(content, async (md) => {
+/** marked 渲染节流：流式期间高频增量全量 parse 会卡，用 150ms 防抖。
+ *  流结束后立即渲染一次（拿到完整 content）。 */
+let renderTimer: ReturnType<typeof setTimeout> | null = null;
+async function renderMarkdown(): Promise<void> {
+  const md = content.value;
   renderedHtml.value = md ? await marked.parse(md) : "";
+}
+function scheduleRender(): void {
+  if (renderTimer) clearTimeout(renderTimer);
+  renderTimer = setTimeout(renderMarkdown, 150);
+}
+watch(content, () => {
+  // 流式期间节流渲染；非流式（一次性赋值）立即渲染
+  if (streaming.value) scheduleRender();
+  else renderMarkdown();
 });
 
 /** 弹窗标题 */
 const title = computed(() => "✨ AI 助手");
 
+/** 流式增量回调：累加到 content，触发节流渲染 */
+function onStreamDelta(delta: string): void {
+  streaming.value = true;
+  content.value += delta;
+}
+
 /** 执行当前工具 */
 async function execute(): Promise<void> {
   loading.value = true;
+  streaming.value = false;
   errorMsg.value = "";
   content.value = "";
 
@@ -85,7 +107,7 @@ async function execute(): Promise<void> {
     switch (tool.value) {
       case "daily":
       case "weekly": {
-        const res = await generateSummary(tool.value as "daily" | "weekly");
+        const res = await generateSummary(tool.value as "daily" | "weekly", onStreamDelta);
         if (res.ok && res.content) content.value = res.content;
         else errorMsg.value = res.message ?? "生成失败";
         break;
@@ -111,7 +133,7 @@ async function execute(): Promise<void> {
             kind: (list.kind ?? "task") as "task" | "note",
           };
         }
-        const res = await generateScopeSummary(scope, false);
+        const res = await generateScopeSummary(scope, false, onStreamDelta);
         if (res.empty) {
           errorMsg.value = res.message ?? "该清单暂无内容";
         } else if (res.ok && res.content) {
@@ -134,7 +156,7 @@ async function execute(): Promise<void> {
           }
           scope = { type: "tasks", ids };
         }
-        const res = await generateScopeSummary(scope, false);
+        const res = await generateScopeSummary(scope, false, onStreamDelta);
         if (res.ok && res.content) content.value = res.content;
         else errorMsg.value = res.message ?? "生成失败";
         break;
@@ -193,8 +215,11 @@ async function execute(): Promise<void> {
   } catch (e) {
     errorMsg.value = String(e);
   } finally {
+    streaming.value = false;
     loading.value = false;
     taskStore.aiLoading = false;
+    // 流式结束/出错后立即渲染一次完整内容（确保最终结果正确显示）
+    renderMarkdown();
   }
 }
 
@@ -303,8 +328,8 @@ watch(
 
       <!-- 结果区 -->
       <div class="ai-assistant__body">
-        <!-- 加载中 -->
-        <div v-if="loading" class="ai-assistant__loading">
+        <!-- 纯加载中（尚未收到任何流式内容） -->
+        <div v-if="loading && !content" class="ai-assistant__loading">
           <a-spin />
           <span class="ai-assistant__loading-text">AI 正在生成...</span>
         </div>
@@ -315,8 +340,13 @@ watch(
           <a-button type="outline" size="small" @click="execute">重试</a-button>
         </div>
 
-        <!-- 结果 -->
-        <div v-else-if="content" class="ai-assistant__content" v-html="renderedHtml"></div>
+        <!-- 结果（含流式生成中：内容 + 角标转圈） -->
+        <div v-else-if="content" class="ai-assistant__content">
+          <div v-if="streaming" class="ai-assistant__streaming-badge">
+            <a-spin :size="12" />
+          </div>
+          <div v-html="renderedHtml"></div>
+        </div>
 
         <!-- 空状态（需要输入但还没执行） -->
         <div v-else class="ai-assistant__empty">
@@ -410,6 +440,15 @@ watch(
   font-size: 14px;
   line-height: 1.7;
   color: var(--jt-text-primary);
+  position: relative;
+}
+
+/* 流式生成中的转圈角标（右上角小 spinner，提示还在生成） */
+.ai-assistant__streaming-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  opacity: 0.5;
 }
 
 .ai-assistant__content :deep(h2) {

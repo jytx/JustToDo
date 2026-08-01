@@ -19,11 +19,22 @@ use super::types::{
     ChatMessage, ChatRequest, ChatResponse, ToolCall, ToolChoice, ToolDef, TokenUsage,
 };
 
-/// Provider 抽象 —— 上层只调 chat() / test_connection()，不关心协议细节
+/// 流式增量回调：每收到一段文本 delta 就回调一次（参数为增量文本）
+pub type DeltaFn = Box<dyn Fn(&str) + Send + Sync>;
+
+/// Provider 抽象 —— 上层只调 chat() / chat_stream() / test_connection()，不关心协议细节
 #[async_trait]
 pub trait AiProvider: Send + Sync {
-    /// 发起 chat 请求，返回统一响应
+    /// 发起 chat 请求（一次性返回完整响应），用于结构化输出（tool_calls）等场景
     async fn chat(&self, req: &ChatRequest) -> Result<ChatResponse, AiError>;
+
+    /// 发起流式 chat 请求（SSE），每收到文本 delta 调 on_delta 回调。
+    /// 结束后返回汇总的完整响应（content 为拼好的全文）。
+    async fn chat_stream(
+        &self,
+        req: &ChatRequest,
+        on_delta: DeltaFn,
+    ) -> Result<ChatResponse, AiError>;
 
     /// 测试连接（发最小请求验证 key/地址/模型可用），成功返回模型名
     async fn test_connection(&self) -> Result<String, AiError>;
@@ -141,9 +152,83 @@ impl AiProvider for OpenAiProvider {
         self.chat(&req).await?;
         Ok(self.model.clone())
     }
-}
 
-/// 统一消息 → OpenAI 消息体
+    async fn chat_stream(
+        &self,
+        req: &ChatRequest,
+        on_delta: DeltaFn,
+    ) -> Result<ChatResponse, AiError> {
+        use futures_util::StreamExt;
+
+        let url = format!("{}/chat/completions", trim_slash(&self.base_url));
+        let mut body = self.build_body(req);
+        body["stream"] = json!(true); // 开启 SSE 流式
+
+        // 流式请求用无超时 client，避免长文本生成被 60s 掐断
+        let stream_client = reqwest::Client::builder()
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        let resp = stream_client
+            .post(&url)
+            .bearer_auth(&self.api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AiError::Network(e.to_string()))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(AiError::Http {
+                status: status.as_u16(),
+                body: truncate_body(&text),
+            });
+        }
+
+        // 逐块读 SSE，按行解析 data: {...delta.content...}
+        let mut full_content = String::new();
+        let mut buf = String::new(); // 半行缓冲（SSE 块边界不一定在换行处）
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk_res) = stream.next().await {
+            let chunk = chunk_res.map_err(|e| AiError::Network(e.to_string()))?;
+            buf.push_str(&String::from_utf8_lossy(&chunk));
+
+            // 按换行切分，最后一段可能不完整，留在 buf 里
+            while let Some(nl) = buf.find('\n') {
+                let line = buf[..nl].trim().to_string();
+                buf = buf[nl + 1..].to_string();
+
+                // SSE 格式：data: {json} 或 data: [DONE]
+                if let Some(json_str) = line.strip_prefix("data: ") {
+                    if json_str.trim() == "[DONE]" {
+                        // 流结束
+                        return Ok(ChatResponse {
+                            content: full_content,
+                            tool_calls: vec![],
+                            usage: None,
+                        });
+                    }
+                    // 解析 JSON，取 choices[0].delta.content
+                    if let Ok(val) = serde_json::from_str::<Value>(json_str) {
+                        if let Some(delta) = val.get("choices").and_then(|c| c.get(0))
+                            .and_then(|c| c.get("delta")).and_then(|d| d.get("content"))
+                            .and_then(|v| v.as_str())
+                        {
+                            full_content.push_str(delta);
+                            on_delta(delta);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 流自然结束（未收到 [DONE]，兼容部分兼容协议）
+        Ok(ChatResponse {
+            content: full_content,
+            tool_calls: vec![],
+            usage: None,
+        })
+    }
+}
 fn msg_to_openai(m: &ChatMessage) -> Value {
     match m {
         ChatMessage::system { content } => json!({ "role": "system", "content": content }),
@@ -359,10 +444,95 @@ impl AiProvider for AnthropicProvider {
         self.chat(&req).await?;
         Ok(self.model.clone())
     }
-}
 
-/// 统一消息 → Anthropic 消息体。
-/// 关键差异：assistant 的 tool_calls 和 tool 结果的 content 都是数组结构。
+    async fn chat_stream(
+        &self,
+        req: &ChatRequest,
+        on_delta: DeltaFn,
+    ) -> Result<ChatResponse, AiError> {
+        use futures_util::StreamExt;
+
+        let url = format!("{}/v1/messages", trim_slash(&self.base_url));
+        let mut body = self.build_body(req);
+        body["stream"] = json!(true); // 开启 SSE 流式
+
+        // 流式请求用无超时 client，避免长文本生成被 60s 掐断
+        let stream_client = reqwest::Client::builder()
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        let resp = stream_client
+            .post(&url)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AiError::Network(e.to_string()))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(AiError::Http {
+                status: status.as_u16(),
+                body: truncate_body(&text),
+            });
+        }
+
+        // Anthropic SSE 有 event: 和 data: 成对出现：
+        //   event: content_block_delta
+        //   data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"..."}}
+        // text 增量在 content_block_delta 的 delta.text 里；message_stop 表示结束。
+        let mut full_content = String::new();
+        let mut buf = String::new();
+        let mut cur_event = String::new(); // 当前 event 类型
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk_res) = stream.next().await {
+            let chunk = chunk_res.map_err(|e| AiError::Network(e.to_string()))?;
+            buf.push_str(&String::from_utf8_lossy(&chunk));
+
+            while let Some(nl) = buf.find('\n') {
+                let line = buf[..nl].trim_end().to_string();
+                buf = buf[nl + 1..].to_string();
+                let line = line.trim();
+
+                if line.is_empty() {
+                    // 空行分隔事件，清空当前 event
+                    cur_event.clear();
+                    continue;
+                }
+                if let Some(ev) = line.strip_prefix("event: ") {
+                    cur_event = ev.trim().to_string();
+                } else if let Some(json_str) = line.strip_prefix("data: ") {
+                    // 只在 content_block_delta 事件里取文本增量
+                    if cur_event == "content_block_delta" {
+                        if let Ok(val) = serde_json::from_str::<Value>(json_str) {
+                            if let Some(text) = val.get("delta").and_then(|d| d.get("text"))
+                                .and_then(|v| v.as_str())
+                            {
+                                full_content.push_str(text);
+                                on_delta(text);
+                            }
+                        }
+                    }
+                    // message_stop 事件 → 流结束
+                    if cur_event == "message_stop" {
+                        return Ok(ChatResponse {
+                            content: full_content,
+                            tool_calls: vec![],
+                            usage: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        // 流自然结束
+        Ok(ChatResponse {
+            content: full_content,
+            tool_calls: vec![],
+            usage: None,
+        })
+    }
+}
 fn msg_to_anthropic(m: &ChatMessage) -> Value {
     match m {
         ChatMessage::system { .. } => {

@@ -2,12 +2,23 @@
 // 所有命令返回 Result<T, String>，错误信息清晰传到前端
 
 use chrono::{Datelike, Timelike};
+use serde::Serialize;
 use sqlx::Row;
+use tauri::ipc::Channel;
 use tauri::State;
 
 use crate::models::*;
 
 pub(crate) type CmdResult<T> = Result<T, String>;
+
+/// AI 流式输出的单条增量消息（经 Tauri Channel 推给前端）
+#[derive(Serialize, Clone)]
+pub struct StreamChunk {
+    /// 本次增量文本（流过程中有，结束帧为 None）
+    pub delta: Option<String>,
+    /// 流是否结束（true = 最后一帧）
+    pub done: bool,
+}
 
 // ─── 工具函数 ────────────────────────────────────────────
 
@@ -2769,6 +2780,7 @@ fn fmt_local(dt: chrono::NaiveDateTime) -> String {
 pub async fn ai_summary(
     pool: State<'_, sqlx::SqlitePool>,
     mode: String,
+    on_event: Channel<StreamChunk>,
 ) -> CmdResult<serde_json::Value> {
     use crate::ai::{build_from_settings, ChatMessage, ChatRequest};
 
@@ -2873,7 +2885,15 @@ pub async fn ai_summary(
         ..Default::default()
     };
 
-    match provider.chat(&req).await {
+    // 流式调用：每收到 delta 通过 Channel 推给前端。
+    // 流结束时 invoke 自动 resolve（返回完整 content），前端据此切到完成态，无需单独 done 帧。
+    let on_delta = Box::new(move |delta: &str| {
+        let _ = on_event.send(StreamChunk {
+            delta: Some(delta.to_string()),
+            done: false,
+        });
+    });
+    match provider.chat_stream(&req, on_delta).await {
         Ok(resp) => Ok(serde_json::json!({
             "ok": true,
             "content": resp.content,
@@ -2884,8 +2904,6 @@ pub async fn ai_summary(
         })),
     }
 }
-
-/// 优先级数字 → 中文标签（供 AI prompt 可读性） */
 fn priority_label(p: i32) -> &'static str {
     match p {
         3 => "高",
@@ -3029,6 +3047,7 @@ pub async fn ai_summary_scope(
     pool: State<'_, sqlx::SqlitePool>,
     scope: serde_json::Value,
     truncate: Option<bool>,
+    on_event: Channel<StreamChunk>,
 ) -> CmdResult<serde_json::Value> {
     use crate::ai::{build_from_settings, ChatMessage, ChatRequest};
 
@@ -3084,7 +3103,14 @@ pub async fn ai_summary_scope(
         ..Default::default()
     };
 
-    match provider.chat(&req).await {
+    // 流式调用：每收到 delta 通过 Channel 推给前端，结束后返回完整 content
+    let on_delta = Box::new(move |delta: &str| {
+        let _ = on_event.send(StreamChunk {
+            delta: Some(delta.to_string()),
+            done: false,
+        });
+    });
+    match provider.chat_stream(&req, on_delta).await {
         Ok(resp) => Ok(serde_json::json!({
             "ok": true, "content": resp.content,
             "count": original_count, "kind": data.kind, "truncated": truncated,

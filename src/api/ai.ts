@@ -1,7 +1,7 @@
 // AI 相关 IPC 封装
 // 详见 discuss/2026-07-31-ai-config-design.md + 2026-07-31-ai-daily-summary-design.md
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, Channel } from "@tauri-apps/api/core";
 
 /** AI 操作结果（与 Rust 端 serde_json::json!({ ok, ... }) 对应） */
 export interface AiResult {
@@ -29,10 +29,30 @@ export interface AiSummaryResult {
   message?: string;
 }
 
+/** 流式输出的单条增量消息（后端 Channel 推送，与 Rust StreamChunk 对应） */
+export interface StreamChunk {
+  delta?: string;
+  done: boolean;
+}
+
+/** 创建流式 Channel：onDelta 收到增量文本时回调，返回 channel 实例传给 invoke */
+function createStreamChannel(onDelta: (text: string) => void): Channel<StreamChunk> {
+  const channel = new Channel<StreamChunk>();
+  channel.onmessage = (msg: StreamChunk) => {
+    if (msg.delta) onDelta(msg.delta);
+  };
+  return channel;
+}
+
 /** 生成每日小结 / 周报。
- *  mode: "daily"（今天）| "weekly"（本周） */
-export async function generateSummary(mode: "daily" | "weekly"): Promise<AiSummaryResult> {
-  return invoke<AiSummaryResult>("ai_summary", { mode });
+ *  mode: "daily"（今天）| "weekly"（本周）
+ *  onDelta: 流式回调，每收到一段文本增量触发（不传则不流式，但仍正常工作） */
+export async function generateSummary(
+  mode: "daily" | "weekly",
+  onDelta?: (text: string) => void,
+): Promise<AiSummaryResult> {
+  const onEvent = onDelta ? createStreamChannel(onDelta) : undefined;
+  return invoke<AiSummaryResult>("ai_summary", { mode, onEvent });
 }
 
 /** AI 总结范围：清单 / 目录 / 多选任务 */
@@ -56,12 +76,15 @@ export interface ScopeSummaryResult {
 }
 
 /** 按范围生成 AI 总结（清单/目录/多选）。
- *  truncate: true 时按设置阈值裁剪（前端超阈值弹确认后传 true） */
+ *  truncate: true 时按设置阈值裁剪（前端超阈值弹确认后传 true）
+ *  onDelta: 流式回调，每收到一段文本增量触发（不传则不流式，但仍正常工作） */
 export async function generateScopeSummary(
   scope: SummaryScope,
   truncate: boolean,
+  onDelta?: (text: string) => void,
 ): Promise<ScopeSummaryResult> {
-  return invoke<ScopeSummaryResult>("ai_summary_scope", { scope, truncate });
+  const onEvent = onDelta ? createStreamChannel(onDelta) : undefined;
+  return invoke<ScopeSummaryResult>("ai_summary_scope", { scope, truncate, onEvent });
 }
 
 /** AI 解析出的任务结构（自然语言建任务的草稿） */

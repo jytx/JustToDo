@@ -42,7 +42,11 @@ tauri-plugin-dialog = "2.7.1"
 
 # HTTP 客户端 —— 拉取法定节假日数据 + 调用 AI API（OpenAI/Anthropic）
 # rustls-tls：避免引入 OpenSSL 系统依赖，跨平台编译更稳
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+# stream：AI 流式输出（SSE）需要 resp.bytes_stream() 逐块读取
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
+
+# 流式 SSE 逐块读取所需（resp.bytes_stream() 返回 Stream<Item=Bytes>）
+futures-util = "0.3"
 
 # trait 内 async 方法所需（AiProvider trait 用了 async fn）
 async-trait = "0.1"
