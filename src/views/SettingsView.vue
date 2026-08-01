@@ -553,11 +553,13 @@ async function changeAttachmentPath() {
             <!-- API 地址 -->
             <div class="settings-section__item">
               <span>API 地址</span>
+              <!-- v-model 绑 store ref：输入过程即时更新 state（避免受控模式被打回），
+                   @change（失焦）才触发持久化 -->
               <a-input
-                :model-value="aiBaseUrl"
+                v-model="aiBaseUrl"
                 :placeholder="baseUrlPlaceholder"
                 style="width: 280px"
-                @change="(v: string) => settingsStore.setAiBaseUrl(v)"
+                @change="() => settingsStore.setAiBaseUrl(aiBaseUrl)"
               />
             </div>
 
@@ -565,10 +567,10 @@ async function changeAttachmentPath() {
             <div class="settings-section__item">
               <span>API Key</span>
               <a-input-password
-                :model-value="aiApiKey"
+                v-model="aiApiKey"
                 placeholder="sk-..."
                 style="width: 280px"
-                @change="(v: string) => settingsStore.setAiApiKey(v)"
+                @change="() => settingsStore.setAiApiKey(aiApiKey)"
               />
             </div>
 
@@ -576,10 +578,10 @@ async function changeAttachmentPath() {
             <div class="settings-section__item">
               <span>模型名</span>
               <a-input
-                :model-value="aiModel"
+                v-model="aiModel"
                 :placeholder="modelPlaceholder"
                 style="width: 280px"
-                @change="(v: string) => settingsStore.setAiModel(v)"
+                @change="() => settingsStore.setAiModel(aiModel)"
               />
             </div>
 
