@@ -126,6 +126,9 @@ const modelPlaceholder = computed(() =>
 const testing = ref(false);
 const testResult = ref<{ ok: boolean; message: string } | null>(null);
 
+/** 提示词编辑器展开状态（默认收起，点击标题展开） */
+const promptExpanded = ref<Record<string, boolean>>({});
+
 /** 切换协议：清空模型名（不同协议模型名不通用），地址保留 */
 async function onProviderChange(v: AiProvider): Promise<void> {
   await settingsStore.setAiProvider(v);
@@ -631,48 +634,68 @@ async function changeAttachmentPath() {
               <p class="settings-section__desc">自定义提示词。清空则使用默认。每日/周报支持 {mode} 占位符（自动替换为「今日」/「本周」）。</p>
 
               <div class="settings-section__prompt">
-                <div class="settings-section__prompt-head">
-                  <span class="settings-section__prompt-label">每日 / 周报</span>
-                  <a-button type="text" size="mini" @click="settingsStore.setAiPromptSmart(DEFAULT_PROMPT_SMART)">恢复默认</a-button>
+                <div class="settings-section__prompt-head" @click="promptExpanded.smart = !promptExpanded.smart">
+                  <span class="settings-section__prompt-label">
+                    <icon-right v-if="!promptExpanded.smart" :size="12" />
+                    <icon-down v-else :size="12" />
+                    每日 / 周报
+                  </span>
+                  <a-button type="text" size="mini" @click.stop="settingsStore.setAiPromptSmart(DEFAULT_PROMPT_SMART)">恢复默认</a-button>
                 </div>
                 <p class="settings-section__prompt-hint">顶栏 AI 按钮 / Cmd+Shift+D —— 按时间汇总今日或本周的任务</p>
                 <PromptEditor
+                  v-if="promptExpanded.smart"
                   v-model="aiPromptSmart"
                   @change="(v: string) => settingsStore.setAiPromptSmart(v)"
                 />
               </div>
 
               <div class="settings-section__prompt">
-                <div class="settings-section__prompt-head">
-                  <span class="settings-section__prompt-label">清单 / 目录总结</span>
-                  <a-button type="text" size="mini" @click="settingsStore.setAiPromptList(DEFAULT_PROMPT_LIST)">恢复默认</a-button>
+                <div class="settings-section__prompt-head" @click="promptExpanded.list = !promptExpanded.list">
+                  <span class="settings-section__prompt-label">
+                    <icon-right v-if="!promptExpanded.list" :size="12" />
+                    <icon-down v-else :size="12" />
+                    清单 / 目录总结
+                  </span>
+                  <a-button type="text" size="mini" @click.stop="settingsStore.setAiPromptList(DEFAULT_PROMPT_LIST)">恢复默认</a-button>
                 </div>
                 <p class="settings-section__prompt-hint">右键侧边栏的清单或目录 —— 总结整个清单/目录下的全部任务</p>
                 <PromptEditor
+                  v-if="promptExpanded.list"
                   v-model="aiPromptList"
                   @change="(v: string) => settingsStore.setAiPromptList(v)"
                 />
               </div>
 
               <div class="settings-section__prompt">
-                <div class="settings-section__prompt-head">
-                  <span class="settings-section__prompt-label">多选任务总结</span>
-                  <a-button type="text" size="mini" @click="settingsStore.setAiPromptTasks(DEFAULT_PROMPT_TASKS)">恢复默认</a-button>
+                <div class="settings-section__prompt-head" @click="promptExpanded.tasks = !promptExpanded.tasks">
+                  <span class="settings-section__prompt-label">
+                    <icon-right v-if="!promptExpanded.tasks" :size="12" />
+                    <icon-down v-else :size="12" />
+                    多选任务总结
+                  </span>
+                  <a-button type="text" size="mini" @click.stop="settingsStore.setAiPromptTasks(DEFAULT_PROMPT_TASKS)">恢复默认</a-button>
                 </div>
                 <p class="settings-section__prompt-hint">多选任务后批量菜单 —— 仅总结你手动选中的那几个任务</p>
                 <PromptEditor
+                  v-if="promptExpanded.tasks"
                   v-model="aiPromptTasks"
                   @change="(v: string) => settingsStore.setAiPromptTasks(v)"
                 />
               </div>
 
               <div class="settings-section__prompt">
-                <div class="settings-section__prompt-head">
-                  <span class="settings-section__prompt-label">笔记摘要</span>
-                  <a-button type="text" size="mini" @click="settingsStore.setAiPromptNote(DEFAULT_PROMPT_NOTE)">恢复默认</a-button>
+                <div class="settings-section__prompt-head" @click="promptExpanded.note = !promptExpanded.note">
+                  <span class="settings-section__prompt-label">
+                    <icon-right v-if="!promptExpanded.note" :size="12" />
+                    <icon-down v-else :size="12" />
+                    笔记摘要
+                  </span>
+                  <a-button type="text" size="mini" @click.stop="settingsStore.setAiPromptNote(DEFAULT_PROMPT_NOTE)">恢复默认</a-button>
                 </div>
                 <p class="settings-section__prompt-hint">右键侧边栏的笔记本/笔记本目录 —— 提炼笔记内容要点</p>
                 <PromptEditor
+                  v-if="promptExpanded.note"
                   v-model="aiPromptNote"
                   @change="(v: string) => settingsStore.setAiPromptNote(v)"
                 />
@@ -1020,9 +1043,19 @@ async function changeAttachmentPath() {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  cursor: pointer;
+  padding: 4px 0;
+  border-radius: 6px;
+}
+
+.settings-section__prompt-head:hover {
+  background-color: var(--jt-surface-hover);
 }
 
 .settings-section__prompt-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 13px;
   font-weight: 500;
   color: var(--jt-text-primary);

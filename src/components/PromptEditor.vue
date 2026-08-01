@@ -96,8 +96,8 @@ function toggleMode(): void {
 /* 源码 textarea：等宽字体，自动高度 */
 .prompt-editor__textarea {
   width: 100%;
-  min-height: 120px;
-  max-height: 320px;
+  min-height: 240px;
+  max-height: 480px;
   padding: 10px 12px;
   border: none;
   outline: none;
@@ -111,8 +111,8 @@ function toggleMode(): void {
 
 /* 预览区：复用 Markdown 渲染样式 */
 .prompt-editor__preview {
-  min-height: 120px;
-  max-height: 320px;
+  min-height: 240px;
+  max-height: 480px;
   overflow-y: auto;
   padding: 10px 14px;
   font-size: 13px;
