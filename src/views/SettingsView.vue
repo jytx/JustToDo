@@ -635,6 +635,7 @@ async function changeAttachmentPath() {
                   <span class="settings-section__prompt-label">每日 / 周报</span>
                   <a-button type="text" size="mini" @click="settingsStore.setAiPromptSmart(DEFAULT_PROMPT_SMART)">恢复默认</a-button>
                 </div>
+                <p class="settings-section__prompt-hint">顶栏 AI 按钮 / Cmd+Shift+D —— 按时间汇总今日或本周的任务</p>
                 <PromptEditor
                   v-model="aiPromptSmart"
                   @change="(v: string) => settingsStore.setAiPromptSmart(v)"
@@ -646,6 +647,7 @@ async function changeAttachmentPath() {
                   <span class="settings-section__prompt-label">清单 / 目录总结</span>
                   <a-button type="text" size="mini" @click="settingsStore.setAiPromptList(DEFAULT_PROMPT_LIST)">恢复默认</a-button>
                 </div>
+                <p class="settings-section__prompt-hint">右键侧边栏的清单或目录 —— 总结整个清单/目录下的全部任务</p>
                 <PromptEditor
                   v-model="aiPromptList"
                   @change="(v: string) => settingsStore.setAiPromptList(v)"
@@ -657,6 +659,7 @@ async function changeAttachmentPath() {
                   <span class="settings-section__prompt-label">多选任务总结</span>
                   <a-button type="text" size="mini" @click="settingsStore.setAiPromptTasks(DEFAULT_PROMPT_TASKS)">恢复默认</a-button>
                 </div>
+                <p class="settings-section__prompt-hint">多选任务后批量菜单 —— 仅总结你手动选中的那几个任务</p>
                 <PromptEditor
                   v-model="aiPromptTasks"
                   @change="(v: string) => settingsStore.setAiPromptTasks(v)"
@@ -668,6 +671,7 @@ async function changeAttachmentPath() {
                   <span class="settings-section__prompt-label">笔记摘要</span>
                   <a-button type="text" size="mini" @click="settingsStore.setAiPromptNote(DEFAULT_PROMPT_NOTE)">恢复默认</a-button>
                 </div>
+                <p class="settings-section__prompt-hint">右键侧边栏的笔记本/笔记本目录 —— 提炼笔记内容要点</p>
                 <PromptEditor
                   v-model="aiPromptNote"
                   @change="(v: string) => settingsStore.setAiPromptNote(v)"
@@ -1022,6 +1026,14 @@ async function changeAttachmentPath() {
   font-size: 13px;
   font-weight: 500;
   color: var(--jt-text-primary);
+}
+
+/* 提示词使用场景说明（标题下灰色小字） */
+.settings-section__prompt-hint {
+  font-size: 12px;
+  color: var(--jt-text-tertiary);
+  margin: 2px 0 0;
+  line-height: 1.4;
 }
 
 /* AI 设置折叠面板：去掉 Arco 默认左缩进，标题字号统一 */
