@@ -18,7 +18,6 @@ import {
   IconRight,
   IconDown,
   IconFolder,
-  IconClose,
   IconArchive,
 } from "@arco-design/web-vue/es/icon";
 // IconEdit 移到 SidebarListNode 中使用
@@ -1371,13 +1370,6 @@ onMounted(async () => {
           @keydown.enter="confirmNewList"
           @keydown.escape.stop="showCreateDialog = false"
         />
-        <button
-          class="sidebar-create__close"
-          title="关闭"
-          @click="showCreateDialog = false"
-        >
-          <icon-close :size="14" />
-        </button>
       </div>
       <div class="sidebar-create__divider" />
       <!-- 属性行：目录 + 颜色 trigger（hover/focus 展示色板） -->
@@ -1433,13 +1425,6 @@ onMounted(async () => {
           @keydown.enter="saveListEdit"
           @keydown.escape.stop="showEditDialog = false"
         />
-        <button
-          class="sidebar-create__close"
-          title="关闭"
-          @click="showEditDialog = false"
-        >
-          <icon-close :size="14" />
-        </button>
       </div>
       <div class="sidebar-create__divider" />
       <!-- 属性行：仅颜色 trigger（清单不能改父级目录） -->
@@ -1482,13 +1467,6 @@ onMounted(async () => {
           @keydown.enter="confirmNewTag"
           @keydown.escape.stop="showCreateTagDialog = false"
         />
-        <button
-          class="sidebar-create__close"
-          title="关闭"
-          @click="showCreateTagDialog = false"
-        >
-          <icon-close :size="14" />
-        </button>
       </div>
       <div class="sidebar-create__attrs">
         <span class="sidebar-create__spacer" />
@@ -1515,13 +1493,6 @@ onMounted(async () => {
           @keydown.enter="saveTagEdit"
           @keydown.escape.stop="showEditTagDialog = false"
         />
-        <button
-          class="sidebar-create__close"
-          title="关闭"
-          @click="showEditTagDialog = false"
-        >
-          <icon-close :size="14" />
-        </button>
       </div>
       <div class="sidebar-create__attrs">
         <span class="sidebar-create__spacer" />
@@ -1548,13 +1519,6 @@ onMounted(async () => {
           @keydown.enter="confirmNewSubFolder"
           @keydown.escape.stop="showCreateSubFolderDialog = false"
         />
-        <button
-          class="sidebar-create__close"
-          title="关闭"
-          @click="showCreateSubFolderDialog = false"
-        >
-          <icon-close :size="14" />
-        </button>
       </div>
       <div class="sidebar-create__divider" />
       <div class="sidebar-create__attrs">

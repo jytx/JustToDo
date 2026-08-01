@@ -1,10 +1,8 @@
 /* QuickAdd 风格创建弹窗 —— 侧栏清单/标签/习惯新建 + HabitView 习惯新建
    复用样式（全局，非 scoped，因为 class 用在多个组件的 modal 内部 DOM 中） */
 
-/* === 弹窗全局：去掉 arco 默认标题栏 + 内边距（圆角由 theme.css 全局统一） === */
-.sidebar-create-modal .arco-modal-header {
-  display: none;
-}
+/* === 弹窗全局：去内边距（圆角由 theme.css 全局统一）
+   标题栏保留，沿用 Arco 默认右上角关闭按钮，与 AI 弹窗等保持一致 === */
 .sidebar-create-modal .arco-modal-body {
   padding: 0;
 }
@@ -14,7 +12,7 @@
   overflow: hidden;
 }
 
-/* === 顶部输入行：裸 input + × 关闭 === */
+/* === 顶部输入行：裸 input === */
 .sidebar-create__input-row {
   display: flex;
   align-items: center;
@@ -36,26 +34,6 @@
 
 .sidebar-create__input::placeholder {
   color: var(--jt-text-tertiary);
-}
-
-.sidebar-create__close {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--jt-text-tertiary);
-  cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
-}
-
-.sidebar-create__close:hover {
-  background-color: var(--jt-surface-hover);
-  color: var(--jt-text-primary);
 }
 
 /* === 分割线 === */

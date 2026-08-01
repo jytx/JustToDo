@@ -615,7 +615,7 @@ function selectHabit(id: string) {
       modal-class="habit-form-modal"
     >
       <div class="habit-form">
-        <!-- 顶部：大图标 + 名称 + 关闭 -->
+        <!-- 顶部：大图标 + 名称 -->
         <div class="habit-form__head">
           <div
             class="habit-form__avatar"
@@ -632,13 +632,6 @@ function selectHabit(id: string) {
             @keydown.enter="createOrUpdateHabit"
             @keydown.escape.stop="showCreateDialog = false"
           />
-          <button
-            class="habit-form__close"
-            title="关闭"
-            @click="showCreateDialog = false"
-          >
-            <icon-close :size="14" />
-          </button>
         </div>
 
         <!-- 属性行：图标 / 颜色 / 时段 / 目标 / 提醒 / 重复 -->
@@ -1352,10 +1345,8 @@ function selectHabit(id: string) {
   font-size: 18px;
 }
 
-/* === 新建/编辑习惯弹窗（完整表单）：去标题栏/内边距，圆角由 theme.css 全局统一 === */
-.habit-form-modal .arco-modal-header {
-  display: none;
-}
+/* === 新建/编辑习惯弹窗（完整表单）：去内边距，圆角由 theme.css 全局统一
+   标题栏保留，沿用 Arco 默认右上角关闭按钮，与 AI 弹窗等保持一致 === */
 .habit-form-modal .arco-modal-body {
   padding: 0;
 }
@@ -1365,7 +1356,7 @@ function selectHabit(id: string) {
   flex-direction: column;
 }
 
-/* 顶部：大图标 + 名称 + 关闭 */
+/* 顶部：大图标 + 名称 */
 .habit-form__head {
   display: flex;
   align-items: center;
@@ -1406,25 +1397,6 @@ function selectHabit(id: string) {
 }
 .habit-form__name::placeholder {
   color: var(--jt-text-tertiary);
-}
-
-.habit-form__close {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--jt-text-tertiary);
-  cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
-}
-.habit-form__close:hover {
-  background-color: var(--jt-surface-hover);
-  color: var(--jt-text-primary);
 }
 
 /* 属性行：垂直堆叠 */
