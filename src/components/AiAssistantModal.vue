@@ -249,22 +249,21 @@ watch(
   >
     <template #title>{{ title }}</template>
     <div class="ai-assistant">
-      <!-- 工具选择 + 输入区 -->
-
-      <!-- 工具选择 + 输入区 -->
+      <!-- 工具选择行：选择器在左，生成按钮在最右 -->
       <div class="ai-assistant__controls">
-        <a-select
-          v-model="selectedTool"
-          size="small"
-          style="width: 160px"
-          @change="(v: any) => onToolChange(String(v))"
-        >
-          <a-option v-for="t in TOOLS" :key="t.value" :value="t.value">
-            {{ t.label }}
-          </a-option>
-        </a-select>
-
-        <!-- 不需要输入的工具：选择器右侧直接放生成按钮 -->
+        <div class="ai-assistant__tool-left">
+          <a-select
+            v-model="selectedTool"
+            size="small"
+            style="width: 160px"
+            @change="(v: any) => onToolChange(String(v))"
+          >
+            <a-option v-for="t in TOOLS" :key="t.value" :value="t.value">
+              {{ t.label }}
+            </a-option>
+          </a-select>
+          <span class="ai-assistant__tool-desc">{{ currentTool.desc }}</span>
+        </div>
         <a-button
           v-if="!currentTool.needInput"
           type="primary"
@@ -275,22 +274,20 @@ watch(
           <template #icon><icon-robot :size="14" /></template>
           生成
         </a-button>
+      </div>
 
-        <span v-if="!currentTool.needInput" class="ai-assistant__tool-desc">{{ currentTool.desc }}</span>
-
-        <!-- 输入框（需要输入的工具才显示） -->
-        <div v-if="currentTool.needInput" class="ai-assistant__input-row">
-          <a-input
-            v-model="userInput"
-            :placeholder="currentTool.desc"
-            allow-clear
-            @keydown.enter="execute"
-          />
-          <a-button type="primary" size="small" :loading="loading" @click="execute">
-            <template #icon><icon-robot :size="14" /></template>
-            生成
-          </a-button>
-        </div>
+      <!-- 输入框（需要输入的工具才显示）：输入 + 生成按钮 -->
+      <div v-if="currentTool.needInput" class="ai-assistant__input-row">
+        <a-input
+          v-model="userInput"
+          :placeholder="currentTool.desc"
+          allow-clear
+          @keydown.enter="execute"
+        />
+        <a-button type="primary" size="small" :loading="loading" @click="execute">
+          <template #icon><icon-robot :size="14" /></template>
+          生成
+        </a-button>
       </div>
 
       <!-- 结果区 -->
@@ -333,10 +330,16 @@ watch(
 
 .ai-assistant__controls {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.ai-assistant__tool-left {
+  display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 16px;
 }
 
 .ai-assistant__tool-desc {
@@ -348,7 +351,7 @@ watch(
   display: flex;
   gap: 8px;
   width: 100%;
-  margin-top: 4px;
+  margin-bottom: 16px;
 }
 
 .ai-assistant__body {
