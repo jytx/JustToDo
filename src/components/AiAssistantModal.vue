@@ -263,7 +263,7 @@ watch(
   >
     <template #title>{{ title }}</template>
     <div class="ai-assistant">
-      <!-- 工具选择行：选择器在左，生成按钮在最右 -->
+      <!-- 第一行：工具选择（左）+ 生成按钮（右，始终在这一行） -->
       <div class="ai-assistant__controls">
         <div class="ai-assistant__tool-left">
           <a-select
@@ -278,7 +278,6 @@ watch(
           </a-select>
         </div>
         <a-button
-          v-if="!currentTool.needInput"
           type="primary"
           size="small"
           :loading="loading"
@@ -289,22 +288,18 @@ watch(
         </a-button>
       </div>
 
-      <!-- 工具描述（选择器下方独立一行） -->
+      <!-- 工具描述 -->
       <p class="ai-assistant__tool-desc">{{ currentTool.desc }}</p>
 
-      <!-- 输入框（需要输入的工具才显示）：输入 + 生成按钮 -->
-      <div v-if="currentTool.needInput" class="ai-assistant__input-row">
-        <a-input
-          v-model="userInput"
-          :placeholder="currentTool.desc"
-          allow-clear
-          @keydown.enter="execute"
-        />
-        <a-button type="primary" size="small" :loading="loading" @click="execute">
-          <template #icon><icon-robot :size="14" /></template>
-          生成
-        </a-button>
-      </div>
+      <!-- 输入框（需要输入的工具才显示，单独一行） -->
+      <a-input
+        v-if="currentTool.needInput"
+        v-model="userInput"
+        :placeholder="currentTool.desc"
+        allow-clear
+        style="margin-bottom: 16px"
+        @keydown.enter="execute"
+      />
 
       <!-- 结果区 -->
       <div class="ai-assistant__body">
