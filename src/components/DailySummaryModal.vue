@@ -58,48 +58,59 @@ const saving = ref(false);
 
 /** 生成总结：按模式分发到不同 API */
 async function generate(truncate = false): Promise<void> {
-  loading.value = true;
-  errorMsg.value = "";
-  isEmpty.value = false;
-  content.value = "";
-  truncatedHint.value = "";
+  // 去重：watch(visible) 和 watch(scope) 可能同时触发，避免重复调用导致重复提示
+  if (generating) return;
+  generating = true;
+  try {
+    loading.value = true;
+    errorMsg.value = "";
+    isEmpty.value = false;
+    content.value = "";
+    truncatedHint.value = "";
 
-  const scope = currentScope.value;
-  if (scope) {
-    // scope 模式：调 generateScopeSummary
-    const res = await generateScopeSummary(scope, truncate);
-    loading.value = false;
-    if (res.empty) {
-      // 范围为空：toast 提示并关闭弹窗（不占用弹窗空间）
+    const scope = currentScope.value;
+    if (scope) {
+      // scope 模式：调 generateScopeSummary
+      const res = await generateScopeSummary(scope, truncate);
       loading.value = false;
-      Message.info(res.message ?? "该范围暂无内容");
-      emit("update:visible", false);
-      return;
-    }
-    if (res.ok && res.content) {
-      content.value = res.content;
-      // 检查是否超阈值（未裁剪且 count > 阈值 → 弹确认）
-      if (!truncate && typeof res.count === "number") {
-        const threshold = settingsStore.aiSummaryTruncateThreshold;
-        if (res.count > threshold) {
-          askTruncate(res.count, threshold);
+      if (res.empty) {
+        // 范围为空：toast 提示并关闭弹窗（不占用弹窗空间）。
+        // 防抖：500ms 内重复的 empty 提示只显示一次（避免 watch 重复触发）
+        const now = Date.now();
+        if (now - lastEmptyToast > 500) {
+          lastEmptyToast = now;
+          Message.info(res.message ?? "该范围暂无内容");
         }
+        emit("update:visible", false);
+        return;
       }
-      if (res.truncated) {
-        truncatedHint.value = `（已智能裁剪至重点任务，共 ${res.count} 项）`;
+      if (res.ok && res.content) {
+        content.value = res.content;
+        // 检查是否超阈值（未裁剪且 count > 阈值 → 弹确认）
+        if (!truncate && typeof res.count === "number") {
+          const threshold = settingsStore.aiSummaryTruncateThreshold;
+          if (res.count > threshold) {
+            askTruncate(res.count, threshold);
+          }
+        }
+        if (res.truncated) {
+          truncatedHint.value = `（已智能裁剪至重点任务，共 ${res.count} 项）`;
+        }
+      } else {
+        errorMsg.value = res.message ?? "生成失败";
       }
     } else {
-      errorMsg.value = res.message ?? "生成失败";
+      // smart 模式：调 generateSummary
+      const res = await generateSummary(smartMode.value);
+      loading.value = false;
+      if (res.ok && res.content) {
+        content.value = res.content;
+      } else {
+        errorMsg.value = res.message ?? "生成失败";
+      }
     }
-  } else {
-    // smart 模式：调 generateSummary
-    const res = await generateSummary(smartMode.value);
-    loading.value = false;
-    if (res.ok && res.content) {
-      content.value = res.content;
-    } else {
-      errorMsg.value = res.message ?? "生成失败";
-    }
+  } finally {
+    generating = false;
   }
 }
 
@@ -162,21 +173,23 @@ async function onSaveAsNote(): Promise<void> {
   }
 }
 
-// 打开时自动生成；关闭时清空状态 + 延迟清 scope。
-// 关键：scope 清空用 nextTick 延迟，避免与 generate 读取 scope 竞争
-// （generate 是 async，关闭瞬间清 scope 会让正在跑的 generate 读到 null）。
+// ─── 触发逻辑（避免重复 generate 导致重复提示）───
+// generating 标志：generate 是 async，期间再次触发（watch visible + scope 同时）直接跳过
+let generating = false;
+/** empty toast 防抖时间戳（避免重复触发显示多个提示） */
+let lastEmptyToast = 0;
+
 watch(
   () => props.visible,
   (v) => {
     if (v) {
-      generate();
+      if (!generating) generate();
     } else {
       content.value = "";
       errorMsg.value = "";
       isEmpty.value = false;
       truncatedHint.value = "";
       smartMode.value = "daily";
-      // 延迟到下一 tick 清空，确保 generate 已快照 scope
       nextTick(() => {
         taskStore.pendingSummaryScope = null;
       });
@@ -184,12 +197,11 @@ watch(
   },
 );
 
-// 弹窗已打开时，scope 变化也要重新生成（如不关弹窗直接切另一个清单总结）。
-// 仅在 visible 时响应，避免关闭流程中 scope 被 nextTick 清空时误触发。
+// 弹窗已打开时，scope 变化重新生成（切清单/切目录场景）
 watch(
   () => taskStore.pendingSummaryScope,
   (scope) => {
-    if (props.visible && scope) {
+    if (props.visible && scope && !generating) {
       generate();
     }
   },

@@ -43,8 +43,7 @@ const panelWidth = ref(480);
 /** AI 每日小结弹窗可见性 */
 const summaryVisible = ref(false);
 
-/** 打开 AI 总结弹窗（顶栏/快捷键入口，smart 模式）。
- *  侧边栏/批量菜单入口直接设置 taskStore.pendingSummaryScope 后再打开。 */
+/** 打开 AI 总结弹窗（顶栏/快捷键入口，smart 模式）。 */
 function openSummary(): void {
   taskStore.pendingSummaryScope = null;
   summaryVisible.value = true;
@@ -56,8 +55,7 @@ function onAiSummary(scope: import("@/api/ai").SummaryScope): void {
   summaryVisible.value = true;
 }
 
-// 监听 pendingSummaryScope：批量菜单等无法直接触达 AppLayout 的入口，
-// 设置 store 的 pendingSummaryScope 后由这里统一打开弹窗。
+// 批量菜单入口：设置 scope（多选任务）后由 watch 统一打开弹窗
 watch(
   () => taskStore.pendingSummaryScope,
   (scope) => {
@@ -331,7 +329,7 @@ useShortcuts({
           title="AI 小结 (Cmd+Shift+D)"
           @click="openSummary()"
         >
-          <template #icon><icon-thunderbolt :size="18" /></template>
+          <template #icon><icon-robot :size="18" /></template>
         </a-button>
         <a-button
           v-if="showGlobalActions"
