@@ -91,18 +91,26 @@ async function execute(): Promise<void> {
         break;
       }
       case "list": {
-        const listId = taskStore.currentListId;
-        const list = listStore.getById(listId);
-        if (!list) {
-          errorMsg.value = "无法获取当前清单";
-          break;
+        // 优先用 pendingSummaryScope（侧边栏右键传入的具体清单），
+        // 没有才用当前视图清单
+        const scopeFromCtx = taskStore.pendingSummaryScope;
+        let scope: SummaryScope;
+        if (scopeFromCtx && (scopeFromCtx.type === "list" || scopeFromCtx.type === "folder")) {
+          scope = scopeFromCtx;
+        } else {
+          const listId = taskStore.currentListId;
+          const list = listStore.getById(listId);
+          if (!list) {
+            errorMsg.value = "无法获取当前清单";
+            break;
+          }
+          scope = {
+            type: "list",
+            id: listId,
+            name: list.name,
+            kind: (list.kind ?? "task") as "task" | "note",
+          };
         }
-        const scope: SummaryScope = {
-          type: "list",
-          id: listId,
-          name: list.name,
-          kind: (list.kind ?? "task") as "task" | "note",
-        };
         const res = await generateScopeSummary(scope, false);
         if (res.empty) {
           errorMsg.value = res.message ?? "该清单暂无内容";
@@ -114,12 +122,18 @@ async function execute(): Promise<void> {
         break;
       }
       case "tasks": {
-        const ids = taskStore.batchSelectedIdsArr;
-        if (ids.length === 0) {
-          errorMsg.value = "请先多选任务";
-          break;
+        const scopeFromCtx = taskStore.pendingSummaryScope;
+        let scope: SummaryScope;
+        if (scopeFromCtx && scopeFromCtx.type === "tasks") {
+          scope = scopeFromCtx;
+        } else {
+          const ids = taskStore.batchSelectedIdsArr;
+          if (ids.length === 0) {
+            errorMsg.value = "请先多选任务";
+            break;
+          }
+          scope = { type: "tasks", ids };
         }
-        const scope: SummaryScope = { type: "tasks", ids };
         const res = await generateScopeSummary(scope, false);
         if (res.ok && res.content) content.value = res.content;
         else errorMsg.value = res.message ?? "生成失败";
