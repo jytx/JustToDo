@@ -314,7 +314,7 @@ function applyAiSummary(): void {
 
     <!-- AI 总结（仅 AI 启用时显示）：总结选中的任务 -->
     <MenuPopoverItem v-if="aiEnabled" @click="applyAiSummary">
-      <icon-magic :size="15" />
+      <icon-thunderbolt :size="15" />
       <span>AI 总结</span>
     </MenuPopoverItem>
 

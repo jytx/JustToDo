@@ -70,9 +70,10 @@ async function generate(truncate = false): Promise<void> {
     const res = await generateScopeSummary(scope, truncate);
     loading.value = false;
     if (res.empty) {
-      // 范围为空：友好提示，不调 AI，不显示重试
-      isEmpty.value = true;
-      errorMsg.value = res.message ?? "该范围暂无内容";
+      // 范围为空：toast 提示并关闭弹窗（不占用弹窗空间）
+      loading.value = false;
+      Message.info(res.message ?? "该范围暂无内容");
+      emit("update:visible", false);
       return;
     }
     if (res.ok && res.content) {
