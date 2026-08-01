@@ -7,7 +7,7 @@
 // - scope 模式：清单/目录/多选，调 generateScopeSummary(scope)，无切换 radio
 //
 // 超阈值裁剪：scope 模式下若返回 count > 设置阈值，弹确认是否裁剪
-import { ref, watch, computed } from "vue";
+import { ref, watch, computed, nextTick } from "vue";
 import { Message, Modal } from "@arco-design/web-vue";
 import { marked } from "marked";
 import { generateSummary, generateScopeSummary, type SummaryScope } from "@/api/ai";
@@ -152,7 +152,9 @@ async function onSaveAsNote(): Promise<void> {
   }
 }
 
-// 打开时自动生成；关闭时清空状态 + scope
+// 打开时自动生成；关闭时清空状态 + 延迟清 scope。
+// 关键：scope 清空用 nextTick 延迟，避免与 generate 读取 scope 竞争
+// （generate 是 async，关闭瞬间清 scope 会让正在跑的 generate 读到 null）。
 watch(
   () => props.visible,
   (v) => {
@@ -163,8 +165,21 @@ watch(
       errorMsg.value = "";
       truncatedHint.value = "";
       smartMode.value = "daily";
-      // 关闭时清掉 scope（下次默认回 smart 模式）
-      taskStore.pendingSummaryScope = null;
+      // 延迟到下一 tick 清空，确保 generate 已快照 scope
+      nextTick(() => {
+        taskStore.pendingSummaryScope = null;
+      });
+    }
+  },
+);
+
+// 弹窗已打开时，scope 变化也要重新生成（如不关弹窗直接切另一个清单总结）。
+// 仅在 visible 时响应，避免关闭流程中 scope 被 nextTick 清空时误触发。
+watch(
+  () => taskStore.pendingSummaryScope,
+  (scope) => {
+    if (props.visible && scope) {
+      generate();
     }
   },
 );
