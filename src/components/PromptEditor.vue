@@ -7,6 +7,7 @@
 // 与任务详情面板的富文本工具栏风格一致，但操作的是纯文本（非 Tiptap）。
 import { ref, watch, nextTick } from "vue";
 import { marked } from "marked";
+import { polishText } from "@/api/ai";
 
 const props = defineProps<{
   /** 提示词文本（v-model） */
@@ -24,6 +25,8 @@ const mode = ref<"edit" | "preview">("edit");
 const previewHtml = ref("");
 /** 工具栏是否展开（仅在编辑模式可用） */
 const toolbarOpen = ref(false);
+/** AI 润色进行中 */
+const polishing = ref(false);
 
 /** textarea 元素引用（工具栏插入需要操作光标位置） */
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
@@ -58,6 +61,26 @@ function toggleMode(): void {
 /** 切换工具栏展开/收起 */
 function toggleToolbar(): void {
   toolbarOpen.value = !toolbarOpen.value;
+}
+
+/** AI 润色：用 polishText 优化当前提示词文本，流式替换 */
+async function onPolish(): Promise<void> {
+  if (polishing.value || !props.modelValue.trim()) return;
+  polishing.value = true;
+  // 切到编辑模式（确保看到流式变化）
+  mode.value = "edit";
+  let result = "";
+  const res = await polishText(props.modelValue, (delta) => {
+    result += delta;
+    emit("update:modelValue", result);
+    // 同步更新 textarea 显示（v-model 是单向 :value，需手动同步）
+    if (textareaRef.value) textareaRef.value.value = result;
+  });
+  polishing.value = false;
+  if (res.ok && res.content) {
+    emit("update:modelValue", res.content);
+    emit("change", res.content);
+  }
 }
 
 // ─── Markdown 工具栏：在 textarea 光标处插入语法 ───
@@ -216,7 +239,7 @@ function insertHardBreak(): void {
 
 <template>
   <div class="prompt-editor">
-    <!-- 顶部工具栏：模式切换 + 富文本工具栏开关 -->
+    <!-- 顶部工具栏：模式切换 + 富文本工具栏开关 + AI 润色 -->
     <div class="prompt-editor__toolbar">
       <a-button type="text" size="mini" @click="toggleToolbar" :disabled="mode !== 'edit'" title="Markdown 工具栏">
         <template #icon><icon-edit :size="14" /></template>
@@ -228,6 +251,19 @@ function insertHardBreak(): void {
           <icon-edit v-else :size="14" />
         </template>
         {{ mode === "edit" ? "预览" : "编辑" }}
+      </a-button>
+      <!-- AI 润色：优化提示词文本（流式替换） -->
+      <a-button
+        type="text"
+        size="mini"
+        :loading="polishing"
+        :disabled="mode !== 'edit' || polishing"
+        title="AI 润色"
+        class="prompt-editor__polish-btn"
+        @click="onPolish"
+      >
+        <template #icon><icon-robot :size="14" /></template>
+        润色
       </a-button>
     </div>
 
@@ -326,6 +362,15 @@ function insertHardBreak(): void {
   padding: 2px 4px;
   border-bottom: 1px solid var(--jt-border);
   background-color: var(--jt-surface-hover);
+}
+
+/* AI 润色按钮：主色调，与工具/预览按钮区分 */
+.prompt-editor__polish-btn {
+  color: var(--jt-primary);
+  margin-left: 4px;
+}
+.prompt-editor__polish-btn:hover {
+  color: var(--jt-primary);
 }
 
 /* Markdown 工具栏：与任务详情富文本工具栏风格一致 */
