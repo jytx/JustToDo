@@ -297,7 +297,7 @@ watch(
         v-model="userInput"
         :placeholder="currentTool.desc"
         allow-clear
-        style="margin-bottom: 16px"
+        style="margin-bottom: 16px; border-radius: 8px"
         @keydown.enter="execute"
       />
 
