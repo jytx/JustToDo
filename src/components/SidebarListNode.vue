@@ -364,6 +364,7 @@ function onDrop(e: DragEvent) {
         @addList="(n: ListTreeNode) => $emit('addList', n)"
         @addTask="(n: ListTreeNode) => $emit('addTask', n)"
         @archive="(n: ListTreeNode) => $emit('archive', n)"
+        @aiSummary="(n: ListTreeNode) => $emit('aiSummary', n)"
         @move="(id: string, target: ListTreeNode, pos: 'before' | 'after' | 'inside') => $emit('move', id, target, pos)"
         @contextmenu="(e: MouseEvent, n: ListTreeNode) => $emit('contextmenu', e, n)"
       />
