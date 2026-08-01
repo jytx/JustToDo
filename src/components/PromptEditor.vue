@@ -77,7 +77,10 @@ function nodeToMarkdown(node: Node): string {
   let result = "";
   node.childNodes.forEach((child) => {
     if (child.nodeType === Node.TEXT_NODE) {
-      result += child.textContent ?? "";
+      // 跳过元素之间的纯空白文本节点（如 </p>\n<p> 之间的换行）
+      const text = child.textContent ?? "";
+      if (text.trim() === "") return;
+      result += text;
     } else if (child.nodeType === Node.ELEMENT_NODE) {
       const el = child as HTMLElement;
       const inner = nodeToMarkdown(el);
