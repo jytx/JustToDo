@@ -178,30 +178,31 @@ pub async fn list_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdRe
         let is_folder: bool = row.get::<i32, _>("is_folder") != 0;
         let kind: String = row.try_get("kind").unwrap_or_else(|_| "task".to_string());
 
+        // 无论删的是目录还是清单，都把它「直接挂载的任务」迁移到对应的默认容器。
+        // 历史 bug：删目录只迁移了子清单的 parent_id，没动 tasks 表，导致挂在该目录
+        // id 上的任务（list_id = 被删 id）变成孤儿——一旦其中有重复模板，每次后台 tick
+        // 都会因外键约束失败而报错（code 787）。这里统一兜底，避免再产生孤儿。
+        let fallback_list = if kind == "note" {
+            "default-notebook"
+        } else {
+            "inbox"
+        };
+        sqlx::query("UPDATE tasks SET list_id = $1, updated_at = $2 WHERE list_id = $3")
+            .bind(fallback_list)
+            .bind(now())
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("迁移条目失败: {}", e))?;
+
         if is_folder {
-            // 删除目录：把子项的 parent_id 提升到被删目录的 parent_id
+            // 删除目录：把子清单/子目录的 parent_id 提升到被删目录的 parent_id
             sqlx::query("UPDATE lists SET parent_id = $1 WHERE parent_id = $2")
                 .bind(&parent_id)
                 .bind(&id)
                 .execute(pool.inner())
                 .await
                 .map_err(|e| format!("迁移子项失败: {}", e))?;
-        } else {
-            // 删除清单/笔记本：把其下条目迁移到对应的默认容器
-            // - kind='task' → 收件箱（inbox）
-            // - kind='note' → 默认笔记本（default-notebook）
-            let fallback_list = if kind == "note" {
-                "default-notebook"
-            } else {
-                "inbox"
-            };
-            sqlx::query("UPDATE tasks SET list_id = $1, updated_at = $2 WHERE list_id = $3")
-                .bind(fallback_list)
-                .bind(now())
-                .bind(&id)
-                .execute(pool.inner())
-                .await
-                .map_err(|e| format!("迁移条目失败: {}", e))?;
         }
     }
 

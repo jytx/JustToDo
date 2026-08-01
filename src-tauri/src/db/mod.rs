@@ -177,6 +177,9 @@ pub async fn init_pool(
     // 024: templates 加 kind 字段（区分任务模板/笔记模板）
     run_migration_024(&pool).await?;
 
+    // 025: 修复孤儿任务 —— list_id 指向已不存在清单的 tasks，迁移到默认容器
+    run_migration_025(&pool).await?;
+
     Ok(pool)
 }
 
@@ -250,6 +253,50 @@ async fn run_migration_023(pool: &SqlitePool) -> Result<(), String> {
 /// - 存量模板（4 个内置 + 用户自建）无需回填：DEFAULT 'task' 对旧记录自动生效。
 async fn run_migration_024(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "templates", "kind", "TEXT NOT NULL DEFAULT 'task'").await?;
+    Ok(())
+}
+
+/// 迁移 025：修复孤儿任务
+///
+/// 背景：旧版 `list_delete` 删除目录（is_folder=1）时只迁移了子清单的 parent_id，
+/// 没有处理 tasks 表，导致挂在被删目录 id 上的任务（list_id 指向已不存在的清单）
+/// 成为孤儿。其中若包含重复模板，后台 tick 每次生成实例都会因外键约束失败
+/// （SQLite code 787）报错。本迁移一次性把这类孤儿迁回默认容器：
+/// - kind='note' → default-notebook
+/// - kind='task'（含默认）→ inbox
+///
+/// 用 NOT EXISTS 反向匹配孤儿（list_id 在 lists 表无对应行），UPDATE 天然幂等。
+async fn run_migration_025(pool: &SqlitePool) -> Result<(), String> {
+    // 笔记类孤儿 → 默认笔记本
+    let notes_fixed = sqlx::query(
+        "UPDATE tasks SET list_id = 'default-notebook' \
+         WHERE kind = 'note' \
+           AND list_id NOT IN (SELECT id FROM lists)",
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("迁移025: 修复笔记孤儿失败: {}", e))?
+    .rows_affected();
+
+    // 待办类孤儿 → 收件箱
+    let tasks_fixed = sqlx::query(
+        "UPDATE tasks SET list_id = 'inbox' \
+         WHERE kind != 'note' \
+           AND list_id NOT IN (SELECT id FROM lists)",
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("迁移025: 修复待办孤儿失败: {}", e))?
+    .rows_affected();
+
+    if notes_fixed + tasks_fixed > 0 {
+        println!(
+            "[JustToDo] 迁移025 完成: 修复孤儿任务 {} 条 (笔记 {}, 待办 {})",
+            notes_fixed + tasks_fixed,
+            notes_fixed,
+            tasks_fixed,
+        );
+    }
     Ok(())
 }
 
