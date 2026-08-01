@@ -1,12 +1,8 @@
 <script setup lang="ts">
-// 提示词编辑器：Markdown 源码 / 预览切换 + Markdown 工具栏
-// 用于设置页 AI 提示词编辑。源码模式是 textarea（等宽字体），
-// 预览模式用 marked 渲染。项目已有 marked 库，直接复用。
-//
-// 工具栏点击在 textarea 光标处插入 Markdown 语法（加粗/斜体/标题/列表等），
-// 与任务详情面板的富文本工具栏风格一致，但操作的是纯文本（非 Tiptap）。
-import { ref, watch, nextTick } from "vue";
-import { marked } from "marked";
+// 提示词编辑器：Markdown 工具栏 + AI 润色
+// 用于设置页 AI 提示词编辑。textarea 直接编辑（等宽字体），
+// 工具栏常态展示，点击在光标处插入 Markdown 语法。
+import { ref, nextTick } from "vue";
 import { polishText } from "@/api/ai";
 import AiPolishDialog from "@/components/AiPolishDialog.vue";
 
@@ -20,10 +16,6 @@ const emit = defineEmits<{
   change: [v: string];
 }>();
 
-/** 当前模式：edit 源码 | preview 预览 */
-const mode = ref<"edit" | "preview">("edit");
-/** 预览渲染的 HTML（marked v18 parse 异步，用 watch 渲染） */
-const previewHtml = ref("");
 /** AI 润色进行中 */
 const polishing = ref(false);
 /** 润色预览弹窗是否可见 */
@@ -38,17 +30,6 @@ const polishError = ref("");
 /** textarea 元素引用（工具栏插入需要操作光标位置） */
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 
-// 预览模式时实时渲染（切到预览或内容变化时）
-watch(
-  () => [mode.value, props.modelValue] as const,
-  async ([m, val]) => {
-    if (m === "preview") {
-      previewHtml.value = val ? await marked.parse(val) : "";
-    }
-  },
-  { immediate: true },
-);
-
 /** 输入时同步到父组件（v-model） */
 function onInput(e: Event): void {
   const v = (e.target as HTMLTextAreaElement).value;
@@ -58,11 +39,6 @@ function onInput(e: Event): void {
 /** 失焦时触发 change 保存（与设置项自动保存一致） */
 function onBlur(): void {
   emit("change", props.modelValue);
-}
-
-/** 切换模式 */
-function toggleMode(): void {
-  mode.value = mode.value === "edit" ? "preview" : "edit";
 }
 
 /** AI 润色：调 polishText 流式获取结果，弹窗预览后确认才覆盖。
@@ -262,16 +238,9 @@ function insertHardBreak(): void {
 
 <template>
   <div class="prompt-editor">
-    <!-- 顶部工具栏：模式切换 + AI 润色 -->
+    <!-- 顶部工具栏：AI 润色 -->
     <div class="prompt-editor__toolbar">
-      <a-button type="text" size="mini" @click="toggleMode">
-        <template #icon>
-          <icon-eye v-if="mode === 'edit'" :size="14" />
-          <icon-edit v-else :size="14" />
-        </template>
-        {{ mode === "edit" ? "预览" : "编辑" }}
-      </a-button>
-      <!-- AI 润色：优化提示词文本（流式替换），预览/编辑模式都能点 -->
+      <!-- AI 润色：优化提示词文本（流式替换） -->
       <a-button
         type="text"
         size="mini"
@@ -286,9 +255,9 @@ function insertHardBreak(): void {
       </a-button>
     </div>
 
-    <!-- Markdown 工具栏（编辑模式常态展示）。
+    <!-- Markdown 工具栏（常态展示）。
          对照任务详情面板 RichTextToolbar 的完整分组 -->
-    <div v-if="mode === 'edit'" class="prompt-editor__md-toolbar">
+    <div class="prompt-editor__md-toolbar">
       <!-- 文本格式组 -->
       <a-button size="mini" shape="circle" type="text" title="加粗 (Cmd+B)" @click="insertBold">
         <icon-bold :size="14" />
@@ -349,9 +318,8 @@ function insertHardBreak(): void {
       </a-button>
     </div>
 
-    <!-- 源码模式：textarea（等宽字体） -->
+    <!-- textarea（等宽字体，常态可编辑） -->
     <textarea
-      v-if="mode === 'edit'"
       ref="textareaRef"
       class="prompt-editor__textarea"
       :value="modelValue"
@@ -359,9 +327,6 @@ function insertHardBreak(): void {
       @blur="onBlur"
       spellcheck="false"
     ></textarea>
-
-    <!-- 预览模式：Markdown 渲染 -->
-    <div v-else class="prompt-editor__preview" v-html="previewHtml"></div>
 
     <!-- AI 润色预览弹窗（确认后才覆盖提示词文本） -->
     <AiPolishDialog
@@ -443,51 +408,4 @@ function insertHardBreak(): void {
   background-color: var(--jt-surface);
 }
 
-/* 预览区：复用 Markdown 渲染样式 */
-.prompt-editor__preview {
-  min-height: 400px;
-  max-height: 600px;
-  overflow-y: auto;
-  padding: 10px 14px;
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--jt-text-primary);
-}
-
-.prompt-editor__preview :deep(h1),
-.prompt-editor__preview :deep(h2),
-.prompt-editor__preview :deep(h3) {
-  font-weight: 600;
-  margin: 10px 0 6px;
-}
-
-.prompt-editor__preview :deep(h1) { font-size: 15px; }
-.prompt-editor__preview :deep(h2) { font-size: 14px; }
-.prompt-editor__preview :deep(h3) { font-size: 13px; }
-
-.prompt-editor__preview :deep(p) {
-  margin: 6px 0;
-}
-
-.prompt-editor__preview :deep(ul),
-.prompt-editor__preview :deep(ol) {
-  margin: 6px 0;
-  padding-left: 20px;
-}
-
-.prompt-editor__preview :deep(li) {
-  margin: 2px 0;
-}
-
-.prompt-editor__preview :deep(strong) {
-  font-weight: 600;
-}
-
-.prompt-editor__preview :deep(code) {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  background-color: var(--jt-surface-hover);
-}
 </style>
