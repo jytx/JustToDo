@@ -1,6 +1,7 @@
 // 全局快捷键 composable
 // - Cmd/Ctrl+K → 搜索
 // - Cmd/Ctrl+Shift+A → 快速添加
+// - Cmd/Ctrl+Shift+D → AI 每日小结
 // - Cmd/Ctrl+Shift+L → 切换主题
 // - Cmd/Ctrl+N → 新建任务（与顶部 +、Cmd+Shift+A 等价）
 // - Cmd/Ctrl+Plus 或 = → 放大界面
@@ -14,6 +15,7 @@ import { onMounted, onUnmounted } from "vue";
 export function useShortcuts(callbacks: {
   onSearch?: () => void;
   onQuickAdd?: () => void;
+  onDailySummary?: () => void;
   onToggleTheme?: () => void;
   onNewTask?: () => void;
   onZoomIn?: () => void;
@@ -67,6 +69,13 @@ export function useShortcuts(callbacks: {
     if (e.shiftKey && (e.key === "a" || e.key === "A")) {
       e.preventDefault();
       callbacks.onQuickAdd?.();
+      return;
+    }
+
+    // Cmd/Ctrl+Shift+D → AI 每日小结
+    if (e.shiftKey && (e.key === "d" || e.key === "D")) {
+      e.preventDefault();
+      callbacks.onDailySummary?.();
       return;
     }
 

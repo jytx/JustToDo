@@ -15,6 +15,7 @@ import TheSidebar from "@/components/TheSidebar.vue";
 import TaskDetailPanel from "@/components/TaskDetailPanel.vue";
 import SearchPalette from "@/components/SearchPalette.vue";
 import QuickAddDialog from "@/components/QuickAddDialog.vue";
+import DailySummaryModal from "@/components/DailySummaryModal.vue";
 import MenuPopover from "@/components/MenuPopover.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
@@ -38,6 +39,9 @@ const sidebarCollapsed = ref(false);
 /** 侧边栏宽度（仅展开态生效；收起态固定 48px） */
 const sidebarWidth = ref(240);
 const panelWidth = ref(480);
+
+/** AI 每日小结弹窗可见性 */
+const summaryVisible = ref(false);
 
 /** 是否显示排序按钮（清单/笔记本/标签/全部视图） */
 const showSortButton = computed(() => {
@@ -255,6 +259,9 @@ useShortcuts({
     listStore.loadLists();
     quickAdd.open();
   },
+  onDailySummary: () => {
+    summaryVisible.value = true;
+  },
   onNewTask: () => {
     listStore.loadLists();
     quickAdd.open();
@@ -290,6 +297,16 @@ useShortcuts({
           @click="searchStore.show()"
         >
           <template #icon><icon-search :size="18" /></template>
+        </a-button>
+        <!-- AI 每日小结（仅 AI 启用时显示） -->
+        <a-button
+          v-if="showGlobalActions && settingsStore.aiEnabled"
+          type="text"
+          size="small"
+          title="AI 小结 (Cmd+Shift+D)"
+          @click="summaryVisible = true"
+        >
+          <template #icon><icon-mind-mapping :size="18" /></template>
         </a-button>
         <a-button
           v-if="showGlobalActions"
@@ -351,6 +368,9 @@ useShortcuts({
       :default-end="quickAdd.defaultEnd.value"
       @update:model-value="quickAdd.close()"
     />
+
+    <!-- AI 每日小结弹窗 -->
+    <DailySummaryModal v-model:visible="summaryVisible" />
 
     <!-- 删除任务确认对话框（键盘 Backspace 或任务项菜单触发，统一极简卡片风） -->
     <ConfirmDialog

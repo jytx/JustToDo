@@ -2708,3 +2708,199 @@ pub async fn ai_test_connection(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<
         })),
     }
 }
+
+/// 查询某时间范围内「已完成」的根任务（按 completed_at 过滤）。
+///
+/// 与 task_get_by_due_range 的区别：
+/// - 那个按「截止日期 due_end_at」过滤，回答"哪天到期"
+/// - 本命令按「完成时间 completed_at」过滤，回答"哪天完成" —— 每日小结的核心数据
+/// - 不限 due_start_at（避免漏掉没设截止日期但已完成的任务）
+///
+/// 时间字符串格式：本地字面量 "YYYY-MM-DDTHH:mm:ss"（与 DB 存储一致）。
+/// SQLite datetime() 对无时区字符串默认按 UTC 解释，必须显式 'localtime'。
+#[tauri::command]
+pub async fn task_get_completed_in_range(
+    pool: State<'_, sqlx::SqlitePool>,
+    start: String,
+    end: String,
+) -> CmdResult<Vec<Task>> {
+    let rows = sqlx::query(
+        "SELECT * FROM tasks
+         WHERE done = 1 AND parent_id IS NULL AND kind = 'task'
+           AND completed_at IS NOT NULL
+           AND datetime(replace(completed_at, 'T', ' '), 'localtime') >= datetime($1, 'localtime')
+           AND datetime(replace(completed_at, 'T', ' '), 'localtime') <  datetime($2, 'localtime')
+         ORDER BY completed_at DESC",
+    )
+    .bind(&start)
+    .bind(&end)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("查询已完成任务失败: {}", e))?;
+    Ok(rows.iter().map(row_to_task).collect())
+}
+
+// ─── AI 每日小结 / 周报 ────────────────────────────────────
+// 详见 discuss/2026-07-31-ai-daily-summary-design.md
+
+/// 计算「本周一 00:00」的本地时间字面量（周一为一周开始）。
+/// chrono 的 Weekday::Mon，days_from_monday() 周一=0...周日=6。
+fn start_of_week_local() -> chrono::NaiveDateTime {
+    let now = chrono::Local::now().naive_local();
+    let today = now.date();
+    // 往前退到本周一：减去"今天距周一的天数"
+    let monday = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
+    monday.and_hms_opt(0, 0, 0).unwrap()
+}
+
+/// 把 NaiveDateTime 格式化为本地字面量（与 DB 存储格式一致）
+fn fmt_local(dt: chrono::NaiveDateTime) -> String {
+    dt.format("%Y-%m-%dT%H:%M:%S").to_string()
+}
+
+/// 每日小结 / 周报的 AI 总结命令。
+///
+/// 流程：算时间范围 → 查已完成 + 待办 → 组装 prompt → 调 AI → 返回 Markdown。
+/// 返回 `{ ok, content }`（成功）或 `{ ok: false, message }`（失败，前端不走 catch）。
+///
+/// mode: "daily"（今天）| "weekly"（本周一到本周日）
+#[tauri::command]
+pub async fn ai_summary(
+    pool: State<'_, sqlx::SqlitePool>,
+    mode: String,
+) -> CmdResult<serde_json::Value> {
+    use crate::ai::{build_from_settings, ChatMessage, ChatRequest};
+
+    // 1. 构造 provider（内部校验 enabled / key / 地址 / 模型）
+    let provider = match build_from_settings(pool.inner()).await {
+        Ok(p) => p,
+        Err(e) => {
+            return Ok(serde_json::json!({
+                "ok": false,
+                "message": format!("{}", e),
+            }));
+        }
+    };
+
+    // 2. 计算时间范围（本地字面量）
+    let now = chrono::Local::now().naive_local();
+    let (start, end, mode_label) = if mode == "weekly" {
+        let monday = start_of_week_local();
+        let next_monday = monday + chrono::Duration::days(7);
+        (fmt_local(monday), fmt_local(next_monday), "本周")
+    } else {
+        let today_start = now.date().and_hms_opt(0, 0, 0).unwrap();
+        let tomorrow_start = today_start + chrono::Duration::days(1);
+        (fmt_local(today_start), fmt_local(tomorrow_start), "今日")
+    };
+    let end_of_today = fmt_local(now.date().and_hms_opt(0, 0, 0).unwrap() + chrono::Duration::days(1));
+
+    // 3. 查数据：已完成任务（按 completed_at）
+    let completed_rows = match sqlx::query(
+        "SELECT * FROM tasks
+         WHERE done = 1 AND parent_id IS NULL AND kind = 'task'
+           AND completed_at IS NOT NULL
+           AND datetime(replace(completed_at, 'T', ' '), 'localtime') >= datetime($1, 'localtime')
+           AND datetime(replace(completed_at, 'T', ' '), 'localtime') <  datetime($2, 'localtime')
+         ORDER BY completed_at DESC",
+    )
+    .bind(&start)
+    .bind(&end)
+    .fetch_all(pool.inner())
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return Ok(serde_json::json!({
+                "ok": false,
+                "message": format!("查询已完成任务失败: {}", e),
+            }));
+        }
+    };
+    let completed: Vec<Task> = completed_rows.iter().map(row_to_task).collect();
+
+    // 4. 查数据：今天截止 / 逾期的未完成任务（每日和周报都包含，作为"待办提醒"）
+    let todo_rows = match sqlx::query(
+        "SELECT * FROM tasks
+         WHERE parent_id IS NULL AND done = 0 AND kind = 'task'
+           AND due_end_at IS NOT NULL
+           AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($1, 'localtime')
+         ORDER BY due_end_at ASC, priority DESC",
+    )
+    .bind(&end_of_today)
+    .fetch_all(pool.inner())
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return Ok(serde_json::json!({
+                "ok": false,
+                "message": format!("查询待办任务失败: {}", e),
+            }));
+        }
+    };
+    let todos: Vec<Task> = todo_rows.iter().map(row_to_task).collect();
+
+    // 5. 组装 prompt（精简字段，避免 token 浪费）
+    let payload = serde_json::json!({
+        "范围": mode_label,
+        "已完成任务": completed.iter().map(|t| serde_json::json!({
+            "标题": t.title,
+            "优先级": priority_label(t.priority),
+        })).collect::<Vec<_>>(),
+        "已完成数量": completed.len(),
+        "待办任务（今天截止或逾期）": todos.iter().map(|t| serde_json::json!({
+            "标题": t.title,
+            "优先级": priority_label(t.priority),
+            "截止": t.due_end_at,
+        })).collect::<Vec<_>>(),
+        "待办数量": todos.len(),
+    });
+
+    // 用原始字符串 r#"..."# 避免转义，prompt 直接多行书写更易读
+    let system_prompt = format!(
+        r#"你是一个温暖、专业的任务总结助手。请根据用户{mode}的任务数据，生成一份简洁的中文 Markdown 小结。
+
+要求：
+1. 用 Markdown 格式输出，包含以下部分（用二级标题）：
+   - 「{mode}完成」：列出已完成的主要任务，肯定用户的努力
+   - 「待办提醒」：列出需要关注的事项（如果有），按紧急程度排序
+   - 「小结」：1-2 句鼓励性的总结
+2. 语气积极、鼓励，让用户有成就感
+3. 如果某部分没有数据，简要说明（例如：今天暂无逾期待办，很棒！）
+4. 不要编造数据，只基于提供的任务
+5. 语言简洁，控制在 300 字以内"#,
+        mode = mode_label,
+    );
+
+    let req = ChatRequest {
+        messages: vec![
+            ChatMessage::system { content: system_prompt },
+            ChatMessage::user {
+                content: payload.to_string(),
+            },
+        ],
+        ..Default::default()
+    };
+
+    match provider.chat(&req).await {
+        Ok(resp) => Ok(serde_json::json!({
+            "ok": true,
+            "content": resp.content,
+        })),
+        Err(e) => Ok(serde_json::json!({
+            "ok": false,
+            "message": format!("{}", e),
+        })),
+    }
+}
+
+/// 优先级数字 → 中文标签（供 AI prompt 可读性） */
+fn priority_label(p: i32) -> &'static str {
+    match p {
+        3 => "高",
+        2 => "中",
+        1 => "低",
+        _ => "无",
+    }
+}

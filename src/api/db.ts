@@ -325,6 +325,19 @@ export async function getTasksByDueRange(
   return rows.map(mapTask);
 }
 
+/** 查询某时间范围内「已完成」的根任务（按 completed_at 过滤）。
+ *  与 getTasksByDueRange 区别：那个按截止日期，本方法按完成时间。 */
+export async function getCompletedTasksInRange(
+  start: string,
+  end: string,
+): Promise<Task[]> {
+  const rows = await invoke<RustTask[]>("task_get_completed_in_range", {
+    start,
+    end,
+  });
+  return rows.map(mapTask);
+}
+
 /** 按 ID 获取单个任务（用于详情面板解析父任务链） */
 export async function getTaskById(id: string): Promise<Task | null> {
   const r = await invoke<RustTask | null>("task_get_by_id", { id });
