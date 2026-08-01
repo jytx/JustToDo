@@ -1,34 +1,51 @@
 <script setup lang="ts">
-// AI 任务拆解预览组件
-// 用户在任务详情面板点「AI 拆解」→ 本组件调 breakdownTask 获取子任务草稿
-// → 展示可编辑列表（改标题/切优先级/删项）→ 用户确认后 emit 给面板批量创建子任务。
+// AI 任务草稿预览组件（双数据源）
+// 场景一（breakdown）：任务详情面板点「AI 拆解」→ 调 breakdownTask 获取子任务草稿
+// 场景二（extract）：AI 助手弹窗粘贴文本 → 调 extractTasks 提取任务草稿
+// → 展示可编辑列表（改标题/切优先级/删项）→ 用户确认后 emit 给父组件批量创建。
 //
 // 三态：loading（生成中）/ error（失败+重试）/ preview（可编辑列表）
 // 视觉复用 TaskDetailPanel 检查项区的样式语言（透明 input + hover 变红删除按钮）。
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { IconRobot, IconClose } from "@arco-design/web-vue/es/icon";
-import { breakdownTask, type ParsedSubtask } from "@/api/ai";
+import { breakdownTask, extractTasks, type ParsedSubtask } from "@/api/ai";
 import PriorityDot from "@/components/PriorityDot.vue";
 import { formatDueDate } from "@/utils/date";
 import type { Priority } from "@/types";
 
+/** 数据源：拆解（传 taskId）/ 提取（传 text） */
+type PreviewSource =
+  | { type: "breakdown"; taskId: string }
+  | { type: "extract"; text: string };
+
 const props = defineProps<{
-  /** 要拆解的大任务 ID */
-  taskId: string;
+  /** 数据源：决定调哪个 API + 文案 */
+  source: PreviewSource;
 }>();
 
 const emit = defineEmits<{
-  /** 用户确认 —— 把编辑后的子任务列表传给父组件批量创建 */
+  /** 用户确认 —— 把编辑后的任务列表传给父组件批量创建 */
   confirm: [subs: ParsedSubtask[]];
   /** 用户取消 / 关闭预览 */
   cancel: [];
 }>();
 
+/** 是否提取模式（文案跟随） */
+const isExtract = computed(() => props.source.type === "extract");
+/** 标题文案 */
+const headerText = computed(() => (isExtract.value ? "AI 提取的任务" : "AI 拆解的子任务"));
+/** 确认按钮文案 */
+const confirmText = computed(() =>
+  isExtract.value ? "全部创建为任务" : "全部创建为子任务",
+);
+/** 失败文案 */
+const failText = computed(() => (isExtract.value ? "提取失败，请重试" : "拆解失败，请重试"));
+
 /** 组件状态：idle（未请求）/ loading / error / preview */
 const status = ref<"idle" | "loading" | "error" | "preview">("idle");
 /** 错误信息（status=error 时） */
 const errorMsg = ref("");
-/** 预览的子任务草稿列表（可编辑） */
+/** 预览的任务草稿列表（可编辑） */
 const subtasks = ref<ParsedSubtask[]>([]);
 /** 是否正在批量创建（父组件处理 confirm 期间） */
 const creating = ref(false);
@@ -36,16 +53,19 @@ const creating = ref(false);
 /** 优先级列表（用于点击切换） */
 const PRIORITIES: Priority[] = [0, 1, 2, 3];
 
-/** 调用 AI 拆解任务 */
+/** 调用 AI 获取任务草稿（按数据源分流） */
 async function generate(): Promise<void> {
   status.value = "loading";
   errorMsg.value = "";
-  const res = await breakdownTask(props.taskId);
+  const res =
+    props.source.type === "breakdown"
+      ? await breakdownTask(props.source.taskId)
+      : await extractTasks(props.source.text);
   if (res.ok && res.subtasks && res.subtasks.length > 0) {
     subtasks.value = res.subtasks.map((s) => ({ ...s }));
     status.value = "preview";
   } else {
-    errorMsg.value = res.message ?? "拆解失败，请重试";
+    errorMsg.value = res.message ?? failText.value;
     status.value = "error";
   }
 }
@@ -89,13 +109,13 @@ generate();
     <!-- 标题行 -->
     <div class="ai-breakdown__header">
       <icon-robot :size="14" />
-      <span class="ai-breakdown__title">AI 拆解的子任务</span>
+      <span class="ai-breakdown__title">{{ headerText }}</span>
     </div>
 
     <!-- 加载中 -->
     <div v-if="status === 'loading'" class="ai-breakdown__loading">
       <a-spin :size="16" />
-      <span>AI 正在拆解任务...</span>
+      <span>{{ isExtract ? "AI 正在提取任务..." : "AI 正在拆解任务..." }}</span>
     </div>
 
     <!-- 错误 -->
@@ -165,7 +185,7 @@ generate();
             :disabled="subtasks.filter((s) => s.title.trim()).length === 0"
             @click="onConfirm"
           >
-            全部创建为子任务
+            {{ confirmText }}
           </a-button>
         </div>
       </div>

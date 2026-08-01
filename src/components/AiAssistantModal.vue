@@ -13,11 +13,13 @@ import {
   generateScopeSummary,
   parseTask,
   type SummaryScope,
+  type ParsedSubtask,
 } from "@/api/ai";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
 import type { Priority } from "@/types";
+import AiBreakdownPreview from "@/components/AiBreakdownPreview.vue";
 
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ "update:visible": [v: boolean] }>();
@@ -33,14 +35,17 @@ interface AiTool {
   desc: string;
   /** 是否需要输入框 */
   needInput: boolean;
+  /** 输入框是否多行（extract 粘贴长文本用 textarea） */
+  multiline: boolean;
 }
 
 const TOOLS: AiTool[] = [
-  { value: "daily", label: "每日小结", desc: "汇总今天完成的任务和待办", needInput: false },
-  { value: "weekly", label: "周报", desc: "汇总本周任务完成情况", needInput: false },
-  { value: "list", label: "总结当前清单", desc: "总结当前所在清单的所有任务", needInput: false },
-  { value: "tasks", label: "总结选中任务", desc: "总结多选的任务", needInput: false },
-  { value: "create", label: "创建条目", desc: "根据当前清单类型自动创建任务或笔记", needInput: true },
+  { value: "daily", label: "每日小结", desc: "汇总今天完成的任务和待办", needInput: false, multiline: false },
+  { value: "weekly", label: "周报", desc: "汇总本周任务完成情况", needInput: false, multiline: false },
+  { value: "list", label: "总结当前清单", desc: "总结当前所在清单的所有任务", needInput: false, multiline: false },
+  { value: "tasks", label: "总结选中任务", desc: "总结多选的任务", needInput: false, multiline: false },
+  { value: "create", label: "创建条目", desc: "根据当前清单类型自动创建任务或笔记", needInput: true, multiline: false },
+  { value: "extract", label: "提取任务", desc: "粘贴会议纪要/邮件，AI 提取行动项", needInput: true, multiline: true },
 ];
 
 /** 当前选中的工具 */
@@ -62,6 +67,8 @@ const errorMsg = ref("");
 const renderedHtml = ref("");
 /** 是否正在保存 */
 const saving = ref(false);
+/** 提取任务预览是否显示（extract 工具专用，嵌入 AiBreakdownPreview） */
+const extractPreview = ref(false);
 
 /** 保存按钮文案：跟随当前清单类型 */
 const saveLabel = computed(() => {
@@ -211,6 +218,16 @@ async function execute(): Promise<void> {
         }
         break;
       }
+      case "extract": {
+        const input = userInput.value.trim();
+        if (!input) {
+          errorMsg.value = "请粘贴要提取的文本";
+          break;
+        }
+        // 显示 AiBreakdownPreview 预览组件（内部自动调 extractTasks）
+        extractPreview.value = true;
+        break;
+      }
     }
   } catch (e) {
     errorMsg.value = String(e);
@@ -259,6 +276,36 @@ function onToolChange(v: string): void {
   content.value = "";
   errorMsg.value = "";
   userInput.value = "";
+  extractPreview.value = false;
+}
+
+/** 提取任务确认：把草稿批量创建为独立任务到当前清单（无 parentId） */
+async function onExtractConfirm(subs: ParsedSubtask[]): Promise<void> {
+  // 智能视图（今天/全部）无 currentListId，兜底用收件箱
+  const listId = taskStore.currentListId || "inbox";
+  const currentList = listStore.getById(listId);
+  const isNote = currentList?.kind === "note";
+  for (const sub of subs) {
+    const created = await taskStore.createTask({
+      title: sub.title.trim(),
+      listId,
+      kind: isNote ? "note" : "task",
+      priority: isNote ? undefined : (sub.priority as Priority),
+      dueStartAt: isNote ? undefined : sub.dueStartAt,
+      dueEndAt: isNote ? undefined : sub.dueEndAt,
+    });
+    if (sub.note) {
+      await taskStore.updateTask(created.id, { note: sub.note });
+    }
+  }
+  Message.success(`已创建 ${subs.length} 个任务到「${currentList?.name ?? "当前清单"}」`);
+  extractPreview.value = false;
+  emit("update:visible", false);
+}
+
+/** 提取任务取消 */
+function onExtractCancel(): void {
+  extractPreview.value = false;
 }
 
 // 打开时：读取入口设置的默认工具，不自动执行（用户点生成按钮才跑）
@@ -270,6 +317,7 @@ watch(
       content.value = "";
       errorMsg.value = "";
       userInput.value = "";
+      extractPreview.value = false;
     }
   },
 );
@@ -317,8 +365,17 @@ watch(
       <p class="ai-assistant__tool-desc">{{ currentTool.desc }}</p>
 
       <!-- 输入框（需要输入的工具才显示，单独一行） -->
+      <!-- 多行（extract 粘贴长文本）用 textarea；单行（create 短指令）用 input -->
+      <a-textarea
+        v-if="currentTool.needInput && currentTool.multiline"
+        v-model="userInput"
+        :placeholder="currentTool.desc"
+        :auto-size="{ minRows: 3, maxRows: 8 }"
+        allow-clear
+        style="margin-bottom: 16px; border-radius: 8px"
+      />
       <a-input
-        v-if="currentTool.needInput"
+        v-else-if="currentTool.needInput"
         v-model="userInput"
         :placeholder="currentTool.desc"
         allow-clear
@@ -328,8 +385,16 @@ watch(
 
       <!-- 结果区 -->
       <div class="ai-assistant__body">
+        <!-- 提取任务预览（extract 工具，嵌入 AiBreakdownPreview 组件） -->
+        <AiBreakdownPreview
+          v-if="extractPreview"
+          :source="{ type: 'extract', text: userInput }"
+          @confirm="onExtractConfirm"
+          @cancel="onExtractCancel"
+        />
+
         <!-- 纯加载中（尚未收到任何流式内容） -->
-        <div v-if="loading && !content" class="ai-assistant__loading">
+        <div v-else-if="loading && !content" class="ai-assistant__loading">
           <a-spin />
           <span class="ai-assistant__loading-text">AI 正在生成...</span>
         </div>

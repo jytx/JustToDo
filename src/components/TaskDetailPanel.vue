@@ -919,7 +919,7 @@ onBeforeUnmount(() => {
       <!-- AI 任务拆解预览（点「AI 拆解」按钮后出现，确认后批量创建子任务） -->
       <AiBreakdownPreview
         v-if="breakdownVisible"
-        :task-id="task.id"
+        :source="{ type: 'breakdown', taskId: task.id }"
         @confirm="onBreakdownConfirm"
         @cancel="onBreakdownCancel"
       />

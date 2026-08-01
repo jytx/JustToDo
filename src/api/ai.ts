@@ -146,3 +146,9 @@ export interface BreakdownResult {
 export async function breakdownTask(taskId: string): Promise<BreakdownResult> {
   return invoke<BreakdownResult>("ai_breakdown_task", { taskId });
 }
+
+/** 用 AI 从一段文本（会议纪要/邮件）中提取出多个待办任务。
+ *  返回任务草稿列表（预览后由前端确认落库）。复用 BreakdownResult 类型。 */
+export async function extractTasks(text: string): Promise<BreakdownResult> {
+  return invoke<BreakdownResult>("ai_extract_tasks", { text });
+}
