@@ -71,6 +71,8 @@ export interface ParsedTask {
   dueStartAt: string | null;
   dueEndAt: string | null;
   tagNames: string[];
+  /** AI 生成的任务详情正文（HTML） */
+  note: string;
 }
 
 /** 自然语言建任务解析结果 */

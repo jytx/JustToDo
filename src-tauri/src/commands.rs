@@ -3151,7 +3151,12 @@ pub const DEFAULT_PROMPT_PARSE_TASK: &str = r#"你是一个任务解析助手。
 3. 截止时间：解析「明天/后天/下周一/3点/下午」等表达，换算成具体时间。若只提到日期无具体时间，结束时间用当天 23:59:59
 4. 标签：识别 # 后面的词作为标签名（不含#）
 5. 无法确定的字段不要编造，省略即可（除了 title 必填）
-6. 时间格式：YYYY-MM-DDTHH:mm:ss（本地时间）"#;
+6. 时间格式：YYYY-MM-DDTHH:mm:ss（本地时间）
+7. 详情正文(note)：根据任务类型生成结构化的 HTML 详情，让任务更可执行。例如：
+   - 会议类：议程要点、参会人、待讨论事项（用 <ul><li> 列表）
+   - 报告类：报告大纲、数据来源、截止提醒
+   - 采购类：清单、预算、购买渠道
+   用 HTML 标签（<h2>/<ul>/<li>/<p> 等），内容简洁实用。简单的任务（如「买菜」）可省略 note"#;
 
 /// 自然语言建任务解析命令。
 /// 参数 input: 用户输入的自然语言。
@@ -3203,6 +3208,10 @@ pub async fn ai_parse_task(
                     "type": "array",
                     "items": { "type": "string" },
                     "description": "标签名称列表（不含#）"
+                },
+                "note": {
+                    "type": "string",
+                    "description": "任务详情正文（HTML 格式）。根据任务内容生成结构化的详情，如会议议程、待办要点、检查清单等。让任务更可执行。无内容则省略"
                 }
             },
             "required": ["title"]
@@ -3234,6 +3243,7 @@ pub async fn ai_parse_task(
                         "tagNames": args.get("tagNames").and_then(|v| v.as_array())
                             .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>())
                             .unwrap_or_default(),
+                        "note": args.get("note").and_then(|v| v.as_str()).unwrap_or(""),
                     }
                 }))
             } else {

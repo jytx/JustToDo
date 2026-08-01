@@ -66,6 +66,20 @@ onMounted(async () => {
   await listStore.loadLists();
   await taskStore.loadTasks(props.id);
 });
+
+/** 添加笔记：创建后如果有 AI 生成的正文(note)，写入 note 字段 */
+async function onAdd(payload: { title: string; priority: import("@/types").Priority; dueStartAt: string | null; dueEndAt: string | null; tagIds: string[]; note?: string }) {
+  const task = await taskStore.createTask({
+    title: payload.title,
+    listId: props.id,
+    priority: payload.priority,
+    kind: "note",
+    tagIds: payload.tagIds,
+  });
+  if (payload.note) {
+    await taskStore.updateTask(task.id, { note: payload.note });
+  }
+}
 </script>
 
 <template>
@@ -86,16 +100,7 @@ onMounted(async () => {
       <AddTaskBar
         :list-id="props.id"
         kind="note"
-        @add="
-          (payload) =>
-            taskStore.createTask({
-              title: payload.title,
-              listId: props.id,
-              priority: payload.priority,
-              kind: 'note',
-              tagIds: payload.tagIds,
-            })
-        "
+        @add="onAdd"
       />
     </div>
 

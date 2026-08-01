@@ -31,7 +31,7 @@ const availableTemplates = computed(() =>
 );
 
 const emit = defineEmits<{
-  add: [payload: { title: string; priority: Priority; dueStartAt: string | null; dueEndAt: string | null; tagIds: string[] }];
+  add: [payload: { title: string; priority: Priority; dueStartAt: string | null; dueEndAt: string | null; tagIds: string[]; note?: string }];
 }>();
 
 const settings = useSettingsStore();
@@ -72,6 +72,8 @@ const dueStartAt = ref<string | null>(initialStart);
 const dueEndAt = ref<string | null>(initialEnd);
 /** 选中的标签 ID 数组 —— submit 时随 payload 一起提交，由父视图透传给 createTask */
 const selectedTagIds = ref<string[]>([]);
+/** AI 解析生成的任务详情（HTML），submit 时随 payload 一起提交。submit 后清空 */
+const pendingNote = ref<string>("");
 /** 标签下拉弹层是否打开 —— handleBlur 据此在打开时保持输入框聚焦 */
 const tagPopoverVisible = ref(false);
 
@@ -105,6 +107,7 @@ function submit() {
     dueStartAt: dueStartAt.value,
     dueEndAt: dueEndAt.value,
     tagIds: [...selectedTagIds.value],
+    note: pendingNote.value || undefined,
   });
   // 重置（保持面板打开便于连续录入）
   title.value = "";
@@ -113,6 +116,7 @@ function submit() {
   dueStartAt.value = resetStart;
   dueEndAt.value = resetEnd;
   selectedTagIds.value = [];
+  pendingNote.value = "";
 }
 
 // ─── AI 自然语言解析（仅任务模式 + AI 启用时可用）───
@@ -143,6 +147,8 @@ async function onAiParse(): Promise<void> {
         const ids = await resolveTagIds(p.tagNames);
         selectedTagIds.value = ids;
       }
+      // AI 生成的详情正文（HTML）
+      pendingNote.value = p.note || "";
       // 直接创建任务（属性已填充，submit 会 emit add + 重置）
       submit();
     } else if (res.fallbackTitle) {

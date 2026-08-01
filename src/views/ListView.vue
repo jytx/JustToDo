@@ -62,6 +62,21 @@ onMounted(async () => {
   await listStore.loadLists();
   await taskStore.loadTasks(props.id);
 });
+
+/** 添加任务：创建后如果有 AI 生成的详情(note)，写入 note 字段 */
+async function onAdd(payload: { title: string; priority: import("@/types").Priority; dueStartAt: string | null; dueEndAt: string | null; tagIds: string[]; note?: string }) {
+  const task = await taskStore.createTask({
+    title: payload.title,
+    listId: props.id,
+    priority: payload.priority,
+    dueStartAt: payload.dueStartAt,
+    dueEndAt: payload.dueEndAt,
+    tagIds: payload.tagIds,
+  });
+  if (payload.note) {
+    await taskStore.updateTask(task.id, { note: payload.note });
+  }
+}
 </script>
 
 <template>
@@ -82,17 +97,7 @@ onMounted(async () => {
     <div v-if="!currentList?.archived" class="list-view__add-bar">
       <AddTaskBar
         :list-id="props.id"
-        @add="
-          (payload) =>
-            taskStore.createTask({
-              title: payload.title,
-              listId: props.id,
-              priority: payload.priority,
-              dueStartAt: payload.dueStartAt,
-              dueEndAt: payload.dueEndAt,
-              tagIds: payload.tagIds,
-            })
-        "
+        @add="onAdd"
       />
     </div>
 

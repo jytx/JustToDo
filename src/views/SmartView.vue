@@ -78,8 +78,8 @@ const {
   onTaskDragEnd,
 } = useTaskDragReorder(() => taskStore.openTasks);
 
-async function onAddTask(payload: { title: string; priority: import("@/types").Priority; dueStartAt: string | null; dueEndAt: string | null; tagIds: string[] }) {
-  await taskStore.createTask({
+async function onAddTask(payload: { title: string; priority: import("@/types").Priority; dueStartAt: string | null; dueEndAt: string | null; tagIds: string[]; note?: string }) {
+  const task = await taskStore.createTask({
     title: payload.title,
     listId: defaultListId.value,
     priority: payload.priority,
@@ -87,6 +87,9 @@ async function onAddTask(payload: { title: string; priority: import("@/types").P
     dueEndAt: payload.dueEndAt,
     tagIds: payload.tagIds,
   });
+  if (payload.note) {
+    await taskStore.updateTask(task.id, { note: payload.note });
+  }
 }
 
 watch(
