@@ -8,6 +8,7 @@ import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
 import { useSettingsStore } from "@/stores/settings";
 import type { ParsedSubtask } from "@/api/ai";
+import { polishText } from "@/api/ai";
 import {
   PRIORITY_LABELS,
   formatRecurrence,
@@ -30,6 +31,7 @@ import AttachmentPopover from "./AttachmentPopover.vue";
 import ChipPopover from "./ChipPopover.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import AiBreakdownPreview from "./AiBreakdownPreview.vue";
+import AiPolishDialog from "./AiPolishDialog.vue";
 import { useAttachmentUpload } from "@/composables/useAttachmentUpload";
 import * as db from "@/api/db";
 
@@ -584,6 +586,102 @@ function onBreakdownCancel(): void {
   breakdownVisible.value = false;
 }
 
+// ─── AI 文本润色：选中文字或整篇 note 用 AI 优化文笔 ───
+/** 润色弹窗是否可见 */
+const polishVisible = ref(false);
+/** 原始文本（润色前，HTML） */
+const polishOriginal = ref("");
+/** 润色结果（流式增长，HTML） */
+const polishResult = ref("");
+/** 润色加载中 */
+const polishLoading = ref(false);
+/** 润色错误信息 */
+const polishError = ref("");
+/** 润色时是否有选区（决定写回方式：替换选区 vs 替换全文） */
+const polishHasSelection = ref(false);
+/** 润色时选区位置（写回时用） */
+let polishSelectionRange: { from: number; to: number } | null = null;
+
+/** 打开 AI 润色：取选区文字或整篇 note，调 polishText 流式获取结果 */
+async function openPolish(): Promise<void> {
+  const editor = richTextEditorRef.value?.editor;
+  if (!editor) return;
+
+  // 取选区
+  const { from, to, empty } = editor.state.selection;
+  let text: string;
+  if (!empty && to > from) {
+    // 有选区：取选中的 HTML 片段
+    text = editor.state.doc.slice(from, to).content.size > 0
+      ? getSelectionHtml(editor, from, to)
+      : "";
+    polishHasSelection.value = true;
+    polishSelectionRange = { from, to };
+  } else {
+    // 无选区：取整篇
+    text = editor.getHTML();
+    polishHasSelection.value = false;
+    polishSelectionRange = null;
+  }
+
+  if (!text.trim()) {
+    Message.warning("没有可润色的内容");
+    return;
+  }
+
+  // 打开弹窗 + 发起流式润色
+  polishOriginal.value = text;
+  polishResult.value = "";
+  polishError.value = "";
+  polishLoading.value = true;
+  polishVisible.value = true;
+
+  const res = await polishText(text, (delta) => {
+    polishResult.value += delta;
+  });
+  polishLoading.value = false;
+  if (res.ok && res.content) {
+    polishResult.value = res.content;
+  } else {
+    polishError.value = res.message ?? "润色失败";
+  }
+}
+
+/** 从 Tiptap editor 取选区的 HTML（ProseMirror fragment → HTML 字符串） */
+function getSelectionHtml(editor: any, from: number, to: number): string {
+  const slice = editor.state.doc.slice(from, to);
+  const div = document.createElement("div");
+  div.append(slice.content.toDOM(document));
+  return div.innerHTML;
+}
+
+/** 确认润色：把结果写回编辑器 */
+function onPolishConfirm(): void {
+  const editor = richTextEditorRef.value?.editor;
+  if (!editor || !polishResult.value) return;
+
+  if (polishHasSelection.value && polishSelectionRange) {
+    // 有选区：删除选中内容，插入润色结果
+    const { from, to } = polishSelectionRange;
+    editor
+      .chain()
+      .focus()
+      .deleteRange({ from, to })
+      .insertContentAt(from, polishResult.value)
+      .run();
+  } else {
+    // 无选区：整体替换
+    editor.commands.setContent(polishResult.value);
+  }
+  // 写回后 editor 的 onUpdate 会触发 update:modelValue → 自动 saveNote
+  polishVisible.value = false;
+}
+
+/** 取消润色 */
+function onPolishCancel(): void {
+  polishVisible.value = false;
+}
+
 
 // ─── 标题编辑：textarea（无边框、自动撑高；Enter 保存 / Esc 还原） ───
 const titleEl = ref<HTMLTextAreaElement | null>(null);
@@ -1006,6 +1104,16 @@ onBeforeUnmount(() => {
         {{ formatMeta(task.createdAt) }}
       </span>
 
+      <!-- AI 文本润色（仅 AI 启用时显示；选中文字润色选中段，无选区润色整篇） -->
+      <button
+        v-if="settingsStore.aiEnabled"
+        class="detail-panel__format-btn detail-panel__ai-btn"
+        title="AI 润色"
+        @click="openPolish"
+      >
+        <icon-edit :size="16" />
+      </button>
+
       <!-- 富文本工具条入口（滴答清单风格：footer "A" 按钮 + 浮出工具条） -->
       <Popover v-model:visible="formatToolbarVisible" placement="top-right" :offset="48">
         <template #trigger>
@@ -1082,6 +1190,17 @@ onBeforeUnmount(() => {
     >
       <template #title>删除{{ isNote ? "笔记" : "任务" }}「<strong>{{ task?.title }}</strong>」？</template>
     </ConfirmDialog>
+
+    <!-- AI 文本润色预览弹窗 -->
+    <AiPolishDialog
+      :visible="polishVisible"
+      :polished-text="polishResult"
+      :original-text="polishOriginal"
+      :loading="polishLoading"
+      :error="polishError"
+      @confirm="onPolishConfirm"
+      @cancel="onPolishCancel"
+    />
 
     <!-- 附件浮窗（chips 行 📎 点击触发；下拉带箭头，嵌 AttachmentSection） -->
   </div>

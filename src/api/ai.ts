@@ -152,3 +152,13 @@ export async function breakdownTask(taskId: string): Promise<BreakdownResult> {
 export async function extractTasks(text: string): Promise<BreakdownResult> {
   return invoke<BreakdownResult>("ai_extract_tasks", { text });
 }
+
+/** 用 AI 润色文本（修正语病、优化表达，保留 HTML 标签结构）。
+ *  onDelta: 流式回调（不传则不流式）。返回 { ok, content }，content 为润色后文本。 */
+export async function polishText(
+  text: string,
+  onDelta?: (text: string) => void,
+): Promise<AiSummaryResult> {
+  const onEvent = onDelta ? createStreamChannel(onDelta) : undefined;
+  return invoke<AiSummaryResult>("ai_polish_text", { text, onEvent });
+}
