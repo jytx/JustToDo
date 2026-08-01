@@ -1,10 +1,20 @@
 <script setup lang="ts">
 // AI 文本润色预览弹窗
-// 展示润色后的文本（流式逐字出现），用户确认后写回编辑器。
-// 下方折叠区可展开查看原文对比。
-import { computed, ref, watch } from "vue";
+// 左右对比布局：左原文 / 右润色结果。
+// 顶部有「源码/预览」切换（两边同步）+ Markdown 工具栏（源码模式可用，操作右侧编辑区）。
+import { computed, ref, watch, nextTick } from "vue";
 import { marked } from "marked";
-import { IconEdit } from "@arco-design/web-vue/es/icon";
+import {
+  IconEdit,
+  IconEye,
+  IconBold,
+  IconItalic,
+  IconCode,
+  IconList,
+  IconOrderedList,
+  IconQuote,
+  IconEraser,
+} from "@arco-design/web-vue/es/icon";
 
 const props = defineProps<{
   /** 弹窗是否可见 */
@@ -26,25 +36,28 @@ const emit = defineEmits<{
   cancel: [];
 }>();
 
-/** 润色结果渲染后的 HTML（loading 中流式展示用） */
+/** 当前模式：edit 源码 | preview 预览（两边同步） */
+const mode = ref<"edit" | "preview">("preview");
+/** 润色结果渲染后的 HTML（预览模式用） */
 const renderedPolished = ref("");
-/** 原文渲染后的 HTML */
+/** 原文渲染后的 HTML（预览模式用） */
 const renderedOriginal = ref("");
-/** 可编辑的润色结果（loading 结束后用户可手动修改，确认时用这个值） */
+/** 可编辑的润色结果（源码模式可改，确认时用这个值） */
 const editablePolished = ref("");
+/** 右侧编辑 textarea 引用（工具栏操作光标用） */
+const editTextareaRef = ref<HTMLTextAreaElement | null>(null);
+/** Markdown 工具栏是否展开 */
+const toolbarOpen = ref(false);
 
 /** 有结果可确认（loading 结束且有内容） */
 const canConfirm = computed(() => !props.loading && editablePolished.value && !props.error);
 
-// polishedText 变化时：loading 中用 marked 渲染展示，结束时初始化可编辑文本
+// polishedText 变化时：预览渲染 + 初始化可编辑文本
 watch(
   () => props.polishedText,
   async (val) => {
-    if (props.loading) {
-      // 流式中：渲染 HTML 预览
-      renderedPolished.value = val ? await marked.parse(val) : "";
-    } else {
-      // 流式结束：初始化可编辑文本
+    renderedPolished.value = val ? await marked.parse(val) : "";
+    if (!props.loading) {
       editablePolished.value = val;
     }
   },
@@ -61,7 +74,7 @@ watch(
   },
 );
 
-// 原文始终渲染（左右对比布局，左侧展示）
+// 原文始终渲染
 watch(
   () => props.originalText,
   async (val) => {
@@ -69,6 +82,97 @@ watch(
   },
   { immediate: true },
 );
+
+/** 切换源码/预览模式 */
+function toggleMode(): void {
+  mode.value = mode.value === "edit" ? "preview" : "edit";
+  if (mode.value === "edit") toolbarOpen.value = false;
+}
+
+/** 切换工具栏展开 */
+function toggleToolbar(): void {
+  toolbarOpen.value = !toolbarOpen.value;
+}
+
+// ─── Markdown 工具栏：在右侧 textarea 光标处插入语法 ───
+
+/** 行内格式：包裹选中文本 */
+function wrapInline(before: string, after: string, placeholder: string): void {
+  const ta = editTextareaRef.value;
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  const text = editablePolished.value;
+  const selected = text.slice(start, end) || placeholder;
+  const newText = text.slice(0, start) + before + selected + after + text.slice(end);
+  editablePolished.value = newText;
+  nextTick(() => {
+    ta.focus();
+    ta.setSelectionRange(start + before.length, start + before.length + selected.length);
+  });
+}
+
+/** 行首格式：在当前行行首插入前缀 */
+function insertLinePrefix(prefix: string): void {
+  const ta = editTextareaRef.value;
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  const text = editablePolished.value;
+  const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+  const block = text.slice(lineStart, end);
+  const newBlock = block.split("\n").map((line) => prefix + line).join("\n");
+  editablePolished.value = text.slice(0, lineStart) + newBlock + text.slice(end);
+  nextTick(() => {
+    ta.focus();
+    ta.setSelectionRange(lineStart, lineStart + newBlock.length);
+  });
+}
+
+function insertBold(): void {
+  wrapInline("**", "**", "加粗文本");
+}
+function insertItalic(): void {
+  wrapInline("*", "*", "斜体文本");
+}
+function insertCode(): void {
+  wrapInline("`", "`", "代码");
+}
+function insertHeading(level: number): void {
+  insertLinePrefix("#".repeat(level) + " ");
+}
+function insertBulletList(): void {
+  insertLinePrefix("- ");
+}
+function insertOrderedList(): void {
+  insertLinePrefix("1. ");
+}
+function insertQuote(): void {
+  insertLinePrefix("> ");
+}
+/** 清除格式：去掉 Markdown 标记符号 */
+function clearFormat(): void {
+  const ta = editTextareaRef.value;
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  const text = editablePolished.value;
+  const selected = text.slice(start, end);
+  if (!selected) return;
+  const cleaned = selected
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/^>\s*/gm, "")
+    .replace(/^[-*]\s+/gm, "")
+    .replace(/^\d+\.\s+/gm, "")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1")
+    .replace(/`(.+?)`/g, "$1");
+  editablePolished.value = text.slice(0, start) + cleaned + text.slice(end);
+  nextTick(() => {
+    ta.focus();
+    ta.setSelectionRange(start, start + cleaned.length);
+  });
+}
 
 /** 确认：把用户编辑后的结果传给父组件 */
 function onConfirm(): void {
@@ -108,14 +212,71 @@ function onCancel(): void {
       </div>
 
       <template v-else>
+        <!-- 顶部工具栏：源码/预览切换 + Markdown 工具栏开关 -->
+        <div class="ai-polish__toolbar">
+          <a-button type="text" size="mini" @click="toggleToolbar" :disabled="mode !== 'edit'" title="Markdown 工具栏">
+            <template #icon><icon-edit :size="14" /></template>
+            工具
+          </a-button>
+          <a-button type="text" size="mini" @click="toggleMode">
+            <template #icon>
+              <icon-eye v-if="mode === 'edit'" :size="14" />
+              <icon-edit v-else :size="14" />
+            </template>
+            {{ mode === "edit" ? "预览" : "编辑" }}
+          </a-button>
+        </div>
+
+        <!-- Markdown 工具栏（仅源码模式 + 展开时） -->
+        <div v-if="toolbarOpen && mode === 'edit'" class="ai-polish__md-toolbar">
+          <a-button size="mini" shape="circle" type="text" title="加粗" @click="insertBold">
+            <icon-bold :size="14" />
+          </a-button>
+          <a-button size="mini" shape="circle" type="text" title="斜体" @click="insertItalic">
+            <icon-italic :size="14" />
+          </a-button>
+          <a-button size="mini" shape="circle" type="text" title="行内代码" @click="insertCode">
+            <icon-code :size="14" />
+          </a-button>
+          <a-button size="mini" shape="circle" type="text" title="清除格式" @click="clearFormat">
+            <icon-eraser :size="14" />
+          </a-button>
+          <span class="ai-polish__md-divider"></span>
+          <a-button size="mini" shape="circle" type="text" title="H2 标题" @click="insertHeading(2)">
+            <span style="font-size: 11px; font-weight: 600">H2</span>
+          </a-button>
+          <a-button size="mini" shape="circle" type="text" title="H3 标题" @click="insertHeading(3)">
+            <span style="font-size: 11px; font-weight: 600">H3</span>
+          </a-button>
+          <a-button size="mini" shape="circle" type="text" title="引用" @click="insertQuote">
+            <icon-quote :size="14" />
+          </a-button>
+          <span class="ai-polish__md-divider"></span>
+          <a-button size="mini" shape="circle" type="text" title="无序列表" @click="insertBulletList">
+            <icon-list :size="14" />
+          </a-button>
+          <a-button size="mini" shape="circle" type="text" title="有序列表" @click="insertOrderedList">
+            <icon-ordered-list :size="14" />
+          </a-button>
+        </div>
+
         <!-- 左右对比布局：左原文 / 右润色结果 -->
         <div class="ai-polish__compare">
-          <!-- 左：原文（只读） -->
+          <!-- 左：原文 -->
           <div class="ai-polish__pane">
             <div class="ai-polish__pane-label">原文</div>
             <div class="ai-polish__pane-body">
+              <!-- 预览模式：渲染 HTML -->
               <!-- eslint-disable-next-line vue/no-v-html -->
-              <div class="ai-polish__content" v-html="renderedOriginal"></div>
+              <div v-if="mode === 'preview'" class="ai-polish__content" v-html="renderedOriginal"></div>
+              <!-- 源码模式：只读 textarea -->
+              <textarea
+                v-else
+                class="ai-polish__textarea ai-polish__textarea--readonly"
+                :value="originalText"
+                readonly
+                spellcheck="false"
+              ></textarea>
             </div>
           </div>
 
@@ -131,12 +292,16 @@ function onCancel(): void {
                 <a-spin :size="20" />
                 <span>AI 正在润色...</span>
               </div>
-              <!-- 流式中：渲染 HTML 预览 -->
+              <!-- 流式中：渲染 HTML 预览（强制预览，不可编辑） -->
               <!-- eslint-disable-next-line vue/no-v-html -->
               <div v-else-if="loading" class="ai-polish__content" v-html="renderedPolished"></div>
-              <!-- 流式结束：可编辑 textarea -->
+              <!-- 预览模式：渲染 HTML -->
+              <!-- eslint-disable-next-line vue/no-v-html -->
+              <div v-else-if="mode === 'preview'" class="ai-polish__content" v-html="renderedPolished"></div>
+              <!-- 源码模式：可编辑 textarea -->
               <textarea
                 v-else
+                ref="editTextareaRef"
                 v-model="editablePolished"
                 class="ai-polish__textarea"
                 spellcheck="false"
@@ -186,6 +351,32 @@ function onCancel(): void {
   gap: 12px;
   padding: 24px 0;
   color: var(--jt-error);
+}
+
+/* 顶部工具栏 */
+.ai-polish__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+/* Markdown 工具栏 */
+.ai-polish__md-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  margin-bottom: 8px;
+  background: var(--jt-surface-hover);
+  border-radius: 6px;
+  border: 1px solid var(--jt-border);
+}
+.ai-polish__md-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--jt-border);
+  margin: 0 2px;
 }
 
 /* 左右对比布局 */
@@ -257,6 +448,11 @@ function onCancel(): void {
   color: var(--jt-text-primary);
   resize: none;
   padding: 0;
+}
+/* 只读原文 textarea：颜色稍淡 */
+.ai-polish__textarea--readonly {
+  color: var(--jt-text-secondary);
+  cursor: default;
 }
 .ai-polish__content :deep(p) {
   margin: 0 0 8px;
