@@ -3,7 +3,7 @@
 // 主题/强调色/自动今天/检查间隔统一通过 settings store 持久化
 import { ref, onMounted, computed } from "vue";
 import { storeToRefs } from "pinia";
-import { useSettingsStore, SETTINGS_KEYS, type StartupView, type AiProvider } from "@/stores/settings";
+import { useSettingsStore, SETTINGS_KEYS, type StartupView, type AiProvider, DEFAULT_PROMPT_SMART, DEFAULT_PROMPT_LIST, DEFAULT_PROMPT_TASKS, DEFAULT_PROMPT_NOTE } from "@/stores/settings";
 import SelectPopover from "@/components/SelectPopover.vue";
 import {
   IconSettings,
@@ -36,6 +36,10 @@ const {
   aiApiKey,
   aiModel,
   aiSummaryTruncateThreshold,
+  aiPromptSmart,
+  aiPromptList,
+  aiPromptTasks,
+  aiPromptNote,
 } = storeToRefs(settingsStore);
 
 const attachmentPath = ref("");
@@ -622,6 +626,67 @@ async function changeAttachmentPath() {
                 <span class="settings-section__interval-unit">项</span>
               </div>
             </div>
+
+            <a-divider class="my-4" />
+
+            <!-- 自定义提示词：4 个场景，各自可编辑 + 恢复默认 -->
+            <p class="settings-section__desc">自定义提示词。清空则使用默认。每日/周报支持 {mode} 占位符（自动替换为「今日」/「本周」）。</p>
+
+            <!-- 每日/周报提示词 -->
+            <div class="settings-section__prompt">
+              <div class="settings-section__prompt-head">
+                <span class="settings-section__prompt-label">每日 / 周报</span>
+                <a-button type="text" size="mini" @click="settingsStore.setAiPromptSmart(DEFAULT_PROMPT_SMART)">恢复默认</a-button>
+              </div>
+              <a-textarea
+                v-model="aiPromptSmart"
+                :auto-size="{ minRows: 3, maxRows: 10 }"
+                style="width: 100%; margin-top: 4px"
+                @change="() => settingsStore.setAiPromptSmart(aiPromptSmart)"
+              />
+            </div>
+
+            <!-- 清单/目录提示词 -->
+            <div class="settings-section__prompt">
+              <div class="settings-section__prompt-head">
+                <span class="settings-section__prompt-label">清单 / 目录总结</span>
+                <a-button type="text" size="mini" @click="settingsStore.setAiPromptList(DEFAULT_PROMPT_LIST)">恢复默认</a-button>
+              </div>
+              <a-textarea
+                v-model="aiPromptList"
+                :auto-size="{ minRows: 3, maxRows: 10 }"
+                style="width: 100%; margin-top: 4px"
+                @change="() => settingsStore.setAiPromptList(aiPromptList)"
+              />
+            </div>
+
+            <!-- 多选任务提示词 -->
+            <div class="settings-section__prompt">
+              <div class="settings-section__prompt-head">
+                <span class="settings-section__prompt-label">多选任务总结</span>
+                <a-button type="text" size="mini" @click="settingsStore.setAiPromptTasks(DEFAULT_PROMPT_TASKS)">恢复默认</a-button>
+              </div>
+              <a-textarea
+                v-model="aiPromptTasks"
+                :auto-size="{ minRows: 3, maxRows: 10 }"
+                style="width: 100%; margin-top: 4px"
+                @change="() => settingsStore.setAiPromptTasks(aiPromptTasks)"
+              />
+            </div>
+
+            <!-- 笔记摘要提示词 -->
+            <div class="settings-section__prompt">
+              <div class="settings-section__prompt-head">
+                <span class="settings-section__prompt-label">笔记摘要</span>
+                <a-button type="text" size="mini" @click="settingsStore.setAiPromptNote(DEFAULT_PROMPT_NOTE)">恢复默认</a-button>
+              </div>
+              <a-textarea
+                v-model="aiPromptNote"
+                :auto-size="{ minRows: 3, maxRows: 10 }"
+                style="width: 100%; margin-top: 4px"
+                @change="() => settingsStore.setAiPromptNote(aiPromptNote)"
+              />
+            </div>
           </template>
         </div>
 
@@ -953,6 +1018,23 @@ async function changeAttachmentPath() {
 
 .settings-section__test-result--fail {
   color: var(--jt-error);
+}
+
+/* 提示词编辑区：标题行 + textarea */
+.settings-section__prompt {
+  margin-bottom: 12px;
+}
+
+.settings-section__prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-section__prompt-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--jt-text-primary);
 }
 
 .settings-section__about {

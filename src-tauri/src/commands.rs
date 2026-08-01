@@ -2858,21 +2858,10 @@ pub async fn ai_summary(
         "待办数量": todos.len(),
     });
 
-    // 用原始字符串 r#"..."# 避免转义，prompt 直接多行书写更易读
-    let system_prompt = format!(
-        r#"你是一个温暖、专业的任务总结助手。请根据用户{mode}的任务数据，生成一份简洁的中文 Markdown 小结。
-
-要求：
-1. 用 Markdown 格式输出，包含以下部分（用二级标题）：
-   - 「{mode}完成」：列出已完成的主要任务，肯定用户的努力
-   - 「待办提醒」：列出需要关注的事项（如果有），按紧急程度排序
-   - 「小结」：1-2 句鼓励性的总结
-2. 语气积极、鼓励，让用户有成就感
-3. 如果某部分没有数据，简要说明（例如：今天暂无逾期待办，很棒！）
-4. 不要编造数据，只基于提供的任务
-5. 语言简洁，控制在 300 字以内"#,
-        mode = mode_label,
-    );
+    // 用原始字符串 r#"..."# 避免转义，prompt 直接多行书写更易读。
+    // 提示词读设置（用户可自定义），{mode} 占位符替换为「今日」/「本周」。
+    let prompt_tpl = load_prompt(pool.inner(), "ai_prompt_smart", DEFAULT_PROMPT_SMART).await;
+    let system_prompt = prompt_tpl.replace("{mode}", mode_label);
 
     let req = ChatRequest {
         messages: vec![
@@ -2903,6 +2892,53 @@ fn priority_label(p: i32) -> &'static str {
         2 => "中",
         1 => "低",
         _ => "无",
+    }
+}
+
+// ─── AI 总结默认提示词（用户可在设置页自定义，存 app_settings）───
+// smart 提示词支持 {mode} 占位符（运行时替换为「今日」/「本周」）。
+pub const DEFAULT_PROMPT_SMART: &str = r#"你是一个温暖、专业的任务总结助手。请根据用户{mode}的任务数据，生成一份简洁的中文 Markdown 小结。
+
+要求：
+1. 用 Markdown 格式输出，包含以下部分（用二级标题）：
+   - 「{mode}完成」：列出已完成的主要任务，肯定用户的努力
+   - 「待办提醒」：列出需要关注的事项（如果有），按紧急程度排序
+   - 「小结」：1-2 句鼓励性的总结
+2. 语气积极、鼓励，让用户有成就感
+3. 如果某部分没有数据，简要说明（例如：今天暂无逾期待办，很棒！）
+4. 不要编造数据，只基于提供的任务
+5. 语言简洁，控制在 300 字以内"#;
+
+pub const DEFAULT_PROMPT_LIST: &str = r#"你是一个温暖、专业的任务总结助手。请根据用户提供的任务列表，生成一份简洁的中文 Markdown 总结。
+
+要求：
+1. 用 Markdown 格式输出，包含以下部分（用二级标题）：
+   - 「概览」：任务总数、完成情况
+   - 「重点任务」：挑出最重要的几项（高优先级、即将截止的）
+   - 「小结」：1-2 句总结性、鼓励性的话
+2. 语气积极、专业
+3. 不要编造数据，只基于提供的任务
+4. 语言简洁，控制在 300 字以内"#;
+
+/// 多选总结默认提示词（与清单/目录相同，但用户可独立定制） */
+pub const DEFAULT_PROMPT_TASKS: &str = DEFAULT_PROMPT_LIST;
+
+pub const DEFAULT_PROMPT_NOTE: &str = r#"你是一个专业的笔记摘要助手。请根据用户提供的笔记列表，生成一份简洁的中文 Markdown 摘要。
+
+要求：
+1. 用 Markdown 格式输出，包含以下部分（用二级标题）：
+   - 「笔记概览」：笔记数量、整体主题
+   - 「要点提炼」：每篇笔记的核心要点（1-2 句）
+   - 「小结」：这些笔记之间的关联或整体价值
+2. 语气客观、专业
+3. 不要编造内容，只基于提供的笔记
+4. 语言简洁，控制在 400 字以内"#;
+
+/// 读取自定义提示词：读 app_settings，为空或不存在则回落默认值。 */
+async fn load_prompt(pool: &sqlx::SqlitePool, key: &str, default: &str) -> String {
+    match get_setting_inner(pool, key.to_string()).await {
+        Ok(Some(v)) if !v.trim().is_empty() => v,
+        _ => default.to_string(),
     }
 }
 
@@ -3027,10 +3063,17 @@ pub async fn ai_summary_scope(
         (data.tasks, false)
     };
 
+    // 读提示词：note 用笔记摘要提示词；task 按 scope.type 区分清单/多选提示词
+    let scope_type = scope.get("type").and_then(|v| v.as_str()).unwrap_or("list");
     let (system_prompt, payload) = if data.kind == "note" {
-        build_note_prompt(&tasks)
+        let p = load_prompt(pool.inner(), "ai_prompt_note", DEFAULT_PROMPT_NOTE).await;
+        build_note_prompt(&tasks, p)
+    } else if scope_type == "tasks" {
+        let p = load_prompt(pool.inner(), "ai_prompt_tasks", DEFAULT_PROMPT_TASKS).await;
+        build_task_summary_prompt(&tasks, p)
     } else {
-        build_task_summary_prompt(&tasks)
+        let p = load_prompt(pool.inner(), "ai_prompt_list", DEFAULT_PROMPT_LIST).await;
+        build_task_summary_prompt(&tasks, p)
     };
 
     let req = ChatRequest {
@@ -3050,8 +3093,8 @@ pub async fn ai_summary_scope(
     }
 }
 
-/// 组装「任务总结」prompt。 */
-fn build_task_summary_prompt(tasks: &[Task]) -> (String, serde_json::Value) {
+/// 组装「任务总结」prompt。system_prompt 由调用方读设置传入（支持自定义）。 */
+fn build_task_summary_prompt(tasks: &[Task], system_prompt: String) -> (String, serde_json::Value) {
     let payload = serde_json::json!({
         "任务列表": tasks.iter().map(|t| serde_json::json!({
             "标题": t.title,
@@ -3061,21 +3104,11 @@ fn build_task_summary_prompt(tasks: &[Task]) -> (String, serde_json::Value) {
         })).collect::<Vec<_>>(),
         "任务总数": tasks.len(),
     });
-    let system_prompt = r#"你是一个温暖、专业的任务总结助手。请根据用户提供的任务列表，生成一份简洁的中文 Markdown 总结。
-
-要求：
-1. 用 Markdown 格式输出，包含以下部分（用二级标题）：
-   - 「概览」：任务总数、完成情况
-   - 「重点任务」：挑出最重要的几项（高优先级、即将截止的）
-   - 「小结」：1-2 句总结性、鼓励性的话
-2. 语气积极、专业
-3. 不要编造数据，只基于提供的任务
-4. 语言简洁，控制在 300 字以内"#.to_string();
     (system_prompt, payload)
 }
 
-/// 组装「笔记摘要」prompt。 */
-fn build_note_prompt(tasks: &[Task]) -> (String, serde_json::Value) {
+/// 组装「笔记摘要」prompt。system_prompt 由调用方读设置传入。 */
+fn build_note_prompt(tasks: &[Task], system_prompt: String) -> (String, serde_json::Value) {
     let payload = serde_json::json!({
         "笔记列表": tasks.iter().map(|t| serde_json::json!({
             "标题": t.title,
@@ -3083,16 +3116,6 @@ fn build_note_prompt(tasks: &[Task]) -> (String, serde_json::Value) {
         })).collect::<Vec<_>>(),
         "笔记总数": tasks.len(),
     });
-    let system_prompt = r#"你是一个专业的笔记摘要助手。请根据用户提供的笔记列表，生成一份简洁的中文 Markdown 摘要。
-
-要求：
-1. 用 Markdown 格式输出，包含以下部分（用二级标题）：
-   - 「笔记概览」：笔记数量、整体主题
-   - 「要点提炼」：每篇笔记的核心要点（1-2 句）
-   - 「小结」：这些笔记之间的关联或整体价值
-2. 语气客观、专业
-3. 不要编造内容，只基于提供的笔记
-4. 语言简洁，控制在 400 字以内"#.to_string();
     (system_prompt, payload)
 }
 

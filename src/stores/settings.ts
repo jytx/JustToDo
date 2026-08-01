@@ -37,6 +37,15 @@ export const SETTINGS_KEYS = {
   aiModel: "ai_model",
   /** AI 总结智能裁剪阈值（任务数超过时弹确认是否裁剪，默认 50） */
   aiSummaryTruncateThreshold: "ai_summary_truncate_threshold",
+  // ── AI 提示词（用户可自定义，空字符串表示用默认）──
+  /** 每日/周报提示词（支持 {mode} 占位符） */
+  aiPromptSmart: "ai_prompt_smart",
+  /** 清单/目录总结提示词 */
+  aiPromptList: "ai_prompt_list",
+  /** 多选任务总结提示词 */
+  aiPromptTasks: "ai_prompt_tasks",
+  /** 笔记摘要提示词 */
+  aiPromptNote: "ai_prompt_note",
 } as const;
 
 /** 每日汇总提醒时点配置 —— 上限 8 个（与 Rust 端 parse_daily_times 一致） */
@@ -74,6 +83,45 @@ const DEFAULT_AI_API_KEY = "";
 const DEFAULT_AI_MODEL = "";
 /** AI 总结裁剪阈值默认 50（任务数超过时前端弹确认是否裁剪） */
 const DEFAULT_AI_SUMMARY_TRUNCATE_THRESHOLD = 50;
+
+// ── AI 提示词默认值（与 Rust 端 DEFAULT_PROMPT_* 常量保持一致）──
+// 供设置页「恢复默认」和初始显示使用。smart 支持 {mode} 占位符。
+export const DEFAULT_PROMPT_SMART = `你是一个温暖、专业的任务总结助手。请根据用户{mode}的任务数据，生成一份简洁的中文 Markdown 小结。
+
+要求：
+1. 用 Markdown 格式输出，包含以下部分（用二级标题）：
+   - 「{mode}完成」：列出已完成的主要任务，肯定用户的努力
+   - 「待办提醒」：列出需要关注的事项（如果有），按紧急程度排序
+   - 「小结」：1-2 句鼓励性的总结
+2. 语气积极、鼓励，让用户有成就感
+3. 如果某部分没有数据，简要说明（例如：今天暂无逾期待办，很棒！）
+4. 不要编造数据，只基于提供的任务
+5. 语言简洁，控制在 300 字以内`;
+
+export const DEFAULT_PROMPT_LIST = `你是一个温暖、专业的任务总结助手。请根据用户提供的任务列表，生成一份简洁的中文 Markdown 总结。
+
+要求：
+1. 用 Markdown 格式输出，包含以下部分（用二级标题）：
+   - 「概览」：任务总数、完成情况
+   - 「重点任务」：挑出最重要的几项（高优先级、即将截止的）
+   - 「小结」：1-2 句总结性、鼓励性的话
+2. 语气积极、专业
+3. 不要编造数据，只基于提供的任务
+4. 语言简洁，控制在 300 字以内`;
+
+/** 多选总结默认提示词（与清单/目录相同，但用户可独立定制） */
+export const DEFAULT_PROMPT_TASKS = DEFAULT_PROMPT_LIST;
+
+export const DEFAULT_PROMPT_NOTE = `你是一个专业的笔记摘要助手。请根据用户提供的笔记列表，生成一份简洁的中文 Markdown 摘要。
+
+要求：
+1. 用 Markdown 格式输出，包含以下部分（用二级标题）：
+   - 「笔记概览」：笔记数量、整体主题
+   - 「要点提炼」：每篇笔记的核心要点（1-2 句）
+   - 「小结」：这些笔记之间的关联或整体价值
+2. 语气客观、专业
+3. 不要编造内容，只基于提供的笔记
+4. 语言简洁，控制在 400 字以内`;
 
 /** 窗口缩放级别上下限（与 Rust 端 menu.rs 保持一致） */
 const ZOOM_MIN = 0.5;
@@ -192,6 +240,11 @@ export const useSettingsStore = defineStore("settings", () => {
   const aiApiKey = ref<string>(DEFAULT_AI_API_KEY);
   const aiModel = ref<string>(DEFAULT_AI_MODEL);
   const aiSummaryTruncateThreshold = ref<number>(DEFAULT_AI_SUMMARY_TRUNCATE_THRESHOLD);
+  // AI 提示词（默认显示全文，用户可改；后端读到空用默认兜底）
+  const aiPromptSmart = ref<string>(DEFAULT_PROMPT_SMART);
+  const aiPromptList = ref<string>(DEFAULT_PROMPT_LIST);
+  const aiPromptTasks = ref<string>(DEFAULT_PROMPT_TASKS);
+  const aiPromptNote = ref<string>(DEFAULT_PROMPT_NOTE);
 
   const initialized = ref(false);
   const loading = ref(false);
@@ -234,7 +287,7 @@ export const useSettingsStore = defineStore("settings", () => {
     if (initialized.value || loading.value) return;
     loading.value = true;
     try {
-      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw, aiEnabledRaw, aiProviderRaw, aiBaseUrlRaw, aiApiKeyRaw, aiModelRaw, aiTruncateRaw] = await Promise.all([
+      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw, aiEnabledRaw, aiProviderRaw, aiBaseUrlRaw, aiApiKeyRaw, aiModelRaw, aiTruncateRaw, aiPromptSmartRaw, aiPromptListRaw, aiPromptTasksRaw, aiPromptNoteRaw] = await Promise.all([
         db.getSetting(SETTINGS_KEYS.themeMode).catch(() => null),
         db.getSetting(SETTINGS_KEYS.accentColor).catch(() => null),
         db.getSetting(SETTINGS_KEYS.newTasksDueToday).catch(() => null),
@@ -250,6 +303,10 @@ export const useSettingsStore = defineStore("settings", () => {
         db.getSetting(SETTINGS_KEYS.aiApiKey).catch(() => null),
         db.getSetting(SETTINGS_KEYS.aiModel).catch(() => null),
         db.getSetting(SETTINGS_KEYS.aiSummaryTruncateThreshold).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiPromptSmart).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiPromptList).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiPromptTasks).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiPromptNote).catch(() => null),
       ]);
 
       const mode = parseThemeMode(themeRaw);
@@ -280,6 +337,11 @@ export const useSettingsStore = defineStore("settings", () => {
       aiApiKey.value = aiApiKeyRaw ?? DEFAULT_AI_API_KEY;
       aiModel.value = aiModelRaw ?? DEFAULT_AI_MODEL;
       aiSummaryTruncateThreshold.value = parseTruncateThreshold(aiTruncateRaw);
+      // AI 提示词：为空（未自定义）则用默认全文，非空用自定义
+      aiPromptSmart.value = aiPromptSmartRaw?.trim() ? aiPromptSmartRaw : DEFAULT_PROMPT_SMART;
+      aiPromptList.value = aiPromptListRaw?.trim() ? aiPromptListRaw : DEFAULT_PROMPT_LIST;
+      aiPromptTasks.value = aiPromptTasksRaw?.trim() ? aiPromptTasksRaw : DEFAULT_PROMPT_TASKS;
+      aiPromptNote.value = aiPromptNoteRaw?.trim() ? aiPromptNoteRaw : DEFAULT_PROMPT_NOTE;
 
       // 先应用强调色（不依赖模式），再应用主题
       theme.setAccentColor(accent);
@@ -476,6 +538,32 @@ async function setAiSummaryTruncateThreshold(v: number): Promise<void> {
   if (!ok) aiSummaryTruncateThreshold.value = prev;
 }
 
+// ── AI 提示词 setter（4 个场景，照搬三步式）──
+async function setAiPromptSmart(v: string): Promise<void> {
+  const prev = aiPromptSmart.value;
+  aiPromptSmart.value = v;
+  const ok = await persist(SETTINGS_KEYS.aiPromptSmart, v, prev);
+  if (!ok) aiPromptSmart.value = prev;
+}
+async function setAiPromptList(v: string): Promise<void> {
+  const prev = aiPromptList.value;
+  aiPromptList.value = v;
+  const ok = await persist(SETTINGS_KEYS.aiPromptList, v, prev);
+  if (!ok) aiPromptList.value = prev;
+}
+async function setAiPromptTasks(v: string): Promise<void> {
+  const prev = aiPromptTasks.value;
+  aiPromptTasks.value = v;
+  const ok = await persist(SETTINGS_KEYS.aiPromptTasks, v, prev);
+  if (!ok) aiPromptTasks.value = prev;
+}
+async function setAiPromptNote(v: string): Promise<void> {
+  const prev = aiPromptNote.value;
+  aiPromptNote.value = v;
+  const ok = await persist(SETTINGS_KEYS.aiPromptNote, v, prev);
+  if (!ok) aiPromptNote.value = prev;
+}
+
   /**
    * 监听 Rust 端 zoom-changed 事件
    *
@@ -563,6 +651,10 @@ async function setAiSummaryTruncateThreshold(v: number): Promise<void> {
     aiApiKey,
     aiModel,
     aiSummaryTruncateThreshold,
+    aiPromptSmart,
+    aiPromptList,
+    aiPromptTasks,
+    aiPromptNote,
     initialized,
     loading,
     error,
@@ -582,6 +674,10 @@ async function setAiSummaryTruncateThreshold(v: number): Promise<void> {
     setAiApiKey,
     setAiModel,
     setAiSummaryTruncateThreshold,
+    setAiPromptSmart,
+    setAiPromptList,
+    setAiPromptTasks,
+    setAiPromptNote,
     cycleTheme,
     zoomIn,
     zoomOut,
