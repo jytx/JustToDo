@@ -49,8 +49,10 @@ const isNote = computed(() => props.kind === "note");
 /** AI 是否启用（决定是否显示 AI 总结菜单项） */
 const aiEnabled = computed(() => useSettingsStore().aiEnabled);
 
-/** 选中的数量（菜单标题显示用，文案随 kind） */
-const selectedCount = computed(() => taskStore.batchSelectedTasks.length);
+/** 选中的数量（菜单标题显示用，文案随 kind）。
+ *  用 batchSelectedIdsArr 而非 batchSelectedTasks：后者只从 currentTasks（根任务）
+ *  过滤，不含子任务，选中子任务时计数会少算。 */
+const selectedCount = computed(() => taskStore.batchSelectedIdsArr.length);
 
 /** 目标列表选项：任务 → taskLists（清单）；笔记 → noteLists（笔记本）。
  *  两棵树相互独立，必须按 kind 取数，避免跨 kind 移动。
