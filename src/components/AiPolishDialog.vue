@@ -189,7 +189,7 @@ function onCancel(): void {
 .ai-polish__result {
   position: relative;
   min-height: 120px;
-  max-height: 400px;
+  max-height: 500px;
   overflow-y: auto;
   padding: 16px;
   background: var(--jt-surface-sunken);
@@ -226,7 +226,7 @@ function onCancel(): void {
 /* 可编辑 textarea（loading 结束后用户可修改润色结果） */
 .ai-polish__textarea {
   width: 100%;
-  min-height: 120px;
+  min-height: 240px;
   border: none;
   outline: none;
   background: transparent;
