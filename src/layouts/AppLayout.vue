@@ -49,19 +49,11 @@ function openSummary(): void {
   summaryVisible.value = true;
 }
 
-/** 侧边栏清单/目录 AI 总结入口：设置 scope 后打开弹窗 */
+/** 侧边栏清单/目录 AI 总结入口：只设置 scope，不立即开弹窗。
+ *  DailySummaryModal 预检后，空则 toast，非空才开弹窗（避免闪烁）。 */
 function onAiSummary(scope: import("@/api/ai").SummaryScope): void {
   taskStore.pendingSummaryScope = scope;
-  summaryVisible.value = true;
 }
-
-// 批量菜单入口：设置 scope（多选任务）后由 watch 统一打开弹窗
-watch(
-  () => taskStore.pendingSummaryScope,
-  (scope) => {
-    if (scope) summaryVisible.value = true;
-  },
-);
 
 /** 是否显示排序按钮（清单/笔记本/标签/全部视图） */
 const showSortButton = computed(() => {

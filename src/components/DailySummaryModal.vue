@@ -56,6 +56,12 @@ watch(content, async (md) => {
 /** 是否正在保存为笔记 */
 const saving = ref(false);
 
+/** modal 关闭（点 mask/ESC/关闭按钮）：同步内部状态 + 通知父组件 */
+function onModalVisibleChange(v: boolean): void {
+  innerVisible.value = v;
+  emit("update:visible", v);
+}
+
 /** 生成总结：按模式分发到不同 API */
 async function generate(truncate = false): Promise<void> {
   // 去重：watch(visible) 和 watch(scope) 可能同时触发，避免重复调用导致重复提示
@@ -74,14 +80,13 @@ async function generate(truncate = false): Promise<void> {
       const res = await generateScopeSummary(scope, truncate);
       loading.value = false;
       if (res.empty) {
-        // 范围为空：toast 提示并关闭弹窗（不占用弹窗空间）。
-        // 防抖：500ms 内重复的 empty 提示只显示一次（避免 watch 重复触发）
+        // 弹窗已打开时切到空范围：toast 并关闭
         const now = Date.now();
         if (now - lastEmptyToast > 500) {
           lastEmptyToast = now;
           Message.info(res.message ?? "该范围暂无内容");
         }
-        emit("update:visible", false);
+        onModalVisibleChange(false);
         return;
       }
       if (res.ok && res.content) {
@@ -165,7 +170,7 @@ async function onSaveAsNote(): Promise<void> {
     });
     await taskStore.updateTask(note.id, { note: html });
     Message.success(`已保存为笔记「${noteTitle}」`);
-    emit("update:visible", false);
+    onModalVisibleChange(false);
   } catch (e) {
     Message.error(`保存失败：${String(e)}`);
   } finally {
@@ -173,18 +178,28 @@ async function onSaveAsNote(): Promise<void> {
   }
 }
 
-// ─── 触发逻辑（避免重复 generate 导致重复提示）───
-// generating 标志：generate 是 async，期间再次触发（watch visible + scope 同时）直接跳过
+// ─── 触发逻辑（避免弹窗闪烁 + 重复提示）───
+// 核心思路：scope 入口（清单/目录/多选）先静默预检（弹窗未开），
+// empty → toast（弹窗自始至终不开，不闪烁）；非空 → 才打开弹窗。
+// smart 入口（顶栏，scope=null）直接打开，走 watch(visible)。
 let generating = false;
-/** empty toast 防抖时间戳（避免重复触发显示多个提示） */
 let lastEmptyToast = 0;
+/** 内部实际可见性：scope 预检通过后才 true，避免 empty 时弹窗闪一下 */
+const innerVisible = ref(false);
 
+// props.visible（外部请求）→ 同步到 innerVisible（smart 模式直接显示）
 watch(
   () => props.visible,
   (v) => {
     if (v) {
-      if (!generating) generate();
+      // smart 模式（scope=null）：直接打开并生成
+      if (!currentScope.value) {
+        innerVisible.value = true;
+        generate();
+      }
+      // scope 模式：由 watch(scope) 预检决定是否打开，这里不处理
     } else {
+      innerVisible.value = false;
       content.value = "";
       errorMsg.value = "";
       isEmpty.value = false;
@@ -197,11 +212,45 @@ watch(
   },
 );
 
-// 弹窗已打开时，scope 变化重新生成（切清单/切目录场景）
+// scope 变化：静默预检。
+// - 弹窗未开：empty → toast + 清 scope；非空 → 存内容 + 打开弹窗（不重新 generate）
+// - 弹窗已开（切清单）：直接 generate
 watch(
   () => taskStore.pendingSummaryScope,
-  (scope) => {
-    if (props.visible && scope && !generating) {
+  async (scope) => {
+    if (!scope || generating) return;
+    if (!innerVisible.value) {
+      // 预检场景（弹窗未开）
+      generating = true;
+      const res = await generateScopeSummary(scope, false);
+      generating = false;
+      if (res.empty) {
+        const now = Date.now();
+        if (now - lastEmptyToast > 500) {
+          lastEmptyToast = now;
+          Message.info(res.message ?? "该范围暂无内容");
+        }
+        taskStore.pendingSummaryScope = null;
+        return;
+      }
+      // 非空：存内容并打开弹窗（不再调 generate，避免重复请求）
+      if (res.ok && res.content) {
+        content.value = res.content;
+        if (res.truncated) {
+          truncatedHint.value = `（已智能裁剪至重点任务，共 ${res.count} 项）`;
+        }
+        innerVisible.value = true;
+        // 超阈值确认（弹窗打开后弹裁剪对话框）
+        if (typeof res.count === "number" && res.count > settingsStore.aiSummaryTruncateThreshold) {
+          askTruncate(res.count, settingsStore.aiSummaryTruncateThreshold);
+        }
+      } else {
+        // 预检失败：打开弹窗显示错误
+        errorMsg.value = res.message ?? "生成失败";
+        innerVisible.value = true;
+      }
+    } else {
+      // 弹窗已开（切清单场景）：重新生成
       generate();
     }
   },
@@ -210,14 +259,14 @@ watch(
 
 <template>
   <a-modal
-    :visible="visible"
+    :visible="innerVisible"
     :width="560"
     :footer="false"
     :mask-closable="true"
     :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
     modal-class="daily-summary-modal"
     wrap-class="daily-summary-wrap"
-    @update:visible="(v: boolean) => emit('update:visible', v)"
+    @update:visible="onModalVisibleChange"
   >
     <div class="daily-summary">
       <!-- 头部：标题 + smart 模式切换（仅 smart 模式显示 radio） -->
