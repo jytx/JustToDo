@@ -2,6 +2,7 @@
 // 任务详情面板 —— 滴答清单风格沉浸式
 // 顶部 chips 行 + 大标题 + 无边框 Tiptap 描述/检查项 + 底部 footer
 import { ref, watch, computed, nextTick, onMounted, onBeforeUnmount } from "vue";
+import { Message } from "@arco-design/web-vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
@@ -575,6 +576,7 @@ async function onBreakdownConfirm(subs: ParsedSubtask[]): Promise<void> {
     taskStore.loadSubtasksToCache(parent.id),
   ]);
   breakdownVisible.value = false;
+  Message.success(`已创建 ${subs.length} 个子任务`);
 }
 
 /** 取消 AI 拆解预览 */
