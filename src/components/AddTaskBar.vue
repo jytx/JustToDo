@@ -123,31 +123,28 @@ const aiParsing = ref(false);
 const aiAvailable = computed(() => settings.aiEnabled && !isNote.value);
 
 /**
- * AI 解析自然语言输入：调 parseTask → 填充属性栏（标题/优先级/日期/标签）。
- * 用户可微调后回车建任务（不直接创建，安全）。
+ * AI 解析自然语言输入：调 parseTask → 填充属性 → 直接创建任务。
+ * 解析失败时保留原输入，用户可手动回车创建。
  */
 async function onAiParse(): Promise<void> {
   const trimmed = title.value.trim();
   if (!trimmed || aiParsing.value) return;
   aiParsing.value = true;
-  focused.value = true; // 展开属性行显示填充结果
   try {
     const res = await parseTask(trimmed);
     if (res.ok && res.parsed) {
       const p = res.parsed;
-      // 标题：解析出的核心内容（为空则保留原文）
+      // 填充解析结果到各属性
       if (p.title) title.value = p.title;
-      // 优先级
       priority.value = (p.priority as Priority) ?? 0;
-      // 日期
       dueStartAt.value = p.dueStartAt ?? null;
       dueEndAt.value = p.dueEndAt ?? null;
-      // 标签：按名称匹配现有标签，不存在的自动创建
       if (p.tagNames.length > 0) {
         const ids = await resolveTagIds(p.tagNames);
         selectedTagIds.value = ids;
       }
-      Message.success("AI 解析完成，请确认后回车创建");
+      // 直接创建任务（属性已填充，submit 会 emit add + 重置）
+      submit();
     } else if (res.fallbackTitle) {
       // 模型未调工具，原样返回标题
       Message.info("AI 未能解析，已保留原输入");
