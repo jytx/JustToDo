@@ -34,3 +34,30 @@ export interface AiSummaryResult {
 export async function generateSummary(mode: "daily" | "weekly"): Promise<AiSummaryResult> {
   return invoke<AiSummaryResult>("ai_summary", { mode });
 }
+
+/** AI 总结范围：清单 / 目录 / 多选任务 */
+export type SummaryScope =
+  | { type: "list" | "folder"; id: string; name: string; kind: "task" | "note" }
+  | { type: "tasks"; ids: string[] };
+
+/** 范围总结结果（比 AiSummaryResult 多 count/kind/truncated，用于超阈值提示） */
+export interface ScopeSummaryResult {
+  ok: boolean;
+  content?: string;
+  message?: string;
+  /** 原始任务总数（裁剪前） */
+  count?: number;
+  /** 实体类型 task/note */
+  kind?: string;
+  /** 是否已裁剪 */
+  truncated?: boolean;
+}
+
+/** 按范围生成 AI 总结（清单/目录/多选）。
+ *  truncate: true 时按设置阈值裁剪（前端超阈值弹确认后传 true） */
+export async function generateScopeSummary(
+  scope: SummaryScope,
+  truncate: boolean,
+): Promise<ScopeSummaryResult> {
+  return invoke<ScopeSummaryResult>("ai_summary_scope", { scope, truncate });
+}

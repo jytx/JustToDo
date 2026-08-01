@@ -1,87 +1,149 @@
 <script setup lang="ts">
-// 每日小结 / 周报 AI 弹窗
-// 详见 discuss/2026-07-31-ai-daily-summary-design.md
+// AI 总结弹窗（每日/周报 + 清单/目录/多选，通用）
+// 详见 discuss/2026-07-31-ai-daily-summary-design.md + 2026-07-31-ai-summary-scope-design.md
 //
-// 交互：打开自动生成 → 展示 Markdown → 可切换每日/周报（重新生成）→ 可保存为笔记
-// 依赖：src/api/ai.ts（generateSummary）、marked（Markdown→HTML）、task store（存为笔记）
-import { ref, watch } from "vue";
-import { Message } from "@arco-design/web-vue";
+// 两种模式：
+// - smart 模式（默认）：每日/周报，调 generateSummary(mode)，顶部有每日/周报切换
+// - scope 模式：清单/目录/多选，调 generateScopeSummary(scope)，无切换 radio
+//
+// 超阈值裁剪：scope 模式下若返回 count > 设置阈值，弹确认是否裁剪
+import { ref, watch, computed } from "vue";
+import { Message, Modal } from "@arco-design/web-vue";
 import { marked } from "marked";
-import { generateSummary } from "@/api/ai";
+import { generateSummary, generateScopeSummary, type SummaryScope } from "@/api/ai";
 import { useTaskStore } from "@/stores/task";
+import { useSettingsStore } from "@/stores/settings";
 
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ "update:visible": [v: boolean] }>();
 
 const taskStore = useTaskStore();
+const settingsStore = useSettingsStore();
 
-/** 模式：每日 | 周报 */
-type SummaryMode = "daily" | "weekly";
-const mode = ref<SummaryMode>("daily");
+/** smart 模式下的每日/周报选择 */
+type SmartMode = "daily" | "weekly";
+const smartMode = ref<SmartMode>("daily");
+
+/** 当前是否为 scope 模式（pendingSummaryScope 非 null） */
+const currentScope = computed<SummaryScope | null>(() => taskStore.pendingSummaryScope);
+const isScopeMode = computed(() => currentScope.value !== null);
+
+/** 弹窗标题：随 scope 动态 */
+const title = computed(() => {
+  const scope = currentScope.value;
+  if (!scope) return "AI 小结";
+  if (scope.type === "tasks") return `选中 ${scope.ids.length} 项的总结`;
+  return `${scope.name} 总结`;
+});
 
 /** 加载状态 */
 const loading = ref(false);
-/** 生成的 Markdown 文本（成功后填充） */
+/** 生成的 Markdown 文本 */
 const content = ref("");
-/** 错误信息（失败时填充） */
+/** 错误信息 */
 const errorMsg = ref("");
+/** 裁剪提示（若本次结果已裁剪） */
+const truncatedHint = ref("");
 
-/** 渲染后的 HTML（用于 v-html 展示）。
- *  marked v18 的 parse 是异步的，用 watch 异步渲染到 ref（computed 无法处理 async）。 */
+/** 渲染后的 HTML（marked v18 parse 异步，用 watch 渲染到 ref） */
 const renderedHtml = ref("");
 watch(content, async (md) => {
   renderedHtml.value = md ? await marked.parse(md) : "";
 });
 
-/** 是否正在保存为笔记（防重复点击） */
+/** 是否正在保存为笔记 */
 const saving = ref(false);
 
-/** 调 AI 生成小结 */
-async function generate(): Promise<void> {
+/** 生成总结：按模式分发到不同 API */
+async function generate(truncate = false): Promise<void> {
   loading.value = true;
   errorMsg.value = "";
   content.value = "";
-  const res = await generateSummary(mode.value);
-  loading.value = false;
-  if (res.ok && res.content) {
-    content.value = res.content;
+  truncatedHint.value = "";
+
+  const scope = currentScope.value;
+  if (scope) {
+    // scope 模式：调 generateScopeSummary
+    const res = await generateScopeSummary(scope, truncate);
+    loading.value = false;
+    if (res.ok && res.content) {
+      content.value = res.content;
+      // 检查是否超阈值（未裁剪且 count > 阈值 → 弹确认）
+      if (!truncate && typeof res.count === "number") {
+        const threshold = settingsStore.aiSummaryTruncateThreshold;
+        if (res.count > threshold) {
+          askTruncate(res.count, threshold);
+        }
+      }
+      if (res.truncated) {
+        truncatedHint.value = `（已智能裁剪至重点任务，共 ${res.count} 项）`;
+      }
+    } else {
+      errorMsg.value = res.message ?? "生成失败";
+    }
   } else {
-    errorMsg.value = res.message ?? "生成失败";
+    // smart 模式：调 generateSummary
+    const res = await generateSummary(smartMode.value);
+    loading.value = false;
+    if (res.ok && res.content) {
+      content.value = res.content;
+    } else {
+      errorMsg.value = res.message ?? "生成失败";
+    }
   }
 }
 
-/** 切换模式：重新生成 */
-function onModeChange(v: SummaryMode): void {
-  if (v === mode.value) return;
-  mode.value = v;
+/** 超阈值时弹确认：是否智能裁剪 */
+function askTruncate(count: number, threshold: number): void {
+  Modal.confirm({
+    title: "任务数量较多",
+    content: `该范围共 ${count} 项任务，全部总结可能较慢且消耗较多 token。是否智能裁剪至前 ${threshold} 项重点任务？`,
+    okText: "智能裁剪",
+    cancelText: "全量总结",
+    onOk: () => {
+      generate(true);
+    },
+    // 取消 = 全量保留（当前内容已是全量，无需重生成）
+  });
+}
+
+/** smart 模式切换每日/周报 */
+function onSmartModeChange(v: SmartMode): void {
+  if (v === smartMode.value) return;
+  smartMode.value = v;
   generate();
 }
 
-/** 重试（失败时） */
+/** 重试 */
 function onRetry(): void {
   generate();
 }
 
-/** 保存为笔记：Markdown → HTML → 创建笔记（kind=note）→ 写入 note 字段 */
+/** 保存为笔记 */
 async function onSaveAsNote(): Promise<void> {
   if (!content.value || saving.value) return;
   saving.value = true;
   try {
-    // marked v18 的 parse 返回 Promise<string>，必须 await（参考 AttachmentPreview.vue:126）
     const html = await marked.parse(content.value);
     const today = new Date();
     const pad = (n: number) => String(n).padStart(2, "0");
     const dateStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
-    const title = mode.value === "weekly" ? `周报 ${dateStr}` : `每日小结 ${dateStr}`;
-    // 创建笔记到默认笔记本
+    // 标题随模式：smart 用每日/周报，scope 用范围名
+    const scope = currentScope.value;
+    const noteTitle = scope
+      ? scope.type === "tasks"
+        ? `任务总结 ${dateStr}`
+        : `${scope.name} 总结 ${dateStr}`
+      : smartMode.value === "weekly"
+        ? `周报 ${dateStr}`
+        : `每日小结 ${dateStr}`;
     const note = await taskStore.createTask({
-      title,
+      title: noteTitle,
       listId: "default-notebook",
       kind: "note",
     });
-    // 写入富文本正文（createTask 不支持 note 字段，需 update）
     await taskStore.updateTask(note.id, { note: html });
-    Message.success(`已保存为笔记「${title}」`);
+    Message.success(`已保存为笔记「${noteTitle}」`);
     emit("update:visible", false);
   } catch (e) {
     Message.error(`保存失败：${String(e)}`);
@@ -90,7 +152,7 @@ async function onSaveAsNote(): Promise<void> {
   }
 }
 
-// 打开时自动生成；关闭时清空状态（下次打开重新生成）
+// 打开时自动生成；关闭时清空状态 + scope
 watch(
   () => props.visible,
   (v) => {
@@ -99,7 +161,10 @@ watch(
     } else {
       content.value = "";
       errorMsg.value = "";
-      mode.value = "daily";
+      truncatedHint.value = "";
+      smartMode.value = "daily";
+      // 关闭时清掉 scope（下次默认回 smart 模式）
+      taskStore.pendingSummaryScope = null;
     }
   },
 );
@@ -117,14 +182,15 @@ watch(
     @update:visible="(v: boolean) => emit('update:visible', v)"
   >
     <div class="daily-summary">
-      <!-- 头部：标题 + 模式切换 -->
+      <!-- 头部：标题 + smart 模式切换（仅 smart 模式显示 radio） -->
       <div class="daily-summary__header">
-        <h2 class="daily-summary__title">AI 小结</h2>
+        <h2 class="daily-summary__title">{{ title }}</h2>
         <a-radio-group
-          :model-value="mode"
+          v-if="!isScopeMode"
+          :model-value="smartMode"
           type="button"
           size="small"
-          @change="(v: any) => onModeChange(v as SummaryMode)"
+          @change="(v: any) => onSmartModeChange(v as SmartMode)"
         >
           <a-radio value="daily">每日</a-radio>
           <a-radio value="weekly">周报</a-radio>
@@ -136,7 +202,7 @@ watch(
         <!-- 加载中 -->
         <div v-if="loading" class="daily-summary__loading">
           <a-spin />
-          <span class="daily-summary__loading-text">AI 正在生成小结...</span>
+          <span class="daily-summary__loading-text">AI 正在生成总结...</span>
         </div>
 
         <!-- 错误 -->
@@ -146,7 +212,12 @@ watch(
         </div>
 
         <!-- 成功：渲染 Markdown -->
-        <div v-else class="daily-summary__content" v-html="renderedHtml"></div>
+        <template v-else>
+          <div v-if="truncatedHint" class="daily-summary__truncated-hint">
+            ⚠️ {{ truncatedHint }}
+          </div>
+          <div class="daily-summary__content" v-html="renderedHtml"></div>
+        </template>
       </div>
 
       <!-- 底部操作 -->
@@ -190,7 +261,6 @@ watch(
   overflow-y: auto;
 }
 
-/* 加载态 */
 .daily-summary__loading {
   display: flex;
   flex-direction: column;
@@ -205,7 +275,6 @@ watch(
   color: var(--jt-text-secondary);
 }
 
-/* 错误态 */
 .daily-summary__error {
   display: flex;
   flex-direction: column;
@@ -222,7 +291,16 @@ watch(
   word-break: break-word;
 }
 
-/* Markdown 内容渲染（复用富文本编辑器的 ProseMirror 样式 token） */
+/* 裁剪提示条 */
+.daily-summary__truncated-hint {
+  font-size: 12px;
+  color: var(--jt-text-tertiary);
+  background-color: var(--jt-surface-hover);
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
 .daily-summary__content {
   font-size: 14px;
   line-height: 1.7;
@@ -259,7 +337,6 @@ watch(
   font-weight: 600;
 }
 
-/* 底部操作 */
 .daily-summary__footer {
   display: flex;
   justify-content: flex-end;

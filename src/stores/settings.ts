@@ -35,6 +35,8 @@ export const SETTINGS_KEYS = {
   aiApiKey: "ai_api_key",
   /** 模型名 */
   aiModel: "ai_model",
+  /** AI 总结智能裁剪阈值（任务数超过时弹确认是否裁剪，默认 50） */
+  aiSummaryTruncateThreshold: "ai_summary_truncate_threshold",
 } as const;
 
 /** 每日汇总提醒时点配置 —— 上限 8 个（与 Rust 端 parse_daily_times 一致） */
@@ -70,6 +72,8 @@ const DEFAULT_AI_PROVIDER: AiProvider = "openai";
 const DEFAULT_AI_BASE_URL = "";
 const DEFAULT_AI_API_KEY = "";
 const DEFAULT_AI_MODEL = "";
+/** AI 总结裁剪阈值默认 50（任务数超过时前端弹确认是否裁剪） */
+const DEFAULT_AI_SUMMARY_TRUNCATE_THRESHOLD = 50;
 
 /** 窗口缩放级别上下限（与 Rust 端 menu.rs 保持一致） */
 const ZOOM_MIN = 0.5;
@@ -156,6 +160,14 @@ function parseAiProvider(v: string | null): AiProvider {
   return DEFAULT_AI_PROVIDER;
 }
 
+/** 解析 AI 总结裁剪阈值（1-500，非法值回落默认 50） */
+function parseTruncateThreshold(v: string | null): number {
+  if (!v) return DEFAULT_AI_SUMMARY_TRUNCATE_THRESHOLD;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 1) return DEFAULT_AI_SUMMARY_TRUNCATE_THRESHOLD;
+  return Math.min(500, Math.floor(n));
+}
+
 export const useSettingsStore = defineStore("settings", () => {
   // 主题：复用 composable 的 mode ref（与 useTheme 共享状态）
   const theme = useTheme();
@@ -179,6 +191,7 @@ export const useSettingsStore = defineStore("settings", () => {
   const aiBaseUrl = ref<string>(DEFAULT_AI_BASE_URL);
   const aiApiKey = ref<string>(DEFAULT_AI_API_KEY);
   const aiModel = ref<string>(DEFAULT_AI_MODEL);
+  const aiSummaryTruncateThreshold = ref<number>(DEFAULT_AI_SUMMARY_TRUNCATE_THRESHOLD);
 
   const initialized = ref(false);
   const loading = ref(false);
@@ -221,7 +234,7 @@ export const useSettingsStore = defineStore("settings", () => {
     if (initialized.value || loading.value) return;
     loading.value = true;
     try {
-      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw, aiEnabledRaw, aiProviderRaw, aiBaseUrlRaw, aiApiKeyRaw, aiModelRaw] = await Promise.all([
+      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw, aiEnabledRaw, aiProviderRaw, aiBaseUrlRaw, aiApiKeyRaw, aiModelRaw, aiTruncateRaw] = await Promise.all([
         db.getSetting(SETTINGS_KEYS.themeMode).catch(() => null),
         db.getSetting(SETTINGS_KEYS.accentColor).catch(() => null),
         db.getSetting(SETTINGS_KEYS.newTasksDueToday).catch(() => null),
@@ -236,6 +249,7 @@ export const useSettingsStore = defineStore("settings", () => {
         db.getSetting(SETTINGS_KEYS.aiBaseUrl).catch(() => null),
         db.getSetting(SETTINGS_KEYS.aiApiKey).catch(() => null),
         db.getSetting(SETTINGS_KEYS.aiModel).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiSummaryTruncateThreshold).catch(() => null),
       ]);
 
       const mode = parseThemeMode(themeRaw);
@@ -265,6 +279,7 @@ export const useSettingsStore = defineStore("settings", () => {
       aiBaseUrl.value = aiBaseUrlRaw ?? DEFAULT_AI_BASE_URL;
       aiApiKey.value = aiApiKeyRaw ?? DEFAULT_AI_API_KEY;
       aiModel.value = aiModelRaw ?? DEFAULT_AI_MODEL;
+      aiSummaryTruncateThreshold.value = parseTruncateThreshold(aiTruncateRaw);
 
       // 先应用强调色（不依赖模式），再应用主题
       theme.setAccentColor(accent);
@@ -452,6 +467,15 @@ async function setAiModel(v: string): Promise<void> {
   if (!ok) aiModel.value = prev;
 }
 
+/** 修改 AI 总结裁剪阈值并持久化（1-500） */
+async function setAiSummaryTruncateThreshold(v: number): Promise<void> {
+  const n = parseTruncateThreshold(String(v));
+  const prev = aiSummaryTruncateThreshold.value;
+  aiSummaryTruncateThreshold.value = n;
+  const ok = await persist(SETTINGS_KEYS.aiSummaryTruncateThreshold, String(n), String(prev));
+  if (!ok) aiSummaryTruncateThreshold.value = prev;
+}
+
   /**
    * 监听 Rust 端 zoom-changed 事件
    *
@@ -538,6 +562,7 @@ async function setAiModel(v: string): Promise<void> {
     aiBaseUrl,
     aiApiKey,
     aiModel,
+    aiSummaryTruncateThreshold,
     initialized,
     loading,
     error,
@@ -556,6 +581,7 @@ async function setAiModel(v: string): Promise<void> {
     setAiBaseUrl,
     setAiApiKey,
     setAiModel,
+    setAiSummaryTruncateThreshold,
     cycleTheme,
     zoomIn,
     zoomOut,

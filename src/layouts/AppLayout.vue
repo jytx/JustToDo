@@ -43,6 +43,28 @@ const panelWidth = ref(480);
 /** AI 每日小结弹窗可见性 */
 const summaryVisible = ref(false);
 
+/** 打开 AI 总结弹窗（顶栏/快捷键入口，smart 模式）。
+ *  侧边栏/批量菜单入口直接设置 taskStore.pendingSummaryScope 后再打开。 */
+function openSummary(): void {
+  taskStore.pendingSummaryScope = null;
+  summaryVisible.value = true;
+}
+
+/** 侧边栏清单/目录 AI 总结入口：设置 scope 后打开弹窗 */
+function onAiSummary(scope: import("@/api/ai").SummaryScope): void {
+  taskStore.pendingSummaryScope = scope;
+  summaryVisible.value = true;
+}
+
+// 监听 pendingSummaryScope：批量菜单等无法直接触达 AppLayout 的入口，
+// 设置 store 的 pendingSummaryScope 后由这里统一打开弹窗。
+watch(
+  () => taskStore.pendingSummaryScope,
+  (scope) => {
+    if (scope) summaryVisible.value = true;
+  },
+);
+
 /** 是否显示排序按钮（清单/笔记本/标签/全部视图） */
 const showSortButton = computed(() => {
   return (
@@ -260,6 +282,8 @@ useShortcuts({
     quickAdd.open();
   },
   onDailySummary: () => {
+    // 顶栏入口 = smart 模式，确保 scope 清空
+    taskStore.pendingSummaryScope = null;
     summaryVisible.value = true;
   },
   onNewTask: () => {
@@ -285,6 +309,7 @@ useShortcuts({
       v-if="showTaskSidebar"
       v-model:collapsed="sidebarCollapsed"
       v-model:width="sidebarWidth"
+      @ai-summary="onAiSummary"
     />
 
     <!-- 主区域（中） -->
@@ -304,7 +329,7 @@ useShortcuts({
           type="text"
           size="small"
           title="AI 小结 (Cmd+Shift+D)"
-          @click="summaryVisible = true"
+          @click="openSummary()"
         >
           <template #icon><icon-mind-mapping :size="18" /></template>
         </a-button>

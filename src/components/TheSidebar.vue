@@ -25,6 +25,7 @@ import {
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
 import { useTaskStore } from "@/stores/task";
+import { useSettingsStore } from "@/stores/settings";
 import { useQuickAdd } from "@/composables/useQuickAdd";
 import SidebarListNode from "./SidebarListNode.vue";
 import SidebarRailCascade from "./SidebarRailCascade.vue";
@@ -45,6 +46,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:collapsed": [value: boolean];
   "update:width": [value: number];
+  /** 触发 AI 总结：携带 scope 数据，由 AppLayout 打开弹窗 */
+  "ai-summary": [scope: import("@/api/ai").SummaryScope];
 }>();
 
 /** 侧边栏宽度边界：最小 = 收起态宽度，最大避免挤压主区域 */
@@ -129,6 +132,7 @@ const router = useRouter();
 const listStore = useListStore();
 const tagStore = useTagStore();
 const taskStore = useTaskStore();
+const settingsStore = useSettingsStore();
 const quickAdd = useQuickAdd();
 
 /** 各区块展开/收起状态 */
@@ -864,6 +868,17 @@ async function onCtxUnarchive(node: ListTreeNode): Promise<void> {
   closeCtxMenu();
   await listStore.unarchiveTree(node.id);
   await taskStore.refreshCounts();
+}
+
+/** AI 总结：构造 scope（清单/目录）并 emit 给 AppLayout 打开弹窗 */
+function onCtxAiSummary(node: ListTreeNode): void {
+  closeCtxMenu();
+  emit("ai-summary", {
+    type: node.isFolder ? "folder" : "list",
+    id: node.id,
+    name: node.name,
+    kind: (node.kind ?? "task") as "task" | "note",
+  });
 }
 
 /** SidebarListNode hover 三点菜单触发的归档：
@@ -1673,6 +1688,10 @@ onMounted(async () => {
           <icon-delete :size="15" />
           <span>删除目录</span>
         </MenuPopoverItem>
+        <MenuPopoverItem v-if="settingsStore.aiEnabled" @click="onCtxAiSummary(ctxMenu.target.node)">
+          <icon-mind-mapping :size="15" />
+          <span>AI 总结</span>
+        </MenuPopoverItem>
         <MenuPopoverItem @click="onCtxArchive(ctxMenu.target.node)">
           <icon-archive :size="15" />
           <span>归档目录</span>
@@ -1701,6 +1720,10 @@ onMounted(async () => {
         <MenuPopoverItem danger @click="onCtxDeleteList(ctxMenu.target.node)">
           <icon-delete :size="15" />
           <span>{{ ctxMenu.target.node.kind === "note" ? "删除笔记本" : "删除清单" }}</span>
+        </MenuPopoverItem>
+        <MenuPopoverItem v-if="settingsStore.aiEnabled" @click="onCtxAiSummary(ctxMenu.target.node)">
+          <icon-mind-mapping :size="15" />
+          <span>AI 总结</span>
         </MenuPopoverItem>
         <MenuPopoverItem @click="onCtxArchive(ctxMenu.target.node)">
           <icon-archive :size="15" />

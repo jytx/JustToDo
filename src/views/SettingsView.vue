@@ -35,6 +35,7 @@ const {
   aiBaseUrl,
   aiApiKey,
   aiModel,
+  aiSummaryTruncateThreshold,
 } = storeToRefs(settingsStore);
 
 const attachmentPath = ref("");
@@ -598,6 +599,28 @@ async function changeAttachmentPath() {
                 class="settings-section__test-result"
                 :class="{ 'settings-section__test-result--ok': testResult.ok, 'settings-section__test-result--fail': !testResult.ok }"
               >{{ testResult.ok ? "✓ " : "✗ " }}{{ testResult.message }}</span>
+            </div>
+
+            <a-divider class="my-4" />
+
+            <!-- 总结裁剪阈值 -->
+            <div class="settings-section__item">
+              <div>
+                <span>总结裁剪阈值</span>
+                <p class="settings-section__path-hint">任务数超过此值时，总结前会询问是否智能裁剪</p>
+              </div>
+              <div class="settings-section__interval">
+                <a-input-number
+                  :model-value="aiSummaryTruncateThreshold"
+                  size="small"
+                  :min="1"
+                  :max="500"
+                  :step="1"
+                  style="width: 100px"
+                  @change="(v: number | undefined) => settingsStore.setAiSummaryTruncateThreshold(v ?? 50)"
+                />
+                <span class="settings-section__interval-unit">项</span>
+              </div>
             </div>
           </template>
         </div>

@@ -54,6 +54,10 @@ export const useTaskStore = defineStore("task", () => {
   /** Shift 范围选的锚点任务 id（最近一次选中/取消的任务） */
   const batchAnchorId = ref<string | null>(null);
 
+  /** 待打开的 AI 总结范围（跨组件传递：侧边栏/批量菜单设置 → AppLayout 弹窗读取）。
+   *  SummaryScope 类型见 src/api/ai.ts；null 表示用默认的每日/周报模式。 */
+  const pendingSummaryScope = ref<import("@/api/ai").SummaryScope | null>(null);
+
   /** 待删除任务的 ID（用于确认对话框） */
   const pendingDeleteId = ref<string | null>(null);
 
@@ -1228,6 +1232,7 @@ export const useTaskStore = defineStore("task", () => {
     batchSelectedIds,
     batchMode,
     batchAnchorId,
+    pendingSummaryScope,
     batchSelectedTasks,
     batchSelectedIdsArr,
     enterBatchMode,

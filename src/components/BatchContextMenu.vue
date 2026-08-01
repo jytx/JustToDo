@@ -15,6 +15,7 @@ import { Message } from "@arco-design/web-vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
+import { useSettingsStore } from "@/stores/settings";
 import { PRIORITY_LABELS, type Priority } from "@/types";
 import ContextMenu from "./ContextMenu.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
@@ -44,6 +45,9 @@ const tagStore = useTagStore();
 
 /** 是否笔记模式（隐藏任务专属菜单项） */
 const isNote = computed(() => props.kind === "note");
+
+/** AI 是否启用（决定是否显示 AI 总结菜单项） */
+const aiEnabled = computed(() => useSettingsStore().aiEnabled);
 
 /** 选中的数量（菜单标题显示用，文案随 kind） */
 const selectedCount = computed(() => taskStore.batchSelectedTasks.length);
@@ -238,6 +242,13 @@ async function applyDelete(): Promise<void> {
   onVisibleChange(false);
   taskStore.requestBatchDelete(taskIds);
 }
+
+/** AI 总结选中的任务：快照 id → 关菜单 → 设置 scope（AppLayout watch 自动打开弹窗） */
+function applyAiSummary(): void {
+  const taskIds = [...taskStore.batchSelectedIds];
+  onVisibleChange(false);
+  taskStore.pendingSummaryScope = { type: "tasks", ids: taskIds };
+}
 </script>
 
 <template>
@@ -300,6 +311,13 @@ async function applyDelete(): Promise<void> {
     </MenuPopoverItem>
 
     <div class="batch-menu__divider" />
+
+    <!-- AI 总结（仅 AI 启用时显示）：总结选中的任务 -->
+    <MenuPopoverItem v-if="aiEnabled" @click="applyAiSummary">
+      <icon-mind-mapping :size="15" />
+      <span>AI 总结</span>
+    </MenuPopoverItem>
+
     <MenuPopoverItem danger @click="applyDelete">
       <icon-delete :size="15" />
       <span>删除（{{ selectedCount }}）</span>

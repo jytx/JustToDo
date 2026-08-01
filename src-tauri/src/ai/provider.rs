@@ -68,8 +68,12 @@ pub struct OpenAiProvider {
 impl OpenAiProvider {
     pub fn new(base_url: String, api_key: String, model: String) -> Self {
         Self {
-            // 复用项目已引入的 reqwest（holiday.rs 同款）
-            client: reqwest::Client::new(),
+            // 复用项目已引入的 reqwest（holiday.rs 同款）。
+            // 加 60s 超时：AI 生成耗时较长但仍需上限，避免接口无响应时弹窗永远 loading。
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(60))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             base_url,
             api_key,
             model,
@@ -255,7 +259,11 @@ pub struct AnthropicProvider {
 impl AnthropicProvider {
     pub fn new(base_url: String, api_key: String, model: String) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            // 60s 超时，与 OpenAiProvider 一致
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(60))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             base_url,
             api_key,
             model,
