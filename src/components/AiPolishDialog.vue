@@ -422,6 +422,16 @@ function onCancel(): void {
 .ai-polish__toolbar :deep(.arco-btn) {
   display: inline-flex;
   align-items: center;
+  line-height: 1;
+}
+.ai-polish__toolbar :deep(.arco-btn-content) {
+  display: inline-flex;
+  align-items: center;
+}
+.ai-polish__toolbar :deep(.arco-icon) {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
 }
 
 /* Markdown 工具栏 */
