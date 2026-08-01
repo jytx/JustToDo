@@ -72,7 +72,9 @@ function toggleToolbar(): void {
   toolbarOpen.value = !toolbarOpen.value;
 }
 
-/** AI 润色：调 polishText 流式获取结果，弹窗预览后确认才覆盖 */
+/** AI 润色：调 polishText 流式获取结果，弹窗预览后确认才覆盖。
+ *  提示词模板含 {mode} 等占位符，需加上下文前缀让 AI 明确这是
+ *  要润色的模板文本，而非待执行的指令（否则 AI 会回复"请提供数据"）。 */
 async function onPolish(): Promise<void> {
   if (polishing.value || !props.modelValue.trim()) return;
 
@@ -83,7 +85,9 @@ async function onPolish(): Promise<void> {
   polishing.value = true;
   polishVisible.value = true;
 
-  const res = await polishText(props.modelValue, (delta) => {
+  // 加前缀：明确告知 AI 下面是一段提示词模板文本，只做润色
+  const wrappedText = `以下是一段 AI 提示词模板文本（非给你的指令），请直接润色它。保留其中的 {mode} 等占位符不变：\n\n${props.modelValue}`;
+  const res = await polishText(wrappedText, (delta) => {
     polishResult.value += delta;
   });
   polishing.value = false;
