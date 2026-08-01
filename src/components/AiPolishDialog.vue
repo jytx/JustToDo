@@ -4,7 +4,7 @@
 // 下方折叠区可展开查看原文对比。
 import { computed, ref, watch } from "vue";
 import { marked } from "marked";
-import { IconEdit, IconDown, IconRight } from "@arco-design/web-vue/es/icon";
+import { IconEdit } from "@arco-design/web-vue/es/icon";
 
 const props = defineProps<{
   /** 弹窗是否可见 */
@@ -26,8 +26,6 @@ const emit = defineEmits<{
   cancel: [];
 }>();
 
-/** 原文是否展开 */
-const showOriginal = ref(false);
 /** 润色结果渲染后的 HTML（loading 中流式展示用） */
 const renderedPolished = ref("");
 /** 原文渲染后的 HTML */
@@ -63,12 +61,14 @@ watch(
   },
 );
 
-// 原文展开时渲染
-watch([() => props.originalText, showOriginal], async ([val, expanded]) => {
-  if (expanded && val) {
-    renderedOriginal.value = await marked.parse(val);
-  }
-});
+// 原文始终渲染（左右对比布局，左侧展示）
+watch(
+  () => props.originalText,
+  async (val) => {
+    renderedOriginal.value = val ? await marked.parse(val) : "";
+  },
+  { immediate: true },
+);
 
 /** 确认：把用户编辑后的结果传给父组件 */
 function onConfirm(): void {
@@ -85,7 +85,7 @@ function onCancel(): void {
 <template>
   <a-modal
     :visible="visible"
-    :width="640"
+    :width="860"
     :footer="false"
     :mask-closable="!loading"
     :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
@@ -108,38 +108,41 @@ function onCancel(): void {
       </div>
 
       <template v-else>
-        <!-- 润色结果（流式逐字显示） -->
-        <div class="ai-polish__result">
-          <!-- 纯 loading（还没收到内容） -->
-          <div v-if="loading && !polishedText" class="ai-polish__loading">
-            <a-spin :size="20" />
-            <span>AI 正在润色...</span>
-          </div>
-          <!-- 流式中：渲染 HTML 预览（带转圈角标） -->
-          <template v-else-if="loading">
-            <div class="ai-polish__streaming-badge">
-              <a-spin :size="12" />
+        <!-- 左右对比布局：左原文 / 右润色结果 -->
+        <div class="ai-polish__compare">
+          <!-- 左：原文（只读） -->
+          <div class="ai-polish__pane">
+            <div class="ai-polish__pane-label">原文</div>
+            <div class="ai-polish__pane-body">
+              <!-- eslint-disable-next-line vue/no-v-html -->
+              <div class="ai-polish__content" v-html="renderedOriginal"></div>
             </div>
-            <!-- eslint-disable-next-line vue/no-v-html -->
-            <div class="ai-polish__content" v-html="renderedPolished"></div>
-          </template>
-          <!-- 流式结束：可编辑 textarea，用户可手动修改 -->
-          <textarea
-            v-else
-            v-model="editablePolished"
-            class="ai-polish__textarea"
-            spellcheck="false"
-          ></textarea>
-        </div>
+          </div>
 
-        <!-- 原文对比（折叠） -->
-        <div class="ai-polish__original-toggle" @click="showOriginal = !showOriginal">
-          <component :is="showOriginal ? IconDown : IconRight" :size="12" />
-          <span>查看原文</span>
-        </div>
-        <div v-if="showOriginal" class="ai-polish__original">
-          <!-- eslint-disable-next-line vue/no-v-html -->
-          <div v-html="renderedOriginal"></div>
+          <!-- 右：润色结果（流式 / 可编辑） -->
+          <div class="ai-polish__pane">
+            <div class="ai-polish__pane-label">
+              润色结果
+              <a-spin v-if="loading" :size="12" class="ai-polish__pane-spinner" />
+            </div>
+            <div class="ai-polish__pane-body">
+              <!-- 纯 loading（还没收到内容） -->
+              <div v-if="loading && !polishedText" class="ai-polish__loading">
+                <a-spin :size="20" />
+                <span>AI 正在润色...</span>
+              </div>
+              <!-- 流式中：渲染 HTML 预览 -->
+              <!-- eslint-disable-next-line vue/no-v-html -->
+              <div v-else-if="loading" class="ai-polish__content" v-html="renderedPolished"></div>
+              <!-- 流式结束：可编辑 textarea -->
+              <textarea
+                v-else
+                v-model="editablePolished"
+                class="ai-polish__textarea"
+                spellcheck="false"
+              ></textarea>
+            </div>
+          </div>
         </div>
 
         <!-- 底部操作 -->
@@ -185,17 +188,42 @@ function onCancel(): void {
   color: var(--jt-error);
 }
 
-/* 润色结果区 */
-.ai-polish__result {
-  position: relative;
-  min-height: 120px;
-  max-height: 500px;
+/* 左右对比布局 */
+.ai-polish__compare {
+  display: flex;
+  gap: 12px;
+}
+
+.ai-polish__pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-polish__pane-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--jt-text-tertiary);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-polish__pane-spinner {
+  opacity: 0.5;
+}
+
+.ai-polish__pane-body {
+  min-height: 240px;
+  max-height: 420px;
   overflow-y: auto;
   padding: 16px;
   background: var(--jt-surface-sunken);
   border-radius: 8px;
   border: 1px solid var(--jt-border);
-  /* 允许选中复制（Arco modal 默认可能禁止） */
+  /* 允许选中复制 */
   user-select: text;
   -webkit-user-select: text;
 }
@@ -210,13 +238,6 @@ function onCancel(): void {
   min-height: 80px;
 }
 
-.ai-polish__streaming-badge {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  opacity: 0.5;
-}
-
 .ai-polish__content {
   font-size: 14px;
   line-height: 1.7;
@@ -226,7 +247,7 @@ function onCancel(): void {
 /* 可编辑 textarea（loading 结束后用户可修改润色结果） */
 .ai-polish__textarea {
   width: 100%;
-  min-height: 240px;
+  min-height: 208px;
   border: none;
   outline: none;
   background: transparent;
@@ -234,7 +255,7 @@ function onCancel(): void {
   font-size: 14px;
   line-height: 1.7;
   color: var(--jt-text-primary);
-  resize: vertical;
+  resize: none;
   padding: 0;
 }
 .ai-polish__content :deep(p) {
@@ -257,32 +278,6 @@ function onCancel(): void {
 }
 .ai-polish__content :deep(strong) {
   font-weight: 600;
-}
-
-/* 原文折叠 */
-.ai-polish__original-toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--jt-text-tertiary);
-  cursor: pointer;
-  user-select: none;
-}
-.ai-polish__original-toggle:hover {
-  color: var(--jt-text-secondary);
-}
-
-.ai-polish__original {
-  max-height: 200px;
-  overflow-y: auto;
-  padding: 12px 16px;
-  background: var(--jt-surface);
-  border-radius: 8px;
-  border: 1px solid var(--jt-border);
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--jt-text-tertiary);
 }
 .ai-polish__original :deep(p) {
   margin: 0 0 6px;
