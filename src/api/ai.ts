@@ -95,3 +95,31 @@ export interface ParseTaskResult {
 export async function parseTask(input: string): Promise<ParseTaskResult> {
   return invoke<ParseTaskResult>("ai_parse_task", { input });
 }
+
+/** AI 拆解出的单个子任务草稿 */
+export interface ParsedSubtask {
+  title: string;
+  /** 优先级：0=无 1=低 2=中 3=高 */
+  priority: number;
+  /** 截止开始时间（本地格式 YYYY-MM-DDTHH:mm:ss），无则 null */
+  dueStartAt: string | null;
+  /** 截止结束时间，无则 null */
+  dueEndAt: string | null;
+  /** AI 生成的执行说明（HTML 的 <p> 标签） */
+  note: string;
+}
+
+/** AI 任务拆解结果 */
+export interface BreakdownResult {
+  ok: boolean;
+  /** 成功时的子任务草稿列表 */
+  subtasks?: ParsedSubtask[];
+  /** 失败时的错误信息 */
+  message?: string;
+}
+
+/** 用 AI 把一个大任务拆解成多个子任务。
+ *  传入大任务 ID，后端查出标题/备注作为输入，返回子任务草稿列表（预览后由前端确认落库）。 */
+export async function breakdownTask(taskId: string): Promise<BreakdownResult> {
+  return invoke<BreakdownResult>("ai_breakdown_task", { taskId });
+}

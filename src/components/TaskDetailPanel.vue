@@ -5,6 +5,8 @@ import { ref, watch, computed, nextTick, onMounted, onBeforeUnmount } from "vue"
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
+import { useSettingsStore } from "@/stores/settings";
+import type { ParsedSubtask } from "@/api/ai";
 import {
   PRIORITY_LABELS,
   formatRecurrence,
@@ -26,12 +28,14 @@ import ListDragHandle from "./ListDragHandle.vue";
 import AttachmentPopover from "./AttachmentPopover.vue";
 import ChipPopover from "./ChipPopover.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
+import AiBreakdownPreview from "./AiBreakdownPreview.vue";
 import { useAttachmentUpload } from "@/composables/useAttachmentUpload";
 import * as db from "@/api/db";
 
 const taskStore = useTaskStore();
 const listStore = useListStore();
 const tagStore = useTagStore();
+const settingsStore = useSettingsStore();
 
 // 附件上传（添加入口在 footer 的更多菜单里；taskId 随当前选中任务变化）
 const { pickFiles: pickAttachmentFiles, uploading: attachmentUploading } =
@@ -533,6 +537,46 @@ async function addSubtask() {
   if (sub) taskStore.selectTask(sub.id);
 }
 
+// ─── AI 任务拆解：把大任务拆成多个子任务（预览后批量创建） ───
+/** AI 拆解预览是否显示 */
+const breakdownVisible = ref(false);
+
+/** 打开 AI 拆解预览 */
+function openBreakdown(): void {
+  if (!task.value) return;
+  breakdownVisible.value = true;
+}
+
+/** AI 拆解确认：把编辑后的子任务草稿批量创建为当前任务的子任务 */
+async function onBreakdownConfirm(subs: ParsedSubtask[]): Promise<void> {
+  if (!task.value) return;
+  const parent = task.value;
+  // 串行创建（避免并发导致 sort_order 冲突），每条都带完整字段
+  for (const sub of subs) {
+    const created = await taskStore.createTask({
+      title: sub.title.trim(),
+      listId: parent.listId,
+      parentId: parent.id,
+      kind: parent.kind,
+      priority: sub.priority as Priority,
+      dueStartAt: sub.dueStartAt,
+      dueEndAt: sub.dueEndAt,
+    });
+    // 备注（note）走 update，createTask 不支持 note 字段
+    if (sub.note) {
+      await taskStore.updateTask(created.id, { note: sub.note });
+    }
+  }
+  // 刷新子任务缓存，主列表树形会立即显示新子任务
+  await taskStore.loadSubtasks(parent.id);
+  breakdownVisible.value = false;
+}
+
+/** 取消 AI 拆解预览 */
+function onBreakdownCancel(): void {
+  breakdownVisible.value = false;
+}
+
 
 // ─── 标题编辑：textarea（无边框、自动撑高；Enter 保存 / Esc 还原） ───
 const titleEl = ref<HTMLTextAreaElement | null>(null);
@@ -771,6 +815,15 @@ onBeforeUnmount(() => {
 
       <!-- 行末：添加检查项（用 margin-left: auto 推至行最右，替代原"更多"按钮位置） -->
       <div class="detail-panel__chips-tail">
+        <!-- AI 拆解任务（仅 AI 启用时显示） -->
+        <button
+          v-if="settingsStore.aiEnabled"
+          class="detail-panel__more-btn detail-panel__ai-btn"
+          title="AI 拆解任务"
+          @click="openBreakdown"
+        >
+          <icon-robot :size="16" />
+        </button>
         <button
           class="detail-panel__more-btn"
           title="添加检查项"
@@ -854,6 +907,14 @@ onBeforeUnmount(() => {
         borderless
         placeholder="输入内容或使用 / 快速插入"
         @update:model-value="(v) => { noteDraft = v; saveNote(v); }"
+      />
+
+      <!-- AI 任务拆解预览（点「AI 拆解」按钮后出现，确认后批量创建子任务） -->
+      <AiBreakdownPreview
+        v-if="breakdownVisible"
+        :task-id="task.id"
+        @confirm="onBreakdownConfirm"
+        @cancel="onBreakdownCancel"
       />
 
       <!-- 检查项区（独立于描述） -->
@@ -1097,6 +1158,15 @@ function formatMeta(iso: string): string {
 }
 .detail-panel__more-btn {
   flex-shrink: 0;
+}
+
+/* AI 拆解按钮：主色调，区别于其他灰色的 tail 按钮 */
+.detail-panel__ai-btn {
+  color: var(--jt-primary);
+}
+.detail-panel__ai-btn:hover {
+  color: var(--jt-primary);
+  background: var(--jt-accent-soft);
 }
 
 .detail-panel__checkbox-wrap {
