@@ -3136,3 +3136,115 @@ fn strip_html(html: &str) -> String {
     }
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
+
+// ─── AI 自然语言建任务（tools/function calling 首个落地）───
+// 用户输入「明天3点和老板开会 #工作 高优」，AI 用 parse_task 工具
+// 解析出 {title, priority, dueStartAt, dueEndAt, tagNames}，前端填充属性栏待确认。
+// 详见 discuss 路线图「AI 助手 L1」。
+
+/// 默认解析提示词（可自定义，读 ai_prompt_parse_task 设置）
+pub const DEFAULT_PROMPT_PARSE_TASK: &str = r#"你是一个任务解析助手。根据用户的自然语言输入，提取任务的结构化信息并调用 parse_task 工具。
+
+规则：
+1. 标题：提取去掉时间/优先级/标签等修饰词后的核心内容
+2. 优先级：识别「高优/紧急/重要」→3，「中/一般」→2，「低」→1，无明确表示→0
+3. 截止时间：解析「明天/后天/下周一/3点/下午」等表达，换算成具体时间。若只提到日期无具体时间，结束时间用当天 23:59:59
+4. 标签：识别 # 后面的词作为标签名（不含#）
+5. 无法确定的字段不要编造，省略即可（除了 title 必填）
+6. 时间格式：YYYY-MM-DDTHH:mm:ss（本地时间）"#;
+
+/// 自然语言建任务解析命令。
+/// 参数 input: 用户输入的自然语言。
+/// 返回 { ok, parsed: {title, priority, dueStartAt, dueEndAt, tagNames} }。 */
+#[tauri::command]
+pub async fn ai_parse_task(
+    pool: State<'_, sqlx::SqlitePool>,
+    input: String,
+) -> CmdResult<serde_json::Value> {
+    use crate::ai::{build_from_settings, ChatMessage, ChatRequest, ToolChoice, ToolDef};
+
+    let provider = match build_from_settings(pool.inner()).await {
+        Ok(p) => p,
+        Err(e) => return Ok(serde_json::json!({ "ok": false, "message": format!("{}", e) })),
+    };
+
+    // 当前时间作锚点（让模型算出正确的绝对日期）
+    let now = now();
+
+    // 读自定义提示词（空用默认）
+    let prompt_tpl = load_prompt(pool.inner(), "ai_prompt_parse_task", DEFAULT_PROMPT_PARSE_TASK).await;
+    let system_prompt = format!("{}\n\n当前时间：{}", prompt_tpl, now);
+
+    // 定义 parse_task 工具
+    let parse_tool = ToolDef {
+        name: "parse_task".into(),
+        description: "解析用户的自然语言输入，提取任务的结构化信息".into(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "任务标题（去掉时间/优先级/标签等修饰词后的核心内容）"
+                },
+                "priority": {
+                    "type": "integer",
+                    "enum": [0, 1, 2, 3],
+                    "description": "优先级：0=无 1=低 2=中 3=高"
+                },
+                "dueStartAt": {
+                    "type": "string",
+                    "description": "截止开始时间，本地格式 YYYY-MM-DDTHH:mm:ss，无则省略"
+                },
+                "dueEndAt": {
+                    "type": "string",
+                    "description": "截止结束时间，本地格式 YYYY-MM-DDTHH:mm:ss，无则省略"
+                },
+                "tagNames": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "标签名称列表（不含#）"
+                }
+            },
+            "required": ["title"]
+        }),
+    };
+
+    let req = ChatRequest {
+        messages: vec![
+            ChatMessage::system { content: system_prompt },
+            ChatMessage::user { content: input.clone() },
+        ],
+        tools: vec![parse_tool],
+        tool_choice: ToolChoice::Required,
+        ..Default::default()
+    };
+
+    match provider.chat(&req).await {
+        Ok(resp) => {
+            // 从 tool_calls 取解析结果（强制 Required，模型应返回工具调用）
+            if let Some(call) = resp.tool_calls.first() {
+                let args = &call.arguments;
+                Ok(serde_json::json!({
+                    "ok": true,
+                    "parsed": {
+                        "title": args.get("title").and_then(|v| v.as_str()).unwrap_or(""),
+                        "priority": args.get("priority").and_then(|v| v.as_i64()).unwrap_or(0),
+                        "dueStartAt": args.get("dueStartAt").and_then(|v| v.as_str()),
+                        "dueEndAt": args.get("dueEndAt").and_then(|v| v.as_str()),
+                        "tagNames": args.get("tagNames").and_then(|v| v.as_array())
+                            .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>())
+                            .unwrap_or_default(),
+                    }
+                }))
+            } else {
+                // 模型没调工具（返回纯文本），fallback
+                Ok(serde_json::json!({
+                    "ok": false,
+                    "message": "AI 未能解析输入，请直接创建",
+                    "fallback_title": input,
+                }))
+            }
+        }
+        Err(e) => Ok(serde_json::json!({ "ok": false, "message": format!("{}", e) })),
+    }
+}

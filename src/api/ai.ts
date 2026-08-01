@@ -63,3 +63,29 @@ export async function generateScopeSummary(
 ): Promise<ScopeSummaryResult> {
   return invoke<ScopeSummaryResult>("ai_summary_scope", { scope, truncate });
 }
+
+/** AI 解析出的任务结构（自然语言建任务的草稿） */
+export interface ParsedTask {
+  title: string;
+  priority: number;
+  dueStartAt: string | null;
+  dueEndAt: string | null;
+  tagNames: string[];
+}
+
+/** 自然语言建任务解析结果 */
+export interface ParseTaskResult {
+  ok: boolean;
+  /** 成功时的解析草稿 */
+  parsed?: ParsedTask;
+  /** 失败时的错误/提示信息 */
+  message?: string;
+  /** fallback：模型未调工具时，原样返回标题让用户直接建 */
+  fallbackTitle?: string;
+}
+
+/** 用 AI 解析自然语言输入，提取任务的结构化字段（tools/function calling）。
+ *  输入如「明天3点和老板开会 #工作 高优」，返回 {title, priority, dueStartAt, dueEndAt, tagNames}。 */
+export async function parseTask(input: string): Promise<ParseTaskResult> {
+  return invoke<ParseTaskResult>("ai_parse_task", { input });
+}

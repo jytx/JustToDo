@@ -7,7 +7,9 @@ import { Message } from "@arco-design/web-vue";
 import { PRIORITY_LABELS, PRIORITY_COLORS, type Priority } from "@/types";
 import { useSettingsStore } from "@/stores/settings";
 import { useTemplateStore } from "@/stores/template";
+import { useTagStore } from "@/stores/tag";
 import { todayRange } from "@/utils/date";
+import { parseTask } from "@/api/ai";
 import PriorityDot from "./PriorityDot.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
@@ -34,6 +36,7 @@ const emit = defineEmits<{
 
 const settings = useSettingsStore();
 const templateStore = useTemplateStore();
+const tagStore = useTagStore();
 
 /** 模板菜单可见态 */
 const showTemplateMenu = ref(false);
@@ -110,6 +113,74 @@ function submit() {
   dueStartAt.value = resetStart;
   dueEndAt.value = resetEnd;
   selectedTagIds.value = [];
+}
+
+// ─── AI 自然语言解析（仅任务模式 + AI 启用时可用）───
+/** 解析中状态（按钮 loading） */
+const aiParsing = ref(false);
+
+/** AI 是否可用（AI 启用 + 任务模式） */
+const aiAvailable = computed(() => settings.aiEnabled && !isNote.value);
+
+/**
+ * AI 解析自然语言输入：调 parseTask → 填充属性栏（标题/优先级/日期/标签）。
+ * 用户可微调后回车建任务（不直接创建，安全）。
+ */
+async function onAiParse(): Promise<void> {
+  const trimmed = title.value.trim();
+  if (!trimmed || aiParsing.value) return;
+  aiParsing.value = true;
+  focused.value = true; // 展开属性行显示填充结果
+  try {
+    const res = await parseTask(trimmed);
+    if (res.ok && res.parsed) {
+      const p = res.parsed;
+      // 标题：解析出的核心内容（为空则保留原文）
+      if (p.title) title.value = p.title;
+      // 优先级
+      priority.value = (p.priority as Priority) ?? 0;
+      // 日期
+      dueStartAt.value = p.dueStartAt ?? null;
+      dueEndAt.value = p.dueEndAt ?? null;
+      // 标签：按名称匹配现有标签，不存在的自动创建
+      if (p.tagNames.length > 0) {
+        const ids = await resolveTagIds(p.tagNames);
+        selectedTagIds.value = ids;
+      }
+      Message.success("AI 解析完成，请确认后回车创建");
+    } else if (res.fallbackTitle) {
+      // 模型未调工具，原样返回标题
+      Message.info("AI 未能解析，已保留原输入");
+    } else {
+      Message.error(res.message ?? "AI 解析失败");
+    }
+  } catch (e) {
+    Message.error(`AI 解析失败：${String(e)}`);
+  } finally {
+    aiParsing.value = false;
+    refocusInput();
+  }
+}
+
+/**
+ * 把标签名列表解析成 tagIds：已存在的按名匹配，不存在的自动创建。
+ */
+async function resolveTagIds(names: string[]): Promise<string[]> {
+  const ids: string[] = [];
+  for (const name of names) {
+    const trimmed = name.trim();
+    if (!trimmed) continue;
+    // 先在已有标签里按名找
+    const existing = tagStore.tags.find((t) => t.name === trimmed);
+    if (existing) {
+      ids.push(existing.id);
+    } else {
+      // 不存在则创建
+      const created = await tagStore.createTag(trimmed);
+      if (created) ids.push(created.id);
+    }
+  }
+  return ids;
 }
 
 /**
@@ -194,6 +265,19 @@ function onDateClose() {
       @blur="handleBlur"
       @keydown.enter="submit"
     />
+    <!-- AI 自然语言解析按钮（仅任务模式 + AI 启用时显示）。
+         点击解析输入，填充属性栏待确认，不直接创建。 -->
+    <button
+      v-if="aiAvailable"
+      class="add-task-bar__ai-btn"
+      :class="{ 'add-task-bar__ai-btn--loading': aiParsing }"
+      :disabled="aiParsing || !title.trim()"
+      :title="'AI 解析（如：明天3点开会 #工作 高优）'"
+      @mousedown.prevent
+      @click="onAiParse"
+    >
+      <icon-robot :size="16" />
+    </button>
     <!-- 优先级 + 日期（flex-wrap 宽度不够时自动换行） -->
     <div
       class="add-task-bar__attrs"
@@ -300,6 +384,40 @@ function onDateClose() {
   font-size: 14px;
   color: inherit;
   font-family: var(--font-body);
+}
+
+/* AI 自然语言解析按钮：紧贴输入框右侧，弱视觉，hover 强调 */
+.add-task-bar__ai-btn {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--jt-text-tertiary);
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.add-task-bar__ai-btn:hover:not(:disabled) {
+  color: var(--jt-primary);
+  background-color: var(--jt-accent-soft);
+}
+
+.add-task-bar__ai-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.add-task-bar__ai-btn--loading {
+  animation: ai-btn-spin 1s linear infinite;
+}
+
+@keyframes ai-btn-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .add-task-bar__attrs {
