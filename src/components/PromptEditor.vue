@@ -24,8 +24,6 @@ const emit = defineEmits<{
 const mode = ref<"edit" | "preview">("edit");
 /** 预览渲染的 HTML（marked v18 parse 异步，用 watch 渲染） */
 const previewHtml = ref("");
-/** 工具栏是否展开（仅在编辑模式可用） */
-const toolbarOpen = ref(false);
 /** AI 润色进行中 */
 const polishing = ref(false);
 /** 润色预览弹窗是否可见 */
@@ -65,11 +63,6 @@ function onBlur(): void {
 /** 切换模式 */
 function toggleMode(): void {
   mode.value = mode.value === "edit" ? "preview" : "edit";
-}
-
-/** 切换工具栏展开/收起 */
-function toggleToolbar(): void {
-  toolbarOpen.value = !toolbarOpen.value;
 }
 
 /** AI 润色：调 polishText 流式获取结果，弹窗预览后确认才覆盖。
@@ -269,12 +262,8 @@ function insertHardBreak(): void {
 
 <template>
   <div class="prompt-editor">
-    <!-- 顶部工具栏：模式切换 + 富文本工具栏开关 + AI 润色 -->
+    <!-- 顶部工具栏：模式切换 + AI 润色 -->
     <div class="prompt-editor__toolbar">
-      <a-button type="text" size="mini" @click="toggleToolbar" :disabled="mode !== 'edit'" title="Markdown 工具栏">
-        <template #icon><icon-edit :size="14" /></template>
-        工具
-      </a-button>
       <a-button type="text" size="mini" @click="toggleMode">
         <template #icon>
           <icon-eye v-if="mode === 'edit'" :size="14" />
@@ -297,9 +286,9 @@ function insertHardBreak(): void {
       </a-button>
     </div>
 
-    <!-- Markdown 工具栏（仅编辑模式 + 展开时显示）。
+    <!-- Markdown 工具栏（编辑模式常态展示）。
          对照任务详情面板 RichTextToolbar 的完整分组 -->
-    <div v-if="toolbarOpen && mode === 'edit'" class="prompt-editor__md-toolbar">
+    <div v-if="mode === 'edit'" class="prompt-editor__md-toolbar">
       <!-- 文本格式组 -->
       <a-button size="mini" shape="circle" type="text" title="加粗 (Cmd+B)" @click="insertBold">
         <icon-bold :size="14" />

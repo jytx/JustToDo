@@ -9,11 +9,17 @@ import {
   IconEye,
   IconBold,
   IconItalic,
+  IconUnderline,
+  IconStrikethrough,
   IconCode,
+  IconEraser,
+  IconQuote,
+  IconMinus,
+  IconRefresh,
   IconList,
   IconOrderedList,
-  IconQuote,
-  IconEraser,
+  IconCheckSquare,
+  IconCodeSquare,
 } from "@arco-design/web-vue/es/icon";
 
 const props = defineProps<{
@@ -46,8 +52,6 @@ const renderedOriginal = ref("");
 const editablePolished = ref("");
 /** 右侧编辑 textarea 引用（工具栏操作光标用） */
 const editTextareaRef = ref<HTMLTextAreaElement | null>(null);
-/** Markdown 工具栏是否展开 */
-const toolbarOpen = ref(false);
 
 /** 有结果可确认（loading 结束且有内容） */
 const canConfirm = computed(() => !props.loading && editablePolished.value && !props.error);
@@ -86,12 +90,6 @@ watch(
 /** 切换源码/预览模式 */
 function toggleMode(): void {
   mode.value = mode.value === "edit" ? "preview" : "edit";
-  if (mode.value === "edit") toolbarOpen.value = false;
-}
-
-/** 切换工具栏展开 */
-function toggleToolbar(): void {
-  toolbarOpen.value = !toolbarOpen.value;
 }
 
 // ─── Markdown 工具栏：在右侧 textarea 光标处插入语法 ───
@@ -135,6 +133,12 @@ function insertBold(): void {
 function insertItalic(): void {
   wrapInline("*", "*", "斜体文本");
 }
+function insertUnderline(): void {
+  wrapInline("<u>", "</u>", "下划线文本");
+}
+function insertStrike(): void {
+  wrapInline("~~", "~~", "删除线文本");
+}
 function insertCode(): void {
   wrapInline("`", "`", "代码");
 }
@@ -147,8 +151,39 @@ function insertBulletList(): void {
 function insertOrderedList(): void {
   insertLinePrefix("1. ");
 }
+function insertTaskList(): void {
+  insertLinePrefix("- [ ] ");
+}
 function insertQuote(): void {
   insertLinePrefix("> ");
+}
+function insertHr(): void {
+  const ta = editTextareaRef.value;
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const text = editablePolished.value;
+  const insert = "\n---\n";
+  const newText = text.slice(0, start) + insert + text.slice(start);
+  editablePolished.value = newText;
+  nextTick(() => {
+    ta.focus();
+    ta.setSelectionRange(start + insert.length, start + insert.length);
+  });
+}
+function insertHardBreak(): void {
+  const ta = editTextareaRef.value;
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const text = editablePolished.value;
+  const insert = "  \n";
+  editablePolished.value = text.slice(0, start) + insert + text.slice(start);
+  nextTick(() => {
+    ta.focus();
+    ta.setSelectionRange(start + insert.length, start + insert.length);
+  });
+}
+function insertCodeBlock(): void {
+  wrapInline("\n```\n", "\n```\n", "代码块");
 }
 /** 清除格式：去掉 Markdown 标记符号 */
 function clearFormat(): void {
@@ -212,12 +247,8 @@ function onCancel(): void {
       </div>
 
       <template v-else>
-        <!-- 顶部工具栏：源码/预览切换 + Markdown 工具栏开关 -->
+        <!-- 顶部工具栏：源码/预览切换 -->
         <div class="ai-polish__toolbar">
-          <a-button type="text" size="mini" @click="toggleToolbar" :disabled="mode !== 'edit'" title="Markdown 工具栏">
-            <template #icon><icon-edit :size="14" /></template>
-            工具
-          </a-button>
           <a-button type="text" size="mini" @click="toggleMode">
             <template #icon>
               <icon-eye v-if="mode === 'edit'" :size="14" />
@@ -227,13 +258,20 @@ function onCancel(): void {
           </a-button>
         </div>
 
-        <!-- Markdown 工具栏（仅源码模式 + 展开时） -->
-        <div v-if="toolbarOpen && mode === 'edit'" class="ai-polish__md-toolbar">
+        <!-- Markdown 工具栏（源码模式常态展示，与 PromptEditor 完全一致） -->
+        <div v-if="mode === 'edit'" class="ai-polish__md-toolbar">
+          <!-- 文本格式组 -->
           <a-button size="mini" shape="circle" type="text" title="加粗" @click="insertBold">
             <icon-bold :size="14" />
           </a-button>
           <a-button size="mini" shape="circle" type="text" title="斜体" @click="insertItalic">
             <icon-italic :size="14" />
+          </a-button>
+          <a-button size="mini" shape="circle" type="text" title="下划线" @click="insertUnderline">
+            <icon-underline :size="14" />
+          </a-button>
+          <a-button size="mini" shape="circle" type="text" title="删除线" @click="insertStrike">
+            <icon-strikethrough :size="14" />
           </a-button>
           <a-button size="mini" shape="circle" type="text" title="行内代码" @click="insertCode">
             <icon-code :size="14" />
@@ -242,21 +280,40 @@ function onCancel(): void {
             <icon-eraser :size="14" />
           </a-button>
           <span class="ai-polish__md-divider"></span>
+          <!-- 段落块组 -->
+          <a-button size="mini" shape="circle" type="text" title="H1 标题" @click="insertHeading(1)">
+            <span class="ai-polish__md-label">H1</span>
+          </a-button>
           <a-button size="mini" shape="circle" type="text" title="H2 标题" @click="insertHeading(2)">
-            <span style="font-size: 11px; font-weight: 600">H2</span>
+            <span class="ai-polish__md-label">H2</span>
           </a-button>
           <a-button size="mini" shape="circle" type="text" title="H3 标题" @click="insertHeading(3)">
-            <span style="font-size: 11px; font-weight: 600">H3</span>
+            <span class="ai-polish__md-label">H3</span>
           </a-button>
           <a-button size="mini" shape="circle" type="text" title="引用" @click="insertQuote">
             <icon-quote :size="14" />
           </a-button>
+          <a-button size="mini" shape="circle" type="text" title="分隔线" @click="insertHr">
+            <icon-minus :size="14" />
+          </a-button>
+          <a-button size="mini" shape="circle" type="text" title="硬换行" @click="insertHardBreak">
+            <icon-refresh :size="14" />
+          </a-button>
           <span class="ai-polish__md-divider"></span>
+          <!-- 列表组 -->
           <a-button size="mini" shape="circle" type="text" title="无序列表" @click="insertBulletList">
             <icon-list :size="14" />
           </a-button>
           <a-button size="mini" shape="circle" type="text" title="有序列表" @click="insertOrderedList">
             <icon-ordered-list :size="14" />
+          </a-button>
+          <a-button size="mini" shape="circle" type="text" title="待办列表" @click="insertTaskList">
+            <icon-check-square :size="14" />
+          </a-button>
+          <span class="ai-polish__md-divider"></span>
+          <!-- 代码块 -->
+          <a-button size="mini" shape="circle" type="text" title="代码块" @click="insertCodeBlock">
+            <icon-code-square :size="14" />
           </a-button>
         </div>
 
@@ -377,6 +434,10 @@ function onCancel(): void {
   height: 16px;
   background: var(--jt-border);
   margin: 0 2px;
+}
+.ai-polish__md-label {
+  font-size: 11px;
+  font-weight: 600;
 }
 
 /* 左右对比布局 */
