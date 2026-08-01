@@ -2,16 +2,16 @@
 // AI 文本润色预览弹窗
 // 展示润色后的文本（流式逐字出现），用户确认后写回编辑器。
 // 下方折叠区可展开查看原文对比。
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
+import { marked } from "marked";
 import { IconEdit, IconDown, IconRight } from "@arco-design/web-vue/es/icon";
-import { ref } from "vue";
 
 const props = defineProps<{
   /** 弹窗是否可见 */
   visible: boolean;
-  /** 润色后的文本（HTML，流式增长中） */
+  /** 润色后的文本（Markdown 或 HTML，流式增长中） */
   polishedText: string;
-  /** 原始文本（HTML） */
+  /** 原始文本（Markdown 或 HTML） */
   originalText: string;
   /** 是否正在生成（流式加载中） */
   loading: boolean;
@@ -28,9 +28,29 @@ const emit = defineEmits<{
 
 /** 原文是否展开 */
 const showOriginal = ref(false);
+/** 润色结果渲染后的 HTML（marked 异步渲染） */
+const renderedPolished = ref("");
+/** 原文渲染后的 HTML */
+const renderedOriginal = ref("");
 
 /** 有结果可确认（loading 结束且有内容） */
 const canConfirm = computed(() => !props.loading && props.polishedText && !props.error);
+
+// polishedText 变化时用 marked 渲染（支持 Markdown 格式 + 流式增量）
+watch(
+  () => props.polishedText,
+  async (val) => {
+    renderedPolished.value = val ? await marked.parse(val) : "";
+  },
+  { immediate: true },
+);
+
+// 原文展开时渲染
+watch([() => props.originalText, showOriginal], async ([val, expanded]) => {
+  if (expanded && val) {
+    renderedOriginal.value = await marked.parse(val);
+  }
+});
 
 /** 确认 */
 function onConfirm(): void {
@@ -81,7 +101,7 @@ function onCancel(): void {
               <a-spin :size="12" />
             </div>
             <!-- eslint-disable-next-line vue/no-v-html -->
-            <div class="ai-polish__content" v-html="polishedText"></div>
+            <div class="ai-polish__content" v-html="renderedPolished"></div>
           </template>
         </div>
 
@@ -92,7 +112,7 @@ function onCancel(): void {
         </div>
         <div v-if="showOriginal" class="ai-polish__original">
           <!-- eslint-disable-next-line vue/no-v-html -->
-          <div v-html="originalText"></div>
+          <div v-html="renderedOriginal"></div>
         </div>
 
         <!-- 底部操作 -->
@@ -148,6 +168,9 @@ function onCancel(): void {
   background: var(--jt-surface-sunken);
   border-radius: 8px;
   border: 1px solid var(--jt-border);
+  /* 允许选中复制（Arco modal 默认可能禁止） */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .ai-polish__loading {
