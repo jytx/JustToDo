@@ -103,6 +103,11 @@ function onRichInput(): void {
   // 预览模式编辑不立即同步 Markdown，切回源码时才转换
 }
 
+/** 预览模式回车：插入 <br> 而非 <div>/<p>，避免额外空行 */
+function onRichEnter(): void {
+  document.execCommand("insertHTML", false, "<br>");
+}
+
 /** 预览模式失焦：转回 Markdown 并保存 */
 function onRichBlur(): void {
   if (richRef.value) {
@@ -491,6 +496,7 @@ function insertHardBreak(): void {
       spellcheck="false"
       @input="onRichInput"
       @blur="onRichBlur"
+      @keydown.enter.prevent="onRichEnter"
     ></div>
 
     <!-- AI 润色预览弹窗（确认后才覆盖提示词文本） -->
@@ -601,7 +607,7 @@ function insertHardBreak(): void {
 .prompt-editor__rich :deep(h2) { font-size: 14px; }
 .prompt-editor__rich :deep(h3) { font-size: 13px; }
 .prompt-editor__rich :deep(p) {
-  margin: 6px 0;
+  margin: 0;
 }
 .prompt-editor__rich :deep(ul),
 .prompt-editor__rich :deep(ol) {
