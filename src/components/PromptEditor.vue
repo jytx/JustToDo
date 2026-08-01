@@ -94,7 +94,11 @@ function nodeToMarkdown(node: Node): string {
       else if (tag === "blockquote") result += inner.split("\n").map((l: string) => `> ${l}`).join("\n");
       else if (tag === "ul") result += inner;
       else if (tag === "ol") result += inner;
-      else if (tag === "li") result += `- ${inner}\n`;
+      else if (tag === "li") {
+        // li 内容里的 <p> 会带尾部换行，去掉内部多余换行后只加一个
+        const cleanInner = inner.replace(/\n+$/, "");
+        result += `- ${cleanInner}\n`;
+      }
       else if (tag === "br") result += "\n";
       // p：内容后加一个换行。连续两个 <p> 自然变成两行（非空行），
       // 因为 marked 把无空行的连续行放进同一个 <p>，有空行的才拆成多个 <p>。
