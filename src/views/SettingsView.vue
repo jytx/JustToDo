@@ -5,6 +5,7 @@ import { ref, onMounted, computed } from "vue";
 import { storeToRefs } from "pinia";
 import { useSettingsStore, SETTINGS_KEYS, type StartupView, type AiProvider, DEFAULT_PROMPT_SMART, DEFAULT_PROMPT_LIST, DEFAULT_PROMPT_TASKS, DEFAULT_PROMPT_NOTE } from "@/stores/settings";
 import SelectPopover from "@/components/SelectPopover.vue";
+import PromptEditor from "@/components/PromptEditor.vue";
 import {
   IconSettings,
   IconSkin,
@@ -638,11 +639,9 @@ async function changeAttachmentPath() {
                 <span class="settings-section__prompt-label">每日 / 周报</span>
                 <a-button type="text" size="mini" @click="settingsStore.setAiPromptSmart(DEFAULT_PROMPT_SMART)">恢复默认</a-button>
               </div>
-              <a-textarea
+              <PromptEditor
                 v-model="aiPromptSmart"
-                :auto-size="{ minRows: 3, maxRows: 10 }"
-                style="width: 100%; margin-top: 4px"
-                @change="() => settingsStore.setAiPromptSmart(aiPromptSmart)"
+                @change="(v: string) => settingsStore.setAiPromptSmart(v)"
               />
             </div>
 
@@ -652,11 +651,9 @@ async function changeAttachmentPath() {
                 <span class="settings-section__prompt-label">清单 / 目录总结</span>
                 <a-button type="text" size="mini" @click="settingsStore.setAiPromptList(DEFAULT_PROMPT_LIST)">恢复默认</a-button>
               </div>
-              <a-textarea
+              <PromptEditor
                 v-model="aiPromptList"
-                :auto-size="{ minRows: 3, maxRows: 10 }"
-                style="width: 100%; margin-top: 4px"
-                @change="() => settingsStore.setAiPromptList(aiPromptList)"
+                @change="(v: string) => settingsStore.setAiPromptList(v)"
               />
             </div>
 
@@ -666,11 +663,9 @@ async function changeAttachmentPath() {
                 <span class="settings-section__prompt-label">多选任务总结</span>
                 <a-button type="text" size="mini" @click="settingsStore.setAiPromptTasks(DEFAULT_PROMPT_TASKS)">恢复默认</a-button>
               </div>
-              <a-textarea
+              <PromptEditor
                 v-model="aiPromptTasks"
-                :auto-size="{ minRows: 3, maxRows: 10 }"
-                style="width: 100%; margin-top: 4px"
-                @change="() => settingsStore.setAiPromptTasks(aiPromptTasks)"
+                @change="(v: string) => settingsStore.setAiPromptTasks(v)"
               />
             </div>
 
@@ -680,11 +675,9 @@ async function changeAttachmentPath() {
                 <span class="settings-section__prompt-label">笔记摘要</span>
                 <a-button type="text" size="mini" @click="settingsStore.setAiPromptNote(DEFAULT_PROMPT_NOTE)">恢复默认</a-button>
               </div>
-              <a-textarea
+              <PromptEditor
                 v-model="aiPromptNote"
-                :auto-size="{ minRows: 3, maxRows: 10 }"
-                style="width: 100%; margin-top: 4px"
-                @change="() => settingsStore.setAiPromptNote(aiPromptNote)"
+                @change="(v: string) => settingsStore.setAiPromptNote(v)"
               />
             </div>
           </template>
