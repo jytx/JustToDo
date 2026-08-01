@@ -46,6 +46,14 @@ export const SETTINGS_KEYS = {
   aiPromptTasks: "ai_prompt_tasks",
   /** 笔记摘要提示词 */
   aiPromptNote: "ai_prompt_note",
+  /** 自然语言建任务提示词 */
+  aiPromptParseTask: "ai_prompt_parse_task",
+  /** 任务拆解提示词 */
+  aiPromptBreakdownTask: "ai_prompt_breakdown_task",
+  /** 文本提取任务提示词 */
+  aiPromptExtractTasks: "ai_prompt_extract_tasks",
+  /** 文本润色提示词 */
+  aiPromptPolish: "ai_prompt_polish",
 } as const;
 
 /** 每日汇总提醒时点配置 —— 上限 8 个（与 Rust 端 parse_daily_times 一致） */
@@ -122,6 +130,62 @@ export const DEFAULT_PROMPT_NOTE = `你是一个专业的笔记摘要助手。�
 2. 语气客观、专业
 3. 不要编造内容，只基于提供的笔记
 4. 语言简洁，控制在 400 字以内`;
+
+export const DEFAULT_PROMPT_PARSE_TASK = `你是一个任务解析助手。根据用户的自然语言输入，提取任务的结构化信息并调用 parse_task 工具。
+
+规则：
+1. 标题：提取去掉时间/优先级/标签等修饰词后的核心内容
+2. 优先级：识别「高优/紧急/重要」→3，「中/一般」→2，「低」→1，无明确表示→0
+3. 截止时间：解析「明天/后天/下周一/3点/下午」等表达，换算成具体时间。若只提到日期无具体时间，结束时间用当天 23:59:59
+4. 标签：识别 # 后面的词作为标签名（不含#）
+5. 无法确定的字段不要编造，省略即可（除了 title 必填）
+6. 时间格式：YYYY-MM-DDTHH:mm:ss（本地时间）
+7. 详情正文(note)：总结并扩充用户输入的内容，生成一段简洁的任务描述（HTML 的 <p> 标签即可）。
+   要基于用户实际输入来总结，不要套模板或编造无关内容。例如：
+   - 「周五早上开周会」→ 「<p>周五早上召开周例会，回顾本周工作进展，同步下周计划，讨论遇到的问题。</p>」
+   - 「准备季度汇报」→ 「<p>准备季度工作汇报，整理本季度主要成果、数据分析及下季度计划。</p>」
+   简单的任务（如「买菜」）可省略 note`;
+
+export const DEFAULT_PROMPT_BREAKDOWN_TASK = `你是一个任务拆解助手。用户会给你一个大任务，你需要把它拆解成 3-8 个具体、可执行的子任务，并调用 breakdown_task 工具返回。
+
+拆解规则：
+1. 子任务数量：3-8 个，过少不够细致，过多难以管理。大任务本身不要作为一个子任务。
+2. 标题：简洁明确的动作短语，如「收集本月销售数据」「撰写汇报大纲」「制作 PPT」。
+3. 优先级：识别子任务的重要性和紧急程度。「关键路径/必须先完成」→3，「一般」→2，「辅助/可选」→1，无法判断→0。
+4. 截止时间：如果父任务有截止时间，子任务应合理分布在父任务截止之前（前面的子任务更早）；
+   若无明确截止时间，可省略。时间格式 YYYY-MM-DDTHH:mm:ss（本地时间），只到日期的用当天 23:59:59。
+5. 备注(note)：为每个子任务生成一段简短的执行说明（HTML 的 <p> 标签），说明具体要做什么、注意什么。
+   要基于实际任务内容来写，不要套模板或编造无关内容。
+6. 子任务之间应有合理的先后顺序，按顺序排列。
+
+示例：
+- 大任务「准备季度汇报」→ 子任务：收集本季度数据 / 撰写汇报大纲 / 制作PPT / 内部评审彩排
+- 大任务「组织团建活动」→ 子任务：确定活动预算 / 调查参与人数和意向 / 预订场地 / 发布活动通知 / 准备活动物资`;
+
+export const DEFAULT_PROMPT_EXTRACT_TASKS = `你是一个任务提取助手。用户会给你一段文本（如会议纪要、邮件、聊天记录），你需要从中提取出所有隐含的、需要执行的待办任务，并调用 extract_tasks 工具返回。
+
+提取规则：
+1. 只提取"需要有人去做"的行动项，跳过纯信息陈述、已完成的、讨论性内容。
+2. 标题：把口语化/隐含的行动项改写成简洁明确的任务标题（动作短语），如「整理本月销售数据」「回复客户合同邮件」。
+3. 优先级：识别紧迫程度。明确提到「紧急/尽快/马上」→3，正常 →2，低优先级 →1，无法判断 →0。
+4. 截止时间：从文本中识别明确的截止日期（如「周五前」「下周一」「7月15号前」），换算成具体时间。
+   时间格式 YYYY-MM-DDTHH:mm:ss（本地时间），只到日期的用当天 23:59:59。无明确截止则省略。
+5. 备注(note)：如果行动项有关键背景信息（如负责人、具体要求），用 HTML 的 <p> 标签简短记录。无则省略。
+6. 如果文本中确实没有可提取的行动项，返回空数组。
+
+示例：
+- 「明天开会讨论Q3规划，小王负责准备数据，周五前发给大家」→
+  ①「准备Q3规划会议数据」(负责人小王) ②「发送Q3规划数据给团队」(周五前)`;
+
+export const DEFAULT_PROMPT_POLISH = `你是一个专业的中文文本润色助手。用户会给你一段文本（可能含 HTML 标签），你需要润色后返回。
+
+润色规则：
+1. 修正语病、错别字、标点错误
+2. 理顺句子逻辑，优化表达，使文字更流畅、更专业
+3. 保持原文的核心意思和风格不变，不要增删实质内容
+4. **必须保留原有的 HTML 标签结构**（如 <p>、<strong>、<ul>、<li>、<h2> 等），只润色标签内的文字
+5. 如果原文是纯文本（无 HTML 标签），返回纯文本
+6. 直接输出润色后的完整文本，不要加任何解释说明`;
 
 /** 窗口缩放级别上下限（与 Rust 端 menu.rs 保持一致） */
 const ZOOM_MIN = 0.5;
@@ -245,6 +309,10 @@ export const useSettingsStore = defineStore("settings", () => {
   const aiPromptList = ref<string>(DEFAULT_PROMPT_LIST);
   const aiPromptTasks = ref<string>(DEFAULT_PROMPT_TASKS);
   const aiPromptNote = ref<string>(DEFAULT_PROMPT_NOTE);
+  const aiPromptParseTask = ref<string>(DEFAULT_PROMPT_PARSE_TASK);
+  const aiPromptBreakdownTask = ref<string>(DEFAULT_PROMPT_BREAKDOWN_TASK);
+  const aiPromptExtractTasks = ref<string>(DEFAULT_PROMPT_EXTRACT_TASKS);
+  const aiPromptPolish = ref<string>(DEFAULT_PROMPT_POLISH);
 
   const initialized = ref(false);
   const loading = ref(false);
@@ -287,7 +355,7 @@ export const useSettingsStore = defineStore("settings", () => {
     if (initialized.value || loading.value) return;
     loading.value = true;
     try {
-      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw, aiEnabledRaw, aiProviderRaw, aiBaseUrlRaw, aiApiKeyRaw, aiModelRaw, aiTruncateRaw, aiPromptSmartRaw, aiPromptListRaw, aiPromptTasksRaw, aiPromptNoteRaw] = await Promise.all([
+      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw, aiEnabledRaw, aiProviderRaw, aiBaseUrlRaw, aiApiKeyRaw, aiModelRaw, aiTruncateRaw, aiPromptSmartRaw, aiPromptListRaw, aiPromptTasksRaw, aiPromptNoteRaw, aiPromptParseTaskRaw, aiPromptBreakdownTaskRaw, aiPromptExtractTasksRaw, aiPromptPolishRaw] = await Promise.all([
         db.getSetting(SETTINGS_KEYS.themeMode).catch(() => null),
         db.getSetting(SETTINGS_KEYS.accentColor).catch(() => null),
         db.getSetting(SETTINGS_KEYS.newTasksDueToday).catch(() => null),
@@ -307,6 +375,10 @@ export const useSettingsStore = defineStore("settings", () => {
         db.getSetting(SETTINGS_KEYS.aiPromptList).catch(() => null),
         db.getSetting(SETTINGS_KEYS.aiPromptTasks).catch(() => null),
         db.getSetting(SETTINGS_KEYS.aiPromptNote).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiPromptParseTask).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiPromptBreakdownTask).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiPromptExtractTasks).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiPromptPolish).catch(() => null),
       ]);
 
       const mode = parseThemeMode(themeRaw);
@@ -342,6 +414,10 @@ export const useSettingsStore = defineStore("settings", () => {
       aiPromptList.value = aiPromptListRaw?.trim() ? aiPromptListRaw : DEFAULT_PROMPT_LIST;
       aiPromptTasks.value = aiPromptTasksRaw?.trim() ? aiPromptTasksRaw : DEFAULT_PROMPT_TASKS;
       aiPromptNote.value = aiPromptNoteRaw?.trim() ? aiPromptNoteRaw : DEFAULT_PROMPT_NOTE;
+      aiPromptParseTask.value = aiPromptParseTaskRaw?.trim() ? aiPromptParseTaskRaw : DEFAULT_PROMPT_PARSE_TASK;
+      aiPromptBreakdownTask.value = aiPromptBreakdownTaskRaw?.trim() ? aiPromptBreakdownTaskRaw : DEFAULT_PROMPT_BREAKDOWN_TASK;
+      aiPromptExtractTasks.value = aiPromptExtractTasksRaw?.trim() ? aiPromptExtractTasksRaw : DEFAULT_PROMPT_EXTRACT_TASKS;
+      aiPromptPolish.value = aiPromptPolishRaw?.trim() ? aiPromptPolishRaw : DEFAULT_PROMPT_POLISH;
 
       // 先应用强调色（不依赖模式），再应用主题
       theme.setAccentColor(accent);
@@ -563,6 +639,30 @@ async function setAiPromptNote(v: string): Promise<void> {
   const ok = await persist(SETTINGS_KEYS.aiPromptNote, v, prev);
   if (!ok) aiPromptNote.value = prev;
 }
+async function setAiPromptParseTask(v: string): Promise<void> {
+  const prev = aiPromptParseTask.value;
+  aiPromptParseTask.value = v;
+  const ok = await persist(SETTINGS_KEYS.aiPromptParseTask, v, prev);
+  if (!ok) aiPromptParseTask.value = prev;
+}
+async function setAiPromptBreakdownTask(v: string): Promise<void> {
+  const prev = aiPromptBreakdownTask.value;
+  aiPromptBreakdownTask.value = v;
+  const ok = await persist(SETTINGS_KEYS.aiPromptBreakdownTask, v, prev);
+  if (!ok) aiPromptBreakdownTask.value = prev;
+}
+async function setAiPromptExtractTasks(v: string): Promise<void> {
+  const prev = aiPromptExtractTasks.value;
+  aiPromptExtractTasks.value = v;
+  const ok = await persist(SETTINGS_KEYS.aiPromptExtractTasks, v, prev);
+  if (!ok) aiPromptExtractTasks.value = prev;
+}
+async function setAiPromptPolish(v: string): Promise<void> {
+  const prev = aiPromptPolish.value;
+  aiPromptPolish.value = v;
+  const ok = await persist(SETTINGS_KEYS.aiPromptPolish, v, prev);
+  if (!ok) aiPromptPolish.value = prev;
+}
 
   /**
    * 监听 Rust 端 zoom-changed 事件
@@ -655,6 +755,10 @@ async function setAiPromptNote(v: string): Promise<void> {
     aiPromptList,
     aiPromptTasks,
     aiPromptNote,
+    aiPromptParseTask,
+    aiPromptBreakdownTask,
+    aiPromptExtractTasks,
+    aiPromptPolish,
     initialized,
     loading,
     error,
@@ -678,6 +782,10 @@ async function setAiPromptNote(v: string): Promise<void> {
     setAiPromptList,
     setAiPromptTasks,
     setAiPromptNote,
+    setAiPromptParseTask,
+    setAiPromptBreakdownTask,
+    setAiPromptExtractTasks,
+    setAiPromptPolish,
     cycleTheme,
     zoomIn,
     zoomOut,

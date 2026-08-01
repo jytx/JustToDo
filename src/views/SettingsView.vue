@@ -3,7 +3,7 @@
 // 主题/强调色/自动今天/检查间隔统一通过 settings store 持久化
 import { ref, onMounted, computed } from "vue";
 import { storeToRefs } from "pinia";
-import { useSettingsStore, SETTINGS_KEYS, type StartupView, type AiProvider, DEFAULT_PROMPT_SMART, DEFAULT_PROMPT_LIST, DEFAULT_PROMPT_TASKS, DEFAULT_PROMPT_NOTE } from "@/stores/settings";
+import { useSettingsStore, SETTINGS_KEYS, type StartupView, type AiProvider, DEFAULT_PROMPT_SMART, DEFAULT_PROMPT_LIST, DEFAULT_PROMPT_TASKS, DEFAULT_PROMPT_NOTE, DEFAULT_PROMPT_PARSE_TASK, DEFAULT_PROMPT_BREAKDOWN_TASK, DEFAULT_PROMPT_EXTRACT_TASKS, DEFAULT_PROMPT_POLISH } from "@/stores/settings";
 import SelectPopover from "@/components/SelectPopover.vue";
 import PromptEditor from "@/components/PromptEditor.vue";
 import {
@@ -41,6 +41,10 @@ const {
   aiPromptList,
   aiPromptTasks,
   aiPromptNote,
+  aiPromptParseTask,
+  aiPromptBreakdownTask,
+  aiPromptExtractTasks,
+  aiPromptPolish,
 } = storeToRefs(settingsStore);
 
 const attachmentPath = ref("");
@@ -698,6 +702,74 @@ async function changeAttachmentPath() {
                   v-if="promptExpanded.note"
                   v-model="aiPromptNote"
                   @change="(v: string) => settingsStore.setAiPromptNote(v)"
+                />
+              </div>
+
+              <div class="settings-section__prompt">
+                <div class="settings-section__prompt-head" @click="promptExpanded.parseTask = !promptExpanded.parseTask">
+                  <span class="settings-section__prompt-label">
+                    <icon-right v-if="!promptExpanded.parseTask" :size="12" />
+                    <icon-down v-else :size="12" />
+                    自然语言建任务
+                  </span>
+                  <a-button type="text" size="mini" @click.stop="settingsStore.setAiPromptParseTask(DEFAULT_PROMPT_PARSE_TASK)">恢复默认</a-button>
+                </div>
+                <p class="settings-section__prompt-hint">底部添加栏 AI 按钮 —— 解析自然语言提取标题/优先级/日期/标签</p>
+                <PromptEditor
+                  v-if="promptExpanded.parseTask"
+                  v-model="aiPromptParseTask"
+                  @change="(v: string) => settingsStore.setAiPromptParseTask(v)"
+                />
+              </div>
+
+              <div class="settings-section__prompt">
+                <div class="settings-section__prompt-head" @click="promptExpanded.breakdown = !promptExpanded.breakdown">
+                  <span class="settings-section__prompt-label">
+                    <icon-right v-if="!promptExpanded.breakdown" :size="12" />
+                    <icon-down v-else :size="12" />
+                    任务拆解
+                  </span>
+                  <a-button type="text" size="mini" @click.stop="settingsStore.setAiPromptBreakdownTask(DEFAULT_PROMPT_BREAKDOWN_TASK)">恢复默认</a-button>
+                </div>
+                <p class="settings-section__prompt-hint">任务详情面板 AI 拆解按钮 —— 把大任务拆成多个子任务</p>
+                <PromptEditor
+                  v-if="promptExpanded.breakdown"
+                  v-model="aiPromptBreakdownTask"
+                  @change="(v: string) => settingsStore.setAiPromptBreakdownTask(v)"
+                />
+              </div>
+
+              <div class="settings-section__prompt">
+                <div class="settings-section__prompt-head" @click="promptExpanded.extract = !promptExpanded.extract">
+                  <span class="settings-section__prompt-label">
+                    <icon-right v-if="!promptExpanded.extract" :size="12" />
+                    <icon-down v-else :size="12" />
+                    文本提取任务
+                  </span>
+                  <a-button type="text" size="mini" @click.stop="settingsStore.setAiPromptExtractTasks(DEFAULT_PROMPT_EXTRACT_TASKS)">恢复默认</a-button>
+                </div>
+                <p class="settings-section__prompt-hint">AI 助手弹窗「提取任务」—— 从会议纪要/邮件提取行动项</p>
+                <PromptEditor
+                  v-if="promptExpanded.extract"
+                  v-model="aiPromptExtractTasks"
+                  @change="(v: string) => settingsStore.setAiPromptExtractTasks(v)"
+                />
+              </div>
+
+              <div class="settings-section__prompt">
+                <div class="settings-section__prompt-head" @click="promptExpanded.polish = !promptExpanded.polish">
+                  <span class="settings-section__prompt-label">
+                    <icon-right v-if="!promptExpanded.polish" :size="12" />
+                    <icon-down v-else :size="12" />
+                    文本润色
+                  </span>
+                  <a-button type="text" size="mini" @click.stop="settingsStore.setAiPromptPolish(DEFAULT_PROMPT_POLISH)">恢复默认</a-button>
+                </div>
+                <p class="settings-section__prompt-hint">详情面板 AI 润色按钮 —— 优化笔记/任务描述的文笔</p>
+                <PromptEditor
+                  v-if="promptExpanded.polish"
+                  v-model="aiPromptPolish"
+                  @change="(v: string) => settingsStore.setAiPromptPolish(v)"
                 />
               </div>
             </a-collapse-item>
