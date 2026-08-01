@@ -540,147 +540,141 @@ async function changeAttachmentPath() {
             />
           </div>
 
-          <!-- 配置区（总开关打开后才显示） -->
-          <template v-if="aiEnabled">
-            <a-divider class="my-4" />
-
-            <!-- 服务协议 -->
-            <div class="settings-section__item">
-              <span>服务协议</span>
-              <a-radio-group
-                :model-value="aiProvider"
-                @change="(v: any) => onProviderChange(v as AiProvider)"
-              >
-                <a-radio value="openai">OpenAI 兼容</a-radio>
-                <a-radio value="anthropic">Anthropic</a-radio>
-              </a-radio-group>
-            </div>
-
-            <!-- API 地址 -->
-            <div class="settings-section__item">
-              <span>API 地址</span>
-              <!-- v-model 绑 store ref：输入过程即时更新 state（避免受控模式被打回），
-                   @change（失焦）才触发持久化 -->
-              <a-input
-                v-model="aiBaseUrl"
-                :placeholder="baseUrlPlaceholder"
-                style="width: 280px"
-                @change="() => settingsStore.setAiBaseUrl(aiBaseUrl)"
-              />
-            </div>
-
-            <!-- API Key（密码框 + 显隐切换） -->
-            <div class="settings-section__item">
-              <span>API Key</span>
-              <a-input-password
-                v-model="aiApiKey"
-                placeholder="sk-..."
-                style="width: 280px"
-                @change="() => settingsStore.setAiApiKey(aiApiKey)"
-              />
-            </div>
-
-            <!-- 模型名 -->
-            <div class="settings-section__item">
-              <span>模型名</span>
-              <a-input
-                v-model="aiModel"
-                :placeholder="modelPlaceholder"
-                style="width: 280px"
-                @change="() => settingsStore.setAiModel(aiModel)"
-              />
-            </div>
-
-            <!-- 测试连接 -->
-            <div class="settings-section__actions">
-              <a-button
-                type="outline"
-                size="small"
-                :loading="testing"
-                @click="onTestConnection"
-              >测试连接</a-button>
-              <span
-                v-if="testResult"
-                class="settings-section__test-result"
-                :class="{ 'settings-section__test-result--ok': testResult.ok, 'settings-section__test-result--fail': !testResult.ok }"
-              >{{ testResult.ok ? "✓ " : "✗ " }}{{ testResult.message }}</span>
-            </div>
-
-            <a-divider class="my-4" />
-
-            <!-- 总结裁剪阈值 -->
-            <div class="settings-section__item">
-              <div>
-                <span>总结裁剪阈值</span>
-                <p class="settings-section__path-hint">任务数超过此值时，总结前会询问是否智能裁剪</p>
+          <!-- 配置区（总开关打开后才显示）：折叠面板分组 -->
+          <a-collapse
+            v-if="aiEnabled"
+            :bordered="false"
+            :default-active-key="['connection']"
+            class="settings-section__collapse"
+          >
+            <!-- 连接配置：协议/地址/Key/模型/测试/裁剪阈值 -->
+            <a-collapse-item key="connection" header="连接配置">
+              <div class="settings-section__item">
+                <span>服务协议</span>
+                <a-radio-group
+                  :model-value="aiProvider"
+                  @change="(v: any) => onProviderChange(v as AiProvider)"
+                >
+                  <a-radio value="openai">OpenAI 兼容</a-radio>
+                  <a-radio value="anthropic">Anthropic</a-radio>
+                </a-radio-group>
               </div>
-              <div class="settings-section__interval">
-                <a-input-number
-                  :model-value="aiSummaryTruncateThreshold"
-                  size="small"
-                  :min="1"
-                  :max="500"
-                  :step="1"
-                  style="width: 100px"
-                  @change="(v: number | undefined) => settingsStore.setAiSummaryTruncateThreshold(v ?? 50)"
+
+              <div class="settings-section__item">
+                <span>API 地址</span>
+                <a-input
+                  v-model="aiBaseUrl"
+                  :placeholder="baseUrlPlaceholder"
+                  style="width: 280px"
+                  @change="() => settingsStore.setAiBaseUrl(aiBaseUrl)"
                 />
-                <span class="settings-section__interval-unit">项</span>
               </div>
-            </div>
 
-            <a-divider class="my-4" />
-
-            <!-- 自定义提示词：4 个场景，各自可编辑 + 恢复默认 -->
-            <p class="settings-section__desc">自定义提示词。清空则使用默认。每日/周报支持 {mode} 占位符（自动替换为「今日」/「本周」）。</p>
-
-            <!-- 每日/周报提示词 -->
-            <div class="settings-section__prompt">
-              <div class="settings-section__prompt-head">
-                <span class="settings-section__prompt-label">每日 / 周报</span>
-                <a-button type="text" size="mini" @click="settingsStore.setAiPromptSmart(DEFAULT_PROMPT_SMART)">恢复默认</a-button>
+              <div class="settings-section__item">
+                <span>API Key</span>
+                <a-input-password
+                  v-model="aiApiKey"
+                  placeholder="sk-..."
+                  style="width: 280px"
+                  @change="() => settingsStore.setAiApiKey(aiApiKey)"
+                />
               </div>
-              <PromptEditor
-                v-model="aiPromptSmart"
-                @change="(v: string) => settingsStore.setAiPromptSmart(v)"
-              />
-            </div>
 
-            <!-- 清单/目录提示词 -->
-            <div class="settings-section__prompt">
-              <div class="settings-section__prompt-head">
-                <span class="settings-section__prompt-label">清单 / 目录总结</span>
-                <a-button type="text" size="mini" @click="settingsStore.setAiPromptList(DEFAULT_PROMPT_LIST)">恢复默认</a-button>
+              <div class="settings-section__item">
+                <span>模型名</span>
+                <a-input
+                  v-model="aiModel"
+                  :placeholder="modelPlaceholder"
+                  style="width: 280px"
+                  @change="() => settingsStore.setAiModel(aiModel)"
+                />
               </div>
-              <PromptEditor
-                v-model="aiPromptList"
-                @change="(v: string) => settingsStore.setAiPromptList(v)"
-              />
-            </div>
 
-            <!-- 多选任务提示词 -->
-            <div class="settings-section__prompt">
-              <div class="settings-section__prompt-head">
-                <span class="settings-section__prompt-label">多选任务总结</span>
-                <a-button type="text" size="mini" @click="settingsStore.setAiPromptTasks(DEFAULT_PROMPT_TASKS)">恢复默认</a-button>
+              <div class="settings-section__actions">
+                <a-button
+                  type="outline"
+                  size="small"
+                  :loading="testing"
+                  @click="onTestConnection"
+                >测试连接</a-button>
+                <span
+                  v-if="testResult"
+                  class="settings-section__test-result"
+                  :class="{ 'settings-section__test-result--ok': testResult.ok, 'settings-section__test-result--fail': !testResult.ok }"
+                >{{ testResult.ok ? "✓ " : "✗ " }}{{ testResult.message }}</span>
               </div>
-              <PromptEditor
-                v-model="aiPromptTasks"
-                @change="(v: string) => settingsStore.setAiPromptTasks(v)"
-              />
-            </div>
 
-            <!-- 笔记摘要提示词 -->
-            <div class="settings-section__prompt">
-              <div class="settings-section__prompt-head">
-                <span class="settings-section__prompt-label">笔记摘要</span>
-                <a-button type="text" size="mini" @click="settingsStore.setAiPromptNote(DEFAULT_PROMPT_NOTE)">恢复默认</a-button>
+              <a-divider class="my-4" />
+
+              <div class="settings-section__item">
+                <div>
+                  <span>总结裁剪阈值</span>
+                  <p class="settings-section__path-hint">任务数超过此值时，总结前会询问是否智能裁剪</p>
+                </div>
+                <div class="settings-section__interval">
+                  <a-input-number
+                    :model-value="aiSummaryTruncateThreshold"
+                    size="small"
+                    :min="1"
+                    :max="500"
+                    :step="1"
+                    style="width: 100px"
+                    @change="(v: number | undefined) => settingsStore.setAiSummaryTruncateThreshold(v ?? 50)"
+                  />
+                  <span class="settings-section__interval-unit">项</span>
+                </div>
               </div>
-              <PromptEditor
-                v-model="aiPromptNote"
-                @change="(v: string) => settingsStore.setAiPromptNote(v)"
-              />
-            </div>
-          </template>
+            </a-collapse-item>
+
+            <!-- 提示词模板：4 个场景，各自可编辑 + 恢复默认 -->
+            <a-collapse-item key="prompts" header="提示词模板">
+              <p class="settings-section__desc">自定义提示词。清空则使用默认。每日/周报支持 {mode} 占位符（自动替换为「今日」/「本周」）。</p>
+
+              <div class="settings-section__prompt">
+                <div class="settings-section__prompt-head">
+                  <span class="settings-section__prompt-label">每日 / 周报</span>
+                  <a-button type="text" size="mini" @click="settingsStore.setAiPromptSmart(DEFAULT_PROMPT_SMART)">恢复默认</a-button>
+                </div>
+                <PromptEditor
+                  v-model="aiPromptSmart"
+                  @change="(v: string) => settingsStore.setAiPromptSmart(v)"
+                />
+              </div>
+
+              <div class="settings-section__prompt">
+                <div class="settings-section__prompt-head">
+                  <span class="settings-section__prompt-label">清单 / 目录总结</span>
+                  <a-button type="text" size="mini" @click="settingsStore.setAiPromptList(DEFAULT_PROMPT_LIST)">恢复默认</a-button>
+                </div>
+                <PromptEditor
+                  v-model="aiPromptList"
+                  @change="(v: string) => settingsStore.setAiPromptList(v)"
+                />
+              </div>
+
+              <div class="settings-section__prompt">
+                <div class="settings-section__prompt-head">
+                  <span class="settings-section__prompt-label">多选任务总结</span>
+                  <a-button type="text" size="mini" @click="settingsStore.setAiPromptTasks(DEFAULT_PROMPT_TASKS)">恢复默认</a-button>
+                </div>
+                <PromptEditor
+                  v-model="aiPromptTasks"
+                  @change="(v: string) => settingsStore.setAiPromptTasks(v)"
+                />
+              </div>
+
+              <div class="settings-section__prompt">
+                <div class="settings-section__prompt-head">
+                  <span class="settings-section__prompt-label">笔记摘要</span>
+                  <a-button type="text" size="mini" @click="settingsStore.setAiPromptNote(DEFAULT_PROMPT_NOTE)">恢复默认</a-button>
+                </div>
+                <PromptEditor
+                  v-model="aiPromptNote"
+                  @change="(v: string) => settingsStore.setAiPromptNote(v)"
+                />
+              </div>
+            </a-collapse-item>
+          </a-collapse>
         </div>
 
         <!-- 关于 -->
@@ -1026,6 +1020,17 @@ async function changeAttachmentPath() {
 
 .settings-section__prompt-label {
   font-size: 13px;
+  font-weight: 500;
+  color: var(--jt-text-primary);
+}
+
+/* AI 设置折叠面板：去掉 Arco 默认左缩进，标题字号统一 */
+.settings-section__collapse :deep(.arco-collapse-item-content) {
+  padding-left: 0;
+}
+
+.settings-section__collapse :deep(.arco-collapse-item-header-title) {
+  font-size: 14px;
   font-weight: 500;
   color: var(--jt-text-primary);
 }
