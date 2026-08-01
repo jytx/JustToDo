@@ -85,7 +85,7 @@ function onCancel(): void {
 <template>
   <a-modal
     :visible="visible"
-    :width="860"
+    :width="1000"
     :footer="false"
     :mask-closable="!loading"
     :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
@@ -216,8 +216,8 @@ function onCancel(): void {
 }
 
 .ai-polish__pane-body {
-  min-height: 240px;
-  max-height: 420px;
+  /* 固定高度让左右等高，内容多时各自滚动 */
+  height: 360px;
   overflow-y: auto;
   padding: 16px;
   background: var(--jt-surface-sunken);
@@ -247,7 +247,7 @@ function onCancel(): void {
 /* 可编辑 textarea（loading 结束后用户可修改润色结果） */
 .ai-polish__textarea {
   width: 100%;
-  min-height: 208px;
+  height: 100%;
   border: none;
   outline: none;
   background: transparent;
