@@ -3180,10 +3180,10 @@ pub async fn ai_parse_task(
     let prompt_tpl = load_prompt(pool.inner(), "ai_prompt_parse_task", DEFAULT_PROMPT_PARSE_TASK).await;
     let system_prompt = format!("{}\n\n当前时间：{}", prompt_tpl, now);
 
-    // 定义 parse_task 工具
+    // 定义 parse_task 工具（建任务意图）
     let parse_tool = ToolDef {
         name: "parse_task".into(),
-        description: "解析用户的自然语言输入，提取任务的结构化信息".into(),
+        description: "用户想创建一个新任务时调用此工具。解析自然语言输入，提取任务的结构化信息".into(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -3218,39 +3218,64 @@ pub async fn ai_parse_task(
         }),
     };
 
+    // 定义 summarize_list 工具（总结当前清单意图）
+    let summarize_tool = ToolDef {
+        name: "summarize_list".into(),
+        description: "用户想总结、分析、回顾当前清单/列表中的任务时调用此工具。如「总结下这个清单」「分析下任务情况」".into(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {}
+        }),
+    };
+
     let req = ChatRequest {
         messages: vec![
             ChatMessage::system { content: system_prompt },
             ChatMessage::user { content: input.clone() },
         ],
-        tools: vec![parse_tool],
-        tool_choice: ToolChoice::Required,
+        tools: vec![parse_tool, summarize_tool],
+        tool_choice: ToolChoice::Auto,
         ..Default::default()
     };
 
     match provider.chat(&req).await {
         Ok(resp) => {
-            // 从 tool_calls 取解析结果（强制 Required，模型应返回工具调用）
+            // 根据模型调用的工具名判断意图（tool_choice: Auto，模型自行选择）
             if let Some(call) = resp.tool_calls.first() {
+                let tool_name = call.name.as_str();
                 let args = &call.arguments;
-                Ok(serde_json::json!({
-                    "ok": true,
-                    "parsed": {
-                        "title": args.get("title").and_then(|v| v.as_str()).unwrap_or(""),
-                        "priority": args.get("priority").and_then(|v| v.as_i64()).unwrap_or(0),
-                        "dueStartAt": args.get("dueStartAt").and_then(|v| v.as_str()),
-                        "dueEndAt": args.get("dueEndAt").and_then(|v| v.as_str()),
-                        "tagNames": args.get("tagNames").and_then(|v| v.as_array())
-                            .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>())
-                            .unwrap_or_default(),
-                        "note": args.get("note").and_then(|v| v.as_str()).unwrap_or(""),
+                match tool_name {
+                    "summarize_list" => {
+                        // 总结当前清单意图：前端据此触发 ai_summary_scope
+                        Ok(serde_json::json!({
+                            "ok": true,
+                            "intent": "summarize_list",
+                        }))
                     }
-                }))
+                    _ => {
+                        // 默认当作建任务（parse_task）
+                        Ok(serde_json::json!({
+                            "ok": true,
+                            "intent": "create_task",
+                            "parsed": {
+                                "title": args.get("title").and_then(|v| v.as_str()).unwrap_or(""),
+                                "priority": args.get("priority").and_then(|v| v.as_i64()).unwrap_or(0),
+                                "dueStartAt": args.get("dueStartAt").and_then(|v| v.as_str()),
+                                "dueEndAt": args.get("dueEndAt").and_then(|v| v.as_str()),
+                                "tagNames": args.get("tagNames").and_then(|v| v.as_array())
+                                    .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect::<Vec<_>>())
+                                    .unwrap_or_default(),
+                                "note": args.get("note").and_then(|v| v.as_str()).unwrap_or(""),
+                            }
+                        }))
+                    }
+                }
             } else {
-                // 模型没调工具（返回纯文本），fallback
+                // 模型没调工具（返回纯文本），fallback：原样返回标题，提示不支持
                 Ok(serde_json::json!({
                     "ok": false,
-                    "message": "AI 未能解析输入，请直接创建",
+                    "intent": "unsupported",
+                    "message": "暂不支持此操作，请直接输入任务内容创建",
                     "fallback_title": input,
                 }))
             }

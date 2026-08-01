@@ -8,6 +8,8 @@ import { PRIORITY_LABELS, PRIORITY_COLORS, type Priority } from "@/types";
 import { useSettingsStore } from "@/stores/settings";
 import { useTemplateStore } from "@/stores/template";
 import { useTagStore } from "@/stores/tag";
+import { useListStore } from "@/stores/list";
+import { useTaskStore } from "@/stores/task";
 import { todayRange } from "@/utils/date";
 import { parseTask } from "@/api/ai";
 import PriorityDot from "./PriorityDot.vue";
@@ -37,6 +39,8 @@ const emit = defineEmits<{
 const settings = useSettingsStore();
 const templateStore = useTemplateStore();
 const tagStore = useTagStore();
+const listStore = useListStore();
+const taskStore = useTaskStore();
 
 /** 模板菜单可见态 */
 const showTemplateMenu = ref(false);
@@ -136,9 +140,9 @@ async function onAiParse(): Promise<void> {
   aiParsing.value = true;
   try {
     const res = await parseTask(trimmed);
-    if (res.ok && res.parsed) {
+    if (res.ok && res.intent === "create_task" && res.parsed) {
+      // 意图：建任务 → 填充属性 + 直接创建
       const p = res.parsed;
-      // 填充解析结果到各属性
       if (p.title) title.value = p.title;
       priority.value = (p.priority as Priority) ?? 0;
       dueStartAt.value = p.dueStartAt ?? null;
@@ -147,13 +151,26 @@ async function onAiParse(): Promise<void> {
         const ids = await resolveTagIds(p.tagNames);
         selectedTagIds.value = ids;
       }
-      // AI 生成的详情正文（HTML）
       pendingNote.value = p.note || "";
-      // 直接创建任务（属性已填充，submit 会 emit add + 重置）
       submit();
+    } else if (res.ok && res.intent === "summarize_list") {
+      // 意图：总结当前清单 → 触发 AI 总结（复用已有链路）
+      const list = listStore.getById(props.listId);
+      if (list) {
+        taskStore.pendingSummaryScope = {
+          type: "list",
+          id: props.listId,
+          name: list.name,
+          kind: (list.kind ?? "task") as "task" | "note",
+        };
+        Message.info("正在总结当前清单...");
+      } else {
+        Message.error("无法获取当前清单信息");
+      }
+      // 清空输入框（总结不是建任务）
+      title.value = "";
     } else if (res.fallbackTitle) {
-      // 模型未调工具，原样返回标题
-      Message.info("AI 未能解析，已保留原输入");
+      Message.info(res.message ?? "暂不支持此操作，已保留原输入");
     } else {
       Message.error(res.message ?? "AI 解析失败");
     }
