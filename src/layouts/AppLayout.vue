@@ -15,7 +15,7 @@ import TheSidebar from "@/components/TheSidebar.vue";
 import TaskDetailPanel from "@/components/TaskDetailPanel.vue";
 import SearchPalette from "@/components/SearchPalette.vue";
 import QuickAddDialog from "@/components/QuickAddDialog.vue";
-import DailySummaryModal from "@/components/DailySummaryModal.vue";
+import AiAssistantModal from "@/components/AiAssistantModal.vue";
 import MenuPopover from "@/components/MenuPopover.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
@@ -43,17 +43,17 @@ const panelWidth = ref(480);
 /** AI 每日小结弹窗可见性 */
 const summaryVisible = ref(false);
 
-/** 打开 AI 总结弹窗（顶栏/快捷键入口，smart 模式）。 */
+/** 打开 AI 助手弹窗（顶栏/快捷键入口，默认每日小结）。 */
 function openSummary(): void {
-  taskStore.pendingSummaryScope = null;
+  taskStore.aiSelectedTool = "daily";
   summaryVisible.value = true;
 }
 
-/** 侧边栏清单/目录 AI 总结入口：设置 scope + 显示 loading。
- *  DailySummaryModal 预检后，空则 toast，非空才开弹窗（避免闪烁）。 */
+/** 侧边栏清单/目录 AI 总结入口：设默认工具为「总结当前清单」+ 设置 scope */
 function onAiSummary(scope: import("@/api/ai").SummaryScope): void {
-  taskStore.aiLoading = true;
+  taskStore.aiSelectedTool = scope.type === "tasks" ? "tasks" : "list";
   taskStore.pendingSummaryScope = scope;
+  summaryVisible.value = true;
 }
 
 /** 是否显示排序按钮（清单/笔记本/标签/全部视图） */
@@ -273,9 +273,7 @@ useShortcuts({
     quickAdd.open();
   },
   onDailySummary: () => {
-    // 顶栏入口 = smart 模式，确保 scope 清空
-    taskStore.pendingSummaryScope = null;
-    summaryVisible.value = true;
+    openSummary();
   },
   onNewTask: () => {
     listStore.loadLists();
@@ -391,8 +389,8 @@ useShortcuts({
       @update:model-value="quickAdd.close()"
     />
 
-    <!-- AI 每日小结弹窗 -->
-    <DailySummaryModal v-model:visible="summaryVisible" />
+    <!-- AI 助手弹窗（统一入口） -->
+    <AiAssistantModal v-model:visible="summaryVisible" />
 
     <!-- 删除任务确认对话框（键盘 Backspace 或任务项菜单触发，统一极简卡片风） -->
     <ConfirmDialog

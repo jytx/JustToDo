@@ -59,6 +59,8 @@ export const useTaskStore = defineStore("task", () => {
   const pendingSummaryScope = ref<import("@/api/ai").SummaryScope | null>(null);
   /** AI 总结加载中（预检/生成期间为 true，AppLayout 显示全局 loading 遮罩） */
   const aiLoading = ref(false);
+  /** AI 助手弹窗默认选中的工具（入口设置，弹窗读取） */
+  const aiSelectedTool = ref<string>("daily");
 
   /** 待删除任务的 ID（用于确认对话框） */
   const pendingDeleteId = ref<string | null>(null);
@@ -1236,6 +1238,7 @@ export const useTaskStore = defineStore("task", () => {
     batchAnchorId,
     pendingSummaryScope,
     aiLoading,
+    aiSelectedTool,
     batchSelectedTasks,
     batchSelectedIdsArr,
     enterBatchMode,
