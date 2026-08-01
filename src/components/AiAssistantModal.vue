@@ -206,11 +206,9 @@ watch(
     wrap-class="ai-assistant-wrap"
     @update:visible="(v: boolean) => emit('update:visible', v)"
   >
+    <template #title>{{ title }}</template>
     <div class="ai-assistant">
-      <!-- 标题 -->
-      <div class="ai-assistant__header">
-        <h2 class="ai-assistant__title">{{ title }}</h2>
-      </div>
+      <!-- 工具选择 + 输入区 -->
 
       <!-- 工具选择 + 输入区 -->
       <div class="ai-assistant__controls">
@@ -289,21 +287,7 @@ watch(
 
 <style scoped>
 .ai-assistant {
-  padding: 4px 0;
-}
-
-.ai-assistant__header {
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--jt-border);
-  margin-bottom: 16px;
-}
-
-.ai-assistant__title {
-  font-family: var(--font-display);
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--jt-text-primary);
-  margin: 0;
+  padding: 0;
 }
 
 .ai-assistant__controls {
