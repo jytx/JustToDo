@@ -471,6 +471,7 @@ pub fn run() {
             commands::ai_test_connection,
             commands::task_get_completed_in_range,
             commands::ai_summary,
+            commands::ai_summary_scope,
         ]);
 
     // 仅在开发模式下启用 MCP 插件（用于 AI 辅助 GUI 测试，不影响 release 构建）
