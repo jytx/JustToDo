@@ -8,6 +8,7 @@
 import { ref, watch, nextTick } from "vue";
 import { marked } from "marked";
 import { polishText } from "@/api/ai";
+import AiPolishDialog from "@/components/AiPolishDialog.vue";
 
 const props = defineProps<{
   /** 提示词文本（v-model） */
@@ -27,6 +28,14 @@ const previewHtml = ref("");
 const toolbarOpen = ref(false);
 /** AI 润色进行中 */
 const polishing = ref(false);
+/** 润色预览弹窗是否可见 */
+const polishVisible = ref(false);
+/** 润色前的原文（弹窗对比用） */
+const polishOriginal = ref("");
+/** 润色结果（流式增长） */
+const polishResult = ref("");
+/** 润色错误信息 */
+const polishError = ref("");
 
 /** textarea 元素引用（工具栏插入需要操作光标位置） */
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
@@ -63,24 +72,41 @@ function toggleToolbar(): void {
   toolbarOpen.value = !toolbarOpen.value;
 }
 
-/** AI 润色：用 polishText 优化当前提示词文本，流式替换 */
+/** AI 润色：调 polishText 流式获取结果，弹窗预览后确认才覆盖 */
 async function onPolish(): Promise<void> {
   if (polishing.value || !props.modelValue.trim()) return;
+
+  // 打开弹窗 + 发起流式润色
+  polishOriginal.value = props.modelValue;
+  polishResult.value = "";
+  polishError.value = "";
   polishing.value = true;
-  // 切到编辑模式（确保看到流式变化）
-  mode.value = "edit";
-  let result = "";
+  polishVisible.value = true;
+
   const res = await polishText(props.modelValue, (delta) => {
-    result += delta;
-    emit("update:modelValue", result);
-    // 同步更新 textarea 显示（v-model 是单向 :value，需手动同步）
-    if (textareaRef.value) textareaRef.value.value = result;
+    polishResult.value += delta;
   });
   polishing.value = false;
   if (res.ok && res.content) {
-    emit("update:modelValue", res.content);
-    emit("change", res.content);
+    polishResult.value = res.content;
+  } else {
+    polishError.value = res.message ?? "润色失败";
   }
+}
+
+/** 确认润色：覆盖提示词文本 */
+function onPolishConfirm(): void {
+  if (!polishResult.value) return;
+  emit("update:modelValue", polishResult.value);
+  emit("change", polishResult.value);
+  // 同步更新 textarea 显示
+  if (textareaRef.value) textareaRef.value.value = polishResult.value;
+  polishVisible.value = false;
+}
+
+/** 取消润色 */
+function onPolishCancel(): void {
+  polishVisible.value = false;
 }
 
 // ─── Markdown 工具栏：在 textarea 光标处插入语法 ───
@@ -343,6 +369,17 @@ function insertHardBreak(): void {
 
     <!-- 预览模式：Markdown 渲染 -->
     <div v-else class="prompt-editor__preview" v-html="previewHtml"></div>
+
+    <!-- AI 润色预览弹窗（确认后才覆盖提示词文本） -->
+    <AiPolishDialog
+      :visible="polishVisible"
+      :polished-text="polishResult"
+      :original-text="polishOriginal"
+      :loading="polishing"
+      :error="polishError"
+      @confirm="onPolishConfirm"
+      @cancel="onPolishCancel"
+    />
   </div>
 </template>
 
