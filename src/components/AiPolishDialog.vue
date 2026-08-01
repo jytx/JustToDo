@@ -445,6 +445,10 @@ function onCancel(): void {
   font-size: 11px;
   font-weight: 600;
 }
+/* 工具栏按钮去掉 hover 背景，只保留点击效果（与 PromptEditor 一致） */
+.ai-polish__md-toolbar :deep(.arco-btn-text:hover) {
+  background-color: transparent;
+}
 
 /* 左右对比布局 */
 .ai-polish__compare {
