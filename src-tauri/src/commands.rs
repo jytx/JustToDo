@@ -2675,3 +2675,36 @@ pub async fn template_reorder(
         .map_err(|e| format!("提交事务失败: {}", e))?;
     Ok(())
 }
+
+// ─── AI 相关命令 ────────────────────────────────────────────
+// 详见 src/ai/ 模块与 discuss/2026-07-31-ai-config-design.md
+
+/// 测试 AI 连接：读配置 → 构造 provider → 发最小请求。
+///
+/// 返回 `serde_json::Value`（始终 Ok，错误信息放 message 字段），
+/// 这样前端不会进 catch，统一按 `{ ok, message }` 渲染结果。
+/// 只有真正的 IPC 错误（如 panic）才会进 Err。
+#[tauri::command]
+pub async fn ai_test_connection(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<serde_json::Value> {
+    // 构造 provider（内部会校验 enabled / base_url / key / model 是否完整）
+    let provider = match crate::ai::build_from_settings(pool.inner()).await {
+        Ok(p) => p,
+        Err(e) => {
+            return Ok(serde_json::json!({
+                "ok": false,
+                "message": format!("{}", e),
+            }));
+        }
+    };
+    // 发最小请求验证连通性
+    match provider.test_connection().await {
+        Ok(model_name) => Ok(serde_json::json!({
+            "ok": true,
+            "message": format!("连接成功（模型 {}）", model_name),
+        })),
+        Err(e) => Ok(serde_json::json!({
+            "ok": false,
+            "message": format!("{}", e),
+        })),
+    }
+}

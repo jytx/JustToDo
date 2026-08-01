@@ -3,7 +3,7 @@
 // 主题/强调色/自动今天/检查间隔统一通过 settings store 持久化
 import { ref, onMounted, computed } from "vue";
 import { storeToRefs } from "pinia";
-import { useSettingsStore, SETTINGS_KEYS, type StartupView } from "@/stores/settings";
+import { useSettingsStore, SETTINGS_KEYS, type StartupView, type AiProvider } from "@/stores/settings";
 import SelectPopover from "@/components/SelectPopover.vue";
 import {
   IconSettings,
@@ -13,6 +13,7 @@ import {
   IconInfoCircle,
   IconCopy,
   IconCalendar,
+  IconRobot,
 } from "@arco-design/web-vue/es/icon";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -29,6 +30,11 @@ const {
   startupView,
   error,
   dailyReminderTimes,
+  aiEnabled,
+  aiProvider,
+  aiBaseUrl,
+  aiApiKey,
+  aiModel,
 } = storeToRefs(settingsStore);
 
 const attachmentPath = ref("");
@@ -40,6 +46,7 @@ const sections = [
   { id: "templates", icon: IconCopy, label: "模板" },
   { id: "schedule", icon: IconCalendar, label: "清单生成计划" },
   { id: "data", icon: IconStorage, label: "数据" },
+  { id: "ai", icon: IconRobot, label: "AI" },
   { id: "about", icon: IconInfoCircle, label: "关于" },
 ];
 
@@ -90,6 +97,51 @@ const isSavingDueToday = computed(() =>
 const isSavingDailyTimes = computed(() =>
   settingsStore.isSaving(SETTINGS_KEYS.dailyReminderTimes),
 );
+
+/* ─── AI 配置 ────────────────────────────────────── */
+// 详见 discuss/2026-07-31-ai-config-design.md
+// 输入框走 @change 自动保存（失焦触发），无需单独 loading 反馈；
+// 仅总开关这种"点击即生效"的控件保留 saving 反馈
+const isSavingAiEnabled = computed(() => settingsStore.isSaving(SETTINGS_KEYS.aiEnabled));
+
+/** API 地址 placeholder：随协议变化，给用户参考标准地址 */
+const baseUrlPlaceholder = computed(() =>
+  aiProvider.value === "anthropic"
+    ? "https://api.anthropic.com"
+    : "https://api.openai.com/v1",
+);
+
+/** 模型名 placeholder：随协议变化 */
+const modelPlaceholder = computed(() =>
+  aiProvider.value === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o",
+);
+
+/** 测试连接状态：testing 进行中、testResult 结果反馈 */
+const testing = ref(false);
+const testResult = ref<{ ok: boolean; message: string } | null>(null);
+
+/** 切换协议：清空模型名（不同协议模型名不通用），地址保留 */
+async function onProviderChange(v: AiProvider): Promise<void> {
+  await settingsStore.setAiProvider(v);
+  // 协议切换后清空模型名，避免残留不兼容的模型名
+  await settingsStore.setAiModel("");
+  // 清空上次的测试结果（配置已变，旧结果失效）
+  testResult.value = null;
+}
+
+/** 测试连接：调 Rust 端 ai_test_connection，发最小请求验证配置可用 */
+async function onTestConnection(): Promise<void> {
+  testing.value = true;
+  testResult.value = null;
+  try {
+    const res = await invoke<{ ok: boolean; message: string }>("ai_test_connection");
+    testResult.value = res;
+  } catch (e) {
+    testResult.value = { ok: false, message: String(e) };
+  } finally {
+    testing.value = false;
+  }
+}
 
 /* ─── 每日固定时点提醒 ────────────────────────────────────── */
 
@@ -464,6 +516,90 @@ async function changeAttachmentPath() {
           </div>
         </div>
 
+        <!-- AI 配置 -->
+        <div v-if="activeSection === 'ai'" class="settings-section">
+          <h2 class="settings-section__title">AI</h2>
+          <p class="settings-section__desc">配置 AI 服务，用于后续的自然语言建任务等功能。</p>
+
+          <!-- 总开关 -->
+          <div class="settings-section__item">
+            <div>
+              <span>启用 AI</span>
+              <p class="settings-section__path-hint">关闭后所有 AI 功能入口将隐藏</p>
+            </div>
+            <a-switch
+              :model-value="aiEnabled"
+              :loading="isSavingAiEnabled"
+              @change="(v: any) => settingsStore.setAiEnabled(Boolean(v))"
+            />
+          </div>
+
+          <!-- 配置区（总开关打开后才显示） -->
+          <template v-if="aiEnabled">
+            <a-divider class="my-4" />
+
+            <!-- 服务协议 -->
+            <div class="settings-section__item">
+              <span>服务协议</span>
+              <a-radio-group
+                :model-value="aiProvider"
+                @change="(v: any) => onProviderChange(v as AiProvider)"
+              >
+                <a-radio value="openai">OpenAI 兼容</a-radio>
+                <a-radio value="anthropic">Anthropic</a-radio>
+              </a-radio-group>
+            </div>
+
+            <!-- API 地址 -->
+            <div class="settings-section__item">
+              <span>API 地址</span>
+              <a-input
+                :model-value="aiBaseUrl"
+                :placeholder="baseUrlPlaceholder"
+                style="width: 280px"
+                @change="(v: string) => settingsStore.setAiBaseUrl(v)"
+              />
+            </div>
+
+            <!-- API Key（密码框 + 显隐切换） -->
+            <div class="settings-section__item">
+              <span>API Key</span>
+              <a-input-password
+                :model-value="aiApiKey"
+                placeholder="sk-..."
+                style="width: 280px"
+                @change="(v: string) => settingsStore.setAiApiKey(v)"
+              />
+            </div>
+
+            <!-- 模型名 -->
+            <div class="settings-section__item">
+              <span>模型名</span>
+              <a-input
+                :model-value="aiModel"
+                :placeholder="modelPlaceholder"
+                style="width: 280px"
+                @change="(v: string) => settingsStore.setAiModel(v)"
+              />
+            </div>
+
+            <!-- 测试连接 -->
+            <div class="settings-section__actions">
+              <a-button
+                type="outline"
+                size="small"
+                :loading="testing"
+                @click="onTestConnection"
+              >测试连接</a-button>
+              <span
+                v-if="testResult"
+                class="settings-section__test-result"
+                :class="{ 'settings-section__test-result--ok': testResult.ok, 'settings-section__test-result--fail': !testResult.ok }"
+              >{{ testResult.ok ? "✓ " : "✗ " }}{{ testResult.message }}</span>
+            </div>
+          </template>
+        </div>
+
         <!-- 关于 -->
         <div v-if="activeSection === 'about'" class="settings-section">
           <h2 class="settings-section__title">关于</h2>
@@ -775,8 +911,23 @@ async function changeAttachmentPath() {
 
 .settings-section__actions {
   display: flex;
+  align-items: center;
   gap: 12px;
   margin-bottom: 8px;
+}
+
+/* 测试连接结果反馈：成功绿、失败红 */
+.settings-section__test-result {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.settings-section__test-result--ok {
+  color: var(--jt-success, #00b42a);
+}
+
+.settings-section__test-result--fail {
+  color: var(--jt-error);
 }
 
 .settings-section__about {

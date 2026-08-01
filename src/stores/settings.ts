@@ -24,6 +24,17 @@ export const SETTINGS_KEYS = {
   templateDefaultListId: "template_default_list_id",
   templateDefaultNoteId: "template_default_note_id",
   dailyReminderTimes: "daily_reminder_times",
+  // ── AI 配置（详见 discuss/2026-07-31-ai-config-design.md）──
+  /** AI 总开关（关掉后所有 AI 功能入口隐藏） */
+  aiEnabled: "ai_enabled",
+  /** 服务协议：openai（OpenAI 兼容）/ anthropic */
+  aiProvider: "ai_provider",
+  /** API 地址（base_url） */
+  aiBaseUrl: "ai_base_url",
+  /** API Key（明文存本地 SQLite） */
+  aiApiKey: "ai_api_key",
+  /** 模型名 */
+  aiModel: "ai_model",
 } as const;
 
 /** 每日汇总提醒时点配置 —— 上限 8 个（与 Rust 端 parse_daily_times 一致） */
@@ -33,6 +44,12 @@ const MAX_DAILY_REMINDER_TIMES = 8;
 export type StartupView = "today" | "all" | "inbox";
 
 const STARTUP_VIEWS: readonly StartupView[] = ["today", "all", "inbox"];
+
+/** AI 服务协议类型：openai（OpenAI 兼容，覆盖 DeepSeek/通义/Ollama 等）/ anthropic */
+export type AiProvider = "openai" | "anthropic";
+
+/** AI 协议可选值（供 UI 与校验复用） */
+const AI_PROVIDERS: readonly AiProvider[] = ["openai", "anthropic"];
 
 const DEFAULT_THEME_MODE: ThemeMode = "system";
 const DEFAULT_ACCENT_COLOR = "#4F46E5";
@@ -44,6 +61,15 @@ const DEFAULT_STARTUP_VIEW: StartupView = "today";
 const DEFAULT_TEMPLATE_LIST_ID = "inbox";
 /** 笔记模板默认笔记本：默认指向 migration 023 预置的"默认笔记本" */
 const DEFAULT_TEMPLATE_NOTE_ID = "default-notebook";
+
+// ── AI 默认值 ──
+/** AI 默认关闭（隐私友好，用户显式开启） */
+const DEFAULT_AI_ENABLED = false;
+/** 默认协议 OpenAI 兼容（覆盖最广） */
+const DEFAULT_AI_PROVIDER: AiProvider = "openai";
+const DEFAULT_AI_BASE_URL = "";
+const DEFAULT_AI_API_KEY = "";
+const DEFAULT_AI_MODEL = "";
 
 /** 窗口缩放级别上下限（与 Rust 端 menu.rs 保持一致） */
 const ZOOM_MIN = 0.5;
@@ -122,6 +148,14 @@ function parseZoomLevel(v: string | null): number {
   return Math.round(clamped * 100) / 100;
 }
 
+/** 解析 AI 协议类型，非法值回落到默认（openai） */
+function parseAiProvider(v: string | null): AiProvider {
+  if (v && (AI_PROVIDERS as readonly string[]).includes(v)) {
+    return v as AiProvider;
+  }
+  return DEFAULT_AI_PROVIDER;
+}
+
 export const useSettingsStore = defineStore("settings", () => {
   // 主题：复用 composable 的 mode ref（与 useTheme 共享状态）
   const theme = useTheme();
@@ -138,6 +172,13 @@ export const useSettingsStore = defineStore("settings", () => {
   const templateDefaultNoteId = ref<string>(DEFAULT_TEMPLATE_NOTE_ID);
   /** 每日固定时点提醒时刻列表（HH:mm，24h 制，字典序升序） */
   const dailyReminderTimes = ref<string[]>([]);
+
+  // ── AI 配置 ──
+  const aiEnabled = ref<boolean>(DEFAULT_AI_ENABLED);
+  const aiProvider = ref<AiProvider>(DEFAULT_AI_PROVIDER);
+  const aiBaseUrl = ref<string>(DEFAULT_AI_BASE_URL);
+  const aiApiKey = ref<string>(DEFAULT_AI_API_KEY);
+  const aiModel = ref<string>(DEFAULT_AI_MODEL);
 
   const initialized = ref(false);
   const loading = ref(false);
@@ -180,7 +221,7 @@ export const useSettingsStore = defineStore("settings", () => {
     if (initialized.value || loading.value) return;
     loading.value = true;
     try {
-      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw] = await Promise.all([
+      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw, aiEnabledRaw, aiProviderRaw, aiBaseUrlRaw, aiApiKeyRaw, aiModelRaw] = await Promise.all([
         db.getSetting(SETTINGS_KEYS.themeMode).catch(() => null),
         db.getSetting(SETTINGS_KEYS.accentColor).catch(() => null),
         db.getSetting(SETTINGS_KEYS.newTasksDueToday).catch(() => null),
@@ -190,6 +231,11 @@ export const useSettingsStore = defineStore("settings", () => {
         db.getSetting(SETTINGS_KEYS.templateDefaultListId).catch(() => null),
         db.getSetting(SETTINGS_KEYS.templateDefaultNoteId).catch(() => null),
         db.getSetting(SETTINGS_KEYS.dailyReminderTimes).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiEnabled).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiProvider).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiBaseUrl).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiApiKey).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiModel).catch(() => null),
       ]);
 
       const mode = parseThemeMode(themeRaw);
@@ -212,6 +258,13 @@ export const useSettingsStore = defineStore("settings", () => {
       templateDefaultListId.value = tplList;
       templateDefaultNoteId.value = tplNote ?? DEFAULT_TEMPLATE_NOTE_ID;
       dailyReminderTimes.value = dailyTimes;
+
+      // AI 配置
+      aiEnabled.value = parseBoolean(aiEnabledRaw, DEFAULT_AI_ENABLED);
+      aiProvider.value = parseAiProvider(aiProviderRaw);
+      aiBaseUrl.value = aiBaseUrlRaw ?? DEFAULT_AI_BASE_URL;
+      aiApiKey.value = aiApiKeyRaw ?? DEFAULT_AI_API_KEY;
+      aiModel.value = aiModelRaw ?? DEFAULT_AI_MODEL;
 
       // 先应用强调色（不依赖模式），再应用主题
       theme.setAccentColor(accent);
@@ -354,6 +407,51 @@ async function setDailyReminderTimes(times: readonly string[]): Promise<void> {
   }
 }
 
+// ── AI 配置 setter ──────────────────────────────────────
+// 均走 persist（乐观更新 + 失败回滚），与现有设置项一致。
+
+/** 切换 AI 总开关并持久化 */
+async function setAiEnabled(v: boolean): Promise<void> {
+  const prev = aiEnabled.value;
+  aiEnabled.value = v;
+  const ok = await persist(SETTINGS_KEYS.aiEnabled, v ? "true" : "false", String(prev));
+  if (!ok) aiEnabled.value = prev;
+}
+
+/** 切换 AI 服务协议并持久化。
+ *  注意：不同协议的模型名不通用，UI 层在切换时应同步清空 aiModel。 */
+async function setAiProvider(v: AiProvider): Promise<void> {
+  if (!(AI_PROVIDERS as readonly string[]).includes(v)) return;
+  const prev = aiProvider.value;
+  aiProvider.value = v;
+  const ok = await persist(SETTINGS_KEYS.aiProvider, v, prev);
+  if (!ok) aiProvider.value = prev;
+}
+
+/** 修改 API 地址并持久化 */
+async function setAiBaseUrl(v: string): Promise<void> {
+  const prev = aiBaseUrl.value;
+  aiBaseUrl.value = v;
+  const ok = await persist(SETTINGS_KEYS.aiBaseUrl, v, prev);
+  if (!ok) aiBaseUrl.value = prev;
+}
+
+/** 修改 API Key 并持久化（明文存本地 SQLite） */
+async function setAiApiKey(v: string): Promise<void> {
+  const prev = aiApiKey.value;
+  aiApiKey.value = v;
+  const ok = await persist(SETTINGS_KEYS.aiApiKey, v, prev);
+  if (!ok) aiApiKey.value = prev;
+}
+
+/** 修改模型名并持久化 */
+async function setAiModel(v: string): Promise<void> {
+  const prev = aiModel.value;
+  aiModel.value = v;
+  const ok = await persist(SETTINGS_KEYS.aiModel, v, prev);
+  if (!ok) aiModel.value = prev;
+}
+
   /**
    * 监听 Rust 端 zoom-changed 事件
    *
@@ -434,6 +532,12 @@ async function setDailyReminderTimes(times: readonly string[]): Promise<void> {
     templateDefaultListId,
     templateDefaultNoteId,
     dailyReminderTimes,
+    // AI 配置
+    aiEnabled,
+    aiProvider,
+    aiBaseUrl,
+    aiApiKey,
+    aiModel,
     initialized,
     loading,
     error,
@@ -447,6 +551,11 @@ async function setDailyReminderTimes(times: readonly string[]): Promise<void> {
     setTemplateDefaultListId,
     setTemplateDefaultNoteId,
     setDailyReminderTimes,
+    setAiEnabled,
+    setAiProvider,
+    setAiBaseUrl,
+    setAiApiKey,
+    setAiModel,
     cycleTheme,
     zoomIn,
     zoomOut,
