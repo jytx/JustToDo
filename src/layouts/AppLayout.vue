@@ -40,20 +40,17 @@ const sidebarCollapsed = ref(false);
 const sidebarWidth = ref(240);
 const panelWidth = ref(480);
 
-/** AI 每日小结弹窗可见性 */
-const summaryVisible = ref(false);
-
 /** 打开 AI 助手弹窗（顶栏/快捷键入口，默认每日小结）。 */
 function openSummary(): void {
   taskStore.aiSelectedTool = "daily";
-  summaryVisible.value = true;
+  taskStore.aiAssistantVisible = true;
 }
 
 /** 侧边栏清单/目录 AI 总结入口：设默认工具为「总结当前清单」+ 设置 scope */
 function onAiSummary(scope: import("@/api/ai").SummaryScope): void {
   taskStore.aiSelectedTool = scope.type === "tasks" ? "tasks" : "list";
   taskStore.pendingSummaryScope = scope;
-  summaryVisible.value = true;
+  taskStore.aiAssistantVisible = true;
 }
 
 /** 是否显示排序按钮（清单/笔记本/标签/全部视图） */
@@ -390,7 +387,7 @@ useShortcuts({
     />
 
     <!-- AI 助手弹窗（统一入口） -->
-    <AiAssistantModal v-model:visible="summaryVisible" />
+    <AiAssistantModal v-model:visible="taskStore.aiAssistantVisible" />
 
     <!-- 删除任务确认对话框（键盘 Backspace 或任务项菜单触发，统一极简卡片风） -->
     <ConfirmDialog
