@@ -51,6 +51,8 @@ export interface ScopeSummaryResult {
   kind?: string;
   /** 是否已裁剪 */
   truncated?: boolean;
+  /** 范围为空（无任务/笔记），无需总结 —— 前端显示友好提示而非错误 */
+  empty?: boolean;
 }
 
 /** 按范围生成 AI 总结（清单/目录/多选）。

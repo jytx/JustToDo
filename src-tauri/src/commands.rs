@@ -3007,6 +3007,16 @@ pub async fn ai_summary_scope(
     };
     let original_count = data.tasks.len();
 
+    // 空范围短路：没有任务/笔记时不调 AI，直接返回提示（省 token、反馈快）
+    if original_count == 0 {
+        let hint = if data.kind == "note" {
+            "该范围暂无笔记，无需生成摘要"
+        } else {
+            "该范围暂无任务，无需生成总结"
+        };
+        return Ok(serde_json::json!({ "ok": false, "message": hint, "empty": true }));
+    }
+
     let (tasks, truncated) = if truncate == Some(true) {
         let threshold = get_setting_inner(pool.inner(), "ai_summary_truncate_threshold".into())
             .await.ok()

@@ -42,6 +42,8 @@ const loading = ref(false);
 const content = ref("");
 /** 错误信息 */
 const errorMsg = ref("");
+/** 范围为空提示（无任务/笔记，不需要调 AI） */
+const isEmpty = ref(false);
 /** 裁剪提示（若本次结果已裁剪） */
 const truncatedHint = ref("");
 
@@ -58,6 +60,7 @@ const saving = ref(false);
 async function generate(truncate = false): Promise<void> {
   loading.value = true;
   errorMsg.value = "";
+  isEmpty.value = false;
   content.value = "";
   truncatedHint.value = "";
 
@@ -66,6 +69,12 @@ async function generate(truncate = false): Promise<void> {
     // scope 模式：调 generateScopeSummary
     const res = await generateScopeSummary(scope, truncate);
     loading.value = false;
+    if (res.empty) {
+      // 范围为空：友好提示，不调 AI，不显示重试
+      isEmpty.value = true;
+      errorMsg.value = res.message ?? "该范围暂无内容";
+      return;
+    }
     if (res.ok && res.content) {
       content.value = res.content;
       // 检查是否超阈值（未裁剪且 count > 阈值 → 弹确认）
@@ -163,6 +172,7 @@ watch(
     } else {
       content.value = "";
       errorMsg.value = "";
+      isEmpty.value = false;
       truncatedHint.value = "";
       smartMode.value = "daily";
       // 延迟到下一 tick 清空，确保 generate 已快照 scope
@@ -220,10 +230,10 @@ watch(
           <span class="daily-summary__loading-text">AI 正在生成总结...</span>
         </div>
 
-        <!-- 错误 -->
+        <!-- 错误 / 空范围提示（空范围不显示重试按钮） -->
         <div v-else-if="errorMsg" class="daily-summary__error">
           <p class="daily-summary__error-msg">{{ errorMsg }}</p>
-          <a-button type="outline" size="small" @click="onRetry">重试</a-button>
+          <a-button v-if="!isEmpty" type="outline" size="small" @click="onRetry">重试</a-button>
         </div>
 
         <!-- 成功：渲染 Markdown -->

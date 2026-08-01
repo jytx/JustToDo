@@ -1689,7 +1689,7 @@ onMounted(async () => {
           <span>删除目录</span>
         </MenuPopoverItem>
         <MenuPopoverItem v-if="settingsStore.aiEnabled" @click="onCtxAiSummary(ctxMenu.target.node)">
-          <icon-mind-mapping :size="15" />
+          <icon-magic :size="15" />
           <span>AI 总结</span>
         </MenuPopoverItem>
         <MenuPopoverItem @click="onCtxArchive(ctxMenu.target.node)">
@@ -1722,7 +1722,7 @@ onMounted(async () => {
           <span>{{ ctxMenu.target.node.kind === "note" ? "删除笔记本" : "删除清单" }}</span>
         </MenuPopoverItem>
         <MenuPopoverItem v-if="settingsStore.aiEnabled" @click="onCtxAiSummary(ctxMenu.target.node)">
-          <icon-mind-mapping :size="15" />
+          <icon-magic :size="15" />
           <span>AI 总结</span>
         </MenuPopoverItem>
         <MenuPopoverItem @click="onCtxArchive(ctxMenu.target.node)">

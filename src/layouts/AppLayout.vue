@@ -331,7 +331,7 @@ useShortcuts({
           title="AI 小结 (Cmd+Shift+D)"
           @click="openSummary()"
         >
-          <template #icon><icon-mind-mapping :size="18" /></template>
+          <template #icon><icon-magic :size="18" /></template>
         </a-button>
         <a-button
           v-if="showGlobalActions"
