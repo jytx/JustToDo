@@ -58,8 +58,14 @@ const content = ref("");
 const errorMsg = ref("");
 /** 渲染后的 HTML */
 const renderedHtml = ref("");
-/** 是否正在保存为笔记 */
+/** 是否正在保存 */
 const saving = ref(false);
+
+/** 保存按钮文案：跟随当前清单类型 */
+const saveLabel = computed(() => {
+  const list = listStore.getById(taskStore.currentListId);
+  return list?.kind === "note" ? "保存到当前笔记本" : "保存到当前清单";
+});
 
 watch(content, async (md) => {
   renderedHtml.value = md ? await marked.parse(md) : "";
@@ -178,7 +184,7 @@ async function execute(): Promise<void> {
   }
 }
 
-/** 保存为笔记 */
+/** 保存结果到当前清单/笔记本（根据清单类型创建任务或笔记） */
 async function onSaveAsNote(): Promise<void> {
   if (!content.value || saving.value) return;
   saving.value = true;
@@ -188,14 +194,18 @@ async function onSaveAsNote(): Promise<void> {
     const pad = (n: number) => String(n).padStart(2, "0");
     const dateStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
     const tool = currentTool.value;
-    const noteTitle = `${tool.label} ${dateStr}`;
-    const note = await taskStore.createTask({
-      title: noteTitle,
-      listId: "default-notebook",
-      kind: "note",
+    const itemTitle = `${tool.label} ${dateStr}`;
+    // 保存到当前清单（kind 跟随清单类型）
+    const listId = taskStore.currentListId;
+    const currentList = listStore.getById(listId);
+    const isNote = currentList?.kind === "note";
+    const item = await taskStore.createTask({
+      title: itemTitle,
+      listId,
+      kind: isNote ? "note" : "task",
     });
-    await taskStore.updateTask(note.id, { note: html });
-    Message.success(`已保存为笔记「${noteTitle}」`);
+    await taskStore.updateTask(item.id, { note: html });
+    Message.success(`已保存到「${currentList?.name ?? "当前清单"}」`);
     emit("update:visible", false);
   } catch (e) {
     Message.error(`保存失败：${String(e)}`);
@@ -309,7 +319,7 @@ watch(
       <!-- 底部操作 -->
       <div v-if="!loading && content" class="ai-assistant__footer">
         <a-button type="outline" size="small" :loading="saving" @click="onSaveAsNote">
-          保存为笔记
+          {{ saveLabel }}
         </a-button>
       </div>
     </div>
