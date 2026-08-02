@@ -31,6 +31,10 @@ export function useKanbanDrag(getOpenTasks: () => Task[]) {
 
   /** 本次拖拽期间是否有变化（用于 dragend 判断要不要持久化） */
   let dragChanged = false;
+  /** 被拖任务的 id 快照（dragend 清空 ref 后，autoPersist 仍可用闭包变量） */
+  let lastDragTaskId: string | null = null;
+  /** 被拖任务的源列优先级快照 */
+  let lastDragFromPriority: Priority | null = null;
 
   /** 拖拽进行中（dragstart→dragend 期间禁止 watch 重置 localColumns） */
   let isDragging = false;
@@ -57,6 +61,8 @@ export function useKanbanDrag(getOpenTasks: () => Task[]) {
   function onCardDragStart(taskId: string, priority: Priority): void {
     draggingId.value = taskId;
     draggingFromPriority.value = priority;
+    lastDragTaskId = taskId;
+    lastDragFromPriority = priority;
     dragChanged = false;
     isDragging = true;
   }
@@ -164,7 +170,8 @@ export function useKanbanDrag(getOpenTasks: () => Task[]) {
     if (autoPersistTimer) clearTimeout(autoPersistTimer);
     autoPersistTimer = setTimeout(() => {
       autoPersistTimer = null;
-      if (draggingId.value && dragChanged) {
+      // 不检查 draggingId（dragend 可能已清空它），只看 dragChanged
+      if (dragChanged) {
         void persistDragResult();
       }
     }, 500);
@@ -182,17 +189,17 @@ export function useKanbanDrag(getOpenTasks: () => Task[]) {
   let persisting = false;
   async function persistDragResult(): Promise<void> {
     if (persisting) return;
-    persisting = true;
-    const taskId = draggingId.value;
-    const fromPriority = draggingFromPriority.value;
+    // 用闭包快照（dragend 可能已清空 draggingId ref，但闭包变量还在）
+    const taskId = draggingId.value ?? lastDragTaskId;
+    const fromPriority = draggingFromPriority.value ?? lastDragFromPriority;
 
-    if (!taskId || !fromPriority || !dragChanged) {
-      persisting = false;
+    if (!taskId || fromPriority === null || !dragChanged) {
       isDragging = false;
       draggingId.value = null;
       draggingFromPriority.value = null;
       return;
     }
+    persisting = true;
 
     // 找任务当前在哪个列
     let toPriority: Priority | null = null;
@@ -225,6 +232,7 @@ export function useKanbanDrag(getOpenTasks: () => Task[]) {
     isDragging = false;
     draggingId.value = null;
     draggingFromPriority.value = null;
+    dragChanged = false;
     persisting = false;
   }
 
