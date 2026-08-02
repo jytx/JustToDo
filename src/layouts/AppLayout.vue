@@ -21,6 +21,7 @@ import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import { useSearchStore } from "@/stores/search";
 import { useListStore } from "@/stores/list";
+import { useGroupStore } from "@/stores/group";
 import { useShortcuts } from "@/composables/useShortcuts";
 import { useQuickAdd } from "@/composables/useQuickAdd";
 
@@ -28,6 +29,7 @@ const { isDark } = useTheme();
 const settingsStore = useSettingsStore();
 const searchStore = useSearchStore();
 const listStore = useListStore();
+const groupStore = useGroupStore();
 const taskStore = useTaskStore();
 const habitStore = useHabitStore();
 const templateStore = useTemplateStore();
@@ -125,6 +127,27 @@ const sortMenuOpen = ref(false);
 async function onSortChange(field: SortField) {
   await taskStore.setSort(field);
   sortMenuOpen.value = false;
+}
+
+/** 新建分组对话框（顶栏入口，仅清单视图显示） */
+const newGroupVisible = ref(false);
+const newGroupName = ref("");
+
+/** 打开新建分组对话框 */
+function openNewGroup(): void {
+  newGroupName.value = "";
+  newGroupVisible.value = true;
+}
+
+/** 确认新建分组：用当前清单 id 创建，追加到末尾 */
+async function confirmNewGroup(): Promise<void> {
+  const name = newGroupName.value.trim();
+  if (!name) return;
+  const listId = route.params.id as string;
+  if (!listId) return;
+  await groupStore.createGroup(listId, name);
+  newGroupName.value = "";
+  newGroupVisible.value = false;
 }
 
 /** 删除确认对话框标题
@@ -362,6 +385,16 @@ useShortcuts({
             <span>{{ f.label }}</span>
           </MenuPopoverItem>
         </MenuPopover>
+        <!-- 新建分组按钮（仅清单视图显示，紧随排序按钮） -->
+        <a-button
+          v-if="route.name === 'list'"
+          type="text"
+          size="small"
+          title="新建分组"
+          @click="openNewGroup"
+        >
+          <template #icon><icon-folder-add :size="18" /></template>
+        </a-button>
       </div>
 
       <router-view />
@@ -410,6 +443,29 @@ useShortcuts({
     >
       <template #title>删除选中的 <strong>{{ batchDeleteCount }}</strong> 个任务？</template>
     </ConfirmDialog>
+
+    <!-- 新建分组对话框（顶栏排序按钮后的入口） -->
+    <a-modal
+      :visible="newGroupVisible"
+      :width="360"
+      :footer="false"
+      :mask-closable="true"
+      @update:visible="(v: boolean) => { newGroupVisible = v; }"
+    >
+      <template #title>新建分组</template>
+      <div class="app-layout__dialog">
+        <a-input
+          v-model="newGroupName"
+          placeholder="分组名称"
+          allow-clear
+          @keydown.enter="confirmNewGroup"
+        />
+        <div class="app-layout__dialog-actions">
+          <a-button size="small" @click="newGroupVisible = false">取消</a-button>
+          <a-button type="primary" size="small" @click="confirmNewGroup">创建</a-button>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -466,5 +522,18 @@ useShortcuts({
 .ai-loading-overlay__text {
   font-size: 13px;
   color: var(--jt-text-secondary);
+}
+
+/* 新建分组对话框（与 ListView 的分组对话框样式一致） */
+.app-layout__dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0;
+}
+.app-layout__dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 </style>

@@ -324,20 +324,12 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
       </p>
     </header>
 
-    <!-- 顶部添加栏：归档清单下隐藏（产品策略：归档区不可新建任务）。
-         新建分组按钮与 AddTaskBar 同排，放其右侧（清单级操作，不污染通用 AddTaskBar 组件）。 -->
+    <!-- 顶部添加栏：归档清单下隐藏（产品策略：归档区不可新建任务） -->
     <div v-if="!currentList?.archived" class="list-view__add-bar">
       <AddTaskBar
         :list-id="props.id"
         @add="onAdd"
       />
-      <button
-        class="list-view__group-add-btn"
-        title="新建分组"
-        @click="openNewGroup()"
-      >
-        <icon-folder-add :size="16" />
-      </button>
     </div>
 
     <div class="mb-2" />
