@@ -152,29 +152,45 @@ export function useKanbanDrag(getOpenTasks: () => Task[]) {
     if (changed) {
       localColumns.value = newCols;
       dragChanged = true;
+      // 每次有变化时重置自动持久化计时器（dragover 停止 500ms 后自动持久化）
+      // 这是 WKWebView 的兜底方案：drop/dragend 可能不触发
+      scheduleAutoPersist();
     }
   }
 
-  /** drop：preventDefault 即可（实际持久化由 dragend 兜底） */
+  /** 自动持久化计时器（dragover 停止后 500ms 触发，兜底 drop/dragend 不触发的情况） */
+  let autoPersistTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleAutoPersist(): void {
+    if (autoPersistTimer) clearTimeout(autoPersistTimer);
+    autoPersistTimer = setTimeout(() => {
+      autoPersistTimer = null;
+      if (draggingId.value && dragChanged) {
+        void persistDragResult();
+      }
+    }, 500);
+  }
+
+  /** drop：在目标列上释放，触发持久化（WKWebView 的 dragend 不可靠，以 drop 为准） */
   function onColumnDrop(e: DragEvent): void {
     if (!draggingId.value) return;
     e.preventDefault();
+    void persistDragResult();
   }
 
-  /**
-   * dragend：持久化最终结果。
-   * - 跨列（源列 ≠ 当前所在列）→ updateTask(id, { priority })
-   * - 同列移动 → persistTaskOrder
-   * - 跨列同时也需要持久化两列的 sortOrder
-   */
-  async function onCardDragEnd(): Promise<void> {
+  /** 持久化拖拽结果（跨列改 priority + 全局重排 sortOrder）。
+   *  可能被 drop / dragend / autoPersist 多次调用，用 persisting 标志防重。 */
+  let persisting = false;
+  async function persistDragResult(): Promise<void> {
+    if (persisting) return;
+    persisting = true;
     const taskId = draggingId.value;
     const fromPriority = draggingFromPriority.value;
-    draggingId.value = null;
-    draggingFromPriority.value = null;
 
     if (!taskId || !fromPriority || !dragChanged) {
+      persisting = false;
       isDragging = false;
+      draggingId.value = null;
+      draggingFromPriority.value = null;
       return;
     }
 
@@ -186,7 +202,13 @@ export function useKanbanDrag(getOpenTasks: () => Task[]) {
         break;
       }
     }
-    if (toPriority === null) return;
+    if (toPriority === null) {
+      isDragging = false;
+      draggingId.value = null;
+      draggingFromPriority.value = null;
+      persisting = false;
+      return;
+    }
 
     // 跨列：先改优先级
     if (toPriority !== fromPriority) {
@@ -194,15 +216,27 @@ export function useKanbanDrag(getOpenTasks: () => Task[]) {
     }
 
     // 持久化所有列的顺序（sortOrder 全局重排）
-    // 把所有列的 id 按 priority 分组顺序拼成一个全局列表
     const allIds: string[] = [];
     for (const p of KANBAN_COLUMNS) {
       allIds.push(...localColumns.value[p]);
     }
     await taskStore.persistTaskOrder(allIds);
 
-    // 持久化完成后解除拖拽锁，让 watch 恢复同步
     isDragging = false;
+    draggingId.value = null;
+    draggingFromPriority.value = null;
+    persisting = false;
+  }
+
+  /**
+   * dragend：拖拽结束的兜底钩子。
+   * 主要持久化由 drop 完成；dragend 清理状态，若 drop 没触发但 dragChanged 为 true 也兜底持久化。
+   */
+  async function onCardDragEnd(): Promise<void> {
+    // 如果 drop 已经处理了（draggingId 已清空），什么都不做
+    if (!draggingId.value) return;
+    // drop 没触发，用 dragend 兜底
+    await persistDragResult();
   }
 
   return {
