@@ -314,11 +314,22 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
   <div class="list-view" @contextmenu="onRootContextMenu">
     <!-- 列表头 -->
     <header class="list-view__header">
-      <h1 class="list-view__title">
-        {{ pageTitle }}
-        <!-- 已归档清单/目录：低饱和度胶囊角标 -->
-        <span v-if="currentList?.archived" class="list-view__archived-tag">已归档</span>
-      </h1>
+      <div class="list-view__title-row">
+        <h1 class="list-view__title">
+          {{ pageTitle }}
+          <!-- 已归档清单/目录：低饱和度胶囊角标 -->
+          <span v-if="currentList?.archived" class="list-view__archived-tag">已归档</span>
+        </h1>
+        <!-- 新建分组按钮（标题右侧，仅非归档清单显示） -->
+        <button
+          v-if="!currentList?.archived"
+          class="list-view__group-add-btn"
+          @click="openNewGroup()"
+        >
+          <icon-plus :size="14" />
+          <span>新建分组</span>
+        </button>
+      </div>
       <p class="list-view__subtitle">
         {{ formatPageDate() }} · {{ openCount }} 个待办
       </p>
@@ -485,13 +496,6 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
           />
         </a-collapse-item>
       </a-collapse>
-
-      <!-- 新建分组按钮（置于分组列表底部） -->
-      <div v-if="!currentList?.archived" class="list-view__group-add">
-        <button class="list-view__group-add-btn" @click="openNewGroup()">
-          + 新建分组
-        </button>
-      </div>
     </div>
 
     <!-- 空状态 -->
@@ -577,11 +581,21 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
 
 <style scoped>
 /* 分组区 */
-.list-view__group-add {
-  padding: 0 4px 8px;
+/* 标题行：标题 + 新建分组按钮两端对齐 */
+.list-view__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
+
+/* 新建分组按钮（标题右侧）：次要文字按钮，带 + 图标 */
 .list-view__group-add-btn {
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 13px;
   color: var(--jt-text-tertiary);
   background: transparent;
   border: none;
