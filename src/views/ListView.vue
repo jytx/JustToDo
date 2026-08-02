@@ -207,7 +207,16 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
     <div class="mb-2" />
 
     <!-- 按分组展示未完成任务 + 底部已完成区 -->
-    <div v-if="taskStore.currentTasks.length > 0" class="list-view__content">
+    <!-- dragover/drop 统一绑在列表外层：真实拖拽时鼠标可能落在空组的
+     「暂无任务」占位、组间空隙、已完成区等任何位置，只有外层容器
+     能保证事件一定到达（组容器 div 是占位的兄弟元素，冒泡不到）；
+     落点判定由 computeTarget 的"最近组兜底"完成。 -->
+    <div
+      v-if="taskStore.currentTasks.length > 0"
+      class="list-view__content"
+      @dragover="onDragOver"
+      @drop.capture="onGroupDrop"
+    >
       <!-- 新建分组按钮 -->
       <div v-if="!currentList?.archived" class="list-view__group-add">
         <button class="list-view__group-add-btn" @click="newGroupVisible = true">
@@ -258,11 +267,10 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
             </MenuPopover>
           </template>
 
-          <!-- 分组内任务列表（拖拽容器） -->
+          <!-- 分组内任务列表（拖拽容器；dragover/drop 由外层统一处理） -->
           <div
             :ref="(el) => setGroupContainerRef(group.id, el as HTMLElement)"
-            @dragover="onDragOver"
-            @drop.capture="onGroupDrop"
+            class="list-view__group-container"
           >
             <TaskListItem
               v-for="task in (tasksByGroup.get(group.id) ?? [])"
@@ -276,13 +284,13 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
               @dragstart="onDragStart(task.id)"
               @dragend="onTaskDragEnd"
             />
-          </div>
-          <!-- 空分组占位 -->
-          <div
-            v-if="(tasksByGroup.get(group.id)?.length ?? 0) === 0"
-            class="list-view__group-empty"
-          >
-            暂无任务
+            <!-- 空分组占位（在容器内部：保证空组容器有高度，拖拽可命中） -->
+            <div
+              v-if="(tasksByGroup.get(group.id)?.length ?? 0) === 0"
+              class="list-view__group-empty"
+            >
+              暂无任务
+            </div>
           </div>
         </a-collapse-item>
 
@@ -419,6 +427,12 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
   color: var(--jt-text-tertiary);
   padding: 8px 0;
   text-align: center;
+}
+
+/* 组拖拽容器：空组时也有最小高度（占位文案在容器内部），
+ * 保证真实拖拽时鼠标落点能命中容器 rect（computeTarget 的组判定）。 */
+.list-view__group-container {
+  min-height: 48px;
 }
 
 /* 对话框 */
