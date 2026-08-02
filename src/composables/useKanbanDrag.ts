@@ -32,10 +32,15 @@ export function useKanbanDrag(getOpenTasks: () => Task[]) {
   /** 本次拖拽期间是否有变化（用于 dragend 判断要不要持久化） */
   let dragChanged = false;
 
+  /** 拖拽进行中（dragstart→dragend 期间禁止 watch 重置 localColumns） */
+  let isDragging = false;
+
   /** store 数据变化时同步本地列（加载/新建/删除后） */
   watch(
     () => getOpenTasks(),
     (tasks) => {
+      // 拖拽期间不重置（否则 updateTask/persistTaskOrder 触发的 store 变化会覆盖拖拽结果）
+      if (isDragging) return;
       const cols: Record<Priority, string[]> = { 0: [], 1: [], 2: [], 3: [] };
       // 按 sortOrder 排序后分组
       const sorted = [...tasks].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -53,6 +58,7 @@ export function useKanbanDrag(getOpenTasks: () => Task[]) {
     draggingId.value = taskId;
     draggingFromPriority.value = priority;
     dragChanged = false;
+    isDragging = true;
   }
 
   /**
@@ -167,7 +173,10 @@ export function useKanbanDrag(getOpenTasks: () => Task[]) {
     draggingId.value = null;
     draggingFromPriority.value = null;
 
-    if (!taskId || !fromPriority || !dragChanged) return;
+    if (!taskId || !fromPriority || !dragChanged) {
+      isDragging = false;
+      return;
+    }
 
     // 找任务当前在哪个列
     let toPriority: Priority | null = null;
@@ -191,6 +200,9 @@ export function useKanbanDrag(getOpenTasks: () => Task[]) {
       allIds.push(...localColumns.value[p]);
     }
     await taskStore.persistTaskOrder(allIds);
+
+    // 持久化完成后解除拖拽锁，让 watch 恢复同步
+    isDragging = false;
   }
 
   return {
