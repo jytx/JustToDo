@@ -157,6 +157,8 @@ function onDragOver(e: DragEvent): void {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* 避开 AppLayout 的 topbar（absolute top:40px + 高度 24px + 间距） */
+  padding-top: 72px;
 }
 
 /* 列容器：水平排列 + 横向滚动 */
