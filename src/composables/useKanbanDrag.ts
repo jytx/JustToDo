@@ -88,7 +88,9 @@ export function useKanbanDrag(getOpenTasks: () => Task[]) {
     }
     if (targetPriority === null) return null;
 
-    // 在目标列内按 clientY 中点找插入位置
+    // 在目标列内按 clientY 中点找插入位置。
+    // 直接遍历 DOM 卡片元素，返回它在「目标列不含 dragging」的序列中的序号，
+    // 这个序号就是插入位置（不查 localColumns，避免 DOM 和数据不同步）。
     const targetEl = columnEls.get(targetPriority);
     if (!targetEl) return { priority: targetPriority, index: 0 };
 
@@ -99,19 +101,13 @@ export function useKanbanDrag(getOpenTasks: () => Task[]) {
     for (let i = 0; i < cards.length; i++) {
       const rect = cards[i].getBoundingClientRect();
       const centerY = rect.top + rect.height / 2;
+      // 鼠标在该卡片上半段 → 插到它前面（序号 i 就是插入位置）
       if (clientY <= centerY) {
-        const colIds = localColumns.value[targetPriority].filter(
-          (id) => id !== draggingId.value,
-        );
-        const cardId = cards[i].getAttribute("data-card-id")!;
-        return { priority: targetPriority, index: colIds.indexOf(cardId) };
+        return { priority: targetPriority, index: i };
       }
     }
     // 鼠标在所有卡片下方 → 插到末尾
-    const colLen = localColumns.value[targetPriority].filter(
-      (id) => id !== draggingId.value,
-    ).length;
-    return { priority: targetPriority, index: colLen };
+    return { priority: targetPriority, index: cards.length };
   }
 
   /**
