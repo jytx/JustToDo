@@ -5,10 +5,12 @@ import { computed, watch, onMounted, ref } from "vue";
 import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import { useGroupStore } from "@/stores/group";
+import type { Group } from "@/types";
 import { formatPageDate } from "@/utils/date";
 import { shouldReserveNativeMenu } from "@/utils/contextMenu";
 import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import { useGroupDrag } from "@/composables/useGroupDrag";
+import { useGroupReorder } from "@/composables/useGroupReorder";
 import { useBatchSelect } from "@/composables/useBatchSelect";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
@@ -93,6 +95,25 @@ function setGroupContainerRef(groupId: string, el: HTMLElement | null): void {
   else groupContainerEls.delete(groupId);
 }
 
+// 分组拖拽排序（拖手柄调整分组先后顺序；与任务跨组拖拽隔离）
+const {
+  localGroupIds,
+  draggingId: reorderingGroupId,
+  dragOver: reorderDragOver,
+  syncFromStore: syncReorder,
+  onHandleDragStart,
+  onHeaderDragOver,
+  onHeaderDragLeave,
+  onHeaderDrop,
+  onHandleDragEnd,
+} = useGroupReorder(() => groupStore.currentGroups.map((g) => g.id));
+
+/** 渲染用的分组列表：拖拽排序时用本地顺序，否则用 store 顺序 */
+const renderGroups = computed(() => {
+  const map = new Map(groupStore.currentGroups.map((g) => [g.id, g]));
+  return localGroupIds.value.map((id) => map.get(id)).filter((g): g is Group => !!g);
+});
+
 /** 列级 dragover 适配 */
 function onDragOver(e: DragEvent): void {
   onGroupDragOver(e, groupContainerEls);
@@ -120,11 +141,18 @@ const tasksByGroup = computed(() => {
   return result;
 });
 
-// store 数据变化时同步 localGroups
+// store 数据变化时同步 localGroups（任务拖拽）
 watch(
   () => [taskStore.openTasks, groupIds.value] as const,
   () => syncFromStore(),
   { immediate: true, deep: true },
+);
+
+// 分组顺序变化时同步 localGroupIds（分组拖拽排序）
+watch(
+  () => groupIds.value,
+  () => syncReorder(),
+  { immediate: true },
 );
 
 /** 新建分组对话框 */
@@ -263,12 +291,41 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
       >
         <!-- 每个分组一个折叠区 -->
         <a-collapse-item
-          v-for="group in groupStore.currentGroups"
+          v-for="group in renderGroups"
           :key="group.id"
-          :header="`${group.name} · ${tasksByGroup.get(group.id)?.length ?? 0}`"
           class="list-view__collapse-header"
+          :class="{
+            'list-view__collapse-header--drag-over-before':
+              reorderDragOver.id === group.id && reorderDragOver.pos === 'before',
+            'list-view__collapse-header--drag-over-after':
+              reorderDragOver.id === group.id && reorderDragOver.pos === 'after',
+            'list-view__collapse-header--dragging': reorderingGroupId === group.id,
+          }"
           @contextmenu="onGroupContextMenu($event, group.id)"
         >
+          <!-- 自定义 header：拖拽手柄 + 分组名 + 任务数 + 拖拽落点事件 -->
+          <template #header>
+            <div
+              class="list-view__group-header"
+              @dragover="onHeaderDragOver($event, group.id)"
+              @dragleave="onHeaderDragLeave($event, group.id)"
+              @drop="onHeaderDrop($event, group.id)"
+            >
+              <!-- 拖拽手柄（hover 显示） -->
+              <span
+                v-if="!currentList?.archived"
+                class="list-view__group-handle"
+                draggable="true"
+                :title="'拖动排序'"
+                @dragstart="onHandleDragStart($event, group.id)"
+                @dragend="onHandleDragEnd"
+              >
+                <icon-drag-dot-vertical :size="14" />
+              </span>
+              <span class="list-view__group-name">{{ group.name }}</span>
+              <span class="list-view__group-count">{{ tasksByGroup.get(group.id)?.length ?? 0 }}</span>
+            </div>
+          </template>
           <!-- 分组标题右侧：更多菜单 -->
           <template #extra>
             <MenuPopover
@@ -455,6 +512,64 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
 .list-view__group-more-btn:hover {
   background: var(--jt-surface-hover);
 }
+
+/* 分组 header：拖拽手柄 + 名称 + 计数横向排列 */
+.list-view__group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0; /* 名称超长省略 */
+}
+
+/* 拖拽手柄：默认隐藏，hover header 时显示；grab 光标 */
+.list-view__group-handle {
+  display: flex;
+  align-items: center;
+  color: var(--jt-text-tertiary);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.12s;
+  flex-shrink: 0;
+  padding: 2px 0;
+}
+.list-view__collapse-header:hover .list-view__group-handle {
+  opacity: 1;
+}
+.list-view__group-handle:active {
+  cursor: grabbing;
+}
+.list-view__group-handle[draggable="false"] {
+  -webkit-user-drag: none;
+}
+
+.list-view__group-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jt-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-view__group-count {
+  font-size: 12px;
+  color: var(--jt-text-tertiary);
+  flex-shrink: 0;
+}
+
+/* 分组拖拽落点高亮：参照 SidebarListNode，before/after 用上下边线感 */
+.list-view__collapse-header--drag-over-before {
+  box-shadow: inset 0 2px 0 var(--jt-primary);
+}
+.list-view__collapse-header--drag-over-after {
+  box-shadow: inset 0 -2px 0 var(--jt-primary);
+}
+
+/* 正在被拖动的分组：半透明（与任务拖拽源行一致） */
+.list-view__collapse-header--dragging {
+  opacity: 0.4;
+}
+
 .list-view__group-empty {
   font-size: 12px;
   color: var(--jt-text-tertiary);
