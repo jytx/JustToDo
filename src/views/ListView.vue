@@ -7,7 +7,7 @@ import { useTaskStore } from "@/stores/task";
 import { useGroupStore } from "@/stores/group";
 import { formatPageDate } from "@/utils/date";
 import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
-import { useTaskDragReorder } from "@/composables/useTaskDragReorder";
+import { useGroupDrag } from "@/composables/useGroupDrag";
 import { useBatchSelect } from "@/composables/useBatchSelect";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
@@ -42,31 +42,51 @@ const currentList = computed(() => listStore.getById(props.id));
 const pageTitle = computed(() => currentList.value?.name ?? "清单");
 const openCount = computed(() => taskStore.openTasks.length);
 
-// 拖拽实时让位（FLIP 动画）—— 第 5 步将改为分组级拖拽
+// 分组拖拽（跨组改 group_id + 组内排序）
+const groupIds = computed(() => groupStore.currentGroups.map((g) => g.id));
 const {
+  localGroups,
   draggingId,
-  orderedTasks,
+  syncFromStore,
   onTaskDragStart,
+  onGroupDragOver,
+  onGroupDrop,
   onTaskDragEnd,
-} = useTaskDragReorder(() => taskStore.openTasks);
+} = useGroupDrag(() => taskStore.openTasks, () => groupIds.value);
+
+/** 分组容器 DOM 引用（groupId → HTMLElement） */
+const groupContainerEls = new Map<string, HTMLElement>();
+function setGroupContainerRef(groupId: string, el: HTMLElement | null): void {
+  if (el) groupContainerEls.set(groupId, el);
+  else groupContainerEls.delete(groupId);
+}
+
+/** 列级 dragover 适配 */
+function onDragOver(e: DragEvent): void {
+  onGroupDragOver(e, groupContainerEls);
+}
 
 // ─── 分组 ───
 /** 展开的分组 key 列表（a-collapse 的 v-model） */
 const activeGroupKeys = ref<string[]>([]);
 
-/** 按分组划分的未完成任务 */
+/** 按分组划分的未完成任务（基于 localGroups + store 数据） */
 const tasksByGroup = computed(() => {
-  const map = new Map<string, typeof taskStore.openTasks>();
-  for (const group of groupStore.currentGroups) {
-    map.set(group.id, []);
+  const taskMap = new Map(taskStore.openTasks.map((t) => [t.id, t]));
+  const result = new Map<string, typeof taskStore.openTasks>();
+  for (const gid of groupIds.value) {
+    const ids = localGroups[gid] ?? [];
+    result.set(gid, ids.map((id) => taskMap.get(id)).filter((t): t is NonNullable<typeof t> => !!t));
   }
-  for (const task of orderedTasks.value) {
-    const gid = task.groupId ?? `${props.id}-default`;
-    if (!map.has(gid)) map.set(gid, []); // 兜底：group_id 不在 groups 里
-    map.get(gid)!.push(task);
-  }
-  return map;
+  return result;
 });
+
+// store 数据变化时同步 localGroups
+watch(
+  () => [taskStore.openTasks, groupIds.value] as const,
+  () => syncFromStore(),
+  { immediate: true, deep: true },
+);
 
 /** 新建分组对话框 */
 const newGroupVisible = ref(false);
@@ -231,19 +251,24 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
             </MenuPopover>
           </template>
 
-          <!-- 分组内任务列表 -->
-          <!-- 第 5 步将改为每分组独立拖拽容器，当前先静态渲染（拖拽在下一步接入） -->
-          <TaskListItem
-            v-for="task in (tasksByGroup.get(group.id) ?? [])"
-            :key="task.id"
-            :task="task"
-            :dragging="draggingId === task.id"
-            :batch-mode="taskStore.batchMode"
-            :batch-selected="taskStore.isBatchSelected(task.id)"
-            @select="(e) => onTaskRowSelect(task.id, e)"
-            @dragstart="onTaskDragStart"
-            @dragend="onTaskDragEnd"
-          />
+          <!-- 分组内任务列表（拖拽容器） -->
+          <div
+            :ref="(el) => setGroupContainerRef(group.id, el as HTMLElement)"
+            @dragover="onDragOver"
+            @drop="onGroupDrop"
+          >
+            <TaskListItem
+              v-for="task in (tasksByGroup.get(group.id) ?? [])"
+              :key="task.id"
+              :task="task"
+              :dragging="draggingId === task.id"
+              :batch-mode="taskStore.batchMode"
+              :batch-selected="taskStore.isBatchSelected(task.id)"
+              @select="(e) => onTaskRowSelect(task.id, e)"
+              @dragstart="onTaskDragStart(task.id, group.id)"
+              @dragend="onTaskDragEnd"
+            />
+          </div>
           <!-- 空分组占位 -->
           <div
             v-if="(tasksByGroup.get(group.id)?.length ?? 0) === 0"

@@ -6,6 +6,7 @@ import type { Task } from "@/types";
 import { PRIORITY_COLORS } from "@/types";
 import { formatDueDate } from "@/utils/date";
 import { useTaskStore } from "@/stores/task";
+import { useGroupStore } from "@/stores/group";
 import TaskCheckbox from "./TaskCheckbox.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
@@ -47,6 +48,20 @@ const emit = defineEmits<{
 
 // ─── 拖拽排序（仅根任务 depth=0 且未完成 且 当前为手动排序模式时启用） ──────────────
 const taskStore = useTaskStore();
+const groupStore = useGroupStore();
+
+/** 当前清单的分组列表（用于「移动到分组」） */
+const currentGroups = computed(() => groupStore.currentGroups);
+
+/** 移动到分组弹窗是否显示 */
+const moveGroupVisible = ref(false);
+
+/** 移动任务到指定分组 */
+async function onMoveToGroup(groupId: string): Promise<void> {
+  await taskStore.updateTask(props.task.id, { groupId });
+  moveGroupVisible.value = false;
+  ctxMenu.visible = false;
+}
 
 /** 笔记（kind='note'）：无完成/日期/重复概念，UI 隐藏这些区块。
  *  笔记仍可拖拽排序（复用任务的拖拽逻辑，仅去掉 done 限制）。 */
@@ -429,12 +444,30 @@ function onCtxEnterBatchMode(): void {
       />
     </div>
 
-    <!-- 右键菜单：多选 / 新建同级 / 新建子项 / 删除（文案随 kind：任务/笔记） -->
+    <!-- 右键菜单：多选 / 移动到分组 / 新建同级 / 新建子项 / 删除 -->
     <ContextMenu v-model:visible="ctxMenu.visible" :x="ctxMenu.x" :y="ctxMenu.y">
       <MenuPopoverItem @click="onCtxEnterBatchMode">
         <icon-check-circle :size="15" />
         <span>多选</span>
       </MenuPopoverItem>
+      <!-- 移动到分组（仅当清单有多个分组时显示） -->
+      <MenuPopover v-if="!isNote && currentGroups.length > 1" v-model:visible="moveGroupVisible" placement="bottom-right">
+        <template #trigger>
+          <div class="task-item__ctx-submenu-trigger" @click.stop="moveGroupVisible = !moveGroupVisible">
+            <icon-folder :size="15" />
+            <span>移动到分组</span>
+            <icon-right :size="12" class="task-item__ctx-submenu-arrow" />
+          </div>
+        </template>
+        <MenuPopoverItem
+          v-for="group in currentGroups"
+          :key="group.id"
+          :active="group.id === props.task.groupId"
+          @click="onMoveToGroup(group.id)"
+        >
+          <span>{{ group.name }}</span>
+        </MenuPopoverItem>
+      </MenuPopover>
       <MenuPopoverItem @click="onCtxAddSiblingTask">
         <icon-plus :size="15" />
         <span>{{ isNote ? "新建笔记" : "新建任务" }}</span>
@@ -728,4 +761,25 @@ function onCtxEnterBatchMode(): void {
   background-color: var(--jt-surface-hover);
   color: var(--jt-text-primary);
 }
+/* 右键菜单的「移动到分组」子菜单触发器 */
+.task-item__ctx-submenu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--jt-text-primary);
+  transition: background-color 0.12s;
+}
+.task-item__ctx-submenu-trigger:hover {
+  background-color: var(--jt-surface-sunken);
+}
+.task-item__ctx-submenu-arrow {
+  margin-left: auto;
+}
+
 </style>
