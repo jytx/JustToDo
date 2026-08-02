@@ -314,33 +314,30 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
   <div class="list-view" @contextmenu="onRootContextMenu">
     <!-- 列表头 -->
     <header class="list-view__header">
-      <div class="list-view__title-row">
-        <h1 class="list-view__title">
-          {{ pageTitle }}
-          <!-- 已归档清单/目录：低饱和度胶囊角标 -->
-          <span v-if="currentList?.archived" class="list-view__archived-tag">已归档</span>
-        </h1>
-        <!-- 新建分组按钮（标题右侧，仅非归档清单显示） -->
-        <button
-          v-if="!currentList?.archived"
-          class="list-view__group-add-btn"
-          @click="openNewGroup()"
-        >
-          <icon-plus :size="14" />
-          <span>新建分组</span>
-        </button>
-      </div>
+      <h1 class="list-view__title">
+        {{ pageTitle }}
+        <!-- 已归档清单/目录：低饱和度胶囊角标 -->
+        <span v-if="currentList?.archived" class="list-view__archived-tag">已归档</span>
+      </h1>
       <p class="list-view__subtitle">
         {{ formatPageDate() }} · {{ openCount }} 个待办
       </p>
     </header>
 
-    <!-- 顶部添加栏：归档清单下隐藏（产品策略：归档区不可新建任务） -->
+    <!-- 顶部添加栏：归档清单下隐藏（产品策略：归档区不可新建任务）。
+         新建分组按钮与 AddTaskBar 同排，放其右侧（清单级操作，不污染通用 AddTaskBar 组件）。 -->
     <div v-if="!currentList?.archived" class="list-view__add-bar">
       <AddTaskBar
         :list-id="props.id"
         @add="onAdd"
       />
+      <button
+        class="list-view__group-add-btn"
+        title="新建分组"
+        @click="openNewGroup()"
+      >
+        <icon-folder-add :size="16" />
+      </button>
     </div>
 
     <div class="mb-2" />
@@ -582,31 +579,24 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
 <style scoped>
 /* 分组区 */
 /* 标题行：标题 + 新建分组按钮两端对齐 */
-.list-view__title-row {
+/* 新建分组按钮：与 AddTaskBar 同排，放其右侧，纯图标样式（对齐 AddTaskBar 属性按钮） */
+.list-view__group-add-btn {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-/* 新建分组按钮（标题右侧）：次要文字按钮，带 + 图标 */
-.list-view__group-add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  justify-content: center;
   flex-shrink: 0;
-  font-size: 13px;
+  width: 28px;
+  height: 28px;
   color: var(--jt-text-tertiary);
   background: transparent;
   border: none;
   cursor: pointer;
-  padding: 4px 8px;
   border-radius: 6px;
   transition: background 0.12s, color 0.12s;
 }
 .list-view__group-add-btn:hover {
   background: var(--jt-surface-hover);
-  color: var(--jt-text-secondary);
+  color: var(--jt-text-primary);
 }
 .list-view__group-more-btn {
   border: none;
@@ -827,6 +817,14 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
 .list-view__add-bar {
   flex-shrink: 0;
   padding: 0 8px 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+/* AddTaskBar 占满剩余宽度，新建分组按钮靠右 */
+.list-view__add-bar > :first-child {
+  flex: 1;
+  min-width: 0;
 }
 
 /* 已归档角标：低饱和度灰底胶囊，置于标题右侧 */
