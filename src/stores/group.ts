@@ -29,10 +29,11 @@ export const useGroupStore = defineStore("group", () => {
     ];
   }
 
-  /** 创建分组 */
-  async function createGroup(listId: string, name: string): Promise<Group | null> {
+  /** 创建分组
+   * @param sortOrder 指定排序位置；不传则后端追加到末尾 */
+  async function createGroup(listId: string, name: string, sortOrder?: number): Promise<Group | null> {
     try {
-      const group = await db.createGroup(listId, name);
+      const group = await db.createGroup(listId, name, sortOrder);
       groups.value = [...groups.value, group];
       return group;
     } catch (e) {

@@ -3797,7 +3797,8 @@ pub async fn group_create(
 ) -> CmdResult<Group> {
     let id = uuid();
     let ts = now();
-    let sort_order = chrono::Utc::now().timestamp_millis();
+    // sort_order：传入则用传入值（支持插入到指定位置），否则追加到末尾（时间戳足够大）
+    let sort_order = input.sort_order.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
     sqlx::query(
         "INSERT INTO groups (id, list_id, name, sort_order, created_at) VALUES ($1, $2, $3, $4, $5)",
     )

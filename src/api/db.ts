@@ -755,10 +755,15 @@ export async function getGroups(listId: string): Promise<Group[]> {
   }));
 }
 
-/** 创建分组 */
-export async function createGroup(listId: string, name: string): Promise<Group> {
+/** 创建分组
+ * @param sortOrder 指定排序位置；不传则后端追加到末尾 */
+export async function createGroup(
+  listId: string,
+  name: string,
+  sortOrder?: number,
+): Promise<Group> {
   const r = await invoke<Record<string, unknown>>('group_create', {
-    input: { list_id: listId, name },
+    input: { list_id: listId, name, sort_order: sortOrder ?? null },
   });
   return {
     id: r.id as string,

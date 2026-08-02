@@ -233,6 +233,8 @@ pub struct Group {
 pub struct CreateGroupInput {
     pub list_id: String,
     pub name: String,
+    /// 指定排序位置；不传则追加到末尾（用当前时间戳，值很大）
+    pub sort_order: Option<i64>,
 }
 
 /// 更新分组的参数

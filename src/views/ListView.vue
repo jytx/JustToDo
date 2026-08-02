@@ -17,6 +17,7 @@ import AddTaskBar from "@/components/AddTaskBar.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 import MenuPopover from "@/components/MenuPopover.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import BatchContextMenu from "@/components/BatchContextMenu.vue";
 
 const props = defineProps<{ id: string }>();
@@ -155,14 +156,24 @@ watch(
   { immediate: true },
 );
 
-/** 新建分组对话框 */
+/** 新建分组对话框（支持指定插入位置的 sort_order；null 表示追加末尾） */
 const newGroupVisible = ref(false);
 const newGroupName = ref("");
+/** 新建分组的目标 sort_order（由「上方/下方新建」菜单项设置；普通新建为 null） */
+const newGroupSortOrder = ref<number | null>(null);
 
 /** 重命名分组对话框 */
 const renameGroupVisible = ref(false);
 const renameGroupId = ref("");
 const renameGroupName = ref("");
+
+/** 删除分组确认对话框 */
+const deleteGroupVisible = ref(false);
+const deleteGroupId = ref("");
+const deletingGroup = ref(false);
+function deleteGroupName(): string {
+  return groupStore.getById(deleteGroupId.value)?.name ?? "";
+}
 
 /** 分组更多菜单（每组标题右侧的 ⋯） */
 const groupMenuVisible = ref<string | null>(null);
@@ -190,16 +201,59 @@ onMounted(async () => {
   activeGroupKeys.value = groupStore.currentGroups.map((g) => g.id);
 });
 
-/** 确认新建分组 */
+/** 确认新建分组（newGroupSortOrder 由调用方预设：null=追加末尾，数字=指定位置） */
 async function confirmNewGroup(): Promise<void> {
   const name = newGroupName.value.trim();
   if (!name) return;
-  const group = await groupStore.createGroup(props.id, name);
+  const group = await groupStore.createGroup(props.id, name, newGroupSortOrder.value ?? undefined);
   if (group) {
     activeGroupKeys.value = [...activeGroupKeys.value, group.id];
   }
   newGroupName.value = "";
+  newGroupSortOrder.value = null;
   newGroupVisible.value = false;
+}
+
+/** 打开「新建分组」对话框（普通：追加末尾） */
+function openNewGroup(): void {
+  newGroupSortOrder.value = null;
+  newGroupName.value = "";
+  newGroupVisible.value = true;
+}
+
+/** 「上方/下方新建分组」：算目标 sort_order 中值后打开对话框
+ *  中值法：取相邻两组 sort_order 的平均；边界用 /2 或 +1000 兜底 */
+function openNewGroupAdjacent(refGroupId: string, position: "before" | "after"): void {
+  const ordered = groupStore.currentGroups;
+  const idx = ordered.findIndex((g) => g.id === refGroupId);
+  if (idx === -1) {
+    openNewGroup();
+    return;
+  }
+  let sortOrder: number;
+  if (position === "before") {
+    const prevSort = idx > 0 ? ordered[idx - 1].sortOrder : 0;
+    sortOrder = Math.floor((prevSort + ordered[idx].sortOrder) / 2);
+  } else {
+    const nextSort = idx < ordered.length - 1 ? ordered[idx + 1].sortOrder : ordered[idx].sortOrder + 2000;
+    sortOrder = Math.floor((ordered[idx].sortOrder + nextSort) / 2);
+  }
+  newGroupSortOrder.value = sortOrder;
+  newGroupName.value = "";
+  newGroupVisible.value = true;
+  groupMenuVisible.value = null;
+}
+
+/** 在指定分组新建任务（空标题 + 选中打开详情面板，复用就近新建范式） */
+async function createTaskInGroup(groupId: string): Promise<void> {
+  groupMenuVisible.value = null;
+  const created = await taskStore.createTask({
+    title: "",
+    listId: props.id,
+    parentId: null,
+    groupId,
+  });
+  taskStore.selectTask(created.id);
 }
 
 /** 打开重命名对话框 */
@@ -220,10 +274,24 @@ async function confirmRename(): Promise<void> {
   renameGroupVisible.value = false;
 }
 
-/** 删除分组（组内任务回填默认分组） */
-async function onDeleteGroup(groupId: string): Promise<void> {
-  await groupStore.deleteGroup(groupId);
+/** 打开删除分组确认对话框 */
+function requestDeleteGroup(groupId: string): void {
+  deleteGroupId.value = groupId;
+  deleteGroupVisible.value = true;
   groupMenuVisible.value = null;
+}
+
+/** 确认删除分组：后端会把组内任务回填到默认分组，删除后刷新任务列表让回填立即显示 */
+async function confirmDeleteGroup(): Promise<void> {
+  deletingGroup.value = true;
+  try {
+    await groupStore.deleteGroup(deleteGroupId.value);
+    // 后端 group_delete 已把组内任务 group_id 改为默认组，需重新加载任务让 UI 同步
+    await taskStore.loadTasks(props.id);
+    deleteGroupVisible.value = false;
+  } finally {
+    deletingGroup.value = false;
+  }
 }
 
 /** 添加任务：创建后如果有 AI 生成的详情(note)，写入 note 字段 */
@@ -277,13 +345,6 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
       @dragover="onDragOver"
       @drop.capture="onGroupDrop"
     >
-      <!-- 新建分组按钮 -->
-      <div v-if="!currentList?.archived" class="list-view__group-add">
-        <button class="list-view__group-add-btn" @click="newGroupVisible = true">
-          + 新建分组
-        </button>
-      </div>
-
       <a-collapse
         v-model:active-key="activeGroupKeys"
         :bordered="false"
@@ -326,8 +387,17 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
               <span class="list-view__group-count">{{ tasksByGroup.get(group.id)?.length ?? 0 }}</span>
             </div>
           </template>
-          <!-- 分组标题右侧：更多菜单 -->
+          <!-- 分组标题右侧：新建任务图标 + 更多菜单 -->
           <template #extra>
+            <!-- 新建任务图标（在该分组新建任务） -->
+            <button
+              v-if="!currentList?.archived"
+              class="list-view__group-add-task-btn"
+              title="在此分组新建任务"
+              @click.stop="createTaskInGroup(group.id)"
+            >
+              <icon-plus :size="14" />
+            </button>
             <MenuPopover
               v-if="!currentList?.archived"
               :visible="groupMenuVisible === group.id"
@@ -342,14 +412,26 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
                   <icon-more :size="14" />
                 </button>
               </template>
-              <MenuPopoverItem @click="openRename(group.id); ">
+              <MenuPopoverItem @click="createTaskInGroup(group.id)">
+                <icon-plus :size="15" />
+                <span>新建任务</span>
+              </MenuPopoverItem>
+              <MenuPopoverItem @click="openNewGroupAdjacent(group.id, 'before')">
+                <icon-arrow-up :size="15" />
+                <span>在上方新建分组</span>
+              </MenuPopoverItem>
+              <MenuPopoverItem @click="openNewGroupAdjacent(group.id, 'after')">
+                <icon-arrow-down :size="15" />
+                <span>在下方新建分组</span>
+              </MenuPopoverItem>
+              <MenuPopoverItem @click="openRename(group.id)">
                 <icon-edit :size="15" />
                 <span>重命名分组</span>
               </MenuPopoverItem>
               <MenuPopoverItem
                 v-if="group.id !== `${props.id}-default`"
                 danger
-                @click="onDeleteGroup(group.id)"
+                @click="requestDeleteGroup(group.id)"
               >
                 <icon-delete :size="15" />
                 <span>删除分组</span>
@@ -403,6 +485,13 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
           />
         </a-collapse-item>
       </a-collapse>
+
+      <!-- 新建分组按钮（置于分组列表底部） -->
+      <div v-if="!currentList?.archived" class="list-view__group-add">
+        <button class="list-view__group-add-btn" @click="openNewGroup()">
+          + 新建分组
+        </button>
+      </div>
     </div>
 
     <!-- 空状态 -->
@@ -472,6 +561,17 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
         </div>
       </div>
     </a-modal>
+
+    <!-- 删除分组确认对话框（组内任务会自动移到默认分组） -->
+    <ConfirmDialog
+      :visible="deleteGroupVisible"
+      :loading="deletingGroup"
+      @update:visible="(v: boolean) => { deleteGroupVisible = v; }"
+      @confirm="confirmDeleteGroup"
+    >
+      <template #title>删除分组「<strong>{{ deleteGroupName() }}</strong>」？</template>
+      该分组内的任务会自动移动到「默认分组」，不会被删除。
+    </ConfirmDialog>
   </div>
 </template>
 
@@ -505,6 +605,27 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
   align-items: center;
   opacity: 0;
   transition: opacity 0.12s, background 0.12s;
+}
+
+/* 新建任务图标按钮：与更多按钮同款样式（hover header 时显示） */
+.list-view__group-add-task-btn {
+  border: none;
+  background: transparent;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s;
+}
+.list-view__collapse-header:hover .list-view__group-add-task-btn {
+  opacity: 1;
+}
+.list-view__group-add-task-btn:hover {
+  background: var(--jt-surface-hover);
+  color: var(--jt-text-primary);
 }
 .list-view__collapse-header:hover .list-view__group-more-btn {
   opacity: 1;
