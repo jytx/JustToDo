@@ -12,6 +12,7 @@ pub const MIGRATIONS_015: &str = include_str!("migrations/015_templates_date_cn.
 pub const MIGRATIONS_016: &str = include_str!("migrations/016_templates_placeholders.sql");
 pub const MIGRATIONS_017: &str = include_str!("migrations/017_daily_reminder_log.sql");
 pub const MIGRATIONS_021: &str = include_str!("migrations/021_list_schedules.sql");
+pub const MIGRATIONS_026: &str = include_str!("migrations/026_groups.sql");
 
 /// 检查表中是否存在某列
 async fn column_exists(pool: &SqlitePool, table: &str, column: &str) -> Result<bool, String> {
@@ -180,6 +181,9 @@ pub async fn init_pool(
     // 025: 修复孤儿任务 —— list_id 指向已不存在清单的 tasks，迁移到默认容器
     run_migration_025(&pool).await?;
 
+    // 026: 任务分组（groups 表 + tasks.group_id 列 + 预置默认分组）
+    run_migration_026(&pool).await?;
+
     Ok(pool)
 }
 
@@ -300,7 +304,67 @@ async fn run_migration_025(pool: &SqlitePool) -> Result<(), String> {
     Ok(())
 }
 
-/// 迁移 004：lists 表加 parent_id（目录父级）+ is_folder（是否目录）
+/// 迁移 026：任务分组
+/// 1. 建 groups 表（幂等 CREATE IF NOT EXISTS）
+/// 2. tasks 加 group_id 列（add_column_if_missing 幂等）
+/// 3. 为每个已有清单创建「默认分组」并回填存量任务的 group_id
+async fn run_migration_026(pool: &SqlitePool) -> Result<(), String> {
+    // 1. 建 groups 表
+    sqlx::query(MIGRATIONS_026)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("迁移026: 建表 groups 失败: {}", e))?;
+
+    // 2. tasks 加 group_id 列
+    add_column_if_missing(pool, "tasks", "group_id", "TEXT").await?;
+
+    // 3. 为没有分组的清单创建默认分组 + 回填存量任务
+    // 找出有任务但没有分组的清单
+    let lists_without_groups = sqlx::query(
+        "SELECT DISTINCT t.list_id FROM tasks t \
+         LEFT JOIN groups g ON g.list_id = t.list_id \
+         WHERE g.id IS NULL AND t.parent_id IS NULL",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("迁移026: 查询无分组清单失败: {}", e))?;
+
+    let ts = chrono::Utc::now().to_rfc3339();
+    let mut created = 0;
+    let mut backfilled = 0;
+
+    for row in &lists_without_groups {
+        let list_id: String = row.get("list_id");
+        let group_id = format!("{}-default", list_id);
+
+        // 创建默认分组
+        sqlx::query("INSERT OR IGNORE INTO groups (id, list_id, name, sort_order, created_at) VALUES ($1, $2, '默认分组', 0, $3)")
+            .bind(&group_id)
+            .bind(&list_id)
+            .bind(&ts)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("迁移026: 创建默认分组失败: {}", e))?;
+        created += 1;
+
+        // 回填该清单下所有 group_id 为 NULL 的根任务
+        let result = sqlx::query("UPDATE tasks SET group_id = $1 WHERE list_id = $2 AND group_id IS NULL AND parent_id IS NULL")
+            .bind(&group_id)
+            .bind(&list_id)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("迁移026: 回填 group_id 失败: {}", e))?;
+        backfilled += result.rows_affected();
+    }
+
+    if created > 0 || backfilled > 0 {
+        println!(
+            "[JustToDo] 迁移026 完成: 创建 {} 个默认分组, 回填 {} 条任务",
+            created, backfilled,
+        );
+    }
+    Ok(())
+}
 async fn run_migration_004(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "lists", "parent_id", "TEXT").await?;
     add_column_if_missing(pool, "lists", "is_folder", "INTEGER NOT NULL DEFAULT 0").await?;

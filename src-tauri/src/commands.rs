@@ -94,6 +94,8 @@ fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
         kind: row
             .try_get::<String, _>("kind")
             .unwrap_or_else(|_| "task".to_string()),
+        // group_id 用 try_get 容错（迁移前可能无此列）
+        group_id: row.try_get("group_id").ok().flatten(),
     }
 }
 
@@ -679,10 +681,12 @@ pub async fn task_create(
     let remind_offset_minutes = input.remind_offset_minutes;
     // kind 不传默认 'task'（待办）；'note' = 笔记（复用 tasks 表，但无日期/完成/重复/提醒）
     let kind = input.kind.clone().unwrap_or_else(|| "task".to_string());
+    // group_id 不传则用清单的默认分组
+    let group_id = input.group_id.clone().unwrap_or_else(|| format!("{}-default", input.list_id));
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, recurrence_freq, recurrence_interval, recurrence_end_at, recurrence_count, remind_offset_minutes, kind)
-         VALUES ($1, $2, '', $3, $4, $5, $6, $7, 0, $8, $9, $10, NULL, $11, $12, $13, $14, $15, $16)",
+        "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, recurrence_freq, recurrence_interval, recurrence_end_at, recurrence_count, remind_offset_minutes, kind, group_id)
+         VALUES ($1, $2, '', $3, $4, $5, $6, $7, 0, $8, $9, $10, NULL, $11, $12, $13, $14, $15, $16, $17)",
     )
     .bind(&id)
     .bind(&input.title)
@@ -700,6 +704,7 @@ pub async fn task_create(
     .bind(recurrence_count)
     .bind(&remind_offset_minutes)
     .bind(&kind)
+    .bind(&group_id)
     .execute(pool.inner())
     .await
     .map_err(|e| format!("创建任务失败: {}", e))?;
@@ -728,6 +733,7 @@ pub async fn task_create(
         checklist: Vec::new(),
         attachments: Vec::new(),
         kind,
+        group_id: Some(group_id),
     })
 }
 
@@ -792,6 +798,16 @@ pub async fn task_update(
     if let Some(list_id) = &input.list_id {
         sqlx::query("UPDATE tasks SET list_id = $1, updated_at = $2 WHERE id = $3")
             .bind(list_id)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新任务失败: {}", e))?;
+    }
+    // group_id：Option<Option<String>>，Some(Some(v)) 改分组，Some(None) 清空回默认
+    if let Some(group_id) = &input.group_id {
+        sqlx::query("UPDATE tasks SET group_id = $1, updated_at = $2 WHERE id = $3")
+            .bind(group_id)
             .bind(&ts)
             .bind(&id)
             .execute(pool.inner())
@@ -3744,4 +3760,138 @@ pub async fn ai_polish_text(
         Ok(resp) => Ok(serde_json::json!({ "ok": true, "content": resp.content })),
         Err(e) => Ok(serde_json::json!({ "ok": false, "message": format!("{}", e) })),
     }
+}
+
+// ─── 任务分组（Group）CRUD ───────────────────────────
+
+/// 从行数据提取 Group
+fn row_to_group(row: &sqlx::sqlite::SqliteRow) -> Group {
+    Group {
+        id: row.get("id"),
+        list_id: row.get("list_id"),
+        name: row.get("name"),
+        sort_order: row.get("sort_order"),
+        created_at: row.get("created_at"),
+    }
+}
+
+/// 获取清单的所有分组（按 sort_order 排序）
+#[tauri::command]
+pub async fn group_list(
+    pool: State<'_, sqlx::SqlitePool>,
+    list_id: String,
+) -> CmdResult<Vec<Group>> {
+    let rows = sqlx::query("SELECT * FROM groups WHERE list_id = $1 ORDER BY sort_order ASC")
+        .bind(&list_id)
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| format!("查询分组失败: {}", e))?;
+    Ok(rows.iter().map(row_to_group).collect())
+}
+
+/// 创建分组
+#[tauri::command]
+pub async fn group_create(
+    pool: State<'_, sqlx::SqlitePool>,
+    input: CreateGroupInput,
+) -> CmdResult<Group> {
+    let id = uuid();
+    let ts = now();
+    let sort_order = chrono::Utc::now().timestamp_millis();
+    sqlx::query(
+        "INSERT INTO groups (id, list_id, name, sort_order, created_at) VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(&id)
+    .bind(&input.list_id)
+    .bind(&input.name)
+    .bind(sort_order)
+    .bind(&ts)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| format!("创建分组失败: {}", e))?;
+    Ok(Group {
+        id,
+        list_id: input.list_id,
+        name: input.name,
+        sort_order,
+        created_at: ts,
+    })
+}
+
+/// 更新分组（重命名 / 改排序）
+#[tauri::command]
+pub async fn group_update(
+    pool: State<'_, sqlx::SqlitePool>,
+    id: String,
+    input: UpdateGroupInput,
+) -> CmdResult<()> {
+    let ts = now();
+    if let Some(name) = &input.name {
+        sqlx::query("UPDATE groups SET name = $1 WHERE id = $2")
+            .bind(name)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新分组失败: {}", e))?;
+    }
+    if let Some(sort_order) = input.sort_order {
+        sqlx::query("UPDATE groups SET sort_order = $1 WHERE id = $2")
+            .bind(sort_order)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新分组排序失败: {}", e))?;
+    }
+    let _ = ts; // updated_at 暂不用于 groups
+    Ok(())
+}
+
+/// 删除分组（组内任务的 group_id 回填为清单的默认分组）
+#[tauri::command]
+pub async fn group_delete(
+    pool: State<'_, sqlx::SqlitePool>,
+    id: String,
+) -> CmdResult<()> {
+    let row = sqlx::query("SELECT list_id FROM groups WHERE id = $1")
+        .bind(&id)
+        .fetch_optional(pool.inner())
+        .await
+        .map_err(|e| format!("查询分组失败: {}", e))?;
+    let list_id: String = match row {
+        Some(r) => r.get("list_id"),
+        None => return Ok(()),
+    };
+    let default_group_id = format!("{}-default", list_id);
+    if id == default_group_id {
+        return Err("不能删除默认分组".to_string());
+    }
+    sqlx::query("UPDATE tasks SET group_id = $1 WHERE group_id = $2")
+        .bind(&default_group_id)
+        .bind(&id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("回填任务分组失败: {}", e))?;
+    sqlx::query("DELETE FROM groups WHERE id = $1")
+        .bind(&id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("删除分组失败: {}", e))?;
+    Ok(())
+}
+
+/// 批量重排分组顺序
+#[tauri::command]
+pub async fn group_reorder(
+    pool: State<'_, sqlx::SqlitePool>,
+    ordered_ids: Vec<String>,
+) -> CmdResult<()> {
+    for (i, id) in ordered_ids.iter().enumerate() {
+        sqlx::query("UPDATE groups SET sort_order = $1 WHERE id = $2")
+            .bind((i * 1000) as i64)
+            .bind(id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("重排分组失败: {}", e))?;
+    }
+    Ok(())
 }

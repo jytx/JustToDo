@@ -85,6 +85,9 @@ pub struct Task {
     /// 笔记复用 tasks 表的全部基础设施，但 due/done/recurrence/remind 恒为默认值
     #[serde(default)]
     pub kind: String,
+    /// 所属分组 ID（migration 026；null = 未分组，正常不会出现，迁移时已回填默认分组）
+    #[serde(default)]
+    pub group_id: Option<String>,
 }
 
 /// 任务模板 —— "任务参数预设"，独立于 tasks 表
@@ -184,6 +187,8 @@ pub struct CreateTaskInput {
     pub remind_offset_minutes: Option<i32>,
     /// 实体类型：不传默认 'task'（待办）；'note' = 笔记
     pub kind: Option<String>,
+    /// 所属分组 ID（不传则用清单的默认分组）
+    pub group_id: Option<String>,
 }
 
 /// 更新任务的参数（所有字段可选）
@@ -198,6 +203,9 @@ pub struct UpdateTaskInput {
     #[serde(default, deserialize_with = "double_option")]
     pub due_end_at: Option<Option<String>>,
     pub list_id: Option<String>,
+    /// 分组 ID（移动到分组时传；Option<Option<String>> 允许清空回默认分组）
+    #[serde(default, deserialize_with = "double_option")]
+    pub group_id: Option<Option<String>>,
     pub recurrence_freq: Option<Option<String>>,
     pub recurrence_interval: Option<i32>,
     pub recurrence_end_at: Option<Option<String>>,
@@ -208,4 +216,28 @@ pub struct UpdateTaskInput {
     pub checklist: Option<Vec<ChecklistItem>>,
     /// 附件列表（整组覆盖；前端负责构造完整数组）
     pub attachments: Option<Vec<Attachment>>,
+}
+
+/// 任务分组（属于清单，类比 Trello 的列）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Group {
+    pub id: String,
+    pub list_id: String,
+    pub name: String,
+    pub sort_order: i64,
+    pub created_at: String,
+}
+
+/// 创建分组的参数
+#[derive(Debug, Deserialize)]
+pub struct CreateGroupInput {
+    pub list_id: String,
+    pub name: String,
+}
+
+/// 更新分组的参数
+#[derive(Debug, Deserialize)]
+pub struct UpdateGroupInput {
+    pub name: Option<String>,
+    pub sort_order: Option<i64>,
 }
