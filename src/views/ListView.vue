@@ -48,7 +48,7 @@ const {
   localGroups,
   draggingId,
   syncFromStore,
-  onTaskDragStart,
+  onTaskDragStart: groupDragStart,
   onGroupDragOver,
   onGroupDrop,
   onTaskDragEnd,
@@ -64,6 +64,13 @@ function setGroupContainerRef(groupId: string, el: HTMLElement | null): void {
 /** 列级 dragover 适配 */
 function onDragOver(e: DragEvent): void {
   onGroupDragOver(e, groupContainerEls);
+}
+
+/** dragstart 适配：从任务的 groupId 取所在分组 */
+function onDragStart(taskId: string): void {
+  const task = taskStore.openTasks.find((t) => t.id === taskId);
+  const groupId = task?.groupId ?? `${props.id}-default`;
+  groupDragStart(taskId, groupId);
 }
 
 // ─── 分组 ───
@@ -265,7 +272,7 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
               :batch-mode="taskStore.batchMode"
               :batch-selected="taskStore.isBatchSelected(task.id)"
               @select="(e) => onTaskRowSelect(task.id, e)"
-              @dragstart="onTaskDragStart(task.id, group.id)"
+              @dragstart="onDragStart(task.id)"
               @dragend="onTaskDragEnd"
             />
           </div>

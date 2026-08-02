@@ -53,13 +53,9 @@ const groupStore = useGroupStore();
 /** 当前清单的分组列表（用于「移动到分组」） */
 const currentGroups = computed(() => groupStore.currentGroups);
 
-/** 移动到分组弹窗是否显示 */
-const moveGroupVisible = ref(false);
-
 /** 移动任务到指定分组 */
 async function onMoveToGroup(groupId: string): Promise<void> {
   await taskStore.updateTask(props.task.id, { groupId });
-  moveGroupVisible.value = false;
   ctxMenu.visible = false;
 }
 
@@ -450,24 +446,21 @@ function onCtxEnterBatchMode(): void {
         <icon-check-circle :size="15" />
         <span>多选</span>
       </MenuPopoverItem>
-      <!-- 移动到分组（仅当清单有多个分组时显示） -->
-      <MenuPopover v-if="!isNote && currentGroups.length > 1" v-model:visible="moveGroupVisible" placement="bottom-right">
-        <template #trigger>
-          <div class="task-item__ctx-submenu-trigger" @click.stop="moveGroupVisible = !moveGroupVisible">
-            <icon-folder :size="15" />
-            <span>移动到分组</span>
-            <icon-right :size="12" class="task-item__ctx-submenu-arrow" />
-          </div>
-        </template>
+      <!-- 移动到分组：直接列出所有分组（仅当清单有多个分组时显示） -->
+      <template v-if="!isNote && currentGroups.length > 1">
+        <div class="task-item__ctx-divider"></div>
+        <div class="task-item__ctx-label">移动到分组</div>
         <MenuPopoverItem
           v-for="group in currentGroups"
           :key="group.id"
           :active="group.id === props.task.groupId"
           @click="onMoveToGroup(group.id)"
         >
+          <icon-folder :size="15" />
           <span>{{ group.name }}</span>
         </MenuPopoverItem>
-      </MenuPopover>
+      </template>
+      <div v-if="!isNote && currentGroups.length > 1" class="task-item__ctx-divider"></div>
       <MenuPopoverItem @click="onCtxAddSiblingTask">
         <icon-plus :size="15" />
         <span>{{ isNote ? "新建笔记" : "新建任务" }}</span>
@@ -761,25 +754,16 @@ function onCtxEnterBatchMode(): void {
   background-color: var(--jt-surface-hover);
   color: var(--jt-text-primary);
 }
-/* 右键菜单的「移动到分组」子菜单触发器 */
-.task-item__ctx-submenu-trigger {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  cursor: pointer;
-  color: var(--jt-text-primary);
-  transition: background-color 0.12s;
+/* 右键菜单的分组区分隔线和标签 */
+.task-item__ctx-divider {
+  height: 1px;
+  background: var(--jt-border);
+  margin: 4px 0;
 }
-.task-item__ctx-submenu-trigger:hover {
-  background-color: var(--jt-surface-sunken);
-}
-.task-item__ctx-submenu-arrow {
-  margin-left: auto;
+.task-item__ctx-label {
+  font-size: 11px;
+  color: var(--jt-text-tertiary);
+  padding: 2px 12px;
 }
 
 </style>
