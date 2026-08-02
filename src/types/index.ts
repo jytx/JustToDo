@@ -107,6 +107,8 @@ export interface Task {
   /** 实体类型：'task' 待办 | 'note' 笔记。
    *  笔记复用 Task 的全部字段，但 due/done/completed/recurrence/remind 恒为默认值。 */
   kind: TaskKind;
+  /** 所属分组 ID（null = 未分组，正常不会出现） */
+  groupId: string | null;
 }
 
 /** 检查项（独立存储；后端 JSON 数组） */
@@ -320,6 +322,8 @@ export interface TaskRow {
   attachments: string;
   /** 实体类型：'task' 待办 | 'note' 笔记 */
   kind: TaskKind;
+  /** 所属分组 ID */
+  group_id: string | null;
 }
 
 /** 清单数据库原始行 */
@@ -361,6 +365,7 @@ export function mapTaskRow(row: TaskRow): Task {
     checklist: parseChecklist(row.checklist),
     attachments: parseAttachments(row.attachments),
     kind: row.kind,
+    groupId: row.group_id,
   };
 }
 
@@ -427,4 +432,13 @@ export interface TemplateForm {
   note: string;
   /** 实体类型：不传默认 'task'；'note' = 笔记模板 */
   kind?: TaskKind;
+}
+
+/** 任务分组（属于清单，类比 Trello 的列） */
+export interface Group {
+  id: string;
+  listId: string;
+  name: string;
+  sortOrder: number;
+  createdAt: string;
 }

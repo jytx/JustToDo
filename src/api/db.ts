@@ -3,7 +3,7 @@
 // 这样绕过了 plugin-sql 前端 API 的 IPC 问题，走标准 invoke 通道
 
 import { invoke } from "@tauri-apps/api/core";
-import type { List, Task, Priority, RecurrenceFreq, ChecklistItem, Template, Attachment, AttachmentType, TaskKind } from "@/types";
+import type { List, Task, Priority, RecurrenceFreq, ChecklistItem, Template, Attachment, AttachmentType, TaskKind, Group } from "@/types";
 
 // ─── 类型（与 Rust models.rs 对应）──────────────────────
 
@@ -51,6 +51,8 @@ interface CreateTaskInput {
   remindOffsetMinutes?: number | null;
   /** 实体类型：不传默认 'task'（待办）；'note' = 笔记 */
   kind?: TaskKind;
+  /** 所属分组 ID（不传则用清单的默认分组） */
+  groupId?: string;
 }
 
 interface UpdateTaskInput {
@@ -60,6 +62,8 @@ interface UpdateTaskInput {
   dueStartAt?: string | null;
   dueEndAt?: string | null;
   listId?: string;
+  /** 分组 ID（移动到分组时传） */
+  groupId?: string | null;
   recurrenceFreq?: RecurrenceFreq | null;
   recurrenceInterval?: number;
   recurrenceEndAt?: string | null;
@@ -178,6 +182,7 @@ interface RustTask {
   attachments: Attachment[];
   /** 实体类型：'task' 待办 | 'note' 笔记 */
   kind: TaskKind;
+  group_id: string | null;
 }
 
 function mapTask(r: RustTask): Task {
@@ -205,6 +210,7 @@ function mapTask(r: RustTask): Task {
     checklist: r.checklist,
     attachments: r.attachments,
     kind: r.kind,
+    groupId: r.group_id,
   };
 }
 
@@ -370,6 +376,7 @@ export async function createTask(params: CreateTaskInput): Promise<Task> {
     recurrence_count: params.recurrenceCount ?? null,
     remind_offset_minutes: params.remindOffsetMinutes ?? null,
     kind: params.kind ?? "task",
+    group_id: params.groupId ?? null,
   };
   const r = await invoke<RustTask>("task_create", { input });
   return mapTask(r);
@@ -386,6 +393,7 @@ export async function updateTask(
     due_start_at: fields.dueStartAt,
     due_end_at: fields.dueEndAt,
     list_id: fields.listId,
+    group_id: fields.groupId,
     recurrence_freq: fields.recurrenceFreq,
     recurrence_interval: fields.recurrenceInterval,
     recurrence_end_at: fields.recurrenceEndAt,
@@ -731,4 +739,53 @@ export async function deleteTemplate(id: string): Promise<void> {
 /** 批量重排模板顺序（拖拽后调用，传入完整新顺序的 [(id, position)] 数组） */
 export async function reorderTemplates(items: [string, number][]): Promise<void> {
   await invoke<void>("template_reorder", { items });
+}
+
+// ─── 任务分组（Group）CRUD ───
+
+/** 获取清单的所有分组（按 sort_order 排序） */
+export async function getGroups(listId: string): Promise<Group[]> {
+  const rows = await invoke<Record<string, unknown>[]>('group_list', { listId });
+  return rows.map((r) => ({
+    id: r.id as string,
+    listId: r.list_id as string,
+    name: r.name as string,
+    sortOrder: r.sort_order as number,
+    createdAt: r.created_at as string,
+  }));
+}
+
+/** 创建分组 */
+export async function createGroup(listId: string, name: string): Promise<Group> {
+  const r = await invoke<Record<string, unknown>>('group_create', {
+    input: { list_id: listId, name },
+  });
+  return {
+    id: r.id as string,
+    listId: r.list_id as string,
+    name: r.name as string,
+    sortOrder: r.sort_order as number,
+    createdAt: r.created_at as string,
+  };
+}
+
+/** 更新分组（重命名 / 改排序） */
+export async function updateGroup(
+  id: string,
+  fields: { name?: string; sortOrder?: number },
+): Promise<void> {
+  const input: Record<string, unknown> = {};
+  if (fields.name !== undefined) input.name = fields.name;
+  if (fields.sortOrder !== undefined) input.sort_order = fields.sortOrder;
+  await invoke<void>('group_update', { id, input });
+}
+
+/** 删除分组（组内任务回填到默认分组） */
+export async function deleteGroup(id: string): Promise<void> {
+  await invoke<void>('group_delete', { id });
+}
+
+/** 批量重排分组顺序 */
+export async function reorderGroups(orderedIds: string[]): Promise<void> {
+  await invoke<void>('group_reorder', { orderedIds });
 }
