@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 任务列表项 —— 支持树形递归（子任务嵌套展开）
 // 含：展开箭头、复选框、标题、优先级色点、截止日期、hover 操作菜单
-import { ref, computed, watch, reactive } from "vue";
+import { ref, computed, watch, reactive, nextTick } from "vue";
 import type { Task } from "@/types";
 import { PRIORITY_COLORS } from "@/types";
 import { formatDueDate } from "@/utils/date";
@@ -57,6 +57,49 @@ const currentGroups = computed(() => groupStore.currentGroups);
 async function onMoveToGroup(groupId: string): Promise<void> {
   await taskStore.updateTask(props.task.id, { groupId });
   ctxMenu.visible = false;
+  groupSubmenuStyle.display = false;
+}
+
+// ─── 移动到分组的级联子菜单（参照 BatchContextMenu 的 Teleport + fixed 方案）───
+const groupSubmenuStyle = reactive({ display: false, top: "" as string | undefined, left: "" as string | undefined });
+let groupCloseTimer: number | null = null;
+const GROUP_CLOSE_DELAY = 200;
+
+/** 显示分组子菜单：定位在触发项右侧 */
+async function showGroupSubmenu(triggerEl: HTMLElement): Promise<void> {
+  if (groupCloseTimer !== null) {
+    clearTimeout(groupCloseTimer);
+    groupCloseTimer = null;
+  }
+  groupSubmenuStyle.display = true;
+  await nextTick();
+  await new Promise((r) => requestAnimationFrame(() => r(null)));
+  const tr = triggerEl.getBoundingClientRect();
+  const subEl = document.querySelector(".group-submenu") as HTMLElement | null;
+  const subW = subEl ? subEl.offsetWidth : 180;
+  const viewportW = document.documentElement.clientWidth;
+  const margin = 4;
+  let left = tr.right + margin;
+  if (left + subW > viewportW - margin) {
+    left = tr.left - subW - margin;
+  }
+  groupSubmenuStyle.left = left + "px";
+  groupSubmenuStyle.top = tr.top + "px";
+}
+
+function scheduleCloseGroupSubmenu(): void {
+  if (groupCloseTimer !== null) clearTimeout(groupCloseTimer);
+  groupCloseTimer = window.setTimeout(() => {
+    groupSubmenuStyle.display = false;
+    groupCloseTimer = null;
+  }, GROUP_CLOSE_DELAY);
+}
+
+function cancelCloseGroupSubmenu(): void {
+  if (groupCloseTimer !== null) {
+    clearTimeout(groupCloseTimer);
+    groupCloseTimer = null;
+  }
 }
 
 /** 笔记（kind='note'）：无完成/日期/重复概念，UI 隐藏这些区块。
@@ -446,21 +489,16 @@ function onCtxEnterBatchMode(): void {
         <icon-check-circle :size="15" />
         <span>多选</span>
       </MenuPopoverItem>
-      <!-- 移动到分组：直接列出所有分组（仅当清单有多个分组时显示） -->
-      <template v-if="!isNote && currentGroups.length > 1">
-        <div class="task-item__ctx-divider"></div>
-        <div class="task-item__ctx-label">移动到分组</div>
-        <MenuPopoverItem
-          v-for="group in currentGroups"
-          :key="group.id"
-          :active="group.id === props.task.groupId"
-          @click="onMoveToGroup(group.id)"
-        >
-          <icon-folder :size="15" />
-          <span>{{ group.name }}</span>
-        </MenuPopoverItem>
-      </template>
-      <div v-if="!isNote && currentGroups.length > 1" class="task-item__ctx-divider"></div>
+      <!-- 移动到分组：hover 弹右侧级联子菜单（仅当清单有多个分组时显示） -->
+      <MenuPopoverItem
+        v-if="!isNote && currentGroups.length > 1"
+        @mouseenter="(e: MouseEvent) => showGroupSubmenu(e.currentTarget as HTMLElement)"
+        @mouseleave="scheduleCloseGroupSubmenu"
+      >
+        <icon-folder :size="15" />
+        <span>移动到分组</span>
+        <icon-right :size="12" style="margin-left: auto" />
+      </MenuPopoverItem>
       <MenuPopoverItem @click="onCtxAddSiblingTask">
         <icon-plus :size="15" />
         <span>{{ isNote ? "新建笔记" : "新建任务" }}</span>
@@ -474,6 +512,26 @@ function onCtxEnterBatchMode(): void {
         <span>{{ isNote ? "删除笔记" : "删除任务" }}</span>
       </MenuPopoverItem>
     </ContextMenu>
+
+    <!-- 移动到分组级联子菜单：Teleport 到 body，position:fixed -->
+    <Teleport to="body">
+      <div
+        v-if="groupSubmenuStyle.display"
+        class="group-submenu context-menu"
+        :style="{ position: 'fixed', top: groupSubmenuStyle.top, left: groupSubmenuStyle.left, zIndex: '10010' }"
+        @mouseenter="cancelCloseGroupSubmenu"
+        @mouseleave="scheduleCloseGroupSubmenu"
+      >
+        <MenuPopoverItem
+          v-for="group in currentGroups"
+          :key="group.id"
+          :active="group.id === props.task.groupId"
+          @click="onMoveToGroup(group.id)"
+        >
+          <span>{{ group.name }}</span>
+        </MenuPopoverItem>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -759,11 +817,6 @@ function onCtxEnterBatchMode(): void {
   height: 1px;
   background: var(--jt-border);
   margin: 4px 0;
-}
-.task-item__ctx-label {
-  font-size: 11px;
-  color: var(--jt-text-tertiary);
-  padding: 2px 12px;
 }
 
 </style>
