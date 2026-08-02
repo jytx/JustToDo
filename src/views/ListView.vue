@@ -387,23 +387,22 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
               <span class="list-view__group-count">{{ tasksByGroup.get(group.id)?.length ?? 0 }}</span>
             </div>
           </template>
-          <!-- 分组标题右侧：新建任务图标 + 更多菜单 -->
+          <!-- 分组标题右侧：新建任务图标 + 更多菜单（flex 同行排列） -->
           <template #extra>
-            <!-- 新建任务图标（在该分组新建任务） -->
-            <button
-              v-if="!currentList?.archived"
-              class="list-view__group-add-task-btn"
-              title="在此分组新建任务"
-              @click.stop="createTaskInGroup(group.id)"
-            >
-              <icon-plus :size="14" />
-            </button>
-            <MenuPopover
-              v-if="!currentList?.archived"
-              :visible="groupMenuVisible === group.id"
-              placement="bottom-right"
-              @update:visible="(v: boolean) => { groupMenuVisible = v ? group.id : null; }"
-            >
+            <div v-if="!currentList?.archived" class="list-view__group-actions">
+              <!-- 新建任务图标（在该分组新建任务） -->
+              <button
+                class="list-view__group-add-task-btn"
+                title="在此分组新建任务"
+                @click.stop="createTaskInGroup(group.id)"
+              >
+                <icon-plus :size="14" />
+              </button>
+              <MenuPopover
+                :visible="groupMenuVisible === group.id"
+                placement="bottom-right"
+                @update:visible="(v: boolean) => { groupMenuVisible = v ? group.id : null; }"
+              >
               <template #trigger>
                 <button
                   class="list-view__group-more-btn"
@@ -437,6 +436,7 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
                 <span>删除分组</span>
               </MenuPopoverItem>
             </MenuPopover>
+            </div>
           </template>
 
           <!-- 分组内任务列表（拖拽容器；dragover/drop 由外层统一处理） -->
@@ -605,6 +605,13 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
   align-items: center;
   opacity: 0;
   transition: opacity 0.12s, background 0.12s;
+}
+
+/* 分组标题右侧操作区：新建任务图标 + 更多菜单按钮同行排列 */
+.list-view__group-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 /* 新建任务图标按钮：与更多按钮同款样式（hover header 时显示） */
