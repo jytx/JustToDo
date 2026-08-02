@@ -26,6 +26,12 @@ const props = withDefaults(
     batchMode?: boolean;
     /** 当前任务是否被批量选中（决定勾选框填充与行高亮） */
     batchSelected?: boolean;
+    /**
+     * 强制允许拖拽（分组视图用）。
+     * 分组拖拽（跨组改 group_id）与视图排序方式无关，
+     * 分组视图下必须无视 currentSort 的 manual 条件，始终可拖。
+     */
+    forceDraggable?: boolean;
   }>(),
   {
     depth: 0,
@@ -33,6 +39,7 @@ const props = withDefaults(
     dragging: false,
     batchMode: false,
     batchSelected: false,
+    forceDraggable: false,
   },
 );
 
@@ -110,7 +117,7 @@ const canDrag = computed(
   () =>
     props.depth === 0 &&
     (isNote.value || !props.task.done) &&
-    taskStore.currentSort.field === "manual",
+    (props.forceDraggable || taskStore.currentSort.field === "manual"),
 );
 const dragOver = ref<"before" | "after" | null>(null);
 
@@ -817,6 +824,25 @@ function onCtxEnterBatchMode(): void {
   height: 1px;
   background: var(--jt-border);
   margin: 4px 0;
+}
+
+/* 「移动到分组」级联子菜单：Teleport 到 body，与一级菜单（ContextMenu 的
+ * .context-menu）外观保持一致。一级菜单样式是 ContextMenu.vue 的 scoped
+ * 样式，在本组件里复用类名匹配不到（scoped 属性不同），必须显式补全，
+ * 否则背景透明、无圆角阴影（与 BatchContextMenu 的 .batch-submenu 同理）。 */
+.group-submenu {
+  width: max-content;
+  min-width: 120px;
+  max-width: 220px;
+  background: var(--jt-surface);
+  border-radius: 12px;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.16),
+    0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 </style>

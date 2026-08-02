@@ -262,7 +262,7 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
           <div
             :ref="(el) => setGroupContainerRef(group.id, el as HTMLElement)"
             @dragover="onDragOver"
-            @drop="onGroupDrop"
+            @drop.capture="onGroupDrop"
           >
             <TaskListItem
               v-for="task in (tasksByGroup.get(group.id) ?? [])"
@@ -271,6 +271,7 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
               :dragging="draggingId === task.id"
               :batch-mode="taskStore.batchMode"
               :batch-selected="taskStore.isBatchSelected(task.id)"
+              force-draggable
               @select="(e) => onTaskRowSelect(task.id, e)"
               @dragstart="onDragStart(task.id)"
               @dragend="onTaskDragEnd"
