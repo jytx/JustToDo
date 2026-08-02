@@ -157,6 +157,7 @@ function onDragOver(e: DragEvent): void {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-sizing: border-box;
   /* 避开 AppLayout 的 topbar（absolute top:40px + 高度 24px + 间距） */
   padding-top: 72px;
 }
@@ -166,6 +167,7 @@ function onDragOver(e: DragEvent): void {
   display: flex;
   gap: 12px;
   flex: 1;
+  min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
   padding: 0 16px 16px;
@@ -176,6 +178,7 @@ function onDragOver(e: DragEvent): void {
   flex: 1;
   min-width: 240px;
   max-width: 320px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--jt-surface-sunken);
