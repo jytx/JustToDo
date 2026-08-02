@@ -1,49 +1,114 @@
 <script setup lang="ts">
-// 看板视图 —— 按优先级分 4 列（无/低/中/高），显示全部未完成任务
-// 支持拖拽跨列改优先级 + 列内排序
-import { ref, computed, onMounted } from "vue";
+// 看板视图 —— 支持两种分列维度：按优先级（无/低/中/高）或按分组（Group）
+// 显示全部未完成任务，拖拽跨列改对应字段（priority / groupId）+ 列内排序
+import { computed, onMounted, watch } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
-import {
-  type Task,
-  type Priority,
-} from "@/types";
+import { useGroupStore } from "@/stores/group";
+import { useKanbanStore } from "@/stores/kanban";
+import { type Task, type Priority } from "@/types";
 import { formatDueDate } from "@/utils/date";
 import PriorityDot from "@/components/PriorityDot.vue";
 import TaskCheckbox from "@/components/TaskCheckbox.vue";
-import { useKanbanDrag } from "@/composables/useKanbanDrag";
+import { useKanbanDrag, type KanbanColumnDef } from "@/composables/useKanbanDrag";
 
 const taskStore = useTaskStore();
 const listStore = useListStore();
+const groupStore = useGroupStore();
+const kanbanStore = useKanbanStore();
 
 onMounted(async () => {
-  await taskStore.loadSmartView("all");
+  // 并行加载全部任务 + 全部分组（分组模式列名查 groupStore.groups）
+  await Promise.all([
+    taskStore.loadSmartView("all"),
+    groupStore.loadAllGroups(),
+  ]);
 });
 
-/** 列定义（优先级 → 列信息） */
-const COLUMN_DEFS: { priority: Priority; label: string; color: string }[] = [
+/** 优先级模式的固定列定义 */
+const PRIORITY_COLUMNS: { priority: Priority; label: string; color: string }[] = [
   { priority: 0, label: "无优先级", color: "var(--jt-text-tertiary)" },
   { priority: 1, label: "低", color: "#3B82F6" },
   { priority: 2, label: "中", color: "var(--jt-warning)" },
   { priority: 3, label: "高", color: "var(--jt-error)" },
 ];
 
-/** 列容器 DOM 引用（dragover 判断用） */
-const columnRefs = ref<Map<Priority, HTMLElement>>(new Map());
-function setColumnRef(priority: Priority, el: HTMLElement | null): void {
-  if (el) columnRefs.value.set(priority, el);
-  else columnRefs.value.delete(priority);
+/** 当前模式的列定义（computed：优先级模式固定 4 列；分组模式从任务的去重 groupId 生成） */
+const columnDefs = computed<KanbanColumnDef[]>(() => {
+  if (kanbanStore.mode === "priority") {
+    return PRIORITY_COLUMNS.map((c) => ({ key: String(c.priority), label: c.label, color: c.color }));
+  }
+  // 分组模式：从任务提取去重 groupId，按 groupStore 的 sortOrder 排序，查不到名的兜底"未分组"
+  const usedIds = new Set<string>();
+  for (const t of taskStore.openTasks) {
+    usedIds.add(t.groupId ?? "__ungrouped__");
+  }
+  // 已知分组按 sortOrder 排序在前，未知/未分组在后
+  const known = groupStore.groups
+    .filter((g) => usedIds.has(g.id))
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((g) => ({ key: g.id, label: g.name, color: "var(--jt-text-tertiary)" }));
+  const result: KanbanColumnDef[] = [...known];
+  if (usedIds.has("__ungrouped__")) {
+    result.push({ key: "__ungrouped__", label: "未分组", color: "var(--jt-text-tertiary)" });
+  }
+  // 兜底：没有任何分组时显示一个空列
+  if (result.length === 0) result.push({ key: "__ungrouped__", label: "未分组", color: "var(--jt-text-tertiary)" });
+  return result;
+});
+
+/** 任务 → 列键（按当前模式） */
+function getColumnKey(task: Task): string {
+  if (kanbanStore.mode === "priority") return String(task.priority ?? 0);
+  return task.groupId ?? "__ungrouped__";
 }
 
-/** 拖拽 composable */
+/** 跨列持久化（按当前模式改对应字段） */
+async function onCrossColumn(taskId: string, toKey: string): Promise<void> {
+  if (kanbanStore.mode === "priority") {
+    await taskStore.updateTask(taskId, { priority: Number(toKey) as Priority });
+  } else {
+    // 分组模式的"未分组"列键不写回（保持 groupId 为 null 不现实，后端总会兜底默认组；
+    // 这里 toKey 是真实 groupId 或 __ungrouped__——后者不持久化，仅视觉归类）
+    if (toKey !== "__ungrouped__") {
+      await taskStore.updateTask(taskId, { groupId: toKey });
+    }
+  }
+}
+
+/** 列容器 DOM 引用（列键 → HTMLElement，dragover 判断用） */
+const columnRefs = computed<Map<string, HTMLElement>>(() => new Map());
+function setColumnRef(key: string, el: HTMLElement | null): void {
+  if (el) columnRefs.value.set(key, el);
+  else columnRefs.value.delete(key);
+}
+
+/** 当前所有列键（供 composable 初始化 localColumns + 遍历） */
+function columnKeys(): string[] {
+  return columnDefs.value.map((c) => c.key);
+}
+
+/** 拖拽 composable（参数化列键，两种模式共用） */
 const {
   localColumns,
   draggingId,
+  syncFromStore,
   onCardDragStart,
   onColumnDragOver,
   onColumnDrop,
   onCardDragEnd,
-} = useKanbanDrag(() => taskStore.openTasks);
+} = useKanbanDrag(
+  () => taskStore.openTasks,
+  getColumnKey,
+  onCrossColumn,
+  columnKeys,
+);
+
+/** 模式切换时重新分桶（getColumnKey 变了，composable 的 watch 不会自动触发） */
+watch(
+  () => kanbanStore.mode,
+  () => syncFromStore(),
+);
 
 /** 根据 id 取任务对象 */
 const taskMap = computed<Map<string, Task>>(() => {
@@ -51,8 +116,8 @@ const taskMap = computed<Map<string, Task>>(() => {
 });
 
 /** 获取某列的任务列表（按 localColumns 顺序） */
-function getColumnTasks(priority: Priority): Task[] {
-  return localColumns.value[priority]
+function getColumnTasks(key: string): Task[] {
+  return (localColumns.value[key] ?? [])
     .map((id) => taskMap.value.get(id))
     .filter((t): t is Task => t !== undefined);
 }
@@ -88,30 +153,35 @@ function onDragOver(e: DragEvent): void {
     <!-- 列容器（水平滚动） -->
     <div class="kanban__board">
       <div
-        v-for="col in COLUMN_DEFS"
-        :key="col.priority"
-        :ref="(el) => setColumnRef(col.priority, el as HTMLElement)"
+        v-for="col in columnDefs"
+        :key="col.key"
+        :ref="(el) => setColumnRef(col.key, el as HTMLElement)"
         class="kanban__column"
         @dragover="onDragOver"
         @drop="onColumnDrop"
       >
-        <!-- 列头 -->
+        <!-- 列头：优先级模式用 PriorityDot，分组模式用普通色点 -->
         <div class="kanban__column-header">
-          <PriorityDot :priority="col.priority" :size="10" />
+          <PriorityDot
+            v-if="kanbanStore.mode === 'priority'"
+            :priority="Number(col.key) as Priority"
+            :size="10"
+          />
+          <span v-else class="kanban__column-dot" :style="{ backgroundColor: col.color }"></span>
           <span class="kanban__column-title">{{ col.label }}</span>
-          <span class="kanban__column-count">{{ getColumnTasks(col.priority).length }}</span>
+          <span class="kanban__column-count">{{ getColumnTasks(col.key).length }}</span>
         </div>
 
         <!-- 卡片列表 -->
         <TransitionGroup name="kanban-flip" tag="div" class="kanban__cards">
           <div
-            v-for="task in getColumnTasks(col.priority)"
+            v-for="task in getColumnTasks(col.key)"
             :key="task.id"
             :data-card-id="task.id"
             class="kanban__card"
             :class="{ 'kanban__card--dragging': draggingId === task.id }"
             draggable="true"
-            @dragstart="onCardDragStart(task.id, col.priority)"
+            @dragstart="onCardDragStart(task.id, col.key)"
             @dragend="onCardDragEnd"
             @click="onCardClick(task.id)"
           >
@@ -143,7 +213,7 @@ function onDragOver(e: DragEvent): void {
         </TransitionGroup>
 
         <!-- 空列占位 -->
-        <div v-if="getColumnTasks(col.priority).length === 0" class="kanban__column-empty">
+        <div v-if="getColumnTasks(col.key).length === 0" class="kanban__column-empty">
           <span>拖拽任务到这里</span>
         </div>
       </div>
@@ -200,6 +270,13 @@ function onDragOver(e: DragEvent): void {
   font-size: 13px;
   font-weight: 600;
   color: var(--jt-text-primary);
+}
+/* 分组模式列头色点（替代优先级模式的 PriorityDot） */
+.kanban__column-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 .kanban__column-count {
   font-size: 12px;

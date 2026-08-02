@@ -22,6 +22,7 @@ import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import { useSearchStore } from "@/stores/search";
 import { useListStore } from "@/stores/list";
 import { useGroupStore } from "@/stores/group";
+import { useKanbanStore } from "@/stores/kanban";
 import { useShortcuts } from "@/composables/useShortcuts";
 import { useQuickAdd } from "@/composables/useQuickAdd";
 
@@ -30,6 +31,7 @@ const settingsStore = useSettingsStore();
 const searchStore = useSearchStore();
 const listStore = useListStore();
 const groupStore = useGroupStore();
+const kanbanStore = useKanbanStore();
 const taskStore = useTaskStore();
 const habitStore = useHabitStore();
 const templateStore = useTemplateStore();
@@ -395,6 +397,17 @@ useShortcuts({
         >
           <template #icon><icon-folder :size="18" /></template>
         </a-button>
+        <!-- 看板列维度切换器（仅看板视图显示：优先级 / 分组） -->
+        <a-radio-group
+          v-if="route.name === 'kanban'"
+          :model-value="kanbanStore.mode"
+          type="button"
+          size="small"
+          @change="(v: string | number | boolean) => kanbanStore.setMode(v as 'priority' | 'group')"
+        >
+          <a-radio value="priority">优先级</a-radio>
+          <a-radio value="group">分组</a-radio>
+        </a-radio-group>
       </div>
 
       <router-view />

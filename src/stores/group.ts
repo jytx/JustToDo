@@ -29,6 +29,11 @@ export const useGroupStore = defineStore("group", () => {
     ];
   }
 
+  /** 加载全部分组（看板「按分组」模式跨清单展示用） */
+  async function loadAllGroups(): Promise<void> {
+    groups.value = await db.getAllGroups();
+  }
+
   /** 创建分组
    * @param sortOrder 指定排序位置；不传则后端追加到末尾 */
   async function createGroup(listId: string, name: string, sortOrder?: number): Promise<Group | null> {
@@ -89,6 +94,7 @@ export const useGroupStore = defineStore("group", () => {
     currentListId,
     currentGroups,
     loadGroups,
+    loadAllGroups,
     createGroup,
     renameGroup,
     deleteGroup,

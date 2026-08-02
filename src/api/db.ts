@@ -755,6 +755,18 @@ export async function getGroups(listId: string): Promise<Group[]> {
   }));
 }
 
+/** 获取全部分组（看板跨清单展示用，按 sort_order 排序） */
+export async function getAllGroups(): Promise<Group[]> {
+  const rows = await invoke<Record<string, unknown>[]>('group_list_all');
+  return rows.map((r) => ({
+    id: r.id as string,
+    listId: r.list_id as string,
+    name: r.name as string,
+    sortOrder: r.sort_order as number,
+    createdAt: r.created_at as string,
+  }));
+}
+
 /** 创建分组
  * @param sortOrder 指定排序位置；不传则后端追加到末尾 */
 export async function createGroup(

@@ -477,6 +477,7 @@ pub fn run() {
             commands::ai_extract_tasks,
             commands::ai_polish_text,
             commands::group_list,
+            commands::group_list_all,
             commands::group_create,
             commands::group_update,
             commands::group_delete,

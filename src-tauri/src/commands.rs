@@ -3789,6 +3789,16 @@ pub async fn group_list(
     Ok(rows.iter().map(row_to_group).collect())
 }
 
+/// 获取全部分组（看板「按分组」模式跨清单展示用，按 sort_order 排序）
+#[tauri::command]
+pub async fn group_list_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<Group>> {
+    let rows = sqlx::query("SELECT * FROM groups ORDER BY sort_order ASC")
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| format!("查询全部分组失败: {}", e))?;
+    Ok(rows.iter().map(row_to_group).collect())
+}
+
 /// 创建分组
 #[tauri::command]
 pub async fn group_create(
