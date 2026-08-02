@@ -103,7 +103,7 @@ function onDragOver(e: DragEvent): void {
         </div>
 
         <!-- 卡片列表 -->
-        <TransitionGroup name="kanban-flip" class="kanban__cards">
+        <TransitionGroup name="kanban-flip" tag="div" class="kanban__cards">
           <div
             v-for="task in getColumnTasks(col.priority)"
             :key="task.id"
