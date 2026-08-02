@@ -172,6 +172,18 @@ function onPolishCancel(): void {
 .prompt-editor__polish-btn {
   color: var(--jt-primary);
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+.prompt-editor__polish-btn :deep(.arco-btn-content) {
+  display: inline-flex;
+  align-items: center;
+}
+.prompt-editor__polish-btn :deep(.arco-icon) {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
 }
 .prompt-editor__polish-btn:hover {
   color: var(--jt-primary);
