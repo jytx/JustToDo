@@ -80,7 +80,8 @@ const showTaskSidebar = computed(() => {
     name === "all" ||
     name === "list" ||
     name === "notebook" ||
-    name === "tag"
+    name === "tag" ||
+    name === "kanban"
   );
 });
 

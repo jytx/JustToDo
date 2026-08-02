@@ -19,6 +19,7 @@ import {
   IconDown,
   IconFolder,
   IconArchive,
+  IconApps,
 } from "@arco-design/web-vue/es/icon";
 // IconEdit 移到 SidebarListNode 中使用
 import { useListStore } from "@/stores/list";
@@ -764,6 +765,7 @@ const smartViews = [
   { id: "today", route: "today", icon: IconStar, label: "今天" },
   { id: "upcoming", route: "upcoming", icon: IconClockCircle, label: "未来 7 天" },
   { id: "all", route: "all", icon: IconCheckCircle, label: "全部" },
+  { id: "kanban", route: "kanban", icon: IconApps, label: "看板" },
 ];
 
 /* === 侧边栏右键菜单（清单/目录/标签 统一由一个 ContextMenu 实例服务） === */
