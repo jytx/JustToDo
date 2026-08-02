@@ -23,7 +23,19 @@ const taskStore = useTaskStore();
 const groupStore = useGroupStore();
 
 // 面板右键菜单：新建任务归属当前清单
-const { ctxMenu, onContextMenu, onCreateTask } = useTaskPanelContextMenu(() => props.id);
+const { ctxMenu, onContextMenu, onCreateTask } = useTaskPanelContextMenu(
+  () => props.id,
+  "task",
+  // 就近分组判定：右键落点在某个分组容器内 → 新建任务进该组；否则 null（默认组）
+  (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return null;
+    for (const [gid, el] of groupContainerEls) {
+      if (el.contains(target)) return gid;
+    }
+    return null;
+  },
+);
 
 // 批量多选：修饰键点击转发 + 批量右键菜单状态
 const { batchCtxMenu, onTaskRowSelect, onBatchContextMenu } = useBatchSelect();

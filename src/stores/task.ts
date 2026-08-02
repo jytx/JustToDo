@@ -380,6 +380,8 @@ export const useTaskStore = defineStore("task", () => {
     kind?: TaskKind;
     /** 创建时一并关联的标签 ID 列表（前端逐条调 db.addTaskTag；后端无批量接口） */
     tagIds?: string[];
+    /** 所属分组 ID；不传则后端落清单的默认分组（{listId}-default） */
+    groupId?: string;
   }) {
     // 自动今天兜底：
     // - 开关开启
