@@ -393,7 +393,7 @@ useShortcuts({
           title="新建分组"
           @click="openNewGroup"
         >
-          <template #icon><icon-folder-add :size="18" /></template>
+          <template #icon><icon-folder :size="18" /></template>
         </a-button>
       </div>
 
