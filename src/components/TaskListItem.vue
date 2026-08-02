@@ -325,6 +325,8 @@ async function onCtxAddSiblingTask(): Promise<void> {
     listId: props.task.listId,
     parentId: props.task.parentId,
     kind: props.task.kind,
+    // 继承同组：新建同级与当前任务属同一分组（任务自带 groupId）
+    groupId: props.task.groupId ?? undefined,
   });
   taskStore.selectTask(created.id);
 }

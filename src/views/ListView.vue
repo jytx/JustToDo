@@ -6,6 +6,7 @@ import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import { useGroupStore } from "@/stores/group";
 import { formatPageDate } from "@/utils/date";
+import { shouldReserveNativeMenu } from "@/utils/contextMenu";
 import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import { useGroupDrag } from "@/composables/useGroupDrag";
 import { useBatchSelect } from "@/composables/useBatchSelect";
@@ -47,6 +48,25 @@ function onRootContextMenu(e: MouseEvent): void {
   } else {
     onContextMenu(e);
   }
+}
+
+/** 分组折叠区右键：无论落在分组名称(header)还是组内，都就近进该组新建。
+ *  header 不在 group-container 内（el.contains 命中不了），故在此显式设 groupId。
+ *  复用面板右键菜单的显示与 onCreateTask，零新增菜单组件。
+ *  注意：任务行右键时 TaskListItem.onContextMenu 内部已 stopPropagation，
+ *  不会冒泡到这里；多选模式下让事件继续冒泡给 onRootContextMenu 走批量菜单。 */
+function onGroupContextMenu(e: MouseEvent, groupId: string): void {
+  // 多选模式：放行给根容器的批量菜单分流
+  if (taskStore.batchMode && taskStore.batchSelectedIdsArr.length > 0) return;
+  // 放行输入框/可编辑区的系统菜单（与 onContextMenu 一致）
+  if (shouldReserveNativeMenu(e.target)) return;
+  e.preventDefault();
+  // 阻止冒泡到根容器 onRootContextMenu，否则后者会用 resolveGroupId 覆盖 groupId
+  e.stopPropagation();
+  ctxMenu.x = e.clientX;
+  ctxMenu.y = e.clientY;
+  ctxMenu.groupId = groupId;
+  ctxMenu.visible = true;
 }
 
 const currentList = computed(() => listStore.getById(props.id));
@@ -247,6 +267,7 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
           :key="group.id"
           :header="`${group.name} · ${tasksByGroup.get(group.id)?.length ?? 0}`"
           class="list-view__collapse-header"
+          @contextmenu="onGroupContextMenu($event, group.id)"
         >
           <!-- 分组标题右侧：更多菜单 -->
           <template #extra>
