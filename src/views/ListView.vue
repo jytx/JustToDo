@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // 清单视图 —— 任务列表区主视图
-// 含：列表头（标题/日期/计数）、未完成任务列表、完成区折叠、添加栏、空状态
-import { computed, watch, onMounted } from "vue";
+// 含：列表头（标题/日期/计数）、按分组展示未完成任务、完成区折叠、添加栏、空状态
+import { computed, watch, onMounted, ref } from "vue";
 import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
+import { useGroupStore } from "@/stores/group";
 import { formatPageDate } from "@/utils/date";
 import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import { useTaskDragReorder } from "@/composables/useTaskDragReorder";
@@ -12,12 +13,14 @@ import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
+import MenuPopover from "@/components/MenuPopover.vue";
 import BatchContextMenu from "@/components/BatchContextMenu.vue";
 
 const props = defineProps<{ id: string }>();
 
 const listStore = useListStore();
 const taskStore = useTaskStore();
+const groupStore = useGroupStore();
 
 // 面板右键菜单：新建任务归属当前清单
 const { ctxMenu, onContextMenu, onCreateTask } = useTaskPanelContextMenu(() => props.id);
@@ -39,29 +42,102 @@ const currentList = computed(() => listStore.getById(props.id));
 const pageTitle = computed(() => currentList.value?.name ?? "清单");
 const openCount = computed(() => taskStore.openTasks.length);
 
-// 拖拽实时让位（FLIP 动画）—— 仅未完成区启用
+// 拖拽实时让位（FLIP 动画）—— 第 5 步将改为分组级拖拽
 const {
-  containerRef: openContainerRef,
   draggingId,
   orderedTasks,
   onTaskDragStart,
-  onContainerDragOver,
-  onContainerDrop,
   onTaskDragEnd,
 } = useTaskDragReorder(() => taskStore.openTasks);
 
-// 切换清单时重新加载任务
+// ─── 分组 ───
+/** 展开的分组 key 列表（a-collapse 的 v-model） */
+const activeGroupKeys = ref<string[]>([]);
+
+/** 按分组划分的未完成任务 */
+const tasksByGroup = computed(() => {
+  const map = new Map<string, typeof taskStore.openTasks>();
+  for (const group of groupStore.currentGroups) {
+    map.set(group.id, []);
+  }
+  for (const task of orderedTasks.value) {
+    const gid = task.groupId ?? `${props.id}-default`;
+    if (!map.has(gid)) map.set(gid, []); // 兜底：group_id 不在 groups 里
+    map.get(gid)!.push(task);
+  }
+  return map;
+});
+
+/** 新建分组对话框 */
+const newGroupVisible = ref(false);
+const newGroupName = ref("");
+
+/** 重命名分组对话框 */
+const renameGroupVisible = ref(false);
+const renameGroupId = ref("");
+const renameGroupName = ref("");
+
+/** 分组更多菜单（每组标题右侧的 ⋯） */
+const groupMenuVisible = ref<string | null>(null);
+
+// 切换清单时重新加载任务 + 分组
 watch(
   () => props.id,
   async (newId) => {
-    await taskStore.loadTasks(newId);
+    await Promise.all([
+      taskStore.loadTasks(newId),
+      groupStore.loadGroups(newId),
+    ]);
+    // 默认展开所有分组
+    activeGroupKeys.value = groupStore.currentGroups.map((g) => g.id);
   },
 );
 
 onMounted(async () => {
   await listStore.loadLists();
-  await taskStore.loadTasks(props.id);
+  await Promise.all([
+    taskStore.loadTasks(props.id),
+    groupStore.loadGroups(props.id),
+  ]);
+  // 默认展开所有分组
+  activeGroupKeys.value = groupStore.currentGroups.map((g) => g.id);
 });
+
+/** 确认新建分组 */
+async function confirmNewGroup(): Promise<void> {
+  const name = newGroupName.value.trim();
+  if (!name) return;
+  const group = await groupStore.createGroup(props.id, name);
+  if (group) {
+    activeGroupKeys.value = [...activeGroupKeys.value, group.id];
+  }
+  newGroupName.value = "";
+  newGroupVisible.value = false;
+}
+
+/** 打开重命名对话框 */
+function openRename(groupId: string): void {
+  const group = groupStore.getById(groupId);
+  if (!group) return;
+  renameGroupId.value = groupId;
+  renameGroupName.value = group.name;
+  renameGroupVisible.value = true;
+  groupMenuVisible.value = null;
+}
+
+/** 确认重命名 */
+async function confirmRename(): Promise<void> {
+  const name = renameGroupName.value.trim();
+  if (!name) return;
+  await groupStore.renameGroup(renameGroupId.value, name);
+  renameGroupVisible.value = false;
+}
+
+/** 删除分组（组内任务回填默认分组） */
+async function onDeleteGroup(groupId: string): Promise<void> {
+  await groupStore.deleteGroup(groupId);
+  groupMenuVisible.value = null;
+}
 
 /** 添加任务：创建后如果有 AI 生成的详情(note)，写入 note 字段 */
 async function onAdd(payload: { title: string; priority: import("@/types").Priority; dueStartAt: string | null; dueEndAt: string | null; tagIds: string[]; note?: string }) {
@@ -103,42 +179,81 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
 
     <div class="mb-2" />
 
-    <!-- 未完成任务与完成区共用折叠面板和滚动容器 -->
+    <!-- 按分组展示未完成任务 + 底部已完成区 -->
     <div v-if="taskStore.currentTasks.length > 0" class="list-view__content">
+      <!-- 新建分组按钮 -->
+      <div v-if="!currentList?.archived" class="list-view__group-add">
+        <button class="list-view__group-add-btn" @click="newGroupVisible = true">
+          + 新建分组
+        </button>
+      </div>
+
       <a-collapse
+        v-model:active-key="activeGroupKeys"
         :bordered="false"
-        :default-active-key="['open']"
         class="list-view__collapse"
       >
+        <!-- 每个分组一个折叠区 -->
         <a-collapse-item
-          v-if="taskStore.openTasks.length > 0"
-          key="open"
-          :header="`未完成 · ${taskStore.openTasks.length}`"
+          v-for="group in groupStore.currentGroups"
+          :key="group.id"
+          :header="`${group.name} · ${tasksByGroup.get(group.id)?.length ?? 0}`"
           class="list-view__collapse-header"
         >
-          <!-- 外层 div 挂容器级 dragover/drop（FLIP 实时让位）；
-               TransitionGroup 做 FLIP 动画，task-flip-move 让位过渡 -->
+          <!-- 分组标题右侧：更多菜单 -->
+          <template #extra>
+            <MenuPopover
+              v-if="!currentList?.archived"
+              :visible="groupMenuVisible === group.id"
+              placement="bottom-right"
+              @update:visible="(v: boolean) => { groupMenuVisible = v ? group.id : null; }"
+            >
+              <template #trigger>
+                <button
+                  class="list-view__group-more-btn"
+                  @click.stop.prevent="groupMenuVisible = groupMenuVisible === group.id ? null : group.id"
+                >
+                  <icon-more :size="14" />
+                </button>
+              </template>
+              <MenuPopoverItem @click="openRename(group.id); ">
+                <icon-edit :size="15" />
+                <span>重命名分组</span>
+              </MenuPopoverItem>
+              <MenuPopoverItem
+                v-if="group.id !== `${props.id}-default`"
+                danger
+                @click="onDeleteGroup(group.id)"
+              >
+                <icon-delete :size="15" />
+                <span>删除分组</span>
+              </MenuPopoverItem>
+            </MenuPopover>
+          </template>
+
+          <!-- 分组内任务列表 -->
+          <!-- 第 5 步将改为每分组独立拖拽容器，当前先静态渲染（拖拽在下一步接入） -->
+          <TaskListItem
+            v-for="task in (tasksByGroup.get(group.id) ?? [])"
+            :key="task.id"
+            :task="task"
+            :dragging="draggingId === task.id"
+            :batch-mode="taskStore.batchMode"
+            :batch-selected="taskStore.isBatchSelected(task.id)"
+            @select="(e) => onTaskRowSelect(task.id, e)"
+            @dragstart="onTaskDragStart"
+            @dragend="onTaskDragEnd"
+          />
+          <!-- 空分组占位 -->
           <div
-            ref="openContainerRef"
-            @dragover="onContainerDragOver"
-            @drop="onContainerDrop"
+            v-if="(tasksByGroup.get(group.id)?.length ?? 0) === 0"
+            class="list-view__group-empty"
           >
-            <TransitionGroup name="task-flip" tag="div">
-              <TaskListItem
-                v-for="task in orderedTasks"
-                :key="task.id"
-                :task="task"
-                :dragging="draggingId === task.id"
-                :batch-mode="taskStore.batchMode"
-                :batch-selected="taskStore.isBatchSelected(task.id)"
-                @select="(e) => onTaskRowSelect(task.id, e)"
-                @dragstart="onTaskDragStart"
-                @dragend="onTaskDragEnd"
-              />
-            </TransitionGroup>
+            暂无任务
           </div>
         </a-collapse-item>
 
+        <!-- 已完成区（底部） -->
         <a-collapse-item
           v-if="taskStore.doneTasks.length > 0"
           key="done"
@@ -180,10 +295,112 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
       :x="batchCtxMenu.x"
       :y="batchCtxMenu.y"
     />
+
+    <!-- 新建分组对话框 -->
+    <a-modal
+      :visible="newGroupVisible"
+      :width="360"
+      :footer="false"
+      :mask-closable="true"
+      @update:visible="(v: boolean) => { newGroupVisible = v; }"
+    >
+      <template #title>新建分组</template>
+      <div class="list-view__dialog">
+        <a-input
+          v-model="newGroupName"
+          placeholder="分组名称"
+          allow-clear
+          @keydown.enter="confirmNewGroup"
+        />
+        <div class="list-view__dialog-actions">
+          <a-button size="small" @click="newGroupVisible = false">取消</a-button>
+          <a-button type="primary" size="small" @click="confirmNewGroup">创建</a-button>
+        </div>
+      </div>
+    </a-modal>
+
+    <!-- 重命名分组对话框 -->
+    <a-modal
+      :visible="renameGroupVisible"
+      :width="360"
+      :footer="false"
+      :mask-closable="true"
+      @update:visible="(v: boolean) => { renameGroupVisible = v; }"
+    >
+      <template #title>重命名分组</template>
+      <div class="list-view__dialog">
+        <a-input
+          v-model="renameGroupName"
+          placeholder="分组名称"
+          allow-clear
+          @keydown.enter="confirmRename"
+        />
+        <div class="list-view__dialog-actions">
+          <a-button size="small" @click="renameGroupVisible = false">取消</a-button>
+          <a-button type="primary" size="small" @click="confirmRename">保存</a-button>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <style scoped>
+/* 分组区 */
+.list-view__group-add {
+  padding: 0 4px 8px;
+}
+.list-view__group-add-btn {
+  font-size: 12px;
+  color: var(--jt-text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.12s, color 0.12s;
+}
+.list-view__group-add-btn:hover {
+  background: var(--jt-surface-hover);
+  color: var(--jt-text-secondary);
+}
+.list-view__group-more-btn {
+  border: none;
+  background: transparent;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s;
+}
+.list-view__collapse-header:hover .list-view__group-more-btn {
+  opacity: 1;
+}
+.list-view__group-more-btn:hover {
+  background: var(--jt-surface-hover);
+}
+.list-view__group-empty {
+  font-size: 12px;
+  color: var(--jt-text-tertiary);
+  padding: 8px 0;
+  text-align: center;
+}
+
+/* 对话框 */
+.list-view__dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0;
+}
+.list-view__dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .list-view {
   height: 100%;
   display: flex;
