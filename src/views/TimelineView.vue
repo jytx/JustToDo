@@ -688,7 +688,12 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
           <!-- 今日竖线 -->
           <div class="gantt__today-line" :style="{ left: todayLeft + 'px' }"></div>
 
-          <div v-for="task in tasks" :key="task.id" class="gantt__grid-row">
+          <div
+            v-for="task in tasks"
+            :key="task.id"
+            class="gantt__grid-row"
+            :class="{ 'gantt__grid-row--selected': taskStore.selectedTaskId === task.id }"
+          >
             <div
               v-for="col in columns"
               :key="col.date.toISOString()"
@@ -885,6 +890,10 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
   display: flex;
   border-bottom: 1px solid var(--jt-border);
   position: relative;
+}
+/* 选中态：右侧时间轴对应行也高亮（与左侧 task-row--selected 背景一致，形成整行高亮） */
+.gantt__grid-row--selected {
+  background-color: var(--jt-accent-soft);
 }
 .gantt__grid-cell {
   flex-shrink: 0;
