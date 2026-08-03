@@ -256,8 +256,8 @@ export function notifyTaskChanged(): void {
   }
 }
 
-/** 内部：日历视图挂载时订阅任务变更，卸载时取消订阅 */
-function subscribeTaskChanged(fn: TaskChangedListener): () => void {
+/** 订阅任务变更（卸载时需调用返回的取消函数）。TimelineView 等非日历视图也用此刷新 */
+export function subscribeTaskChanged(fn: TaskChangedListener): () => void {
   taskChangedListeners.add(fn);
   return () => {
     taskChangedListeners.delete(fn);

@@ -2,11 +2,12 @@
 // 时间线（甘特图）视图 —— 横轴=连续日期，每任务一行，横条按起止日期定位。
 // 支持拖拽横条平移改日期、拖边缘改时长、点击看详情、点击空白建任务、天/周/月缩放。
 // 只显示有日期的任务；颜色按优先级。
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { getTasksByDueRange } from "@/api/db";
 import type { Task, Priority } from "@/types";
 import { parseLocalIso, dateToLocalIso, todayDateOnly } from "@/utils/date";
+import { subscribeTaskChanged } from "@/composables/useCalendarView";
 
 const props = defineProps<{ id: string }>();
 
@@ -67,6 +68,10 @@ async function loadTasks(): Promise<void> {
 
 onMounted(loadTasks);
 watch([anchorDate, zoom, () => props.id], loadTasks);
+
+// 订阅任务变更（标题/时间/完成等修改后刷新，与其他视图的 notifyTaskChanged 总线联动）
+const unsubscribe = subscribeTaskChanged(() => { void loadTasks(); });
+onBeforeUnmount(unsubscribe);
 
 // ─── 日期工具（纯函数） ───
 function startOfMonth(d: Date): Date {
@@ -373,7 +378,8 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH);
                 'gantt__bar--dragging': dragState?.taskId === task.id,
               }"
               :style="{
-                ...barStyle(task)!,
+                left: barStyle(task)?.left + 'px',
+                width: barStyle(task)?.width + 'px',
                 backgroundColor: PRIO_COLOR[task.priority ?? 0],
                 transform: dragState?.taskId === task.id && dragState.mode === 'move'
                   ? `translateX(${dragState.dx}px)` : undefined,
