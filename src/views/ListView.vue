@@ -10,7 +10,7 @@ import { useKanbanStore } from "@/stores/kanban";
 import type { Group } from "@/types";
 import { formatPageDate } from "@/utils/date";
 import { shouldReserveNativeMenu } from "@/utils/contextMenu";
-import { getViewPref } from "@/composables/useViewPrefs";
+import { getViewPref, type ListView } from "@/composables/useViewPrefs";
 import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import { useGroupDrag } from "@/composables/useGroupDrag";
 import { useGroupReorder } from "@/composables/useGroupReorder";
@@ -23,14 +23,20 @@ import MenuPopover from "@/components/MenuPopover.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import BatchContextMenu from "@/components/BatchContextMenu.vue";
 import KanbanView from "@/views/KanbanView.vue";
+import TimelineView from "@/views/TimelineView.vue";
 
 const props = defineProps<{ id: string }>();
 
 const route = useRoute();
 const router = useRouter();
 const kanbanStore = useKanbanStore();
-/** 是否看板视图（query ?view=kanban） */
-const isKanban = computed(() => route.query.view === "kanban");
+/** 当前清单视图（query ?view=：list 默认 / kanban 看板 / timeline 时间线） */
+const currentView = computed<ListView>(() => {
+  const v = route.query.view;
+  if (v === "kanban") return "kanban";
+  if (v === "timeline") return "timeline";
+  return "list";
+});
 
 const listStore = useListStore();
 const taskStore = useTaskStore();
@@ -335,7 +341,9 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
 
 <template>
   <!-- 看板视图（query ?view=kanban）：直接渲染看板，复用本视图已加载的清单数据 -->
-  <KanbanView v-if="isKanban" :id="props.id" />
+  <KanbanView v-if="currentView === 'kanban'" :id="props.id" />
+  <!-- 时间线视图（query ?view=timeline）：甘特图，复用本视图已加载的清单数据 -->
+  <TimelineView v-else-if="currentView === 'timeline'" :id="props.id" />
   <!-- 列表视图（默认） -->
   <div v-else class="list-view" @contextmenu="onRootContextMenu">
     <!-- 列表头 -->

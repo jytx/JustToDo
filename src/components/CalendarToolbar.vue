@@ -29,13 +29,12 @@ const emit = defineEmits<{
 const route = useRoute();
 const router = useRouter();
 
-/** 当前日历视图名称（含 timeline：甘特图，不用 FullCalendar） */
-type CalendarView = "dayGridMonth" | "timeGridWeek" | "dayGridYear" | "timeline";
+/** 当前日历视图名称 */
+type CalendarView = "dayGridMonth" | "timeGridWeek" | "dayGridYear";
 const currentView = computed<CalendarView>(() => {
   const name = route.name as string;
   if (name === "week") return "timeGridWeek";
   if (name === "year") return "dayGridYear";
-  if (name === "timeline") return "timeline";
   return "dayGridMonth";
 });
 
@@ -49,7 +48,6 @@ function switchView(view: CalendarView): void {
   }
   if (view === "timeGridWeek") router.push("/week");
   else if (view === "dayGridYear") router.push("/year");
-  else if (view === "timeline") router.push("/timeline");
   else router.push("/month");
   viewMenuOpen.value = false;
 }
@@ -58,7 +56,6 @@ const viewMenuItems: Array<{ view: CalendarView; label: string; shortcut: string
   { view: "timeGridWeek", label: "周", shortcut: "W" },
   { view: "dayGridMonth", label: "月", shortcut: "M" },
   { view: "dayGridYear", label: "年", shortcut: "Y" },
-  { view: "timeline", label: "时间线", shortcut: "T" },
 ];
 
 // ─── 标题点击 → 弹日期选择器跳转 ──────────────────────

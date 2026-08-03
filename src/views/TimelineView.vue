@@ -8,6 +8,8 @@ import { getTasksByDueRange } from "@/api/db";
 import type { Task, Priority } from "@/types";
 import { parseLocalIso, dateToLocalIso, todayDateOnly } from "@/utils/date";
 
+const props = defineProps<{ id: string }>();
+
 const taskStore = useTaskStore();
 
 /** 缩放粒度：day=每天一列，week=每周一列，month=每月一列 */
@@ -51,15 +53,16 @@ const rangeLiteral = computed(() => {
   };
 });
 
-/** 加载范围内的任务 */
+/** 加载范围内的任务（按当前清单过滤） */
 const tasks = ref<Task[]>([]);
 async function loadTasks(): Promise<void> {
   const { start, end } = rangeLiteral.value;
-  tasks.value = await getTasksByDueRange(start, end, true);
+  const all = await getTasksByDueRange(start, end, true);
+  tasks.value = all.filter((t) => t.listId === props.id);
 }
 
 onMounted(loadTasks);
-watch([anchorDate, zoom], loadTasks);
+watch([anchorDate, zoom, () => props.id], loadTasks);
 
 // ─── 日期工具（纯函数） ───
 function startOfMonth(d: Date): Date {
@@ -166,12 +169,12 @@ function onBarClick(task: Task): void {
   taskStore.selectTask(task.id);
 }
 
-/** 点击空白格 → 在该日期建任务 */
+/** 点击空白格 → 在该日期建任务（归属当前清单） */
 async function onCellClick(colDate: Date): Promise<void> {
   const dayLiteral = `${toISO(colDate)}T00:00:00`;
   const created = await taskStore.createTask({
     title: "",
-    listId: "inbox",
+    listId: props.id,
     dueStartAt: dayLiteral,
     dueEndAt: dayLiteral,
   });

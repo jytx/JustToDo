@@ -72,7 +72,7 @@ const showSortButton = computed(() => {
 /** 是否显示搜索 + 新建任务按钮（习惯/设置/日历视图不显示） */
 const showGlobalActions = computed(() => {
   const name = route.name as string;
-  return name !== "habits" && name !== "settings" && name !== "week" && name !== "month" && name !== "year" && name !== "timeline";
+  return name !== "habits" && name !== "settings" && name !== "week" && name !== "month" && name !== "year";
 });
 
 /** TheSidebar 只在 AppRail 选中"任务"族路由时显示
@@ -96,7 +96,7 @@ const showTaskSidebar = computed(() => {
  * 任务类视图（today/upcoming/all/list/tag）保持原行为：让位让出 360px。 */
 const isCalendarView = computed<boolean>(() => {
   const name = route.name as string;
-  return name === "week" || name === "month" || name === "year" || name === "timeline";
+  return name === "week" || name === "month" || name === "year";
 });
 
 /**
@@ -154,12 +154,14 @@ function onKanbanModeChange(mode: "priority" | "group"): void {
 }
 
 /** 清单视图切换（列表 / 看板，通过 query ?view= 切换，仅清单路由显示） */
-type ListView = "list" | "kanban";
-const LIST_VIEW_LABELS: Record<ListView, string> = { list: "列表", kanban: "看板" };
+type ListView = "list" | "kanban" | "timeline";
+const LIST_VIEW_LABELS: Record<ListView, string> = { list: "列表", kanban: "看板", timeline: "时间线" };
 const listViewMenuOpen = ref(false);
-const currentListView = computed<ListView>(() =>
-  route.query.view === "kanban" ? "kanban" : "list",
-);
+const currentListView = computed<ListView>(() => {
+  if (route.query.view === "kanban") return "kanban";
+  if (route.query.view === "timeline") return "timeline";
+  return "list";
+});
 
 /** 切换清单视图：用 router.replace 改 query + 持久化到清单偏好 */
 function onListViewChange(view: ListView): void {
@@ -439,6 +441,7 @@ useShortcuts({
             >
               <template #icon>
                 <icon-apps v-if="currentListView === 'kanban'" :size="18" />
+                <icon-calendar v-else-if="currentListView === 'timeline'" :size="18" />
                 <icon-list v-else :size="18" />
               </template>
             </a-button>
@@ -456,6 +459,13 @@ useShortcuts({
           >
             <icon-apps :size="15" />
             <span>看板视图</span>
+          </MenuPopoverItem>
+          <MenuPopoverItem
+            :active="currentListView === 'timeline'"
+            @click="onListViewChange('timeline')"
+          >
+            <icon-calendar :size="15" />
+            <span>时间线</span>
           </MenuPopoverItem>
         </MenuPopover>
         <!-- 新建分组按钮（仅列表视图显示；看板视图不显示分组管理入口） -->

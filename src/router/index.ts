@@ -75,11 +75,6 @@ const routes: RouteRecordRaw[] = [
     name: "year",
     component: () => import("@/views/YearView.vue"),
   },
-  {
-    path: "/timeline",
-    name: "timeline",
-    component: () => import("@/views/TimelineView.vue"),
-  },
 ];
 
 /** StartupView → 路由 path */

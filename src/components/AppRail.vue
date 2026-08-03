@@ -47,7 +47,7 @@ const isSettingsActive = computed(() => route.name === "settings");
 /** 日历族路由（周/月/年）共享同一个 active 态 */
 const isCalendarActive = computed(() => {
   const name = route.name as string;
-  return name === "week" || name === "month" || name === "year" || name === "timeline";
+  return name === "week" || name === "month" || name === "year";
 });
 
 /** 通用跳转：保持 hash 路由一致 */
