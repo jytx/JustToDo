@@ -126,8 +126,9 @@ function goToday(): void {
 /** 任务 → 横条样式（left/width 基于 day 缩放下的列偏移） */
 function barStyle(task: Task): { left: number; width: number } | null {
   const start = parseLocalIso(task.dueStartAt);
-  const end = parseLocalIso(task.dueEndAt);
-  if (!start || !end) return null;
+  if (!start) return null;
+  // end 缺失时用 start 兜底（单点任务，横条占一天）
+  const end = parseLocalIso(task.dueEndAt) ?? start;
   const firstColDate = columns.value[0]?.date;
   if (!firstColDate) return null;
   // 横条定位按"天"计算（day 缩放）。week/month 缩放下也用天数映射到列宽
