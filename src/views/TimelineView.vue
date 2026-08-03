@@ -944,7 +944,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 .gantt__task-check {
   width: 16px; height: 16px;
   border: 1.5px solid var(--jt-text-tertiary);
-  border-radius: 50%;
+  border-radius: 4px; /* 方形圆角（与任务列表 TaskCheckbox 一致） */
   flex-shrink: 0;
   display: flex;
   align-items: center;
