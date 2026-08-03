@@ -221,6 +221,11 @@ const PRIO_COLOR: Record<Priority, string> = {
 // ─── 交互 ───
 /** 点击横条 → 打开详情 */
 function onBarClick(task: Task): void {
+  // 拖拽刚结束（wasDragging）→ 不打开详情，避免拖拽误触面板
+  if (wasDragging) {
+    wasDragging = false;
+    return;
+  }
   taskStore.selectTask(task.id);
 }
 
@@ -244,6 +249,9 @@ function setZoom(z: Zoom): void {
 }
 
 // ─── 拖拽改日期/时长（横条平移 + 边缘拖拽） ───
+/** 本次 mousedown→mouseup 期间是否真正发生了拖拽（用于区分点击） */
+let wasDragging = false;
+
 const dragState = ref<{
   taskId: string;
   mode: "move" | "resize-start" | "resize-end";
@@ -275,6 +283,7 @@ function onBarMouseMove(e: MouseEvent, task: Task): void {
 
 function onBarMouseDown(e: MouseEvent, task: Task): void {
   if (task.done) return;
+  wasDragging = false;
   // 边缘 6px 内 → resize，否则 move
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const offsetX = e.clientX - rect.left;
@@ -297,6 +306,8 @@ function onBarMouseDown(e: MouseEvent, task: Task): void {
 function onMouseMove(e: MouseEvent): void {
   if (!dragState.value) return;
   const dx = e.clientX - dragState.value.startX;
+  // 移动超过 4px 视为真正拖拽（区分点击：避免拖拽误触详情面板）
+  if (Math.abs(dx) > 4) wasDragging = true;
   const deltaDays = Math.round(dx / dayWidth());
   dragState.value = { ...dragState.value, dx, deltaDays };
 }
@@ -348,9 +359,21 @@ async function onMouseUp(): Promise<void> {
     dueStartAt: keepTime(ds.origStart, pv.start),
     dueEndAt: keepTime(ds.origEnd ?? ds.origStart, pv.end),
   });
-  // 若新日期移出当前可视范围，自动调整 anchor 让任务保持可见
-  ensureVisible(pv.start);
-  await loadTasks();
+  // 若新日期移出当前可视范围，调整 anchor 让任务保持可见。
+  // 不主动 loadTasks —— updateTask 已触发 notifyTaskChanged，订阅会自动刷新，
+  // 避免"自己再 loadTasks 一次"导致任务列表整体替换的闪烁。
+  if (!isDateInRange(pv.start)) {
+    ensureVisible(pv.start);
+    await loadTasks();
+  }
+}
+
+/** 判断日期是否在当前可视列范围内 */
+function isDateInRange(date: Date): boolean {
+  const first = columns.value[0]?.date;
+  const last = columns.value[columns.value.length - 1]?.date;
+  if (!first || !last) return true;
+  return date >= first && date <= last;
 }
 
 /** 确保给定日期在当前可视范围内，否则把 anchor 调整到能容纳它的位置 */
