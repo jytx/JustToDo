@@ -131,6 +131,23 @@ async function onSortChange(field: SortField) {
   sortMenuOpen.value = false;
 }
 
+/** 看板列维度切换（下拉菜单形式，仅看板视图显示） */
+const KANBAN_MODES: { value: "priority" | "group"; label: string }[] = [
+  { value: "priority", label: "按优先级" },
+  { value: "group", label: "按分组" },
+];
+const KANBAN_MODE_LABELS: Record<"priority" | "group", string> = {
+  priority: "优先级",
+  group: "分组",
+};
+const kanbanModeMenuOpen = ref(false);
+
+/** 看板维度变更（选择后关闭菜单） */
+function onKanbanModeChange(mode: "priority" | "group"): void {
+  kanbanStore.setMode(mode);
+  kanbanModeMenuOpen.value = false;
+}
+
 /** 新建分组对话框（顶栏入口，仅清单视图显示） */
 const newGroupVisible = ref(false);
 const newGroupName = ref("");
@@ -397,17 +414,30 @@ useShortcuts({
         >
           <template #icon><icon-folder :size="18" /></template>
         </a-button>
-        <!-- 看板列维度切换器（仅看板视图显示：优先级 / 分组） -->
-        <a-radio-group
+        <!-- 看板列维度切换（仅看板视图显示：优先级 / 分组，下拉菜单形式） -->
+        <MenuPopover
           v-if="route.name === 'kanban'"
-          :model-value="kanbanStore.mode"
-          type="button"
-          size="small"
-          @change="(v: string | number | boolean) => kanbanStore.setMode(v as 'priority' | 'group')"
+          v-model:visible="kanbanModeMenuOpen"
         >
-          <a-radio value="priority">优先级</a-radio>
-          <a-radio value="group">分组</a-radio>
-        </a-radio-group>
+          <template #trigger>
+            <a-button
+              type="text"
+              size="small"
+              :title="`看板分组: ${KANBAN_MODE_LABELS[kanbanStore.mode]}`"
+              @click="kanbanModeMenuOpen = !kanbanModeMenuOpen"
+            >
+              <template #icon><icon-list :size="18" /></template>
+            </a-button>
+          </template>
+          <MenuPopoverItem
+            v-for="m in KANBAN_MODES"
+            :key="m.value"
+            :active="m.value === kanbanStore.mode"
+            @click="onKanbanModeChange(m.value)"
+          >
+            <span>{{ m.label }}</span>
+          </MenuPopoverItem>
+        </MenuPopover>
       </div>
 
       <router-view />
