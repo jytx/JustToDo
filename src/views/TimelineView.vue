@@ -2,7 +2,7 @@
 // 时间线（甘特图）视图 —— 横轴=连续日期，每任务一行，横条按起止日期定位。
 // 支持拖拽横条平移改日期、拖边缘改时长、点击看详情、点击空白建任务、天/周/月缩放。
 // 只显示有日期的任务；颜色按优先级。
-import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
+import { ref, computed, reactive, onMounted, onBeforeUnmount, watch } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { getTasksByDueRange } from "@/api/db";
 import type { Task, Priority } from "@/types";
@@ -10,6 +10,7 @@ import { parseLocalIso, dateToLocalIso } from "@/utils/date";
 import { subscribeTaskChanged } from "@/composables/useCalendarView";
 import MenuPopover from "@/components/MenuPopover.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
+import ContextMenu from "@/components/ContextMenu.vue";
 
 const props = defineProps<{ id: string }>();
 
@@ -400,6 +401,49 @@ function onCellClick(): void {
   if (taskStore.selectedTaskId) taskStore.selectedTaskId = null;
 }
 
+// ─── 右键菜单（参照 TaskListItem 的菜单项） ───
+const ctxMenu = reactive<{ visible: boolean; x: number; y: number; taskId: string }>({
+  visible: false,
+  x: 0,
+  y: 0,
+  taskId: "",
+});
+
+/** 任务行右键：记录目标任务 + 弹菜单 */
+function onTaskContextMenu(e: MouseEvent, task: Task): void {
+  e.preventDefault();
+  e.stopPropagation();
+  ctxMenu.taskId = task.id;
+  ctxMenu.x = e.clientX;
+  ctxMenu.y = e.clientY;
+  ctxMenu.visible = true;
+}
+
+/** 新建任务（与当前任务同清单，空标题 + 选中打开详情） */
+async function onCtxAddTask(): Promise<void> {
+  const task = tasks.value.find((t) => t.id === ctxMenu.taskId);
+  ctxMenu.visible = false;
+  const created = await taskStore.createTask({
+    title: "",
+    listId: props.id,
+    groupId: task?.groupId ?? undefined,
+  });
+  taskStore.selectTask(created.id);
+}
+
+/** 删除任务（走 store 的删除确认弹窗） */
+function onCtxDelete(): void {
+  const id = ctxMenu.taskId;
+  ctxMenu.visible = false;
+  taskStore.requestDelete(id);
+}
+
+/** 进入多选模式（选中当前任务） */
+function onCtxBatchSelect(): void {
+  ctxMenu.visible = false;
+  taskStore.toggleBatchSelect(ctxMenu.taskId);
+}
+
 /** 缩放切换 */
 function setZoom(z: Zoom): void {
   zoom.value = z;
@@ -645,6 +689,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
             'gantt__task-row--dragging': rowDragId === task.id,
           }"
           @click="onBarClick(task)"
+          @contextmenu="onTaskContextMenu($event, task)"
           @dragover="onRowDragOver($event, task.id)"
           @dragleave="onRowDragLeave($event, task.id)"
           @drop="onRowDrop"
@@ -732,6 +777,22 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
         </div>
       </div>
     </div>
+
+    <!-- 右键菜单（参照任务列表菜单：多选/新建/删除） -->
+    <ContextMenu v-model:visible="ctxMenu.visible" :x="ctxMenu.x" :y="ctxMenu.y">
+      <MenuPopoverItem @click="onCtxBatchSelect">
+        <icon-check-circle :size="15" />
+        <span>多选</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem @click="onCtxAddTask">
+        <icon-plus :size="15" />
+        <span>新建任务</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem danger @click="onCtxDelete">
+        <icon-delete :size="15" />
+        <span>删除任务</span>
+      </MenuPopoverItem>
+    </ContextMenu>
   </div>
 </template>
 
