@@ -72,7 +72,7 @@ const showSortButton = computed(() => {
 /** 是否显示搜索 + 新建任务按钮（习惯/设置/日历视图不显示） */
 const showGlobalActions = computed(() => {
   const name = route.name as string;
-  return name !== "habits" && name !== "settings" && name !== "week" && name !== "month" && name !== "year";
+  return name !== "habits" && name !== "settings" && name !== "week" && name !== "month" && name !== "year" && name !== "timeline";
 });
 
 /** TheSidebar 只在 AppRail 选中"任务"族路由时显示
@@ -96,7 +96,7 @@ const showTaskSidebar = computed(() => {
  * 任务类视图（today/upcoming/all/list/tag）保持原行为：让位让出 360px。 */
 const isCalendarView = computed<boolean>(() => {
   const name = route.name as string;
-  return name === "week" || name === "month" || name === "year";
+  return name === "week" || name === "month" || name === "year" || name === "timeline";
 });
 
 /**
