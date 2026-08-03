@@ -170,6 +170,7 @@ function dragBarStyle(task: Task): Record<string, string> {
       width: base.width + "px",
       backgroundColor: color,
       transform: `translateX(${ds.dx}px)`,
+      cursor: "grabbing",
     };
   }
   // resize：按预览日期重算 left/width
@@ -190,7 +191,7 @@ function dragBarStyle(task: Task): Record<string, string> {
   const left = Math.max(0, daysBetween(firstCol, newStart) * dw);
   const span = daysBetween(newStart, newEnd);
   const width = Math.max(dw, (span + 1) * dw - 2);
-  return { left: left + "px", width: width + "px", backgroundColor: color };
+  return { left: left + "px", width: width + "px", backgroundColor: color, cursor: "ew-resize" };
 }
 
 /** 两个日期的天数差（含端点：a=8/1, b=8/3 → 2） */
@@ -258,6 +259,18 @@ const dragState = ref<{
 /** 当前缩放下一天的像素宽度 */
 function dayWidth(): number {
   return zoom.value === "day" ? COL_WIDTH : COL_WIDTH / columnSpanDays(zoom.value);
+}
+
+/** hover 时按鼠标位置切 cursor：边缘 ew-resize（调整时长），中间 grab（移动）；
+ *  拖拽中按模式显示 grabbing / ew-resize */
+function onBarMouseMove(e: MouseEvent, task: Task): void {
+  if (task.done) return;
+  const el = e.currentTarget as HTMLElement;
+  // 拖拽中：cursor 由 dragState.mode 决定（已在 CSS .gantt__bar--dragging 处理，这里不覆盖）
+  if (dragState.value?.taskId === task.id) return;
+  const rect = el.getBoundingClientRect();
+  const offsetX = e.clientX - rect.left;
+  el.style.cursor = offsetX < 6 || offsetX > rect.width - 6 ? "ew-resize" : "grab";
 }
 
 function onBarMouseDown(e: MouseEvent, task: Task): void {
@@ -449,6 +462,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH);
               }"
               :style="dragBarStyle(task)"
               @mousedown="onBarMouseDown($event, task)"
+              @mousemove="onBarMouseMove($event, task)"
               @click.stop="onBarClick(task)"
             >
               {{ task.title || '(未命名)' }}
