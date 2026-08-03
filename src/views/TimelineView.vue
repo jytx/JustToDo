@@ -701,6 +701,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
           class="gantt__task-row"
           :class="{
             'gantt__task-row--selected': taskStore.selectedTaskId === task.id,
+            'gantt__task-row--focused': taskStore.focusedTaskId === task.id,
             'gantt__task-row--batch-selected': taskStore.batchMode && taskStore.isBatchSelected(task.id),
             'gantt__task-row--drop-before': rowDropTarget?.id === task.id && rowDropTarget.pos === 'before',
             'gantt__task-row--drop-after': rowDropTarget?.id === task.id && rowDropTarget.pos === 'after',
@@ -920,6 +921,11 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 }
 .gantt__task-row:hover { background: var(--jt-surface-hover); }
 .gantt__task-row--selected { background: var(--jt-accent-soft); }
+/* 键盘导航焦点（虚线边框，区别于选中的背景色） */
+.gantt__task-row--focused {
+  outline: 2px solid var(--jt-primary);
+  outline-offset: -2px;
+}
 /* 垂直拖拽落点高亮（上下边线，参照 SidebarListNode） */
 .gantt__task-row--drop-before { box-shadow: inset 0 2px 0 var(--jt-primary); }
 .gantt__task-row--drop-after { box-shadow: inset 0 -2px 0 var(--jt-primary); }
