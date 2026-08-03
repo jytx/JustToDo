@@ -248,7 +248,20 @@ async function onMouseUp(e: MouseEvent): Promise<void> {
     dueStartAt: keepTime(ds.origStart, newStart),
     dueEndAt: keepTime(ds.origEnd, newEnd),
   });
+  // 若新日期移出当前可视范围，自动调整 anchor 让任务保持可见
+  // （否则 getTasksByDueRange 查不到，任务"凭空消失"）
+  ensureVisible(newStart);
   await loadTasks();
+}
+
+/** 确保给定日期在当前可视范围内，否则把 anchor 调整到能容纳它的位置 */
+function ensureVisible(date: Date): void {
+  const first = columns.value[0]?.date;
+  const last = columns.value[columns.value.length - 1]?.date;
+  if (!first || !last) return;
+  if (date >= first && date <= last) return; // 在范围内，无需调整
+  // 移出范围：把 anchor 移到新日期所在月的开头，让任务重新进入视野
+  anchorDate.value = startOfMonth(date);
 }
 
 /** 保持原字面量的时间部分，只换日期 */
