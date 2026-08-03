@@ -551,7 +551,11 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
           <span>任务（{{ tasks.length }}）</span>
           <MenuPopover v-model:visible="moreMenuOpen" placement="bottom-right">
             <template #trigger>
-              <button class="gantt__tasks-more-btn" title="更多">
+              <button
+                class="gantt__tasks-more-btn"
+                title="更多"
+                @click.stop.prevent="moreMenuOpen = !moreMenuOpen"
+              >
                 <icon-more :size="14" />
               </button>
             </template>
