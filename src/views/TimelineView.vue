@@ -229,6 +229,11 @@ function onBarClick(task: Task): void {
   taskStore.selectTask(task.id);
 }
 
+/** 点击复选框切换完成状态 */
+function onToggle(task: Task): void {
+  taskStore.toggleTask(task.id, !task.done);
+}
+
 /** 点击空白格 → 在该日期建任务（归属当前清单） */
 async function onCellClick(colDate: Date): Promise<void> {
   const dayLiteral = `${toISO(colDate)}T00:00:00`;
@@ -439,7 +444,12 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH);
           :class="{ 'gantt__task-row--selected': taskStore.selectedTaskId === task.id }"
           @click="onBarClick(task)"
         >
-          <div class="gantt__task-check" :class="{ 'gantt__task-check--done': task.done }"></div>
+          <div
+            class="gantt__task-check"
+            :class="{ 'gantt__task-check--done': task.done }"
+            :title="task.done ? '标记未完成' : '标记完成'"
+            @click.stop="onToggle(task)"
+          ></div>
           <div class="gantt__task-prio" :style="{ backgroundColor: PRIO_COLOR[task.priority ?? 0] }"></div>
           <span class="gantt__task-name" :class="{ 'gantt__task-name--done': task.done }">{{ task.title || '(未命名)' }}</span>
         </div>
@@ -576,15 +586,21 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH);
 .gantt__task-row:hover { background: var(--jt-surface-hover); }
 .gantt__task-row--selected { background: var(--jt-accent-soft); }
 .gantt__task-check {
-  width: 14px; height: 14px;
+  width: 16px; height: 16px;
   border: 1.5px solid var(--jt-text-tertiary);
   border-radius: 50%;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
 }
-.gantt__task-check--done { background: var(--jt-primary); border-color: var(--jt-primary); position: relative; }
+.gantt__task-check:hover { border-color: var(--jt-primary); }
+.gantt__task-check--done { background: var(--jt-primary); border-color: var(--jt-primary); }
 .gantt__task-check--done::after {
-  content: '✓'; color: #fff; font-size: 9px;
-  position: absolute; top: -2px; left: 2px;
+  content: '✓'; color: #fff; font-size: 10px; line-height: 1;
+  /* flex 居中，无需绝对定位 */
 }
 .gantt__task-prio { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .gantt__task-name {
