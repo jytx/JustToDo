@@ -8,6 +8,8 @@ import { getTasksByDueRange } from "@/api/db";
 import type { Task, Priority } from "@/types";
 import { parseLocalIso, dateToLocalIso } from "@/utils/date";
 import { subscribeTaskChanged } from "@/composables/useCalendarView";
+import MenuPopover from "@/components/MenuPopover.vue";
+import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 
 const props = defineProps<{ id: string }>();
 
@@ -68,10 +70,25 @@ const rangeLiteral = computed(() => {
 /** 加载范围内的任务（按当前清单过滤）。
  *  注意：不按 due_start_at 排序——拖拽改日期后行顺序应保持不变
  *  （只移动横条，不重排行），用 sort_order 保持稳定顺序。 */
+/** 是否显示已完成任务（false 时只加载未完成） */
+const showCompleted = ref(true);
+
+/** 任务列表更多菜单开关 */
+const moreMenuOpen = ref(false);
+
+/** 切换显示/隐藏已完成 */
+function toggleShowCompleted(): void {
+  showCompleted.value = !showCompleted.value;
+  moreMenuOpen.value = false;
+}
+
+/** 加载范围内的任务（按当前清单过滤）。
+ *  注意：不按 due_start_at 排序——拖拽改日期后行顺序应保持不变
+ *  （只移动横条，不重排行），用 sort_order 保持稳定顺序。 */
 const tasks = ref<Task[]>([]);
 async function loadTasks(): Promise<void> {
   const { start, end } = rangeLiteral.value;
-  const all = await getTasksByDueRange(start, end, true);
+  const all = await getTasksByDueRange(start, end, showCompleted.value);
   tasks.value = all
     .filter((t) => t.listId === props.id)
     .sort((a, b) => a.sortOrder - b.sortOrder);
@@ -82,7 +99,7 @@ onMounted(() => {
   // 初始滚动到今天附近
   requestAnimationFrame(scrollToToday);
 });
-watch([rangeStart, rangeCount, zoom, () => props.id], loadTasks);
+watch([rangeStart, rangeCount, zoom, () => props.id, showCompleted], loadTasks);
 
 // 订阅任务变更（标题/时间/完成等修改后刷新，与其他视图的 notifyTaskChanged 总线联动）
 const unsubscribe = subscribeTaskChanged(() => { void loadTasks(); });
@@ -530,7 +547,21 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
     <div class="gantt">
       <!-- 左侧任务名列 -->
       <div class="gantt__tasks">
-        <div class="gantt__tasks-head">任务（{{ tasks.length }}）</div>
+        <div class="gantt__tasks-head">
+          <span>任务（{{ tasks.length }}）</span>
+          <MenuPopover v-model:visible="moreMenuOpen" placement="bottom-right">
+            <template #trigger>
+              <button class="gantt__tasks-more-btn" title="更多">
+                <icon-more :size="14" />
+              </button>
+            </template>
+            <MenuPopoverItem @click="toggleShowCompleted">
+              <icon-eye-invisible v-if="showCompleted" :size="15" />
+              <icon-eye v-else :size="15" />
+              <span>{{ showCompleted ? '隐藏已完成' : '显示已完成' }}</span>
+            </MenuPopoverItem>
+          </MenuPopover>
+        </div>
         <div
           v-for="task in tasks"
           :key="task.id"
@@ -662,7 +693,9 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
   height: 56px;
   display: flex;
   align-items: center;
-  padding: 0 12px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 0 12px;
   font-size: 12px;
   color: var(--jt-text-tertiary);
   border-bottom: 1px solid var(--jt-border);
@@ -671,6 +704,21 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
   position: sticky;
   top: 0;
   z-index: 2;
+}
+/* 任务区更多按钮 */
+.gantt__tasks-more-btn {
+  border: none;
+  background: transparent;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+.gantt__tasks-more-btn:hover {
+  background: var(--jt-surface-hover);
+  color: var(--jt-text-primary);
 }
 .gantt__task-row {
   height: 40px;
