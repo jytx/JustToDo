@@ -356,17 +356,31 @@ async function onMouseUp(): Promise<void> {
   document.removeEventListener("mousemove", onMouseMove);
   document.removeEventListener("mouseup", onMouseUp);
   const ds = dragState.value;
-  dragState.value = null;
-  if (!ds || ds.deltaDays === 0) return;
+  if (!ds || ds.deltaDays === 0) {
+    // 无变化：直接清空 dragState，横条回到原位
+    dragState.value = null;
+    return;
+  }
   const pv = previewDates(ds);
-  if (!pv) return;
+  if (!pv) {
+    dragState.value = null;
+    return;
+  }
+  // 先持久化更新 task 日期
   await taskStore.updateTask(ds.taskId, {
     dueStartAt: keepTime(ds.origStart, pv.start),
     dueEndAt: keepTime(ds.origEnd ?? ds.origStart, pv.end),
   });
-  // 若新日期移出当前可视范围，调整 anchor 让任务保持可见。
-  // 不主动 loadTasks —— updateTask 已触发 notifyTaskChanged，订阅会自动刷新，
-  // 避免"自己再 loadTasks 一次"导致任务列表整体替换的闪烁。
+  // 乐观更新本地 tasks：直接改这个 task 的日期，让 barStyle 立即用新日期，
+  // 避免清空 dragState 后横条用旧日期回弹（tasks ref 要等 loadTasks 才更新）
+  const newStartLit = keepTime(ds.origStart, pv.start);
+  const newEndLit = keepTime(ds.origEnd ?? ds.origStart, pv.end);
+  tasks.value = tasks.value.map((t) =>
+    t.id === ds.taskId ? { ...t, dueStartAt: newStartLit, dueEndAt: newEndLit } : t,
+  );
+  // 数据已更新，清空 dragState 后横条用 barStyle 直接停在新位置，无回弹
+  dragState.value = null;
+  // 若新日期移出当前可视范围，调整 anchor 让任务保持可见
   if (!isDateInRange(pv.start)) {
     ensureVisible(pv.start);
     await loadTasks();
