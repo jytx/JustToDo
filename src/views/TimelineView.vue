@@ -29,7 +29,7 @@ const INITIAL_COUNT: Record<Zoom, number> = { day: 42, week: 16, month: 12 };
 
 /** 各缩放的每列宽度（px）。day 每天一列 60px；week 每周一列 140px；
  *  month 每月一列 180px——列越宽代表的时间越长，避免挤在一起看不清 */
-const COL_WIDTH_BY_ZOOM: Record<Zoom, number> = { day: 60, week: 200, month: 280 };
+const COL_WIDTH_BY_ZOOM: Record<Zoom, number> = { day: 90, week: 200, month: 280 };
 
 /** 当前缩放的每列宽度 */
 const COL_WIDTH = computed(() => COL_WIDTH_BY_ZOOM[zoom.value]);
