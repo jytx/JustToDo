@@ -1,7 +1,8 @@
 <script setup lang="ts">
-// 看板视图 —— 支持两种分列维度：按优先级（无/低/中/高）或按分组（Group）
-// 显示全部未完成任务，拖拽跨列改对应字段（priority / groupId）+ 列内排序
-import { computed, onMounted, watch } from "vue";
+// 看板视图 —— 作为清单的视图（由 ListView 按 ?view=kanban 条件渲染）
+// 支持两种分列维度：按优先级（无/低/中/高）或按分组（Group）
+// 只显示当前清单的任务，拖拽跨列改对应字段（priority / groupId）+ 列内排序
+import { computed, watch } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useGroupStore } from "@/stores/group";
@@ -12,18 +13,22 @@ import PriorityDot from "@/components/PriorityDot.vue";
 import TaskCheckbox from "@/components/TaskCheckbox.vue";
 import { useKanbanDrag, type KanbanColumnDef } from "@/composables/useKanbanDrag";
 
+const props = defineProps<{ id: string }>();
+
 const taskStore = useTaskStore();
 const listStore = useListStore();
 const groupStore = useGroupStore();
 const kanbanStore = useKanbanStore();
 
-onMounted(async () => {
-  // 并行加载全部任务 + 全部分组（分组模式列名查 groupStore.groups）
-  await Promise.all([
-    taskStore.loadSmartView("all"),
-    groupStore.loadAllGroups(),
-  ]);
-});
+// 数据由父级 ListView 加载（loadTasks + loadGroups），看板复用同一 store 数据。
+// 这里仅兜底：清单切换时确保分组刷新（任务由 ListView 的 watch 触发）。
+watch(
+  () => props.id,
+  async (newId) => {
+    await groupStore.loadGroups(newId);
+  },
+  { immediate: true },
+);
 
 /** 优先级模式的固定列定义 */
 const PRIORITY_COLUMNS: { priority: Priority; label: string; color: string }[] = [
@@ -38,15 +43,14 @@ const columnDefs = computed<KanbanColumnDef[]>(() => {
   if (kanbanStore.mode === "priority") {
     return PRIORITY_COLUMNS.map((c) => ({ key: String(c.priority), label: c.label, color: c.color }));
   }
-  // 分组模式：从任务提取去重 groupId，按 groupStore 的 sortOrder 排序，查不到名的兜底"未分组"
+  // 分组模式：从任务提取去重 groupId，按 groupStore.currentGroups（已按本清单过滤+排序）取名
   const usedIds = new Set<string>();
   for (const t of taskStore.openTasks) {
     usedIds.add(t.groupId ?? "__ungrouped__");
   }
   // 已知分组按 sortOrder 排序在前，未知/未分组在后
-  const known = groupStore.groups
+  const known = groupStore.currentGroups
     .filter((g) => usedIds.has(g.id))
-    .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((g) => ({ key: g.id, label: g.name, color: "var(--jt-text-tertiary)" }));
   const result: KanbanColumnDef[] = [...known];
   if (usedIds.has("__ungrouped__")) {

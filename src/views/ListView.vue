@@ -2,6 +2,7 @@
 // 清单视图 —— 任务列表区主视图
 // 含：列表头（标题/日期/计数）、按分组展示未完成任务、完成区折叠、添加栏、空状态
 import { computed, watch, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import { useGroupStore } from "@/stores/group";
@@ -19,8 +20,13 @@ import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 import MenuPopover from "@/components/MenuPopover.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import BatchContextMenu from "@/components/BatchContextMenu.vue";
+import KanbanView from "@/views/KanbanView.vue";
 
 const props = defineProps<{ id: string }>();
+
+const route = useRoute();
+/** 是否看板视图（query ?view=kanban） */
+const isKanban = computed(() => route.query.view === "kanban");
 
 const listStore = useListStore();
 const taskStore = useTaskStore();
@@ -311,7 +317,10 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
 </script>
 
 <template>
-  <div class="list-view" @contextmenu="onRootContextMenu">
+  <!-- 看板视图（query ?view=kanban）：直接渲染看板，复用本视图已加载的清单数据 -->
+  <KanbanView v-if="isKanban" :id="props.id" />
+  <!-- 列表视图（默认） -->
+  <div v-else class="list-view" @contextmenu="onRootContextMenu">
     <!-- 列表头 -->
     <header class="list-view__header">
       <h1 class="list-view__title">

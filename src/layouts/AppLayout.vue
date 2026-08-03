@@ -8,7 +8,7 @@ import { useTaskStore } from "@/stores/task";
 import { useHabitStore } from "@/stores/habit";
 import { useTemplateStore } from "@/stores/template";
 import { useListScheduleStore } from "@/stores/listSchedule";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { SORT_FIELDS, SORT_FIELD_LABELS, type SortField } from "@/types";
 import AppRail from "@/components/AppRail.vue";
 import TheSidebar from "@/components/TheSidebar.vue";
@@ -37,6 +37,7 @@ const habitStore = useHabitStore();
 const templateStore = useTemplateStore();
 const listScheduleStore = useListScheduleStore();
 const route = useRoute();
+const router = useRouter();
 const quickAdd = useQuickAdd();
 
 const sidebarCollapsed = ref(false);
@@ -84,8 +85,7 @@ const showTaskSidebar = computed(() => {
     name === "all" ||
     name === "list" ||
     name === "notebook" ||
-    name === "tag" ||
-    name === "kanban"
+    name === "tag"
   );
 });
 
@@ -146,6 +146,20 @@ const kanbanModeMenuOpen = ref(false);
 function onKanbanModeChange(mode: "priority" | "group"): void {
   kanbanStore.setMode(mode);
   kanbanModeMenuOpen.value = false;
+}
+
+/** 清单视图切换（列表 / 看板，通过 query ?view= 切换，仅清单路由显示） */
+type ListView = "list" | "kanban";
+const LIST_VIEW_LABELS: Record<ListView, string> = { list: "列表", kanban: "看板" };
+const listViewMenuOpen = ref(false);
+const currentListView = computed<ListView>(() =>
+  route.query.view === "kanban" ? "kanban" : "list",
+);
+
+/** 切换清单视图：用 router.replace 改 query，不刷新页面、不污染历史 */
+function onListViewChange(view: ListView): void {
+  router.replace({ query: { ...route.query, view } });
+  listViewMenuOpen.value = false;
 }
 
 /** 新建分组对话框（顶栏入口，仅清单视图显示） */
@@ -404,9 +418,42 @@ useShortcuts({
             <span>{{ f.label }}</span>
           </MenuPopoverItem>
         </MenuPopover>
-        <!-- 新建分组按钮（仅清单视图显示，紧随排序按钮） -->
-        <a-button
+        <!-- 视图切换（列表 / 看板，仅清单视图显示） -->
+        <MenuPopover
           v-if="route.name === 'list'"
+          v-model:visible="listViewMenuOpen"
+        >
+          <template #trigger>
+            <a-button
+              type="text"
+              size="small"
+              :title="`视图: ${LIST_VIEW_LABELS[currentListView]}`"
+              @click="listViewMenuOpen = !listViewMenuOpen"
+            >
+              <template #icon>
+                <icon-apps v-if="currentListView === 'kanban'" :size="18" />
+                <icon-list v-else :size="18" />
+              </template>
+            </a-button>
+          </template>
+          <MenuPopoverItem
+            :active="currentListView === 'list'"
+            @click="onListViewChange('list')"
+          >
+            <icon-list :size="15" />
+            <span>列表视图</span>
+          </MenuPopoverItem>
+          <MenuPopoverItem
+            :active="currentListView === 'kanban'"
+            @click="onListViewChange('kanban')"
+          >
+            <icon-apps :size="15" />
+            <span>看板视图</span>
+          </MenuPopoverItem>
+        </MenuPopover>
+        <!-- 新建分组按钮（仅列表视图显示；看板视图不显示分组管理入口） -->
+        <a-button
+          v-if="route.name === 'list' && currentListView === 'list'"
           type="text"
           size="small"
           title="新建分组"
@@ -416,7 +463,7 @@ useShortcuts({
         </a-button>
         <!-- 看板列维度切换（仅看板视图显示：优先级 / 分组，下拉菜单形式） -->
         <MenuPopover
-          v-if="route.name === 'kanban'"
+          v-if="route.name === 'list' && currentListView === 'kanban'"
           v-model:visible="kanbanModeMenuOpen"
         >
           <template #trigger>

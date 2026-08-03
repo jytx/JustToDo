@@ -37,8 +37,7 @@ const isTasksActive = computed(() => {
     name === "all" ||
     name === "list" ||
     name === "notebook" ||
-    name === "tag" ||
-    name === "kanban"
+    name === "tag"
   );
 });
 
