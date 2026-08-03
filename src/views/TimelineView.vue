@@ -53,12 +53,16 @@ const rangeLiteral = computed(() => {
   };
 });
 
-/** 加载范围内的任务（按当前清单过滤） */
+/** 加载范围内的任务（按当前清单过滤）。
+ *  注意：不按 due_start_at 排序——拖拽改日期后行顺序应保持不变
+ *  （只移动横条，不重排行），用 sort_order 保持稳定顺序。 */
 const tasks = ref<Task[]>([]);
 async function loadTasks(): Promise<void> {
   const { start, end } = rangeLiteral.value;
   const all = await getTasksByDueRange(start, end, true);
-  tasks.value = all.filter((t) => t.listId === props.id);
+  tasks.value = all
+    .filter((t) => t.listId === props.id)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
 onMounted(loadTasks);
