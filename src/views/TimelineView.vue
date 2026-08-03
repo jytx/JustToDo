@@ -149,6 +149,50 @@ function barStyle(task: Task): { left: number; width: number } | null {
   return { left: Math.max(0, left), width };
 }
 
+/** 横条实际渲染样式：静态用 barStyle，拖拽中按模式叠加反馈
+ *  - move：translateX(dx) 跟手平移（left/width 不变）
+ *  - resize-start/end：重算 left/width（按预览日期），让边缘跟手伸缩 */
+function dragBarStyle(task: Task): Record<string, string> {
+  const base = barStyle(task);
+  const color = PRIO_COLOR[task.priority ?? 0];
+  const ds = dragState.value;
+  if (!base || !ds || ds.taskId !== task.id) {
+    return {
+      left: (base?.left ?? 0) + "px",
+      width: (base?.width ?? 0) + "px",
+      backgroundColor: color,
+    };
+  }
+  // 拖拽中
+  if (ds.mode === "move") {
+    return {
+      left: base.left + "px",
+      width: base.width + "px",
+      backgroundColor: color,
+      transform: `translateX(${ds.dx}px)`,
+    };
+  }
+  // resize：按预览日期重算 left/width
+  const dw = dayWidth();
+  const firstCol = columns.value[0]?.date;
+  if (!firstCol) return { left: base.left + "px", width: base.width + "px", backgroundColor: color };
+  const origStart = parseLocalIso(ds.origStart) ?? new Date();
+  const origEnd = parseLocalIso(ds.origEnd) ?? origStart;
+  let newStart = origStart;
+  let newEnd = origEnd;
+  if (ds.mode === "resize-start") {
+    newStart = addDays(origStart, ds.deltaDays);
+    if (daysBetween(newStart, origEnd) < 0) newStart = origEnd;
+  } else {
+    newEnd = addDays(origEnd, ds.deltaDays);
+    if (daysBetween(origStart, newEnd) < 0) newEnd = origStart;
+  }
+  const left = Math.max(0, daysBetween(firstCol, newStart) * dw);
+  const span = daysBetween(newStart, newEnd);
+  const width = Math.max(dw, (span + 1) * dw - 2);
+  return { left: left + "px", width: width + "px", backgroundColor: color };
+}
+
 /** 两个日期的天数差（含端点：a=8/1, b=8/3 → 2） */
 function daysBetween(a: Date, b: Date): number {
   const ms = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) -
@@ -205,9 +249,16 @@ const dragState = ref<{
   startX: number;
   origStart: string;
   origEnd: string;
-  /** 拖拽中的实时偏移（px），驱动横条 transform 跟随鼠标 */
+  /** 拖拽中的实时偏移（px） */
   dx: number;
+  /** 拖拽中实时的天数变化（dx / dayWidth，四舍五入） */
+  deltaDays: number;
 } | null>(null);
+
+/** 当前缩放下一天的像素宽度 */
+function dayWidth(): number {
+  return zoom.value === "day" ? COL_WIDTH : COL_WIDTH / columnSpanDays(zoom.value);
+}
 
 function onBarMouseDown(e: MouseEvent, task: Task): void {
   if (task.done) return;
@@ -222,51 +273,70 @@ function onBarMouseDown(e: MouseEvent, task: Task): void {
     origStart: task.dueStartAt ?? "",
     origEnd: task.dueEndAt ?? "",
     dx: 0,
+    deltaDays: 0,
   };
   e.preventDefault();
   document.addEventListener("mousemove", onMouseMove);
   document.addEventListener("mouseup", onMouseUp);
 }
 
-/** 拖拽中实时更新 dx，驱动横条 transform 跟随鼠标（视觉反馈） */
+/** 拖拽中实时更新 dx + deltaDays，驱动横条 transform/宽度跟随鼠标 */
 function onMouseMove(e: MouseEvent): void {
   if (!dragState.value) return;
-  dragState.value = { ...dragState.value, dx: e.clientX - dragState.value.startX };
+  const dx = e.clientX - dragState.value.startX;
+  const deltaDays = Math.round(dx / dayWidth());
+  dragState.value = { ...dragState.value, dx, deltaDays };
 }
 
-async function onMouseUp(e: MouseEvent): Promise<void> {
+/** 计算拖拽预览的起止日期（move/resize 三种模式，纯函数，拖拽中实时调用） */
+function previewDates(ds: { mode: string; origStart: string; origEnd: string; deltaDays: number }): { start: Date; end: Date } | null {
+  const origStart = parseLocalIso(ds.origStart);
+  if (!origStart) return null;
+  const origEnd = parseLocalIso(ds.origEnd) ?? origStart;
+  const d = ds.deltaDays;
+  if (ds.mode === "move") {
+    return { start: addDays(origStart, d), end: addDays(origEnd, d) };
+  }
+  if (ds.mode === "resize-start") {
+    const newStart = addDays(origStart, d);
+    if (daysBetween(newStart, origEnd) < 0) return { start: origEnd, end: origEnd };
+    return { start: newStart, end: origEnd };
+  }
+  // resize-end
+  const newEnd = addDays(origEnd, d);
+  if (daysBetween(origStart, newEnd) < 0) return { start: origStart, end: origStart };
+  return { start: origStart, end: newEnd };
+}
+
+/** 格式化日期为 M/D 显示（拖拽提示气泡用） */
+function fmtDate(d: Date): string {
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+/** 拖拽中的预览日期文本（供提示气泡显示） */
+const dragPreviewText = computed<string | null>(() => {
+  if (!dragState.value) return null;
+  const pv = previewDates(dragState.value);
+  if (!pv) return null;
+  return pv.start.getTime() === pv.end.getTime()
+    ? fmtDate(pv.start)
+    : `${fmtDate(pv.start)} ~ ${fmtDate(pv.end)}`;
+});
+
+async function onMouseUp(): Promise<void> {
   document.removeEventListener("mousemove", onMouseMove);
   document.removeEventListener("mouseup", onMouseUp);
   const ds = dragState.value;
   dragState.value = null;
-  if (!ds) return;
-  const dx = e.clientX - ds.startX;
-  const dayWidth = zoom.value === "day" ? COL_WIDTH : COL_WIDTH / columnSpanDays(zoom.value);
-  const deltaDays = Math.round(dx / dayWidth);
-  if (deltaDays === 0) return;
-  const origStart = parseLocalIso(ds.origStart);
-  if (!origStart) return;
-  // end 为 null 时用 start 兜底（单点任务也能拖）
-  const origEnd = parseLocalIso(ds.origEnd) ?? origStart;
-  let newStart = origStart;
-  let newEnd = origEnd;
-  if (ds.mode === "move") {
-    newStart = addDays(origStart, deltaDays);
-    newEnd = addDays(origEnd, deltaDays);
-  } else if (ds.mode === "resize-start") {
-    newStart = addDays(origStart, deltaDays);
-    if (daysBetween(newStart, origEnd) < 0) return; // 起点不能晚于终点
-  } else if (ds.mode === "resize-end") {
-    newEnd = addDays(origEnd, deltaDays);
-    if (daysBetween(origStart, newEnd) < 0) return;
-  }
+  if (!ds || ds.deltaDays === 0) return;
+  const pv = previewDates(ds);
+  if (!pv) return;
   await taskStore.updateTask(ds.taskId, {
-    dueStartAt: keepTime(ds.origStart, newStart),
-    dueEndAt: keepTime(ds.origEnd, newEnd),
+    dueStartAt: keepTime(ds.origStart, pv.start),
+    dueEndAt: keepTime(ds.origEnd ?? ds.origStart, pv.end),
   });
   // 若新日期移出当前可视范围，自动调整 anchor 让任务保持可见
-  // （否则 getTasksByDueRange 查不到，任务"凭空消失"）
-  ensureVisible(newStart);
+  ensureVisible(pv.start);
   await loadTasks();
 }
 
@@ -377,16 +447,16 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH);
                 'gantt__bar--done': task.done,
                 'gantt__bar--dragging': dragState?.taskId === task.id,
               }"
-              :style="{
-                left: barStyle(task)?.left + 'px',
-                width: barStyle(task)?.width + 'px',
-                backgroundColor: PRIO_COLOR[task.priority ?? 0],
-                transform: dragState?.taskId === task.id && dragState.mode === 'move'
-                  ? `translateX(${dragState.dx}px)` : undefined,
-              }"
+              :style="dragBarStyle(task)"
               @mousedown="onBarMouseDown($event, task)"
               @click.stop="onBarClick(task)"
-            >{{ task.title || '(未命名)' }}</div>
+            >
+              {{ task.title || '(未命名)' }}
+              <!-- 拖拽中的目标日期提示气泡 -->
+              <span v-if="dragState?.taskId === task.id && dragPreviewText" class="gantt__bar-tip">
+                {{ dragPreviewText }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -568,4 +638,32 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH);
 .gantt__bar:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
 .gantt__bar:active { cursor: grabbing; }
 .gantt__bar--done { opacity: 0.5; }
+
+/* 拖拽中的目标日期提示气泡（显示在横条上方） */
+.gantt__bar-tip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 6px;
+  background: var(--jt-text-primary, #1F1F1F);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 5px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+.gantt__bar-tip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: var(--jt-text-primary, #1F1F1F);
+}
 </style>
