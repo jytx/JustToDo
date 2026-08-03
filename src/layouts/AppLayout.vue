@@ -23,6 +23,7 @@ import { useSearchStore } from "@/stores/search";
 import { useListStore } from "@/stores/list";
 import { useGroupStore } from "@/stores/group";
 import { useKanbanStore } from "@/stores/kanban";
+import { setViewPref } from "@/composables/useViewPrefs";
 import { useShortcuts } from "@/composables/useShortcuts";
 import { useQuickAdd } from "@/composables/useQuickAdd";
 
@@ -143,8 +144,12 @@ const KANBAN_MODE_LABELS: Record<"priority" | "group", string> = {
 const kanbanModeMenuOpen = ref(false);
 
 /** 看板维度变更（选择后关闭菜单） */
+/** 看板维度变更（选择后关闭菜单 + 持久化到清单偏好） */
 function onKanbanModeChange(mode: "priority" | "group"): void {
   kanbanStore.setMode(mode);
+  // 记住该清单的看板维度选择
+  const listId = route.params.id as string;
+  if (listId) setViewPref(listId, { kanbanMode: mode });
   kanbanModeMenuOpen.value = false;
 }
 
@@ -156,9 +161,11 @@ const currentListView = computed<ListView>(() =>
   route.query.view === "kanban" ? "kanban" : "list",
 );
 
-/** 切换清单视图：用 router.replace 改 query，不刷新页面、不污染历史 */
+/** 切换清单视图：用 router.replace 改 query + 持久化到清单偏好 */
 function onListViewChange(view: ListView): void {
   router.replace({ query: { ...route.query, view } });
+  const listId = route.params.id as string;
+  if (listId) setViewPref(listId, { view });
   listViewMenuOpen.value = false;
 }
 

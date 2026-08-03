@@ -2,13 +2,15 @@
 // 清单视图 —— 任务列表区主视图
 // 含：列表头（标题/日期/计数）、按分组展示未完成任务、完成区折叠、添加栏、空状态
 import { computed, watch, onMounted, ref } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import { useGroupStore } from "@/stores/group";
+import { useKanbanStore } from "@/stores/kanban";
 import type { Group } from "@/types";
 import { formatPageDate } from "@/utils/date";
 import { shouldReserveNativeMenu } from "@/utils/contextMenu";
+import { getViewPref } from "@/composables/useViewPrefs";
 import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import { useGroupDrag } from "@/composables/useGroupDrag";
 import { useGroupReorder } from "@/composables/useGroupReorder";
@@ -25,12 +27,25 @@ import KanbanView from "@/views/KanbanView.vue";
 const props = defineProps<{ id: string }>();
 
 const route = useRoute();
+const router = useRouter();
+const kanbanStore = useKanbanStore();
 /** 是否看板视图（query ?view=kanban） */
 const isKanban = computed(() => route.query.view === "kanban");
 
 const listStore = useListStore();
 const taskStore = useTaskStore();
 const groupStore = useGroupStore();
+
+/** 从清单偏好恢复视图：无 view query 时按偏好补上，并同步看板维度 */
+function restoreViewPref(listId: string): void {
+  const pref = getViewPref(listId);
+  // 仅在 query 没有 view 时补上（用户显式带了 view 则尊重，如点链接进来）
+  if (!route.query.view) {
+    router.replace({ query: { ...route.query, view: pref.view } });
+  }
+  // 同步看板维度（下次进看板时用上次的维度）
+  kanbanStore.setMode(pref.kanbanMode);
+}
 
 // 面板右键菜单：新建任务归属当前清单
 const { ctxMenu, onContextMenu, onCreateTask } = useTaskPanelContextMenu(
@@ -184,10 +199,11 @@ function deleteGroupName(): string {
 /** 分组更多菜单（每组标题右侧的 ⋯） */
 const groupMenuVisible = ref<string | null>(null);
 
-// 切换清单时重新加载任务 + 分组
+// 切换清单时重新加载任务 + 分组 + 恢复视图偏好
 watch(
   () => props.id,
   async (newId) => {
+    restoreViewPref(newId);
     await Promise.all([
       taskStore.loadTasks(newId),
       groupStore.loadGroups(newId),
@@ -198,6 +214,7 @@ watch(
 );
 
 onMounted(async () => {
+  restoreViewPref(props.id);
   await listStore.loadLists();
   await Promise.all([
     taskStore.loadTasks(props.id),
