@@ -196,6 +196,8 @@ const dragState = ref<{
   startX: number;
   origStart: string;
   origEnd: string;
+  /** 拖拽中的实时偏移（px），驱动横条 transform 跟随鼠标 */
+  dx: number;
 } | null>(null);
 
 function onBarMouseDown(e: MouseEvent, task: Task): void {
@@ -210,14 +212,17 @@ function onBarMouseDown(e: MouseEvent, task: Task): void {
     startX: e.clientX,
     origStart: task.dueStartAt ?? "",
     origEnd: task.dueEndAt ?? "",
+    dx: 0,
   };
   e.preventDefault();
   document.addEventListener("mousemove", onMouseMove);
   document.addEventListener("mouseup", onMouseUp);
 }
 
-function onMouseMove(): void {
-  // 拖拽中不实时改 DOM（松手时一次性持久化更新，避免频繁 updateTask）
+/** 拖拽中实时更新 dx，驱动横条 transform 跟随鼠标（视觉反馈） */
+function onMouseMove(e: MouseEvent): void {
+  if (!dragState.value) return;
+  dragState.value = { ...dragState.value, dx: e.clientX - dragState.value.startX };
 }
 
 async function onMouseUp(e: MouseEvent): Promise<void> {
@@ -231,8 +236,9 @@ async function onMouseUp(e: MouseEvent): Promise<void> {
   const deltaDays = Math.round(dx / dayWidth);
   if (deltaDays === 0) return;
   const origStart = parseLocalIso(ds.origStart);
-  const origEnd = parseLocalIso(ds.origEnd);
-  if (!origStart || !origEnd) return;
+  if (!origStart) return;
+  // end 为 null 时用 start 兜底（单点任务也能拖）
+  const origEnd = parseLocalIso(ds.origEnd) ?? origStart;
   let newStart = origStart;
   let newEnd = origEnd;
   if (ds.mode === "move") {
@@ -362,7 +368,12 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH);
                 'gantt__bar--done': task.done,
                 'gantt__bar--dragging': dragState?.taskId === task.id,
               }"
-              :style="{ ...barStyle(task)!, backgroundColor: PRIO_COLOR[task.priority ?? 0] }"
+              :style="{
+                ...barStyle(task)!,
+                backgroundColor: PRIO_COLOR[task.priority ?? 0],
+                transform: dragState?.taskId === task.id && dragState.mode === 'move'
+                  ? `translateX(${dragState.dx}px)` : undefined,
+              }"
               @mousedown="onBarMouseDown($event, task)"
               @click.stop="onBarClick(task)"
             >{{ task.title || '(未命名)' }}</div>
@@ -537,8 +548,14 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH);
   transition: box-shadow 0.12s;
   user-select: none;
 }
+.gantt__bar--dragging {
+  /* 拖拽中关闭 transition，让 transform 实时跟手；提升层级避免被其他行遮挡 */
+  transition: none;
+  z-index: 5;
+  opacity: 0.7;
+  cursor: grabbing;
+}
 .gantt__bar:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
 .gantt__bar:active { cursor: grabbing; }
 .gantt__bar--done { opacity: 0.5; }
-.gantt__bar--dragging { opacity: 0.7; }
 </style>
