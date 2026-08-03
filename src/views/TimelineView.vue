@@ -383,7 +383,8 @@ function onToggle(task: Task): void {
 }
 
 /** 点击空白格 → 在该日期建任务（归属当前清单） */
-async function onCellClick(colDate: Date): Promise<void> {
+/** 双击空白格 → 在该日期建任务（单击不建，避免误触） */
+async function onCellDblClick(colDate: Date): Promise<void> {
   const dayLiteral = `${toISO(colDate)}T00:00:00`;
   const created = await taskStore.createTask({
     title: "",
@@ -392,6 +393,11 @@ async function onCellClick(colDate: Date): Promise<void> {
     dueEndAt: dayLiteral,
   });
   taskStore.selectTask(created.id);
+}
+
+/** 单击空白格 → 仅取消选中（不建任务） */
+function onCellClick(): void {
+  if (taskStore.selectedTaskId) taskStore.selectedTaskId = null;
 }
 
 /** 缩放切换 */
@@ -700,7 +706,8 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
               class="gantt__grid-cell"
               :class="{ 'gantt__grid-cell--weekend': col.weekend, 'gantt__grid-cell--today': col.today }"
               :style="{ width: COL_WIDTH + 'px' }"
-              @click="onCellClick(col.date)"
+              @click="onCellClick"
+              @dblclick="onCellDblClick(col.date)"
             ></div>
             <!-- 任务横条 -->
             <div
@@ -899,7 +906,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
   flex-shrink: 0;
   border-right: 1px solid var(--jt-border);
   height: 100%;
-  cursor: cell;
+  cursor: default;
 }
 .gantt__grid-cell--weekend { background: rgba(0,0,0,0.02); }
 .gantt__grid-cell--today { background: rgba(79, 70, 229, 0.04); }
