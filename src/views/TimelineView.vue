@@ -23,10 +23,14 @@ const rangeStart = ref<Date>(addDays(startOfDay(new Date()), -7));
 const rangeCount = ref<number>(42);
 
 /** 缩放对应的初始列数 */
-const INITIAL_COUNT: Record<Zoom, number> = { day: 42, week: 12, month: 12 };
+const INITIAL_COUNT: Record<Zoom, number> = { day: 42, week: 16, month: 12 };
 
-/** 每列宽度（px） */
-const COL_WIDTH = 60;
+/** 各缩放的每列宽度（px）。day 每天一列 60px；week 每周一列 140px；
+ *  month 每月一列 180px——列越宽代表的时间越长，避免挤在一起看不清 */
+const COL_WIDTH_BY_ZOOM: Record<Zoom, number> = { day: 60, week: 140, month: 180 };
+
+/** 当前缩放的每列宽度 */
+const COL_WIDTH = computed(() => COL_WIDTH_BY_ZOOM[zoom.value]);
 
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -149,7 +153,7 @@ function scrollToToday(): void {
   const firstCol = columns.value[0]?.date;
   if (!firstCol) return;
   const offset = daysBetween(firstCol, new Date());
-  el.scrollLeft = Math.max(0, offset * COL_WIDTH - el.clientWidth / 2 + COL_WIDTH / 2);
+  el.scrollLeft = Math.max(0, offset * COL_WIDTH.value - el.clientWidth / 2 + COL_WIDTH.value / 2);
 }
 
 /** 时间轴滚动容器 ref */
@@ -169,7 +173,7 @@ function onTimelineScroll(): void {
     rangeCount.value += extendCols;
     // rangeStart 前移后列整体右移，需要把 scrollLeft 加上扩展的宽度避免画面跳动
     requestAnimationFrame(() => {
-      el.scrollLeft += extendCols * COL_WIDTH;
+      el.scrollLeft += extendCols * COL_WIDTH.value;
     });
   } else if (nearRight) {
     // 往后扩展 14 列
@@ -186,7 +190,7 @@ function barStyle(task: Task): { left: number; width: number } | null {
   const firstColDate = columns.value[0]?.date;
   if (!firstColDate) return null;
   // 横条定位按"天"计算（day 缩放）。week/month 缩放下也用天数映射到列宽
-  const dayWidth = zoom.value === "day" ? COL_WIDTH : COL_WIDTH / columnSpanDays(zoom.value);
+  const dayWidth = zoom.value === "day" ? COL_WIDTH.value : COL_WIDTH.value / columnSpanDays(zoom.value);
   const startOffset = daysBetween(firstColDate, start);
   const endOffset = daysBetween(firstColDate, end);
   const left = startOffset * dayWidth;
@@ -250,7 +254,7 @@ function daysBetween(a: Date, b: Date): number {
 const todayLeft = computed(() => {
   const firstColDate = columns.value[0]?.date;
   if (!firstColDate) return 0;
-  const dayWidth = zoom.value === "day" ? COL_WIDTH : COL_WIDTH / columnSpanDays(zoom.value);
+  const dayWidth = zoom.value === "day" ? COL_WIDTH.value : COL_WIDTH.value / columnSpanDays(zoom.value);
   const today = new Date();
   return daysBetween(firstColDate, today) * dayWidth;
 });
@@ -318,7 +322,7 @@ const dragState = ref<{
 
 /** 当前缩放下一天的像素宽度 */
 function dayWidth(): number {
-  return zoom.value === "day" ? COL_WIDTH : COL_WIDTH / columnSpanDays(zoom.value);
+  return zoom.value === "day" ? COL_WIDTH.value : COL_WIDTH.value / columnSpanDays(zoom.value);
 }
 
 /** hover 时按鼠标位置切 cursor：边缘 ew-resize（调整时长），中间 grab（移动）；
@@ -471,7 +475,7 @@ function keepTime(origLiteral: string, newDate: Date): string {
 }
 
 /** 时间轴容器宽度 */
-const timelineWidth = computed(() => columns.value.length * COL_WIDTH);
+const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 </script>
 
 <template>
