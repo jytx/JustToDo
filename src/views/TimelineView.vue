@@ -82,6 +82,68 @@ function toggleShowCompleted(): void {
   moreMenuOpen.value = false;
 }
 
+// ─── 任务行垂直拖拽排序（专用手柄触发，改 sort_order） ───
+/** 正在被拖动的任务 id */
+const rowDragId = ref<string | null>(null);
+/** 落点：目标行 id + 位置（before/after） */
+const rowDropTarget = ref<{ id: string; pos: "before" | "after" } | null>(null);
+
+/** 手柄 dragstart：记录被拖任务 */
+function onRowDragStart(e: DragEvent, taskId: string): void {
+  rowDragId.value = taskId;
+  e.dataTransfer!.effectAllowed = "move";
+  e.dataTransfer!.setData("text/plain", taskId);
+}
+
+/** 行 dragover：preventDefault 允许 drop + 按 clientY 中点算落点 */
+function onRowDragOver(e: DragEvent, taskId: string): void {
+  if (!rowDragId.value || rowDragId.value === taskId) return;
+  e.preventDefault();
+  e.dataTransfer!.dropEffect = "move";
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const pos: "before" | "after" = e.clientY - rect.top < rect.height / 2 ? "before" : "after";
+  rowDropTarget.value = { id: taskId, pos };
+}
+
+/** 行 dragleave：清落点高亮（仅真正离开时） */
+function onRowDragLeave(e: DragEvent, taskId: string): void {
+  const related = e.relatedTarget as HTMLElement | null;
+  if (related && (e.currentTarget as HTMLElement).contains(related)) return;
+  if (rowDropTarget.value?.id === taskId) rowDropTarget.value = null;
+}
+
+/** 行 drop：重排 tasks 数组 + 持久化 sort_order */
+async function onRowDrop(): Promise<void> {
+  const dragId = rowDragId.value;
+  const target = rowDropTarget.value;
+  if (!dragId || !target || dragId === target.id) {
+    clearRowDrag();
+    return;
+  }
+  // 重排本地 tasks 数组
+  const ids = tasks.value.map((t) => t.id).filter((id) => id !== dragId);
+  const targetIdx = ids.indexOf(target.id);
+  if (targetIdx === -1) { clearRowDrag(); return; }
+  const insertIdx = target.pos === "before" ? targetIdx : targetIdx + 1;
+  ids.splice(insertIdx, 0, dragId);
+  // 按新顺序重建 tasks（保持 Task 对象）
+  const map = new Map(tasks.value.map((t) => [t.id, t]));
+  tasks.value = ids.map((id) => map.get(id)).filter((t): t is Task => !!t);
+  clearRowDrag();
+  // 持久化（含当前清单其他未在时间线显示的任务，persistTaskOrder 内部会处理全量重排）
+  await taskStore.persistTaskOrder(ids);
+}
+
+/** 手柄 dragend：清状态 */
+function onRowDragEnd(): void {
+  clearRowDrag();
+}
+
+function clearRowDrag(): void {
+  rowDragId.value = null;
+  rowDropTarget.value = null;
+}
+
 /** 加载范围内的任务（按当前清单过滤）。
  *  注意：不按 due_start_at 排序——拖拽改日期后行顺序应保持不变
  *  （只移动横条，不重排行），用 sort_order 保持稳定顺序。 */
@@ -570,9 +632,26 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
           v-for="task in tasks"
           :key="task.id"
           class="gantt__task-row"
-          :class="{ 'gantt__task-row--selected': taskStore.selectedTaskId === task.id }"
+          :class="{
+            'gantt__task-row--selected': taskStore.selectedTaskId === task.id,
+            'gantt__task-row--drop-before': rowDropTarget?.id === task.id && rowDropTarget.pos === 'before',
+            'gantt__task-row--drop-after': rowDropTarget?.id === task.id && rowDropTarget.pos === 'after',
+            'gantt__task-row--dragging': rowDragId === task.id,
+          }"
           @click="onBarClick(task)"
+          @dragover="onRowDragOver($event, task.id)"
+          @dragleave="onRowDragLeave($event, task.id)"
+          @drop="onRowDrop"
         >
+          <span
+            class="gantt__task-handle"
+            draggable="true"
+            title="拖动排序"
+            @dragstart="onRowDragStart($event, task.id)"
+            @dragend="onRowDragEnd"
+          >
+            <icon-drag-dot-vertical :size="12" />
+          </span>
           <div
             class="gantt__task-check"
             :class="{ 'gantt__task-check--done': task.done }"
@@ -735,6 +814,24 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 }
 .gantt__task-row:hover { background: var(--jt-surface-hover); }
 .gantt__task-row--selected { background: var(--jt-accent-soft); }
+/* 垂直拖拽落点高亮（上下边线，参照 SidebarListNode） */
+.gantt__task-row--drop-before { box-shadow: inset 0 2px 0 var(--jt-primary); }
+.gantt__task-row--drop-after { box-shadow: inset 0 -2px 0 var(--jt-primary); }
+.gantt__task-row--dragging { opacity: 0.4; }
+
+/* 拖拽手柄：默认隐藏，hover 行时显示 */
+.gantt__task-handle {
+  display: flex;
+  align-items: center;
+  color: var(--jt-text-tertiary);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.12s;
+  flex-shrink: 0;
+  padding: 2px 0;
+}
+.gantt__task-row:hover .gantt__task-handle { opacity: 1; }
+.gantt__task-handle:active { cursor: grabbing; }
 .gantt__task-check {
   width: 16px; height: 16px;
   border: 1.5px solid var(--jt-text-tertiary);
