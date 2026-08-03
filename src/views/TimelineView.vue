@@ -370,9 +370,14 @@ const PRIO_COLOR: Record<Priority, string> = {
 // ─── 交互 ───
 /** 点击横条 → 打开详情 */
 function onBarClick(task: Task): void {
-  // 拖拽刚结束（wasDragging）→ 不打开详情，避免拖拽误触面板
+  // 拖拽刚结束（wasDragging）→ 不触发，避免拖拽误触
   if (wasDragging) {
     wasDragging = false;
+    return;
+  }
+  // 多选模式：切换批量选中（不打开详情面板）
+  if (taskStore.batchMode) {
+    taskStore.toggleBatchSelect(task.id);
     return;
   }
   taskStore.selectTask(task.id);
@@ -684,6 +689,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
           class="gantt__task-row"
           :class="{
             'gantt__task-row--selected': taskStore.selectedTaskId === task.id,
+            'gantt__task-row--batch-selected': taskStore.batchMode && taskStore.isBatchSelected(task.id),
             'gantt__task-row--drop-before': rowDropTarget?.id === task.id && rowDropTarget.pos === 'before',
             'gantt__task-row--drop-after': rowDropTarget?.id === task.id && rowDropTarget.pos === 'after',
             'gantt__task-row--dragging': rowDragId === task.id,
@@ -703,6 +709,13 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
           >
             <icon-drag-dot-vertical :size="12" />
           </span>
+          <!-- 多选模式：批量勾选框（圆形，主色填充+白勾） -->
+          <div
+            v-if="taskStore.batchMode"
+            class="gantt__batch-check"
+            :class="{ 'gantt__batch-check--on': taskStore.isBatchSelected(task.id) }"
+            @click.stop="taskStore.toggleBatchSelect(task.id)"
+          ></div>
           <div
             class="gantt__task-check"
             :class="{ 'gantt__task-check--done': task.done }"
@@ -905,6 +918,29 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 }
 .gantt__task-row:hover .gantt__task-handle { opacity: 1; }
 .gantt__task-handle:active { cursor: grabbing; }
+/* 多选模式批量勾选框：圆形 16px，未选空心灰圈，选中主色填充+白勾 */
+.gantt__batch-check {
+  width: 16px; height: 16px;
+  border: 2px solid var(--jt-text-tertiary);
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.gantt__batch-check--on {
+  background: var(--jt-primary);
+  border-color: var(--jt-primary);
+  position: relative;
+}
+.gantt__batch-check--on::after {
+  content: '✓'; color: #fff; font-size: 10px; line-height: 1;
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+}
+/* 多选模式下批量选中的行高亮 */
+.gantt__task-row--batch-selected {
+  background: var(--jt-accent-soft);
+}
+
 .gantt__task-check {
   width: 16px; height: 16px;
   border: 1.5px solid var(--jt-text-tertiary);
