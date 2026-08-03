@@ -6,7 +6,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { getTasksByDueRange } from "@/api/db";
 import type { Task, Priority } from "@/types";
-import { parseLocalIso, dateToLocalIso, todayDateOnly } from "@/utils/date";
+import { parseLocalIso, dateToLocalIso } from "@/utils/date";
 import { subscribeTaskChanged } from "@/composables/useCalendarView";
 
 const props = defineProps<{ id: string }>();
@@ -39,16 +39,17 @@ function startOfDay(d: Date): Date {
 /** 生成日期列数组（从 rangeStart 开始，共 rangeCount 列） */
 const columns = computed(() => {
   const cols: { date: Date; label: string; sub: string; weekend: boolean; today: boolean }[] = [];
-  const today = todayDateOnly();
+  const today = new Date();
   for (let i = 0; i < rangeCount.value; i++) {
     const d = columnStartDate(rangeStart.value, i);
-    const dateOnly = toISO(d);
+    const next = columnStartDate(d, 1); // 本列跨度终点（排他）
     cols.push({
       date: d,
       label: columnLabel(d, zoom.value),
       sub: columnSub(d, zoom.value),
       weekend: zoom.value === "day" && (d.getDay() === 0 || d.getDay() === 6),
-      today: dateOnly === today,
+      // day 模式精确到天；week/month 判断今天是否落在该列跨度内
+      today: today >= d && today < next,
     });
   }
   return cols;
@@ -140,8 +141,10 @@ function goNext(): void {
   rangeStart.value = columnStartDate(rangeStart.value, 7);
 }
 function goToday(): void {
-  // 重置范围到今天前后，滚动到今天
-  rangeStart.value = addDays(startOfDay(new Date()), -7);
+  // 重置范围：让今天落在范围中间偏左，各缩放按列数前移（day 前移7天≈7列，
+  // week 前移4列=4周，month 前移4列=4月），避免今天贴在开头无法居中
+  const leadCols = zoom.value === "day" ? 7 : 4;
+  rangeStart.value = columnStartDate(startOfDay(new Date()), -leadCols);
   rangeCount.value = INITIAL_COUNT[zoom.value];
   requestAnimationFrame(scrollToToday);
 }
@@ -152,8 +155,25 @@ function scrollToToday(): void {
   if (!el) return;
   const firstCol = columns.value[0]?.date;
   if (!firstCol) return;
-  const offset = daysBetween(firstCol, new Date());
-  el.scrollLeft = Math.max(0, offset * COL_WIDTH.value - el.clientWidth / 2 + COL_WIDTH.value / 2);
+  // 算今天落在第几列（week/month 一列跨多天，不能直接用天数偏移）
+  const today = new Date();
+  let colIndex = -1;
+  for (let i = 0; i < columns.value.length; i++) {
+    const colStart = columns.value[i].date;
+    const colEnd = columnStartDate(colStart, 1); // 下一列起点 = 本列终点（排他）
+    if (today >= colStart && today < colEnd) {
+      colIndex = i;
+      break;
+    }
+  }
+  if (colIndex === -1) {
+    // 今天不在当前列范围（理论上 goToday 会重置范围，兜底用天数近似）
+    const offset = daysBetween(firstCol, today);
+    el.scrollLeft = Math.max(0, offset * dayWidth() - el.clientWidth / 2);
+    return;
+  }
+  // 滚动到今天所在列居中
+  el.scrollLeft = colIndex * COL_WIDTH.value - el.clientWidth / 2 + COL_WIDTH.value / 2;
 }
 
 /** 时间轴滚动容器 ref */
