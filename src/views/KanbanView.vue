@@ -183,7 +183,10 @@ function onDragOver(e: DragEvent): void {
             :key="task.id"
             :data-card-id="task.id"
             class="kanban__card"
-            :class="{ 'kanban__card--dragging': draggingId === task.id }"
+            :class="{
+              'kanban__card--dragging': draggingId === task.id,
+              'kanban__card--selected': taskStore.selectedTaskId === task.id,
+            }"
             draggable="true"
             @dragstart="onCardDragStart(task.id, col.key)"
             @dragend="onCardDragEnd"
@@ -322,6 +325,13 @@ function onDragOver(e: DragEvent): void {
 }
 .kanban__card--dragging {
   opacity: 0.4;
+}
+/* 选中态：主色边框 + 强调软背景（与 TaskListItem 选中态对齐，
+ * 用 !important 压过 hover 的边框/阴影，否则选中卡片 hover 时会被覆盖） */
+.kanban__card--selected {
+  border-color: var(--jt-primary) !important;
+  background-color: var(--jt-accent-soft) !important;
+  box-shadow: 0 0 0 1px var(--jt-primary) !important;
 }
 
 .kanban__card-body {
