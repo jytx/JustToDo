@@ -17,21 +17,27 @@ const taskStore = useTaskStore();
 type Zoom = "day" | "week" | "month";
 const zoom = ref<Zoom>("day");
 
-/** 当前可视范围的起始日期（本地 Date，不含时间） */
-const anchorDate = ref<Date>(startOfMonth(new Date()));
+/** 可视范围的起始日期（滚动到左边缘时往前扩展，初始为今天前 7 天） */
+const rangeStart = ref<Date>(addDays(startOfDay(new Date()), -7));
+/** 可视范围的列数（滚动到右边缘时往后扩展） */
+const rangeCount = ref<number>(42);
 
-/** 缩放对应的列数 */
-const COLUMN_COUNT: Record<Zoom, number> = { day: 42, week: 12, month: 12 };
+/** 缩放对应的初始列数 */
+const INITIAL_COUNT: Record<Zoom, number> = { day: 42, week: 12, month: 12 };
 
 /** 每列宽度（px） */
 const COL_WIDTH = 60;
 
-/** 生成从 anchor 开始的日期列数组（每项含 Date + 标签信息） */
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/** 生成日期列数组（从 rangeStart 开始，共 rangeCount 列） */
 const columns = computed(() => {
   const cols: { date: Date; label: string; sub: string; weekend: boolean; today: boolean }[] = [];
   const today = todayDateOnly();
-  for (let i = 0; i < COLUMN_COUNT[zoom.value]; i++) {
-    const d = columnStartDate(anchorDate.value, i);
+  for (let i = 0; i < rangeCount.value; i++) {
+    const d = columnStartDate(rangeStart.value, i);
     const dateOnly = toISO(d);
     cols.push({
       date: d,
@@ -46,8 +52,8 @@ const columns = computed(() => {
 
 /** 可视范围对应的字面量（用于 getTasksByDueRange） */
 const rangeLiteral = computed(() => {
-  const first = columns.value[0]?.date ?? anchorDate.value;
-  const last = columns.value[columns.value.length - 1]?.date ?? anchorDate.value;
+  const first = columns.value[0]?.date ?? rangeStart.value;
+  const last = columns.value[columns.value.length - 1]?.date ?? rangeStart.value;
   return {
     start: toISO(first),
     end: toISO(addDays(last, columnSpanDays(zoom.value))),
@@ -66,17 +72,18 @@ async function loadTasks(): Promise<void> {
     .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-onMounted(loadTasks);
-watch([anchorDate, zoom, () => props.id], loadTasks);
+onMounted(() => {
+  void loadTasks();
+  // 初始滚动到今天附近
+  requestAnimationFrame(scrollToToday);
+});
+watch([rangeStart, rangeCount, zoom, () => props.id], loadTasks);
 
 // 订阅任务变更（标题/时间/完成等修改后刷新，与其他视图的 notifyTaskChanged 总线联动）
 const unsubscribe = subscribeTaskChanged(() => { void loadTasks(); });
 onBeforeUnmount(unsubscribe);
 
 // ─── 日期工具（纯函数） ───
-function startOfMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
 function addDays(d: Date, n: number): Date {
   const r = new Date(d);
   r.setDate(r.getDate() + n);
@@ -121,15 +128,53 @@ const toolbarTitle = computed(() => {
   return `${first.getFullYear()}年${first.getMonth() + 1}月`;
 });
 
-/** 前/后/今天导航 */
+/** 前/后/今天导航（平移可视范围，保持列数） */
 function goPrev(): void {
-  anchorDate.value = columnStartDate(anchorDate.value, -1);
+  rangeStart.value = columnStartDate(rangeStart.value, -7);
 }
 function goNext(): void {
-  anchorDate.value = columnStartDate(anchorDate.value, 1);
+  rangeStart.value = columnStartDate(rangeStart.value, 7);
 }
 function goToday(): void {
-  anchorDate.value = zoom.value === "day" ? addDays(new Date(), -3) : startOfMonth(new Date());
+  // 重置范围到今天前后，滚动到今天
+  rangeStart.value = addDays(startOfDay(new Date()), -7);
+  rangeCount.value = INITIAL_COUNT[zoom.value];
+  requestAnimationFrame(scrollToToday);
+}
+
+/** 滚动到今天所在位置 */
+function scrollToToday(): void {
+  const el = timelineScrollEl.value;
+  if (!el) return;
+  const firstCol = columns.value[0]?.date;
+  if (!firstCol) return;
+  const offset = daysBetween(firstCol, new Date());
+  el.scrollLeft = Math.max(0, offset * COL_WIDTH - el.clientWidth / 2 + COL_WIDTH / 2);
+}
+
+/** 时间轴滚动容器 ref */
+const timelineScrollEl = ref<HTMLElement | null>(null);
+
+/** 滚动到边缘时扩展范围（无限滚动） */
+const EDGE_THRESHOLD = 200; // 距边缘 200px 触发扩展
+function onTimelineScroll(): void {
+  const el = timelineScrollEl.value;
+  if (!el) return;
+  const nearLeft = el.scrollLeft < EDGE_THRESHOLD;
+  const nearRight = el.scrollLeft + el.clientWidth > el.scrollWidth - EDGE_THRESHOLD;
+  if (nearLeft) {
+    // 往前扩展 14 列，同步调整 rangeStart 并保持滚动位置（视觉不跳）
+    const extendCols = 14;
+    rangeStart.value = columnStartDate(rangeStart.value, -extendCols);
+    rangeCount.value += extendCols;
+    // rangeStart 前移后列整体右移，需要把 scrollLeft 加上扩展的宽度避免画面跳动
+    requestAnimationFrame(() => {
+      el.scrollLeft += extendCols * COL_WIDTH;
+    });
+  } else if (nearRight) {
+    // 往后扩展 14 列
+    rangeCount.value += 14;
+  }
 }
 
 /** 任务 → 横条样式（left/width 基于 day 缩放下的列偏移） */
@@ -249,8 +294,10 @@ async function onCellClick(colDate: Date): Promise<void> {
 /** 缩放切换 */
 function setZoom(z: Zoom): void {
   zoom.value = z;
-  // 切缩放时重置 anchor 到月初
-  anchorDate.value = startOfMonth(new Date());
+  // 切缩放时重置范围到今天前后
+  rangeStart.value = addDays(startOfDay(new Date()), -7);
+  rangeCount.value = INITIAL_COUNT[z];
+  requestAnimationFrame(scrollToToday);
 }
 
 // ─── 拖拽改日期/时长（横条平移 + 边缘拖拽） ───
@@ -401,8 +448,17 @@ function ensureVisible(date: Date): void {
   const last = columns.value[columns.value.length - 1]?.date;
   if (!first || !last) return;
   if (date >= first && date <= last) return; // 在范围内，无需调整
-  // 移出范围：把 anchor 移到新日期所在月的开头，让任务重新进入视野
-  anchorDate.value = startOfMonth(date);
+  // 移出范围：扩展 rangeStart/rangeCount 让任务进入视野
+  if (date < first) {
+    // 往前扩展
+    const extendCols = Math.ceil(daysBetween(date, first) / columnSpanDays(zoom.value)) + 7;
+    rangeStart.value = columnStartDate(rangeStart.value, -extendCols);
+    rangeCount.value += extendCols;
+  } else {
+    // 往后扩展
+    const extendCols = Math.ceil(daysBetween(last, date) / columnSpanDays(zoom.value)) + 7;
+    rangeCount.value += extendCols;
+  }
 }
 
 /** 保持原字面量的时间部分，只换日期 */
@@ -470,7 +526,11 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH);
       </div>
 
       <!-- 右侧时间轴 -->
-      <div class="gantt__timeline">
+      <div
+        ref="timelineScrollEl"
+        class="gantt__timeline"
+        @scroll="onTimelineScroll"
+      >
         <!-- 日期表头 -->
         <div class="gantt__dates" :style="{ width: timelineWidth + 'px' }">
           <div
