@@ -729,6 +729,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
             @click.stop="taskStore.toggleBatchSelect(task.id)"
           ></div>
           <div
+            v-if="!taskStore.batchMode"
             class="gantt__task-check"
             :class="{ 'gantt__task-check--done': task.done }"
             :title="task.done ? '标记未完成' : '标记完成'"
@@ -961,7 +962,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 }
 
 .gantt__task-check {
-  width: 16px; height: 16px;
+  width: 14px; height: 14px;
   border: 1.5px solid var(--jt-text-tertiary);
   border-radius: 4px; /* 方形圆角（与任务列表 TaskCheckbox 一致） */
   flex-shrink: 0;
@@ -974,7 +975,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 .gantt__task-check:hover { border-color: var(--jt-primary); }
 .gantt__task-check--done { background: var(--jt-primary); border-color: var(--jt-primary); }
 .gantt__task-check--done::after {
-  content: '✓'; color: #fff; font-size: 10px; line-height: 1;
+  content: '✓'; color: #fff; font-size: 9px; line-height: 1;
   /* flex 居中，无需绝对定位 */
 }
 .gantt__task-prio { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
