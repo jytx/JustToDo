@@ -8,13 +8,16 @@ import { getTasksByDueRange } from "@/api/db";
 import type { Task, Priority } from "@/types";
 import { parseLocalIso, dateToLocalIso } from "@/utils/date";
 import { subscribeTaskChanged } from "@/composables/useCalendarView";
+import { useBatchSelect } from "@/composables/useBatchSelect";
 import MenuPopover from "@/components/MenuPopover.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
+import BatchContextMenu from "@/components/BatchContextMenu.vue";
 
 const props = defineProps<{ id: string }>();
 
 const taskStore = useTaskStore();
+const { batchCtxMenu, onBatchContextMenu } = useBatchSelect();
 
 /** 缩放粒度：day=每天一列，week=每周一列，month=每月一列 */
 type Zoom = "day" | "week" | "month";
@@ -414,8 +417,16 @@ const ctxMenu = reactive<{ visible: boolean; x: number; y: number; taskId: strin
   taskId: "",
 });
 
-/** 任务行右键：记录目标任务 + 弹菜单 */
+/** 任务行右键：多选模式下走批量菜单，否则弹单任务菜单 */
 function onTaskContextMenu(e: MouseEvent, task: Task): void {
+  // 多选模式：右键的任务若未选中则先加入选中集合，关单任务菜单，让事件冒泡弹批量菜单
+  if (taskStore.batchMode) {
+    if (!taskStore.isBatchSelected(task.id)) {
+      taskStore.toggleBatchSelect(task.id);
+    }
+    ctxMenu.visible = false;
+    return; // 不 stop，冒泡到 .timeline 的 onBatchContextMenu 弹批量菜单
+  }
   e.preventDefault();
   e.stopPropagation();
   ctxMenu.taskId = task.id;
@@ -633,7 +644,8 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 </script>
 
 <template>
-  <div class="timeline">
+  <!-- 根容器绑 contextmenu：多选模式下右键选中任务时冒泡上来弹批量菜单 -->
+  <div class="timeline" @contextmenu="onBatchContextMenu($event)">
     <!-- 工具栏 -->
     <div class="timeline__toolbar">
       <div class="timeline__nav">
@@ -806,6 +818,13 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
         <span>删除任务</span>
       </MenuPopoverItem>
     </ContextMenu>
+
+    <!-- 批量操作菜单（多选模式下右键选中任务时弹出） -->
+    <BatchContextMenu
+      v-model:visible="batchCtxMenu.visible"
+      :x="batchCtxMenu.x"
+      :y="batchCtxMenu.y"
+    />
   </div>
 </template>
 
