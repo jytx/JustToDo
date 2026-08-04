@@ -301,7 +301,11 @@ function barStyle(task: Task): { left: number; width: number } | null {
   // 横条定位按"天"计算（day 缩放）。week/month 缩放下也用天数映射到列宽
   const dayWidth = zoom.value === "day" ? COL_WIDTH.value : COL_WIDTH.value / columnSpanDays(zoom.value);
   const startOffset = daysBetween(firstColDate, start);
-  const endOffset = daysBetween(firstColDate, end);
+  let endOffset = daysBetween(firstColDate, end);
+  // dueEndAt 若是某天 00:00:00，通常是"排他端点"（如 8/4T00:00 表示到 8/3 结束），
+  // 此时 width 不该再 +1，否则横条多覆盖一天（用户看到任务延伸到不该在的日期）
+  const isExclusiveEnd = task.dueEndAt?.endsWith("T00:00:00");
+  if (isExclusiveEnd && endOffset > startOffset) endOffset -= 1;
   const left = startOffset * dayWidth;
   const width = Math.max(dayWidth, (endOffset - startOffset + 1) * dayWidth - 2);
   return { left: Math.max(0, left), width };
