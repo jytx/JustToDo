@@ -267,12 +267,33 @@ function scrollToToday(): void {
 
 /** 时间轴滚动容器 ref */
 const timelineScrollEl = ref<HTMLElement | null>(null);
+/** 左侧任务列滚动容器 ref */
+const tasksScrollEl = ref<HTMLElement | null>(null);
+
+/** 垂直滚动同步锁：同步对端 scrollTop 时置 true，避免 A→B→A 递归触发 */
+let syncingScroll = false;
+/** 把 source 的 scrollTop 同步给 target（仅垂直方向，横向各自独立） */
+function syncVerticalScroll(source: HTMLElement, target: HTMLElement): void {
+  if (syncingScroll) return;
+  syncingScroll = true;
+  target.scrollTop = source.scrollTop;
+  syncingScroll = false;
+}
+/** 左侧任务列 scroll → 同步右侧时间轴的垂直滚动 */
+function onTasksScroll(): void {
+  const src = tasksScrollEl.value;
+  const dst = timelineScrollEl.value;
+  if (src && dst) syncVerticalScroll(src, dst);
+}
 
 /** 滚动到边缘时扩展范围（无限滚动） */
 const EDGE_THRESHOLD = 200; // 距边缘 200px 触发扩展
 function onTimelineScroll(): void {
   const el = timelineScrollEl.value;
   if (!el) return;
+  // 垂直同步：把右侧的 scrollTop 反向同步给左侧任务列
+  const tasks = tasksScrollEl.value;
+  if (tasks) syncVerticalScroll(el, tasks);
   const nearLeft = el.scrollLeft < EDGE_THRESHOLD;
   const nearRight = el.scrollLeft + el.clientWidth > el.scrollWidth - EDGE_THRESHOLD;
   if (nearLeft) {
@@ -681,7 +702,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
     <!-- 甘特图主体 -->
     <div class="gantt">
       <!-- 左侧任务名列 -->
-      <div class="gantt__tasks">
+      <div ref="tasksScrollEl" class="gantt__tasks" @scroll="onTasksScroll">
         <div class="gantt__tasks-head">
           <span>任务（{{ tasks.length }}）</span>
           <MenuPopover v-model:visible="moreMenuOpen" placement="bottom-right">
