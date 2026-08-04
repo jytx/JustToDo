@@ -494,16 +494,16 @@ function onBarMouseMove(e: MouseEvent, task: Task): void {
   if (dragState.value?.taskId === task.id) return;
   const rect = el.getBoundingClientRect();
   const offsetX = e.clientX - rect.left;
-  el.style.cursor = offsetX < 6 || offsetX > rect.width - 6 ? "ew-resize" : "grab";
+  el.style.cursor = offsetX < 10 || offsetX > rect.width - 10 ? "ew-resize" : "grab";
 }
 
 function onBarMouseDown(e: MouseEvent, task: Task): void {
   if (task.done) return;
   wasDragging = false;
-  // 边缘 6px 内 → resize，否则 move
+  // 边缘 10px 内 → resize，否则 move（10px 比原来 6px 更易抓取）
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const offsetX = e.clientX - rect.left;
-  const mode = offsetX < 6 ? "resize-start" : offsetX > rect.width - 6 ? "resize-end" : "move";
+  const mode = offsetX < 10 ? "resize-start" : offsetX > rect.width - 10 ? "resize-end" : "move";
   dragState.value = {
     taskId: task.id,
     mode,
@@ -1071,6 +1071,19 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 }
 .gantt__bar:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
 .gantt__bar:active { cursor: grabbing; }
+/* 边缘 resize 区域视觉指示（左右 10px，hover 显示加深） */
+.gantt__bar::before, .gantt__bar::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 10px;
+  cursor: ew-resize;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.gantt__bar::before { left: 0; border-radius: 6px 0 0 6px; background: rgba(255,255,255,0.25); }
+.gantt__bar::after { right: 0; border-radius: 0 6px 6px 0; background: rgba(255,255,255,0.25); }
+.gantt__bar:hover::before, .gantt__bar:hover::after { opacity: 1; }
 .gantt__bar--done { opacity: 0.5; }
 
 /* 拖拽中的目标日期提示气泡（显示在横条上方） */
