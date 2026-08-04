@@ -166,14 +166,10 @@ function dueInfo(task: Task) {
   return formatDueDate(task.dueStartAt, task.dueEndAt);
 }
 
-/** 点击卡片打开详情 */
+/** 点击卡片：修饰键或多选模式 → 多选增减；普通点击 → 打开详情。
+ *  统一转发给 onTaskRowSelect（内部按修饰键/批量模式分流） */
 function onCardClick(taskId: string, e: MouseEvent): void {
-  // 修饰键点击（Shift/Cmd）→ 多选；普通点击 → 打开详情
-  if (e.shiftKey || e.metaKey || e.ctrlKey) {
-    onTaskRowSelect(taskId, e);
-    return;
-  }
-  taskStore.selectTask(taskId);
+  onTaskRowSelect(taskId, e);
 }
 
 /** 复选框切换完成 */
@@ -199,7 +195,8 @@ function onCardContextMenu(e: MouseEvent, task: Task): void {
       taskStore.toggleBatchSelect(task.id);
     }
     ctxMenu.visible = false;
-    return; // 不 stop，冒泡到 .kanban 的 onBatchContextMenu 弹批量菜单
+    blankMenu.visible = false;
+    return; // 不 stop，冒泡到 .kanban 的 onRootContextMenu 弹批量菜单
   }
   e.preventDefault();
   e.stopPropagation();
@@ -207,6 +204,48 @@ function onCardContextMenu(e: MouseEvent, task: Task): void {
   ctxMenu.x = e.clientX;
   ctxMenu.y = e.clientY;
   ctxMenu.visible = true;
+  blankMenu.visible = false;
+}
+
+/** 空白区右键菜单状态（非多选模式下右键空白处弹「新建任务」） */
+const blankMenu = reactive<{ visible: boolean; x: number; y: number; listId: string; priority: Priority }>({
+  visible: false,
+  x: 0,
+  y: 0,
+  listId: "",
+  priority: 0,
+});
+
+/** 根容器右键分流（卡片外的空白区）：
+ *  - 多选模式 → 弹批量菜单
+ *  - 非多选 → 弹「新建任务」空白菜单（归属当前清单/默认清单） */
+function onRootContextMenu(e: MouseEvent): void {
+  // 多选模式下右键空白：弹批量菜单
+  if (taskStore.batchMode && taskStore.batchSelectedIdsArr.length > 0) {
+    onBatchContextMenu(e);
+    return;
+  }
+  // 卡片右键已 stopPropagation，到这里说明是空白区
+  e.preventDefault();
+  blankMenu.x = e.clientX;
+  blankMenu.y = e.clientY;
+  // 清单模式用当前清单；智能视图用默认清单
+  blankMenu.listId = isSmart.value ? (props.defaultListId ?? "inbox") : (listId.value ?? "inbox");
+  blankMenu.priority = 0;
+  blankMenu.visible = true;
+  ctxMenu.visible = false;
+}
+
+/** 空白区右键的新建任务（空标题 + 选中打开详情） */
+async function onBlankAddTask(): Promise<void> {
+  const listId = blankMenu.listId || "inbox";
+  blankMenu.visible = false;
+  const created = await taskStore.createTask({
+    title: "",
+    listId,
+    priority: blankMenu.priority,
+  });
+  taskStore.selectTask(created.id);
 }
 
 /** 新建任务（与所点任务同清单同列，空标题 + 选中打开详情）。
@@ -247,8 +286,8 @@ function onDragOver(e: DragEvent): void {
 </script>
 
 <template>
-  <!-- 根容器绑 contextmenu：多选模式下右键选中任务时冒泡上来弹批量菜单 -->
-  <div class="kanban" @contextmenu="onBatchContextMenu($event)">
+  <!-- 根容器绑 contextmenu：空白区右键弹新建菜单；多选模式下右键弹批量菜单 -->
+  <div class="kanban" @contextmenu="onRootContextMenu($event)">
     <!-- 列容器（水平滚动） -->
     <div class="kanban__board">
       <div
@@ -336,6 +375,14 @@ function onDragOver(e: DragEvent): void {
       <MenuPopoverItem danger @click="onCtxDelete">
         <icon-delete :size="15" />
         <span>删除任务</span>
+      </MenuPopoverItem>
+    </ContextMenu>
+
+    <!-- 空白区右键菜单（新建任务） -->
+    <ContextMenu v-model:visible="blankMenu.visible" :x="blankMenu.x" :y="blankMenu.y">
+      <MenuPopoverItem @click="onBlankAddTask">
+        <icon-plus :size="15" />
+        <span>新建任务</span>
       </MenuPopoverItem>
     </ContextMenu>
 
