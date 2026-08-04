@@ -158,13 +158,25 @@ function onDragStart(taskId: string): void {
 /** 展开的分组 key 列表（a-collapse 的 v-model） */
 const activeGroupKeys = ref<string[]>([]);
 
-/** 按分组划分的未完成任务（基于 localGroups + store 数据） */
+/** 按分组划分的未完成任务（基于 localGroups + store 数据）。
+ *  兜底：group_id 为空或不在已知分组的任务，并入默认分组（{listId}-default）显示，
+ *  避免脏数据（group_id 丢失）导致任务在列表凭空消失（sidebar 计数对得上却看不到）。 */
 const tasksByGroup = computed(() => {
   const taskMap = new Map(taskStore.openTasks.map((t) => [t.id, t]));
   const result = new Map<string, typeof taskStore.openTasks>();
+  const knownGroups = new Set(groupIds.value);
+  const defaultGroupId = `${props.id}-default`;
   for (const gid of groupIds.value) {
     const ids = localGroups[gid] ?? [];
     result.set(gid, ids.map((id) => taskMap.get(id)).filter((t): t is NonNullable<typeof t> => !!t));
+  }
+  // 把 group_id 不在已知分组的孤儿任务并入默认分组
+  const orphans = taskStore.openTasks.filter(
+    (t) => !knownGroups.has(t.groupId ?? ""),
+  );
+  if (orphans.length > 0) {
+    const existing = result.get(defaultGroupId) ?? [];
+    result.set(defaultGroupId, [...existing, ...orphans]);
   }
   return result;
 });
