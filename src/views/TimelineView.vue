@@ -9,6 +9,7 @@ import type { Task, Priority } from "@/types";
 import { parseLocalIso, dateToLocalIso } from "@/utils/date";
 import { subscribeTaskChanged } from "@/composables/useCalendarView";
 import { useBatchSelect } from "@/composables/useBatchSelect";
+import { getViewPref, setViewPref } from "@/composables/useViewPrefs";
 import MenuPopover from "@/components/MenuPopover.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
@@ -74,15 +75,16 @@ const rangeLiteral = computed(() => {
 /** 加载范围内的任务（按当前清单过滤）。
  *  注意：不按 due_start_at 排序——拖拽改日期后行顺序应保持不变
  *  （只移动横条，不重排行），用 sort_order 保持稳定顺序。 */
-/** 是否显示已完成任务（false 时只加载未完成） */
-const showCompleted = ref(true);
+/** 是否显示已完成任务（false 时只加载未完成）—— 从清单偏好恢复初始值 */
+const showCompleted = ref<boolean>(getViewPref(props.id).showCompleted);
 
 /** 任务列表更多菜单开关 */
 const moreMenuOpen = ref(false);
 
-/** 切换显示/隐藏已完成 */
+/** 切换显示/隐藏已完成 + 持久化到清单偏好 */
 function toggleShowCompleted(): void {
   showCompleted.value = !showCompleted.value;
+  setViewPref(props.id, { showCompleted: showCompleted.value });
   moreMenuOpen.value = false;
 }
 
@@ -166,6 +168,10 @@ onMounted(() => {
   requestAnimationFrame(scrollToToday);
 });
 watch([rangeStart, rangeCount, zoom, () => props.id, showCompleted], loadTasks);
+// 切换清单时从偏好恢复 showCompleted
+watch(() => props.id, (newId) => {
+  showCompleted.value = getViewPref(newId).showCompleted;
+});
 
 // 订阅任务变更（标题/时间/完成等修改后刷新，与其他视图的 notifyTaskChanged 总线联动）
 const unsubscribe = subscribeTaskChanged(() => { void loadTasks(); });

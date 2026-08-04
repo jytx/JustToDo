@@ -1,8 +1,9 @@
-// 视图偏好持久化 —— 按清单记住用户选择的视图（列表/看板/时间线）和看板维度（优先级/分组）。
+// 视图偏好持久化 —— 按清单记住用户选择的视图（列表/看板/时间线）、看板维度、
+// 时间线是否显示已完成。
 //
 // 用 localStorage 存储（UI 偏好，无需进 DB schema）。每个清单独立记录，
-// key 形如 "jt-view-pref:list:{listId}"，值为 JSON { view, kanbanMode }。
-// 查不到时返回默认值（列表视图 + 优先级维度）。
+// key 形如 "jt-view-pref:list:{listId}"，值为 JSON。
+// 查不到时返回默认值（列表视图 + 优先级维度 + 显示已完成）。
 
 import { type KanbanMode } from "@/stores/kanban";
 
@@ -15,9 +16,11 @@ interface ViewPref {
   view: ListView;
   /** 看板维度（仅看板视图有意义）：优先级 / 分组 */
   kanbanMode: KanbanMode;
+  /** 时间线是否显示已完成任务（默认 true） */
+  showCompleted: boolean;
 }
 
-const DEFAULT_PREF: ViewPref = { view: "list", kanbanMode: "priority" };
+const DEFAULT_PREF: ViewPref = { view: "list", kanbanMode: "priority", showCompleted: true };
 const PREFIX = "jt-view-pref:list:";
 
 /** 读取某清单的视图偏好（无记录返回默认值） */
@@ -30,6 +33,7 @@ export function getViewPref(listId: string): ViewPref {
     return {
       view,
       kanbanMode: parsed.kanbanMode === "group" ? "group" : "priority",
+      showCompleted: parsed.showCompleted !== false,
     };
   } catch {
     return { ...DEFAULT_PREF };
