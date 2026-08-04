@@ -135,7 +135,8 @@ function onRowDragLeave(e: DragEvent, taskId: string): void {
   if (rowDropTarget.value?.id === taskId) rowDropTarget.value = null;
 }
 
-/** 行 drop：重排 tasks 数组 + 持久化 sort_order */
+/** 行 drop：重排根任务顺序 + 持久化 sort_order。
+ *  只在根任务间重排（tasks 含子任务，需过滤 parentId）；子任务跟随父任务不动。 */
 async function onRowDrop(): Promise<void> {
   const dragId = rowDragId.value;
   const target = rowDropTarget.value;
@@ -143,18 +144,27 @@ async function onRowDrop(): Promise<void> {
     clearRowDrag();
     return;
   }
-  // 重排本地 tasks 数组
-  const ids = tasks.value.map((t) => t.id).filter((id) => id !== dragId);
-  const targetIdx = ids.indexOf(target.id);
+  // 只重排根任务（parentId 为 null）；子任务不参与排序
+  const rootIds = tasks.value.filter((t) => !t.parentId).map((t) => t.id);
+  const reordered = rootIds.filter((id) => id !== dragId);
+  const targetIdx = reordered.indexOf(target.id);
   if (targetIdx === -1) { clearRowDrag(); return; }
   const insertIdx = target.pos === "before" ? targetIdx : targetIdx + 1;
-  ids.splice(insertIdx, 0, dragId);
-  // 按新顺序重建 tasks（保持 Task 对象）
+  reordered.splice(insertIdx, 0, dragId);
+  // 按新根任务顺序重建 tasks（根任务按新序，子任务保持原位跟随其后）
   const map = new Map(tasks.value.map((t) => [t.id, t]));
-  tasks.value = ids.map((id) => map.get(id)).filter((t): t is Task => !!t);
+  const newTasks: Task[] = [];
+  for (const id of reordered) {
+    newTasks.push(map.get(id)!);
+    // 该根任务的子任务保持原顺序跟在后面
+    for (const t of tasks.value) {
+      if (t.parentId === id) newTasks.push(t);
+    }
+  }
+  tasks.value = newTasks;
   clearRowDrag();
   // 持久化（含当前清单其他未在时间线显示的任务，persistTaskOrder 内部会处理全量重排）
-  await taskStore.persistTaskOrder(ids);
+  await taskStore.persistTaskOrder(reordered);
 }
 
 /** 手柄 dragend：清状态 */
@@ -877,11 +887,11 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
           :style="row.depth > 0 ? { paddingLeft: '28px' } : undefined"
           @click="onBarClick(row.task, $event)"
           @contextmenu="onTaskContextMenu($event, row.task)"
-          @dragover="onRowDragOver($event, row.task.id)"
-          @dragleave="onRowDragLeave($event, row.task.id)"
+          @dragover="row.depth === 0 ? onRowDragOver($event, row.task.id) : undefined"
+          @dragleave="row.depth === 0 ? onRowDragLeave($event, row.task.id) : undefined"
           @drop="onRowDrop"
         >
-          <!-- 根任务：展开/收起箭头（有子任务时）+ 拖拽手柄 -->
+          <!-- 根任务前导区：有子任务显示展开箭头，无子任务显示同宽占位（保证手柄对齐） -->
           <span
             v-if="row.depth === 0 && hasChildren(row.task.id)"
             class="gantt__task-arrow"
@@ -890,6 +900,8 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
           >
             <icon-right :size="12" />
           </span>
+          <span v-else-if="row.depth === 0" class="gantt__task-arrow-placeholder"></span>
+          <!-- 拖拽手柄（根任务且非智能视图；子任务无手柄） -->
           <span
             v-if="row.depth === 0 && !isSmart"
             class="gantt__task-handle"
@@ -1133,6 +1145,11 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 }
 .gantt__task-arrow:hover { color: var(--jt-text-primary); }
 .gantt__task-arrow--open { transform: rotate(90deg); }
+/* 无子任务根任务的箭头占位：与箭头同宽，保证拖拽手柄位置对齐 */
+.gantt__task-arrow-placeholder {
+  width: 12px;
+  flex-shrink: 0;
+}
 
 /* 拖拽手柄：默认隐藏，hover 行时显示 */
 .gantt__task-handle {
