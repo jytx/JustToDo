@@ -99,6 +99,15 @@ const isCalendarView = computed<boolean>(() => {
   return name === "week" || name === "month" || name === "year";
 });
 
+/** 清单视图切换类型（列表 / 看板 / 时间线）——读 query ?view= */
+type ListView = "list" | "kanban" | "timeline";
+/** 当前视图形态（看板/时间线被多处复用判断：是否悬浮详情面板等） */
+const currentListView = computed<ListView>(() => {
+  if (route.query.view === "kanban") return "kanban";
+  if (route.query.view === "timeline") return "timeline";
+  return "list";
+});
+
 /**
  * 路由切换时关闭任务详情面板
  *
@@ -111,15 +120,20 @@ watch(showTaskSidebar, (isTaskView) => {
   }
 });
 
-/** 详情面板打开时，主区域右侧留出面板宽度的空间（日历视图除外，悬浮不缩进） */
+/** 详情面板打开时，主区域右侧留出面板宽度的空间（悬浮视图除外，不缩进）。
+ *  悬浮视图 = 日历(周/月/年) + 看板 + 时间线：这些视图内容宽幅/水平滚动，
+ *  被挤压会变形，故详情面板改为右侧悬浮 drawer 盖在上面 */
+const isFloatingPanelView = computed(() =>
+  isCalendarView.value || currentListView.value === "kanban" || currentListView.value === "timeline",
+);
 const mainStyle = computed(() => {
-  if (!taskStore.detailOpen || isCalendarView.value) return { paddingRight: "0px" };
+  if (!taskStore.detailOpen || isFloatingPanelView.value) return { paddingRight: "0px" };
   return { paddingRight: panelWidth.value + "px" };
 });
 
-/** 详情面板打开时，topbar 整体向右推一个面板宽度（日历视图除外，悬浮不缩进） */
+/** 详情面板打开时，topbar 整体向右推一个面板宽度（悬浮视图除外，不缩进） */
 const topbarStyle = computed(() => {
-  if (!taskStore.detailOpen || isCalendarView.value) return {};
+  if (!taskStore.detailOpen || isFloatingPanelView.value) return {};
   return { right: `${panelWidth.value + 24}px` };
 });
 
@@ -153,14 +167,8 @@ function onKanbanModeChange(mode: "priority" | "group"): void {
 }
 
 /** 清单视图切换（列表 / 看板 / 时间线，通过 query ?view= 切换；清单 + 智能视图均可显示） */
-type ListView = "list" | "kanban" | "timeline";
 const LIST_VIEW_LABELS: Record<ListView, string> = { list: "列表", kanban: "看板", timeline: "时间线" };
 const listViewMenuOpen = ref(false);
-const currentListView = computed<ListView>(() => {
-  if (route.query.view === "kanban") return "kanban";
-  if (route.query.view === "timeline") return "timeline";
-  return "list";
-});
 
 /** 是否处于智能视图路由（today/upcoming/all）——视图切换菜单也在此显示 */
 const isSmartRoute = computed(() =>
