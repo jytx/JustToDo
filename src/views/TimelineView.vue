@@ -17,7 +17,7 @@ import BatchContextMenu from "@/components/BatchContextMenu.vue";
 const props = defineProps<{ id: string }>();
 
 const taskStore = useTaskStore();
-const { batchCtxMenu, onBatchContextMenu } = useBatchSelect();
+const { batchCtxMenu, onTaskRowSelect, onBatchContextMenu } = useBatchSelect();
 
 /** 缩放粒度：day=每天一列，week=每周一列，month=每月一列 */
 type Zoom = "day" | "week" | "month";
@@ -371,19 +371,14 @@ const PRIO_COLOR: Record<Priority, string> = {
 };
 
 // ─── 交互 ───
-/** 点击横条 → 打开详情 */
-function onBarClick(task: Task): void {
+/** 点击任务行/横条 → 转发给 onTaskRowSelect 处理修饰键（Shift/Cmd 多选、普通单选） */
+function onBarClick(task: Task, e: MouseEvent): void {
   // 拖拽刚结束（wasDragging）→ 不触发，避免拖拽误触
   if (wasDragging) {
     wasDragging = false;
     return;
   }
-  // 多选模式：切换批量选中（不打开详情面板）
-  if (taskStore.batchMode) {
-    taskStore.toggleBatchSelect(task.id);
-    return;
-  }
-  taskStore.selectTask(task.id);
+  onTaskRowSelect(task.id, e);
 }
 
 /** 点击复选框切换完成状态 */
@@ -707,7 +702,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
             'gantt__task-row--drop-after': rowDropTarget?.id === task.id && rowDropTarget.pos === 'after',
             'gantt__task-row--dragging': rowDragId === task.id,
           }"
-          @click="onBarClick(task)"
+          @click="onBarClick(task, $event)"
           @contextmenu="onTaskContextMenu($event, task)"
           @dragover="onRowDragOver($event, task.id)"
           @dragleave="onRowDragLeave($event, task.id)"
@@ -792,7 +787,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
               :style="dragBarStyle(task)"
               @mousedown="onBarMouseDown($event, task)"
               @mousemove="onBarMouseMove($event, task)"
-              @click.stop="onBarClick(task)"
+              @click.stop="onBarClick(task, $event)"
             >
               {{ task.title || '(未命名)' }}
               <!-- 拖拽中的目标日期提示气泡 -->
