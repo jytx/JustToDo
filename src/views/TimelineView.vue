@@ -290,20 +290,23 @@ function onTimelineScroll(): void {
   }
 }
 
-/** 任务 → 横条样式（left/width 基于 day 缩放下的列偏移） */
+/** 任务 → 横条样式（left/width 基于 day 缩放下的列偏移）。
+ *  横条按"天"对齐（截断时刻），不因非 00:00 时刻偏移导致跨入前一天。 */
 function barStyle(task: Task): { left: number; width: number } | null {
-  const start = parseLocalIso(task.dueStartAt);
-  if (!start) return null;
+  const startRaw = parseLocalIso(task.dueStartAt);
+  if (!startRaw) return null;
   // end 缺失时用 start 兜底（单点任务，横条占一天）
-  const end = parseLocalIso(task.dueEndAt) ?? start;
+  const endRaw = parseLocalIso(task.dueEndAt) ?? startRaw;
   const firstColDate = columns.value[0]?.date;
   if (!firstColDate) return null;
-  // 横条定位按"天"计算（day 缩放）。week/month 缩放下也用天数映射到列宽
+  // 截断到天（忽略时分秒），保证横条按整天对齐，不因时刻跨日前一天
+  const startDay = new Date(startRaw.getFullYear(), startRaw.getMonth(), startRaw.getDate());
+  const endDay = new Date(endRaw.getFullYear(), endRaw.getMonth(), endRaw.getDate());
   const dayWidth = zoom.value === "day" ? COL_WIDTH.value : COL_WIDTH.value / columnSpanDays(zoom.value);
-  const startOffset = daysBetween(firstColDate, start);
-  let endOffset = daysBetween(firstColDate, end);
+  const startOffset = daysBetween(firstColDate, startDay);
+  let endOffset = daysBetween(firstColDate, endDay);
   // dueEndAt 若是某天 00:00:00，通常是"排他端点"（如 8/4T00:00 表示到 8/3 结束），
-  // 此时 width 不该再 +1，否则横条多覆盖一天（用户看到任务延伸到不该在的日期）
+  // 此时 width 不该再 +1，否则横条多覆盖一天
   const isExclusiveEnd = task.dueEndAt?.endsWith("T00:00:00");
   if (isExclusiveEnd && endOffset > startOffset) endOffset -= 1;
   const left = startOffset * dayWidth;
