@@ -29,6 +29,31 @@ const props = defineProps<{
   defaultListId?: string;
 }>();
 
+// ─── 左侧任务列宽度拖拽调整 ───
+/** 任务列宽度（可拖拽手柄调整，范围 160~400） */
+const tasksColWidth = ref<number>(200);
+/** 拖拽调宽：mousedown 记录起始，mousemove 实时改宽度，mouseup 解绑 */
+function onColResizeStart(e: MouseEvent): void {
+  e.preventDefault();
+  const startX = e.clientX;
+  const startWidth = tasksColWidth.value;
+  function onMove(ev: MouseEvent): void {
+    // 向右拖增宽（delta 正），向左拖减宽；钳制到 160~400
+    const delta = ev.clientX - startX;
+    tasksColWidth.value = Math.max(160, Math.min(400, startWidth + delta));
+  }
+  function onUp(): void {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
+}
+
 /** 是否处于智能视图模式（跨清单） */
 const isSmart = computed(() => props.smartView !== undefined);
 
@@ -861,8 +886,13 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 
     <!-- 甘特图主体 -->
     <div class="gantt">
-      <!-- 左侧任务名列 -->
-      <div ref="tasksScrollEl" class="gantt__tasks" @scroll="onTasksScroll">
+      <!-- 左侧任务名列（宽度可拖拽调整） -->
+      <div
+        ref="tasksScrollEl"
+        class="gantt__tasks"
+        :style="{ width: tasksColWidth + 'px' }"
+        @scroll="onTasksScroll"
+      >
         <div class="gantt__tasks-head">
           <span>任务（{{ tasks.length }}）</span>
           <MenuPopover v-model:visible="moreMenuOpen" placement="bottom-right">
@@ -942,6 +972,9 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
           <span class="gantt__task-name" :class="{ 'gantt__task-name--done': row.task.done }">{{ row.task.title || '(未命名)' }}</span>
         </div>
       </div>
+
+      <!-- 任务列/时间轴分隔拖拽手柄（mousedown 调整任务列宽度） -->
+      <div class="gantt__col-resizer" @mousedown="onColResizeStart"></div>
 
       <!-- 右侧时间轴（垂直滚动由 wheel 转发给左侧统一处理，自身只横滚） -->
       <div
@@ -1080,11 +1113,25 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 
 /* 左侧任务名列 */
 .gantt__tasks {
-  width: 200px;
+  /* width 由 inline style（tasksColWidth）控制，支持拖拽调整 */
   flex-shrink: 0;
-  border-right: 2px solid var(--jt-border);
+  border-right: 1px solid var(--jt-border);
   background: var(--jt-surface);
   overflow-y: auto;
+}
+/* 任务列/时间轴分隔拖拽手柄：窄竖线，hover 高亮，mousedown 调宽 */
+.gantt__col-resizer {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 4;
+  transition: background 0.12s;
+}
+.gantt__col-resizer:hover,
+.gantt__col-resizer:active {
+  background: var(--jt-primary);
 }
 .gantt__tasks-head {
   height: 56px;
