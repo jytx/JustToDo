@@ -582,12 +582,14 @@ pub async fn task_get_by_due_range(
     include_done: bool,
 ) -> CmdResult<Vec<Task>> {
     let done_clause = if include_done { "" } else { "AND done = 0" };
-    // 区间相交匹配：要求 due_start_at <= end 且 (due_end_at ?? due_start_at) >= start。
-    // due_end_at 为 null 时用 due_start_at 兜底（单点任务），否则这类任务永远查不到。
+    // 区间相交匹配：开始日期用 COALESCE(due_start_at, due_end_at) 兜底，
+    // 结束日期用 COALESCE(due_end_at, due_start_at) 兜底。
+    // 这样只有 due_end_at（无开始日期）的任务也能被查到——开始=结束=due_end_at，
+    // 作为单点任务显示，避免在时间线/日历凭空消失。
     let sql = format!(
         "SELECT * FROM tasks
-         WHERE due_start_at IS NOT NULL
-           AND due_start_at <= $2
+         WHERE COALESCE(due_start_at, due_end_at) IS NOT NULL
+           AND COALESCE(due_start_at, due_end_at) <= $2
            AND COALESCE(due_end_at, due_start_at) >= $1
            {}
          ORDER BY done ASC, due_start_at ASC, sort_order ASC",

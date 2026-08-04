@@ -502,7 +502,8 @@ function onTimelineScroll(): void {
 /** 任务 → 横条样式（left/width 基于 day 缩放下的列偏移）。
  *  横条按"天"对齐（截断时刻），不因非 00:00 时刻偏移导致跨入前一天。 */
 function barStyle(task: Task): { left: number; width: number } | null {
-  const startRaw = parseLocalIso(task.dueStartAt);
+  // 开始日期缺失时用结束日期兜底（只有 due_end_at 的任务），两者都空则不显示
+  const startRaw = parseLocalIso(task.dueStartAt) ?? parseLocalIso(task.dueEndAt);
   if (!startRaw) return null;
   // end 缺失时用 start 兜底（单点任务，横条占一天）
   const endRaw = parseLocalIso(task.dueEndAt) ?? startRaw;
