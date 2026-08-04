@@ -2,7 +2,7 @@
 // 看板视图 —— 作为清单的视图（由 ListView 按 ?view=kanban 条件渲染）
 // 支持两种分列维度：按优先级（无/低/中/高）或按分组（Group）
 // 只显示当前清单的任务，拖拽跨列改对应字段（priority / groupId）+ 列内排序
-import { computed, reactive, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useGroupStore } from "@/stores/group";
@@ -58,6 +58,44 @@ watch(
   },
   { immediate: true },
 );
+
+// 预加载子任务缓存：任务列表变化后批量拉取各根任务的子任务到 subtaskCache，
+// 供卡片展示「子任务进度 + 展开明细」。父级 ListView/SmartView 已加载 currentTasks。
+watch(
+  () => taskStore.openTasks,
+  () => { void taskStore.preloadSubtaskCounts(); },
+  { immediate: true },
+);
+
+// ─── 子任务展开状态（父卡片 id 集合） ───
+const expandedCardIds = ref<Set<string>>(new Set());
+/** 切换某父卡片的子任务展开/收起 */
+function toggleCardExpand(taskId: string): void {
+  const next = new Set(expandedCardIds.value);
+  if (next.has(taskId)) next.delete(taskId);
+  else next.add(taskId);
+  expandedCardIds.value = next;
+}
+/** 某任务的子任务（从 store 缓存读，未加载返回空） */
+function subtasksOf(taskId: string): Task[] {
+  return taskStore.getCachedSubtasks(taskId);
+}
+/** 子任务完成进度文本「已完成/总数」 */
+function subtaskProgressText(taskId: string): string {
+  const subs = subtasksOf(taskId);
+  const done = subs.filter((t) => t.done).length;
+  return `${done}/${subs.length}`;
+}
+/** 子任务完成百分比（0–100，用于进度条填充宽度） */
+function subtaskProgressPercent(taskId: string): number {
+  const subs = subtasksOf(taskId);
+  if (subs.length === 0) return 0;
+  return Math.round((subs.filter((t) => t.done).length / subs.length) * 100);
+}
+/** 某任务是否有子任务（决定是否显示子任务区） */
+function hasSubtasks(taskId: string): boolean {
+  return taskId in taskStore.subtaskCache && subtasksOf(taskId).length > 0;
+}
 
 /** 优先级模式的固定列定义 */
 const PRIORITY_COLUMNS: { priority: Priority; label: string; color: string }[] = [
@@ -362,6 +400,43 @@ function onDragOver(e: DragEvent): void {
                 >{{ dueInfo(task)?.text }}</span>
               </div>
             </div>
+            <!-- 子任务区（仅有子任务时显示）：收起态显示进度，展开态列出明细可勾选 -->
+            <div v-if="hasSubtasks(task.id)" class="kanban__subtasks">
+              <button
+                class="kanban__subtasks-header"
+                @click.stop="toggleCardExpand(task.id)"
+              >
+                <icon-right
+                  class="kanban__subtasks-arrow"
+                  :class="{ 'kanban__subtasks-arrow--open': expandedCardIds.has(task.id) }"
+                  :size="12"
+                />
+                <span class="kanban__subtasks-count">子任务 {{ subtaskProgressText(task.id) }}</span>
+                <span class="kanban__subtasks-bar">
+                  <span
+                    class="kanban__subtasks-bar-fill"
+                    :style="{ width: subtaskProgressPercent(task.id) + '%' }"
+                  ></span>
+                </span>
+              </button>
+              <!-- 展开的子任务明细 -->
+              <div v-if="expandedCardIds.has(task.id)" class="kanban__subtasks-list">
+                <div
+                  v-for="sub in subtasksOf(task.id)"
+                  :key="sub.id"
+                  class="kanban__subtask"
+                  :class="{ 'kanban__subtask--done': sub.done }"
+                  @click.stop="onCardClick(sub.id, $event)"
+                >
+                  <span
+                    class="kanban__subtask-check"
+                    :class="{ 'kanban__subtask-check--done': sub.done }"
+                    @click.stop="onToggle(sub)"
+                  ></span>
+                  <span class="kanban__subtask-title">{{ sub.title || '(未命名)' }}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </TransitionGroup>
 
@@ -484,6 +559,7 @@ function onDragOver(e: DragEvent): void {
 /* 单张卡片 */
 .kanban__card {
   display: flex;
+  flex-wrap: wrap; /* 允许子任务区换行到底部 */
   align-items: flex-start;
   gap: 8px;
   padding: 10px;
@@ -511,6 +587,104 @@ function onDragOver(e: DragEvent): void {
 }
 .kanban__card:hover {
   border-color: var(--jt-primary);
+}
+
+/* === 子任务区（父卡片底部，Trello 风格进度+展开明细）=== */
+.kanban__subtasks {
+  width: 100%; /* flex-wrap 下占满整行，换到卡片底部 */
+  margin-top: 4px;
+}
+.kanban__subtasks-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 2px 0;
+  cursor: pointer;
+  color: var(--jt-text-tertiary);
+  font-size: 11px;
+}
+.kanban__subtasks-arrow {
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.kanban__subtasks-arrow--open {
+  transform: rotate(90deg);
+}
+.kanban__subtasks-count {
+  flex-shrink: 0;
+  font-weight: 500;
+}
+/* 进度条：细轨道 + 主色填充 */
+.kanban__subtasks-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--jt-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.kanban__subtasks-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--jt-primary);
+  border-radius: 2px;
+  transition: width 0.2s ease;
+}
+/* 展开的子任务明细列表 */
+.kanban__subtasks-list {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.kanban__subtask {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.kanban__subtask:hover {
+  background: var(--jt-surface-hover);
+}
+/* 子任务复选框：小方形，与 TaskCheckbox 区分（更小） */
+.kanban__subtask-check {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--jt-text-tertiary);
+  border-radius: 3px;
+  flex-shrink: 0;
+  position: relative;
+  transition: background 0.12s, border-color 0.12s;
+}
+.kanban__subtask-check--done {
+  background: var(--jt-primary);
+  border-color: var(--jt-primary);
+}
+.kanban__subtask-check--done::after {
+  content: '✓';
+  color: #fff;
+  font-size: 9px;
+  line-height: 1;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+.kanban__subtask-title {
+  font-size: 11px;
+  color: var(--jt-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kanban__subtask--done .kanban__subtask-title {
+  color: var(--jt-text-tertiary);
+  text-decoration: line-through;
+}
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 .kanban__card:active {

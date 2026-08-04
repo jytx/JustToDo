@@ -1226,6 +1226,7 @@ export const useTaskStore = defineStore("task", () => {
     loadSubtasksToCache,
     getCachedSubtasks,
     getSubtasks,
+    preloadSubtaskCounts,
     refreshTaskTags,
     // 检查项操作
     addChecklistItem,

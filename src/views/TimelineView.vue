@@ -193,6 +193,92 @@ async function loadTasks(): Promise<void> {
         ? a.sortOrder - b.sortOrder
         : a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0,
     );
+  // 预加载子任务缓存（供父任务展开箭头判断 + 展开后挂载无 due 的子任务行）
+  void preloadTimelineSubtasks();
+}
+
+/** 行类型：根任务行 / 子任务行（带 depth + 父 id 用于缩进与样式区分） */
+interface TimelineRow {
+  task: Task;
+  /** 0=根任务，1=子任务（当前只处理一级） */
+  depth: number;
+  parentId: string | null;
+}
+
+/** 展开的父任务 id 集合（点击展开箭头切换） */
+const expandedParents = ref<Set<string>>(new Set());
+
+/** 按 parentId 归组：根任务 id → 其子任务列表（从 tasks 取有 due 的 +
+ *  从 subtaskCache 补充无 due 的，保证展开后能看到全部子任务） */
+const childrenMap = computed<Record<string, Task[]>>(() => {
+  const map: Record<string, Task[]> = {};
+  // tasks 里已有的子任务（有 due 日期）
+  for (const t of tasks.value) {
+    if (t.parentId) {
+      (map[t.parentId] ??= []).push(t);
+    }
+  }
+  // subtaskCache 补充（无 due 日期但属于该父的子任务，展开时也显示）
+  for (const t of tasks.value) {
+    if (!t.parentId) {
+      const cached = taskStore.getCachedSubtasks(t.id);
+      const existing = new Set((map[t.id] ?? []).map((s) => s.id));
+      for (const sub of cached) {
+        if (!existing.has(sub.id)) (map[t.id] ??= []).push(sub);
+      }
+    }
+  }
+  return map;
+});
+
+/** 某父任务是否有子任务（决定是否显示展开箭头） */
+function hasChildren(taskId: string): boolean {
+  return (childrenMap.value[taskId]?.length ?? 0) > 0;
+}
+
+/** 生成展开后的行列表：根任务行 + 展开父的子任务行（缩进挂载）。
+ *  左右两区共用此列表渲染，保证行对齐。 */
+const rows = computed<TimelineRow[]>(() => {
+  const result: TimelineRow[] = [];
+  for (const t of tasks.value) {
+    // 只处理根任务作为主行（子任务通过展开挂载，不独立成行）
+    if (t.parentId) continue;
+    result.push({ task: t, depth: 0, parentId: null });
+    // 父任务展开时，插入其子任务行
+    if (expandedParents.value.has(t.id)) {
+      const subs = childrenMap.value[t.id] ?? [];
+      for (const sub of subs) {
+        result.push({ task: sub, depth: 1, parentId: t.id });
+      }
+    }
+  }
+  return result;
+});
+
+/** 切换父任务展开/收起 */
+function toggleParentExpand(taskId: string): void {
+  const next = new Set(expandedParents.value);
+  if (next.has(taskId)) next.delete(taskId);
+  else next.add(taskId);
+  expandedParents.value = next;
+}
+
+/** 预加载时间线任务的子任务到 store 缓存（时间线自己 loadTasks，不经 store.currentTasks） */
+async function preloadTimelineSubtasks(): Promise<void> {
+  const rootIds = tasks.value.filter((t) => !t.parentId).map((t) => t.id);
+  const newCache: Record<string, Task[]> = {};
+  await Promise.all(
+    rootIds.map(async (id) => {
+      try {
+        const { getSubtasks } = await import("@/api/db");
+        newCache[id] = await getSubtasks(id);
+      } catch {
+        newCache[id] = [];
+      }
+    }),
+  );
+  // 合并到 store 的 subtaskCache（用 setter 触发响应式）
+  taskStore.subtaskCache = { ...taskStore.subtaskCache, ...newCache };
 }
 
 onMounted(() => {
@@ -776,48 +862,61 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
           </MenuPopover>
         </div>
         <div
-          v-for="task in tasks"
-          :key="task.id"
+          v-for="row in rows"
+          :key="row.task.id"
           class="gantt__task-row"
           :class="{
-            'gantt__task-row--selected': taskStore.selectedTaskId === task.id,
-            'gantt__task-row--focused': taskStore.focusedTaskId === task.id,
-            'gantt__task-row--batch-selected': taskStore.batchMode && taskStore.isBatchSelected(task.id),
-            'gantt__task-row--drop-before': rowDropTarget?.id === task.id && rowDropTarget.pos === 'before',
-            'gantt__task-row--drop-after': rowDropTarget?.id === task.id && rowDropTarget.pos === 'after',
-            'gantt__task-row--dragging': rowDragId === task.id,
+            'gantt__task-row--selected': taskStore.selectedTaskId === row.task.id,
+            'gantt__task-row--focused': taskStore.focusedTaskId === row.task.id,
+            'gantt__task-row--batch-selected': taskStore.batchMode && taskStore.isBatchSelected(row.task.id),
+            'gantt__task-row--drop-before': rowDropTarget?.id === row.task.id && rowDropTarget.pos === 'before',
+            'gantt__task-row--drop-after': rowDropTarget?.id === row.task.id && rowDropTarget.pos === 'after',
+            'gantt__task-row--dragging': rowDragId === row.task.id,
+            'gantt__task-row--sub': row.depth > 0,
           }"
-          @click="onBarClick(task, $event)"
-          @contextmenu="onTaskContextMenu($event, task)"
-          @dragover="onRowDragOver($event, task.id)"
-          @dragleave="onRowDragLeave($event, task.id)"
+          :style="row.depth > 0 ? { paddingLeft: '28px' } : undefined"
+          @click="onBarClick(row.task, $event)"
+          @contextmenu="onTaskContextMenu($event, row.task)"
+          @dragover="onRowDragOver($event, row.task.id)"
+          @dragleave="onRowDragLeave($event, row.task.id)"
           @drop="onRowDrop"
         >
+          <!-- 根任务：展开/收起箭头（有子任务时）+ 拖拽手柄 -->
           <span
+            v-if="row.depth === 0 && hasChildren(row.task.id)"
+            class="gantt__task-arrow"
+            :class="{ 'gantt__task-arrow--open': expandedParents.has(row.task.id) }"
+            @click.stop="toggleParentExpand(row.task.id)"
+          >
+            <icon-right :size="12" />
+          </span>
+          <span
+            v-if="row.depth === 0 && !isSmart"
             class="gantt__task-handle"
-            :draggable="!isSmart"
+            :draggable="true"
             title="拖动排序"
-            @dragstart="onRowDragStart($event, task.id)"
+            @dragstart="onRowDragStart($event, row.task.id)"
             @dragend="onRowDragEnd"
           >
             <icon-drag-dot-vertical :size="12" />
           </span>
+          <!-- 子任务缩进占位（无箭头无手柄，靠 paddingLeft 缩进） -->
           <!-- 多选模式：批量勾选框（圆形，主色填充+白勾） -->
           <div
             v-if="taskStore.batchMode"
             class="gantt__batch-check"
-            :class="{ 'gantt__batch-check--on': taskStore.isBatchSelected(task.id) }"
-            @click.stop="taskStore.toggleBatchSelect(task.id)"
+            :class="{ 'gantt__batch-check--on': taskStore.isBatchSelected(row.task.id) }"
+            @click.stop="taskStore.toggleBatchSelect(row.task.id)"
           ></div>
           <div
             v-if="!taskStore.batchMode"
             class="gantt__task-check"
-            :class="{ 'gantt__task-check--done': task.done }"
-            :title="task.done ? '标记未完成' : '标记完成'"
-            @click.stop="onToggle(task)"
+            :class="{ 'gantt__task-check--done': row.task.done }"
+            :title="row.task.done ? '标记未完成' : '标记完成'"
+            @click.stop="onToggle(row.task)"
           ></div>
-          <div class="gantt__task-prio" :style="{ backgroundColor: PRIO_COLOR[task.priority ?? 0] }"></div>
-          <span class="gantt__task-name" :class="{ 'gantt__task-name--done': task.done }">{{ task.title || '(未命名)' }}</span>
+          <div class="gantt__task-prio" :style="{ backgroundColor: PRIO_COLOR[row.task.priority ?? 0] }"></div>
+          <span class="gantt__task-name" :class="{ 'gantt__task-name--done': row.task.done }">{{ row.task.title || '(未命名)' }}</span>
         </div>
       </div>
 
@@ -848,10 +947,13 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
           <div class="gantt__today-line" :style="{ left: todayLeft + 'px' }"></div>
 
           <div
-            v-for="task in tasks"
-            :key="task.id"
+            v-for="row in rows"
+            :key="row.task.id"
             class="gantt__grid-row"
-            :class="{ 'gantt__grid-row--selected': taskStore.selectedTaskId === task.id }"
+            :class="{
+              'gantt__grid-row--selected': taskStore.selectedTaskId === row.task.id,
+              'gantt__grid-row--sub': row.depth > 0,
+            }"
           >
             <div
               v-for="col in columns"
@@ -864,20 +966,21 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
             ></div>
             <!-- 任务横条 -->
             <div
-              v-if="barStyle(task)"
+              v-if="barStyle(row.task)"
               class="gantt__bar"
               :class="{
-                'gantt__bar--done': task.done,
-                'gantt__bar--dragging': dragState?.taskId === task.id,
+                'gantt__bar--done': row.task.done,
+                'gantt__bar--dragging': dragState?.taskId === row.task.id,
+                'gantt__bar--sub': row.depth > 0,
               }"
-              :style="dragBarStyle(task)"
-              @mousedown="onBarMouseDown($event, task)"
-              @mousemove="onBarMouseMove($event, task)"
-              @click.stop="onBarClick(task, $event)"
+              :style="dragBarStyle(row.task)"
+              @mousedown="onBarMouseDown($event, row.task)"
+              @mousemove="onBarMouseMove($event, row.task)"
+              @click.stop="onBarClick(row.task, $event)"
             >
-              {{ task.title || '(未命名)' }}
+              {{ row.task.title || '(未命名)' }}
               <!-- 拖拽中的目标日期提示气泡 -->
-              <span v-if="dragState?.taskId === task.id && dragPreviewText" class="gantt__bar-tip">
+              <span v-if="dragState?.taskId === row.task.id && dragPreviewText" class="gantt__bar-tip">
                 {{ dragPreviewText }}
               </span>
             </div>
@@ -1011,6 +1114,25 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 .gantt__task-row--drop-before { box-shadow: inset 0 2px 0 var(--jt-primary); }
 .gantt__task-row--drop-after { box-shadow: inset 0 -2px 0 var(--jt-primary); }
 .gantt__task-row--dragging { opacity: 0.4; }
+/* 子任务行：高度略小、文字稍淡（靠 paddingLeft 缩进挂在父行下方） */
+.gantt__task-row--sub {
+  height: 32px;
+}
+.gantt__task-row--sub .gantt__task-name {
+  font-size: 11px;
+  color: var(--jt-text-secondary);
+}
+/* 展开箭头（有子任务的根任务显示，点击展开/收起） */
+.gantt__task-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.15s ease, color 0.12s;
+}
+.gantt__task-arrow:hover { color: var(--jt-text-primary); }
+.gantt__task-arrow--open { transform: rotate(90deg); }
 
 /* 拖拽手柄：默认隐藏，hover 行时显示 */
 .gantt__task-handle {
@@ -1111,6 +1233,10 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 .gantt__grid-row--selected {
   background-color: var(--jt-accent-soft);
 }
+/* 子任务行：高度与左侧 task-row--sub 一致（32px），保持左右行对齐 */
+.gantt__grid-row--sub {
+  height: 32px;
+}
 .gantt__grid-cell {
   flex-shrink: 0;
   /* border-box：物理宽度 = COL_WIDTH，与横条 left 计算对齐（见 .gantt__date 注释） */
@@ -1157,6 +1283,12 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
   box-shadow: 0 1px 2px rgba(0,0,0,0.1);
   transition: box-shadow 0.12s;
   user-select: none;
+}
+/* 子任务横条：高度略小、透明度降低，视觉区分于父任务 */
+.gantt__bar--sub {
+  height: 22px;
+  top: 5px;
+  opacity: 0.85;
 }
 .gantt__bar--dragging {
   /* 拖拽中关闭 transition，让 transform 实时跟手；提升层级避免被其他行遮挡 */
