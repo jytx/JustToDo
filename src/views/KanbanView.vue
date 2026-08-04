@@ -328,14 +328,24 @@ function onDragOver(e: DragEvent): void {
             @click="onCardClick(task.id, $event)"
             @contextmenu="onCardContextMenu($event, task)"
           >
-            <!-- 复选框 -->
+            <!-- 完成复选框（多选模式下隐藏，由批量勾选框取代） -->
             <TaskCheckbox
+              v-if="!taskStore.batchMode"
               :done="task.done"
               :priority="task.priority"
               size="small"
               @click.stop
               @toggle="onToggle(task)"
             />
+            <!-- 批量多选勾选框（仅 batchMode 下显示，圆形区别于方形完成框） -->
+            <span
+              v-if="taskStore.batchMode"
+              class="kanban__batch-check"
+              :class="{ 'kanban__batch-check--on': taskStore.isBatchSelected(task.id) }"
+              @click.stop="onTaskRowSelect(task.id, $event)"
+            >
+              <icon-check v-if="taskStore.isBatchSelected(task.id)" :size="11" style="color: #fff" />
+            </span>
             <!-- 内容区 -->
             <div class="kanban__card-body">
               <span class="kanban__card-title">{{ task.title }}</span>
@@ -482,6 +492,22 @@ function onDragOver(e: DragEvent): void {
   border: 1px solid var(--jt-border);
   cursor: grab;
   transition: box-shadow 0.12s, border-color 0.12s;
+}
+/* 批量多选勾选框（仅 batchMode 下显示，圆形区别于方形完成框，与时间线一致） */
+.kanban__batch-check {
+  width: 16px; height: 16px;
+  border: 2px solid var(--jt-text-tertiary);
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.kanban__batch-check--on {
+  background: var(--jt-primary);
+  border-color: var(--jt-primary);
 }
 .kanban__card:hover {
   border-color: var(--jt-primary);
