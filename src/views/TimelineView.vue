@@ -895,7 +895,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
             'gantt__task-row--dragging': rowDragId === row.task.id,
             'gantt__task-row--sub': row.depth > 0,
           }"
-          :style="row.depth > 0 ? { paddingLeft: 44 + row.depth * 16 + 'px' } : undefined"
+          :style="row.depth > 0 ? { paddingLeft: 40 + row.depth * 14 + 'px' } : undefined"
           @click="onBarClick(row.task, $event)"
           @contextmenu="onTaskContextMenu($event, row.task)"
           @dragover="row.depth === 0 ? onRowDragOver($event, row.task.id) : undefined"
