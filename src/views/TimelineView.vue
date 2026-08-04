@@ -274,11 +274,18 @@ function hasChildren(taskId: string): boolean {
 }
 
 /** 生成展开后的行列表：根任务行 + 递归展开各级子任务行（深度优先，支持多级嵌套）。
- *  左右两区共用此列表渲染，保证行对齐。 */
+ *  左右两区共用此列表渲染，保证行对齐。
+ *  注意：父任务已完成（被 done 过滤）或不在日期范围时，未完成的子任务会成为"孤儿"，
+ *  此时把它当作独立入口行显示（depth 0），避免有日期的未完成任务凭空消失。 */
 const rows = computed<TimelineRow[]>(() => {
   const result: TimelineRow[] = [];
+  // tasks 内所有任务 id（用于判断父任务是否在视野内）
+  const taskIds = new Set(tasks.value.map((t) => t.id));
+  // 已作为子任务挂载的 id（避免孤儿入口与父递归重复）
+  const mounted = new Set<string>();
   /** 递归挂载：把 task 作为行加入，若它已展开则递归加入其子任务（depth 逐级 +1） */
   function appendWithChildren(task: Task, depth: number): void {
+    mounted.add(task.id);
     result.push({ task, depth, parentId: depth === 0 ? null : task.parentId });
     if (expandedParents.value.has(task.id)) {
       const subs = childrenMap.value[task.id] ?? [];
@@ -288,8 +295,10 @@ const rows = computed<TimelineRow[]>(() => {
     }
   }
   for (const t of tasks.value) {
-    // 只处理根任务作为主行（子任务通过递归挂载，不独立成行）
-    if (t.parentId) continue;
+    // 入口条件：真根任务（无 parentId），或父任务不在视野内的"孤儿"子任务。
+    // 父在视野内的子任务由父的递归挂载（mounted 判断避免重复）。
+    if (t.parentId && taskIds.has(t.parentId)) continue;
+    if (mounted.has(t.id)) continue;
     appendWithChildren(t, 0);
   }
   return result;
