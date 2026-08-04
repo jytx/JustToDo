@@ -1119,7 +1119,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
   background: var(--jt-surface);
   overflow-y: auto;
 }
-/* 任务列/时间轴分隔拖拽手柄：窄竖线，hover 高亮，mousedown 调宽 */
+/* 任务列/时间轴分隔拖拽手柄：5px 透明命中区 + 1px 细线（hover 主色） */
 .gantt__col-resizer {
   width: 5px;
   flex-shrink: 0;
@@ -1127,11 +1127,20 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
   background: transparent;
   position: relative;
   z-index: 4;
-  transition: background 0.12s;
 }
-.gantt__col-resizer:hover,
-.gantt__col-resizer:active {
+.gantt__col-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--jt-border);
+  transition: background 0.12s, width 0.12s;
+}
+.gantt__col-resizer:hover::after,
+.gantt__col-resizer:active::after {
   background: var(--jt-primary);
+  width: 2px;
 }
 .gantt__tasks-head {
   height: 56px;
