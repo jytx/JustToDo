@@ -218,8 +218,10 @@ interface TimelineRow {
 /** 展开的父任务 id 集合（点击展开箭头切换） */
 const expandedParents = ref<Set<string>>(new Set());
 
-/** 按 parentId 归组：根任务 id → 其子任务列表（从 tasks 取有 due 的 +
- *  从 subtaskCache 补充无 due 的，保证展开后能看到全部子任务） */
+/** 按 parentId 归组：任意任务 id → 其子任务列表（从 tasks 取有 due 的 +
+ *  从 subtaskCache 补充无 due 的，保证展开后能看到全部子任务，支持多级嵌套）。
+ *  注意：补充要遍历 subtaskCache 的所有 key（含无 due 的中间层子任务），
+ *  否则无 due 的子任务的孙任务无法补充——它们不在 tasks.value 里。 */
 const childrenMap = computed<Record<string, Task[]>>(() => {
   const map: Record<string, Task[]> = {};
   // tasks 里已有的子任务（有 due 日期）
@@ -228,13 +230,13 @@ const childrenMap = computed<Record<string, Task[]>>(() => {
       (map[t.parentId] ??= []).push(t);
     }
   }
-  // subtaskCache 补充（无 due 日期但属于该父的子任务，展开时也显示）
-  for (const t of tasks.value) {
-    if (!t.parentId) {
-      const cached = taskStore.getCachedSubtasks(t.id);
-      const existing = new Set((map[t.id] ?? []).map((s) => s.id));
+  // subtaskCache 补充：遍历缓存的所有 key（任意层级的任务，含无 due 的中间层）
+  for (const parentId of Object.keys(taskStore.subtaskCache)) {
+    const cached = taskStore.subtaskCache[parentId] ?? [];
+    if (cached.length > 0) {
+      const existing = new Set((map[parentId] ?? []).map((s) => s.id));
       for (const sub of cached) {
-        if (!existing.has(sub.id)) (map[t.id] ??= []).push(sub);
+        if (!existing.has(sub.id)) (map[parentId] ??= []).push(sub);
       }
     }
   }
@@ -246,21 +248,24 @@ function hasChildren(taskId: string): boolean {
   return (childrenMap.value[taskId]?.length ?? 0) > 0;
 }
 
-/** 生成展开后的行列表：根任务行 + 展开父的子任务行（缩进挂载）。
+/** 生成展开后的行列表：根任务行 + 递归展开各级子任务行（深度优先，支持多级嵌套）。
  *  左右两区共用此列表渲染，保证行对齐。 */
 const rows = computed<TimelineRow[]>(() => {
   const result: TimelineRow[] = [];
-  for (const t of tasks.value) {
-    // 只处理根任务作为主行（子任务通过展开挂载，不独立成行）
-    if (t.parentId) continue;
-    result.push({ task: t, depth: 0, parentId: null });
-    // 父任务展开时，插入其子任务行
-    if (expandedParents.value.has(t.id)) {
-      const subs = childrenMap.value[t.id] ?? [];
+  /** 递归挂载：把 task 作为行加入，若它已展开则递归加入其子任务（depth 逐级 +1） */
+  function appendWithChildren(task: Task, depth: number): void {
+    result.push({ task, depth, parentId: depth === 0 ? null : task.parentId });
+    if (expandedParents.value.has(task.id)) {
+      const subs = childrenMap.value[task.id] ?? [];
       for (const sub of subs) {
-        result.push({ task: sub, depth: 1, parentId: t.id });
+        appendWithChildren(sub, depth + 1);
       }
     }
+  }
+  for (const t of tasks.value) {
+    // 只处理根任务作为主行（子任务通过递归挂载，不独立成行）
+    if (t.parentId) continue;
+    appendWithChildren(t, 0);
   }
   return result;
 });
@@ -273,20 +278,26 @@ function toggleParentExpand(taskId: string): void {
   expandedParents.value = next;
 }
 
-/** 预加载时间线任务的子任务到 store 缓存（时间线自己 loadTasks，不经 store.currentTasks） */
+/** 预加载时间线任务的子任务到 store 缓存（递归加载各级，支持多级嵌套）。
+ *  时间线自己 loadTasks，不经 store.currentTasks，故需自行预加载。 */
 async function preloadTimelineSubtasks(): Promise<void> {
-  const rootIds = tasks.value.filter((t) => !t.parentId).map((t) => t.id);
+  const { getSubtasks } = await import("@/api/db");
   const newCache: Record<string, Task[]> = {};
-  await Promise.all(
-    rootIds.map(async (id) => {
-      try {
-        const { getSubtasks } = await import("@/api/db");
-        newCache[id] = await getSubtasks(id);
-      } catch {
-        newCache[id] = [];
-      }
-    }),
-  );
+  /** 递归加载某任务的子任务，并继续加载子任务的子任务（深度优先） */
+  async function loadDescendants(taskId: string): Promise<void> {
+    if (taskId in newCache) return; // 防环/已加载
+    let subs: Task[] = [];
+    try {
+      subs = await getSubtasks(taskId);
+    } catch {
+      subs = [];
+    }
+    newCache[taskId] = subs;
+    // 递归加载每个子任务的下一级
+    await Promise.all(subs.map((s) => loadDescendants(s.id)));
+  }
+  const rootIds = tasks.value.filter((t) => !t.parentId).map((t) => t.id);
+  await Promise.all(rootIds.map((id) => loadDescendants(id)));
   // 合并到 store 的 subtaskCache（用 setter 触发响应式）
   taskStore.subtaskCache = { ...taskStore.subtaskCache, ...newCache };
 }
@@ -884,23 +895,23 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
             'gantt__task-row--dragging': rowDragId === row.task.id,
             'gantt__task-row--sub': row.depth > 0,
           }"
-          :style="row.depth > 0 ? { paddingLeft: '72px' } : undefined"
+          :style="row.depth > 0 ? { paddingLeft: 52 + row.depth * 20 + 'px' } : undefined"
           @click="onBarClick(row.task, $event)"
           @contextmenu="onTaskContextMenu($event, row.task)"
           @dragover="row.depth === 0 ? onRowDragOver($event, row.task.id) : undefined"
           @dragleave="row.depth === 0 ? onRowDragLeave($event, row.task.id) : undefined"
           @drop="onRowDrop"
         >
-          <!-- 根任务前导区：有子任务显示展开箭头，无子任务显示同宽占位（保证手柄对齐） -->
+          <!-- 前导区：有子任务显示展开箭头，无子任务显示同宽占位（任意层级都适用） -->
           <span
-            v-if="row.depth === 0 && hasChildren(row.task.id)"
+            v-if="hasChildren(row.task.id)"
             class="gantt__task-arrow"
             :class="{ 'gantt__task-arrow--open': expandedParents.has(row.task.id) }"
             @click.stop="toggleParentExpand(row.task.id)"
           >
             <icon-right :size="12" />
           </span>
-          <span v-else-if="row.depth === 0" class="gantt__task-arrow-placeholder"></span>
+          <span v-else class="gantt__task-arrow-placeholder"></span>
           <!-- 拖拽手柄（根任务且非智能视图；子任务无手柄） -->
           <span
             v-if="row.depth === 0 && !isSmart"
