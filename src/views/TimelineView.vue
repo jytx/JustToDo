@@ -1011,6 +1011,10 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 }
 .gantt__date {
   flex-shrink: 0;
+  /* border-box：width 含 border，列物理宽度精确 = COL_WIDTH，
+   * 与 barStyle 的 startOffset×COL_WIDTH 对齐（否则 content-box 下 border 叠加
+   * 会让列宽变成 91px，天数越多横条左偏越多，最终整条偏到前一天列） */
+  box-sizing: border-box;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   border-right: 1px solid var(--jt-border);
@@ -1035,6 +1039,8 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 }
 .gantt__grid-cell {
   flex-shrink: 0;
+  /* border-box：物理宽度 = COL_WIDTH，与横条 left 计算对齐（见 .gantt__date 注释） */
+  box-sizing: border-box;
   border-right: 1px solid var(--jt-border);
   height: 100%;
   cursor: default;
