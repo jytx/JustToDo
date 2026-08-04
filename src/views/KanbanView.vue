@@ -587,6 +587,7 @@ function onDragOver(e: DragEvent): void {
 }
 .kanban__card:hover {
   border-color: var(--jt-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 /* === 子任务区（父卡片底部，Trello 风格进度+展开明细）=== */
@@ -684,8 +685,6 @@ function onDragOver(e: DragEvent): void {
 .kanban__subtask--done .kanban__subtask-title {
   color: var(--jt-text-tertiary);
   text-decoration: line-through;
-}
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 .kanban__card:active {
   cursor: grabbing;
