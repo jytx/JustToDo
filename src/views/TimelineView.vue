@@ -1113,9 +1113,9 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 
 /* 左侧任务名列 */
 .gantt__tasks {
-  /* width 由 inline style（tasksColWidth）控制，支持拖拽调整 */
+  /* width 由 inline style（tasksColWidth）控制，支持拖拽调整。
+   * 分隔线由相邻的 .gantt__col-resizer 提供，这里不再画 border 避免双线 */
   flex-shrink: 0;
-  border-right: 1px solid var(--jt-border);
   background: var(--jt-surface);
   overflow-y: auto;
 }
