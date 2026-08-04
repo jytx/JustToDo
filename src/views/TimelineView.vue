@@ -157,9 +157,19 @@ const tasks = ref<Task[]>([]);
 async function loadTasks(): Promise<void> {
   const { start, end } = rangeLiteral.value;
   const all = await getTasksByDueRange(start, end, showCompleted.value);
+  // 排序：sort_order 为主，createdAt 为次级稳定键。
+  // 必须 加次级键——sort_order 存在重复值（persistTaskOrder 间隔体系会撞值，
+  // 如多个 4000/5000），仅按 sort_order 排序不稳定；勾选完成触发 loadTasks 重拉时，
+  // 后端 ORDER BY done ASC 让返回顺序随 done 状态变化，相同 sort_order 的任务
+  // 相对位置就会被打乱，表现为"完成任务后顺序变了"。加 createdAt 后顺序完全由
+  // (sortOrder, createdAt) 决定，与 done 状态、后端返回顺序无关。
   tasks.value = all
     .filter((t) => t.listId === props.id)
-    .sort((a, b) => a.sortOrder - b.sortOrder);
+    .sort((a, b) =>
+      a.sortOrder !== b.sortOrder
+        ? a.sortOrder - b.sortOrder
+        : a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0,
+    );
 }
 
 onMounted(() => {
