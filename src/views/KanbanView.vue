@@ -2,7 +2,7 @@
 // 看板视图 —— 作为清单的视图（由 ListView 按 ?view=kanban 条件渲染）
 // 支持两种分列维度：按优先级（无/低/中/高）或按分组（Group）
 // 只显示当前清单的任务，拖拽跨列改对应字段（priority / groupId）+ 列内排序
-import { computed, watch } from "vue";
+import { computed, reactive, watch } from "vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useGroupStore } from "@/stores/group";
@@ -13,6 +13,10 @@ import PriorityDot from "@/components/PriorityDot.vue";
 import TaskCheckbox from "@/components/TaskCheckbox.vue";
 import { useKanbanDrag, type KanbanColumnDef } from "@/composables/useKanbanDrag";
 import type { SmartViewId } from "@/api/db";
+import { useBatchSelect } from "@/composables/useBatchSelect";
+import ContextMenu from "@/components/ContextMenu.vue";
+import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
+import BatchContextMenu from "@/components/BatchContextMenu.vue";
 
 /**
  * 看板视图既可挂在清单下（scope="list:{id}"，支持优先级/分组两种维度），
@@ -36,6 +40,11 @@ const isSmart = computed(() => props.smartView !== undefined);
 const effectiveMode = computed<"priority" | "group">(() =>
   isSmart.value ? "priority" : kanbanStore.mode,
 );
+/** 从 scope 解析清单 id（仅清单模式有效；右键新建任务归属用） */
+const listId = computed(() => {
+  if (isSmart.value) return null;
+  return props.scope.startsWith("list:") ? props.scope.slice(5) : props.scope;
+});
 
 // 数据由父级（ListView/SmartView）加载到 store，看板复用同一 store 数据。
 // 清单模式兜底：清单切换时确保分组刷新（任务由父级 watch 触发）。
@@ -158,13 +167,77 @@ function dueInfo(task: Task) {
 }
 
 /** 点击卡片打开详情 */
-function onCardClick(taskId: string): void {
+function onCardClick(taskId: string, e: MouseEvent): void {
+  // 修饰键点击（Shift/Cmd）→ 多选；普通点击 → 打开详情
+  if (e.shiftKey || e.metaKey || e.ctrlKey) {
+    onTaskRowSelect(taskId, e);
+    return;
+  }
   taskStore.selectTask(taskId);
 }
 
 /** 复选框切换完成 */
 function onToggle(task: Task): void {
   taskStore.toggleTask(task.id, !task.done);
+}
+
+// ─── 右键菜单（参照 TimelineView 的菜单项：多选/新建/删除） ───
+const { batchCtxMenu, onTaskRowSelect, onBatchContextMenu } = useBatchSelect();
+
+const ctxMenu = reactive<{ visible: boolean; x: number; y: number; taskId: string }>({
+  visible: false,
+  x: 0,
+  y: 0,
+  taskId: "",
+});
+
+/** 卡片右键：多选模式下走批量菜单，否则弹单任务菜单 */
+function onCardContextMenu(e: MouseEvent, task: Task): void {
+  // 多选模式：右键的任务若未选中则先加入选中集合，关单任务菜单，让事件冒泡弹批量菜单
+  if (taskStore.batchMode) {
+    if (!taskStore.isBatchSelected(task.id)) {
+      taskStore.toggleBatchSelect(task.id);
+    }
+    ctxMenu.visible = false;
+    return; // 不 stop，冒泡到 .kanban 的 onBatchContextMenu 弹批量菜单
+  }
+  e.preventDefault();
+  e.stopPropagation();
+  ctxMenu.taskId = task.id;
+  ctxMenu.x = e.clientX;
+  ctxMenu.y = e.clientY;
+  ctxMenu.visible = true;
+}
+
+/** 新建任务（与所点任务同清单同列，空标题 + 选中打开详情）。
+ *  智能视图模式下：归属所点任务的清单（若可取），否则默认清单；不继承 groupId */
+async function onCtxAddTask(): Promise<void> {
+  const task = taskMap.value.get(ctxMenu.taskId);
+  ctxMenu.visible = false;
+  // 清单模式归属当前清单；智能视图模式归属所点任务清单或默认清单
+  const targetListId = isSmart.value
+    ? (task?.listId ?? props.defaultListId ?? "inbox")
+    : (listId.value ?? "inbox");
+  const created = await taskStore.createTask({
+    title: "",
+    listId: targetListId,
+    groupId: isSmart.value ? undefined : (task?.groupId ?? undefined),
+    priority: effectiveMode.value === "priority" ? (task?.priority ?? 0) : undefined,
+  });
+  taskStore.selectTask(created.id);
+}
+
+/** 删除任务（走 store 的删除确认弹窗） */
+function onCtxDelete(): void {
+  const id = ctxMenu.taskId;
+  ctxMenu.visible = false;
+  taskStore.requestDelete(id);
+}
+
+/** 进入多选模式（选中当前任务） */
+function onCtxBatchSelect(): void {
+  ctxMenu.visible = false;
+  taskStore.toggleBatchSelect(ctxMenu.taskId);
 }
 
 /** 列 dragover */
@@ -174,7 +247,8 @@ function onDragOver(e: DragEvent): void {
 </script>
 
 <template>
-  <div class="kanban">
+  <!-- 根容器绑 contextmenu：多选模式下右键选中任务时冒泡上来弹批量菜单 -->
+  <div class="kanban" @contextmenu="onBatchContextMenu($event)">
     <!-- 列容器（水平滚动） -->
     <div class="kanban__board">
       <div
@@ -207,11 +281,13 @@ function onDragOver(e: DragEvent): void {
             :class="{
               'kanban__card--dragging': draggingId === task.id,
               'kanban__card--selected': taskStore.selectedTaskId === task.id,
+              'kanban__card--batch-selected': taskStore.batchMode && taskStore.isBatchSelected(task.id),
             }"
             draggable="true"
             @dragstart="onCardDragStart(task.id, col.key)"
             @dragend="onCardDragEnd"
-            @click="onCardClick(task.id)"
+            @click="onCardClick(task.id, $event)"
+            @contextmenu="onCardContextMenu($event, task)"
           >
             <!-- 复选框 -->
             <TaskCheckbox
@@ -246,6 +322,29 @@ function onDragOver(e: DragEvent): void {
         </div>
       </div>
     </div>
+
+    <!-- 右键菜单（参照时间线菜单：多选/新建/删除） -->
+    <ContextMenu v-model:visible="ctxMenu.visible" :x="ctxMenu.x" :y="ctxMenu.y">
+      <MenuPopoverItem @click="onCtxBatchSelect">
+        <icon-check-circle :size="15" />
+        <span>多选</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem @click="onCtxAddTask">
+        <icon-plus :size="15" />
+        <span>新建任务</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem danger @click="onCtxDelete">
+        <icon-delete :size="15" />
+        <span>删除任务</span>
+      </MenuPopoverItem>
+    </ContextMenu>
+
+    <!-- 批量操作菜单（多选模式下右键选中任务时弹出） -->
+    <BatchContextMenu
+      v-model:visible="batchCtxMenu.visible"
+      :x="batchCtxMenu.x"
+      :y="batchCtxMenu.y"
+    />
   </div>
 </template>
 
@@ -353,6 +452,12 @@ function onDragOver(e: DragEvent): void {
   border-color: var(--jt-primary) !important;
   background-color: var(--jt-accent-soft) !important;
   box-shadow: 0 0 0 1px var(--jt-primary) !important;
+}
+/* 多选模式下批量选中的卡片高亮（与单选态区分，用主色左条带） */
+.kanban__card--batch-selected {
+  border-color: var(--jt-primary) !important;
+  background-color: var(--jt-accent-soft) !important;
+  box-shadow: inset 3px 0 0 var(--jt-primary) !important;
 }
 
 .kanban__card-body {
