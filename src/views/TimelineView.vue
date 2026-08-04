@@ -304,11 +304,9 @@ function barStyle(task: Task): { left: number; width: number } | null {
   const endDay = new Date(endRaw.getFullYear(), endRaw.getMonth(), endRaw.getDate());
   const dayWidth = zoom.value === "day" ? COL_WIDTH.value : COL_WIDTH.value / columnSpanDays(zoom.value);
   const startOffset = daysBetween(firstColDate, startDay);
-  let endOffset = daysBetween(firstColDate, endDay);
-  // dueEndAt 若是某天 00:00:00，通常是"排他端点"（如 8/4T00:00 表示到 8/3 结束），
-  // 此时 width 不该再 +1，否则横条多覆盖一天
-  const isExclusiveEnd = task.dueEndAt?.endsWith("T00:00:00");
-  if (isExclusiveEnd && endOffset > startOffset) endOffset -= 1;
+  const endOffset = daysBetween(firstColDate, endDay);
+  // 宽度按"两端包含整天"计算（如 7/31~8/3 占满 4 列）。-2 留右侧视觉间隙；
+  // 配合 .gantt__bar 的 border-box，width 含 padding，物理宽度精确不溢出到下一列
   const left = startOffset * dayWidth;
   const width = Math.max(dayWidth, (endOffset - startOffset + 1) * dayWidth - 2);
   return { left: Math.max(0, left), width };
@@ -1070,6 +1068,9 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 .gantt__bar {
   position: absolute;
   top: 6px; height: 28px;
+  /* border-box：width 含左右 padding，物理宽度精确 = barStyle 计算值，
+   * 不让 padding 撑大溢出到下一列（content-box 下 width=90 + padding 16 = 106px 溢出） */
+  box-sizing: border-box;
   border-radius: 6px;
   display: flex; align-items: center;
   padding: 0 8px;
