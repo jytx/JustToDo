@@ -144,16 +144,15 @@ const KANBAN_MODE_LABELS: Record<"priority" | "group", string> = {
 const kanbanModeMenuOpen = ref(false);
 
 /** 看板维度变更（选择后关闭菜单） */
-/** 看板维度变更（选择后关闭菜单 + 持久化到清单偏好） */
+/** 看板维度变更（选择后关闭菜单 + 持久化到作用域偏好）。
+ *  智能视图强制 priority（菜单不显示，理论上不会触发 group） */
 function onKanbanModeChange(mode: "priority" | "group"): void {
   kanbanStore.setMode(mode);
-  // 记住该清单的看板维度选择
-  const listId = route.params.id as string;
-  if (listId) setViewPref(listId, { kanbanMode: mode });
+  if (viewPrefScope.value) setViewPref(viewPrefScope.value, { kanbanMode: mode });
   kanbanModeMenuOpen.value = false;
 }
 
-/** 清单视图切换（列表 / 看板，通过 query ?view= 切换，仅清单路由显示） */
+/** 清单视图切换（列表 / 看板 / 时间线，通过 query ?view= 切换；清单 + 智能视图均可显示） */
 type ListView = "list" | "kanban" | "timeline";
 const LIST_VIEW_LABELS: Record<ListView, string> = { list: "列表", kanban: "看板", timeline: "时间线" };
 const listViewMenuOpen = ref(false);
@@ -163,11 +162,24 @@ const currentListView = computed<ListView>(() => {
   return "list";
 });
 
-/** 切换清单视图：用 router.replace 改 query + 持久化到清单偏好 */
+/** 是否处于智能视图路由（today/upcoming/all）——视图切换菜单也在此显示 */
+const isSmartRoute = computed(() =>
+  route.name === "today" || route.name === "upcoming" || route.name === "all",
+);
+/** 是否显示视图切换菜单（清单或智能视图） */
+const showViewSwitch = computed(() => route.name === "list" || isSmartRoute.value);
+
+/** 当前作用域（清单用 "list:{id}"，智能视图用 "smart:{viewId}"）——偏好持久化用 */
+const viewPrefScope = computed(() => {
+  if (route.name === "list") return "list:" + (route.params.id as string);
+  if (isSmartRoute.value) return "smart:" + String(route.name);
+  return "";
+});
+
+/** 切换视图：用 router.replace 改 query + 持久化到作用域偏好 */
 function onListViewChange(view: ListView): void {
   router.replace({ query: { ...route.query, view } });
-  const listId = route.params.id as string;
-  if (listId) setViewPref(listId, { view });
+  if (viewPrefScope.value) setViewPref(viewPrefScope.value, { view });
   listViewMenuOpen.value = false;
 }
 
@@ -427,9 +439,9 @@ useShortcuts({
             <span>{{ f.label }}</span>
           </MenuPopoverItem>
         </MenuPopover>
-        <!-- 视图切换（列表 / 看板，仅清单视图显示） -->
+        <!-- 视图切换（列表 / 看板 / 时间线；清单 + 智能视图均可显示） -->
         <MenuPopover
-          v-if="route.name === 'list'"
+          v-if="showViewSwitch"
           v-model:visible="listViewMenuOpen"
         >
           <template #trigger>

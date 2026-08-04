@@ -12,20 +12,40 @@ import { formatDueDate } from "@/utils/date";
 import PriorityDot from "@/components/PriorityDot.vue";
 import TaskCheckbox from "@/components/TaskCheckbox.vue";
 import { useKanbanDrag, type KanbanColumnDef } from "@/composables/useKanbanDrag";
+import type { SmartViewId } from "@/api/db";
 
-const props = defineProps<{ id: string }>();
+/**
+ * 看板视图既可挂在清单下（scope="list:{id}"，支持优先级/分组两种维度），
+ * 也可挂在智能视图下（scope="smart:{viewId}"，跨清单强制优先级维度——
+ * 分组是清单内概念，跨清单 groupId 冲突无意义）。
+ */
+const props = defineProps<{
+  scope: string;
+  smartView?: SmartViewId;
+  defaultListId?: string;
+}>();
 
 const taskStore = useTaskStore();
 const listStore = useListStore();
 const groupStore = useGroupStore();
 const kanbanStore = useKanbanStore();
 
-// 数据由父级 ListView 加载（loadTasks + loadGroups），看板复用同一 store 数据。
-// 这里仅兜底：清单切换时确保分组刷新（任务由 ListView 的 watch 触发）。
+/** 是否处于智能视图模式（跨清单，强制 priority 维度） */
+const isSmart = computed(() => props.smartView !== undefined);
+/** 实际生效的看板维度：智能视图强制 priority，清单模式取 store 选择 */
+const effectiveMode = computed<"priority" | "group">(() =>
+  isSmart.value ? "priority" : kanbanStore.mode,
+);
+
+// 数据由父级（ListView/SmartView）加载到 store，看板复用同一 store 数据。
+// 清单模式兜底：清单切换时确保分组刷新（任务由父级 watch 触发）。
+// 智能视图模式不加载分组（强制 priority 维度）。
 watch(
-  () => props.id,
-  async (newId) => {
-    await groupStore.loadGroups(newId);
+  () => props.scope,
+  async (newScope) => {
+    if (isSmart.value) return;
+    const id = newScope.startsWith("list:") ? newScope.slice(5) : newScope;
+    await groupStore.loadGroups(id);
   },
   { immediate: true },
 );
@@ -38,9 +58,10 @@ const PRIORITY_COLUMNS: { priority: Priority; label: string; color: string }[] =
   { priority: 3, label: "高", color: "var(--jt-error)" },
 ];
 
-/** 当前模式的列定义（computed：优先级模式固定 4 列；分组模式从任务的去重 groupId 生成） */
+/** 当前模式的列定义（computed：优先级模式固定 4 列；分组模式从任务的去重 groupId 生成）。
+ *  智能视图模式强制 priority（effectiveMode 已处理）。 */
 const columnDefs = computed<KanbanColumnDef[]>(() => {
-  if (kanbanStore.mode === "priority") {
+  if (effectiveMode.value === "priority") {
     return PRIORITY_COLUMNS.map((c) => ({ key: String(c.priority), label: c.label, color: c.color }));
   }
   // 分组模式：从任务提取去重 groupId，按 groupStore.currentGroups（已按本清单过滤+排序）取名
@@ -61,15 +82,15 @@ const columnDefs = computed<KanbanColumnDef[]>(() => {
   return result;
 });
 
-/** 任务 → 列键（按当前模式） */
+/** 任务 → 列键（按当前生效模式） */
 function getColumnKey(task: Task): string {
-  if (kanbanStore.mode === "priority") return String(task.priority ?? 0);
+  if (effectiveMode.value === "priority") return String(task.priority ?? 0);
   return task.groupId ?? "__ungrouped__";
 }
 
-/** 跨列持久化（按当前模式改对应字段） */
+/** 跨列持久化（按当前生效模式改对应字段） */
 async function onCrossColumn(taskId: string, toKey: string): Promise<void> {
-  if (kanbanStore.mode === "priority") {
+  if (effectiveMode.value === "priority") {
     await taskStore.updateTask(taskId, { priority: Number(toKey) as Priority });
   } else {
     // 分组模式的"未分组"列键不写回（保持 groupId 为 null 不现实，后端总会兜底默认组；
@@ -108,9 +129,9 @@ const {
   columnKeys,
 );
 
-/** 模式切换时重新分桶（getColumnKey 变了，composable 的 watch 不会自动触发） */
+/** 生效模式切换时重新分桶（getColumnKey 变了，composable 的 watch 不会自动触发） */
 watch(
-  () => kanbanStore.mode,
+  () => effectiveMode.value,
   () => syncFromStore(),
 );
 
@@ -167,7 +188,7 @@ function onDragOver(e: DragEvent): void {
         <!-- 列头：优先级模式用 PriorityDot，分组模式用普通色点 -->
         <div class="kanban__column-header">
           <PriorityDot
-            v-if="kanbanStore.mode === 'priority'"
+            v-if="effectiveMode === 'priority'"
             :priority="Number(col.key) as Priority"
             :size="10"
           />

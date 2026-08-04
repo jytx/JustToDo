@@ -44,7 +44,7 @@ const groupStore = useGroupStore();
 
 /** 从清单偏好恢复视图：无 view query 时按偏好补上，并同步看板维度 */
 function restoreViewPref(listId: string): void {
-  const pref = getViewPref(listId);
+  const pref = getViewPref("list:" + listId);
   // 仅在 query 没有 view 时补上（用户显式带了 view 则尊重，如点链接进来）
   if (!route.query.view) {
     router.replace({ query: { ...route.query, view: pref.view } });
@@ -341,9 +341,9 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
 
 <template>
   <!-- 看板视图（query ?view=kanban）：直接渲染看板，复用本视图已加载的清单数据 -->
-  <KanbanView v-if="currentView === 'kanban'" :id="props.id" />
+  <KanbanView v-if="currentView === 'kanban'" :scope="'list:' + props.id" :default-list-id="props.id" />
   <!-- 时间线视图（query ?view=timeline）：甘特图，复用本视图已加载的清单数据 -->
-  <TimelineView v-else-if="currentView === 'timeline'" :id="props.id" />
+  <TimelineView v-else-if="currentView === 'timeline'" :scope="'list:' + props.id" :default-list-id="props.id" />
   <!-- 列表视图（默认） -->
   <div v-else class="list-view" @contextmenu="onRootContextMenu">
     <!-- 列表头 -->

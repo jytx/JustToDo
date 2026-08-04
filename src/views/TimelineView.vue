@@ -14,8 +14,23 @@ import MenuPopover from "@/components/MenuPopover.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import BatchContextMenu from "@/components/BatchContextMenu.vue";
+import type { SmartViewId } from "@/api/db";
 
-const props = defineProps<{ id: string }>();
+/**
+ * 时间线视图既可挂在清单下（scope="list:{id}"，单清单过滤），也可挂在智能视图下
+ * （scope="smart:{viewId}"，跨清单不按 listId 过滤）。
+ * - scope：偏好持久化 key + 唯一标识（清单用 "list:{id}"，智能视图用 "smart:{viewId}"）
+ * - smartView：传入表示处于智能视图模式（跨清单，禁用垂直拖拽排序）
+ * - defaultListId：智能视图下双击/右键建任务的默认归属清单
+ */
+const props = defineProps<{
+  scope: string;
+  smartView?: SmartViewId;
+  defaultListId?: string;
+}>();
+
+/** 是否处于智能视图模式（跨清单） */
+const isSmart = computed(() => props.smartView !== undefined);
 
 const taskStore = useTaskStore();
 const { batchCtxMenu, onTaskRowSelect, onBatchContextMenu } = useBatchSelect();
@@ -75,16 +90,16 @@ const rangeLiteral = computed(() => {
 /** 加载范围内的任务（按当前清单过滤）。
  *  注意：不按 due_start_at 排序——拖拽改日期后行顺序应保持不变
  *  （只移动横条，不重排行），用 sort_order 保持稳定顺序。 */
-/** 是否显示已完成任务（false 时只加载未完成）—— 从清单偏好恢复初始值 */
-const showCompleted = ref<boolean>(getViewPref(props.id).showCompleted);
+/** 是否显示已完成任务（false 时只加载未完成）—— 从作用域偏好恢复初始值 */
+const showCompleted = ref<boolean>(getViewPref(props.scope).showCompleted);
 
 /** 任务列表更多菜单开关 */
 const moreMenuOpen = ref(false);
 
-/** 切换显示/隐藏已完成 + 持久化到清单偏好 */
+/** 切换显示/隐藏已完成 + 持久化到作用域偏好 */
 function toggleShowCompleted(): void {
   showCompleted.value = !showCompleted.value;
-  setViewPref(props.id, { showCompleted: showCompleted.value });
+  setViewPref(props.scope, { showCompleted: showCompleted.value });
   moreMenuOpen.value = false;
 }
 
@@ -94,8 +109,10 @@ const rowDragId = ref<string | null>(null);
 /** 落点：目标行 id + 位置（before/after） */
 const rowDropTarget = ref<{ id: string; pos: "before" | "after" } | null>(null);
 
-/** 手柄 dragstart：记录被拖任务 */
+/** 手柄 dragstart：记录被拖任务。
+ *  智能视图模式禁用（跨清单重排 sort_order 无意义）——模板已用 :draggable 关闭 */
 function onRowDragStart(e: DragEvent, taskId: string): void {
+  if (isSmart.value) { e.preventDefault(); return; }
   rowDragId.value = taskId;
   e.dataTransfer!.effectAllowed = "move";
   e.dataTransfer!.setData("text/plain", taskId);
@@ -150,7 +167,13 @@ function clearRowDrag(): void {
   rowDropTarget.value = null;
 }
 
-/** 加载范围内的任务（按当前清单过滤）。
+/** 从 scope 解析出清单 id（仅清单模式有效；scope="list:{id}" → id） */
+const listId = computed(() => {
+  if (isSmart.value) return null;
+  return props.scope.startsWith("list:") ? props.scope.slice(5) : props.scope;
+});
+
+/** 加载范围内的任务（清单模式按清单过滤；智能视图模式跨清单不过滤）。
  *  注意：不按 due_start_at 排序——拖拽改日期后行顺序应保持不变
  *  （只移动横条，不重排行），用 sort_order 保持稳定顺序。 */
 const tasks = ref<Task[]>([]);
@@ -164,7 +187,7 @@ async function loadTasks(): Promise<void> {
   // 相对位置就会被打乱，表现为"完成任务后顺序变了"。加 createdAt 后顺序完全由
   // (sortOrder, createdAt) 决定，与 done 状态、后端返回顺序无关。
   tasks.value = all
-    .filter((t) => t.listId === props.id)
+    .filter((t) => (isSmart.value ? true : t.listId === listId.value))
     .sort((a, b) =>
       a.sortOrder !== b.sortOrder
         ? a.sortOrder - b.sortOrder
@@ -177,10 +200,10 @@ onMounted(() => {
   // 初始滚动到今天附近
   requestAnimationFrame(scrollToToday);
 });
-watch([rangeStart, rangeCount, zoom, () => props.id, showCompleted], loadTasks);
-// 切换清单时从偏好恢复 showCompleted
-watch(() => props.id, (newId) => {
-  showCompleted.value = getViewPref(newId).showCompleted;
+watch([rangeStart, rangeCount, zoom, () => props.scope, showCompleted], loadTasks);
+// 切换作用域时从偏好恢复 showCompleted
+watch(() => props.scope, (newScope) => {
+  showCompleted.value = getViewPref(newScope).showCompleted;
 });
 
 // 订阅任务变更（标题/时间/完成等修改后刷新，与其他视图的 notifyTaskChanged 总线联动）
@@ -442,13 +465,14 @@ function onToggle(task: Task): void {
   taskStore.toggleTask(task.id, !task.done);
 }
 
-/** 点击空白格 → 在该日期建任务（归属当前清单） */
-/** 双击空白格 → 在该日期建任务（单击不建，避免误触） */
+/** 双击空白格 → 在该日期建任务（归属当前清单或默认收件箱） */
 async function onCellDblClick(colDate: Date): Promise<void> {
   const dayLiteral = `${toISO(colDate)}T00:00:00`;
+  // 清单模式用当前清单，智能视图模式用默认清单（inbox 优先）
+  const targetListId = isSmart.value ? (props.defaultListId ?? "inbox") : (listId.value ?? "inbox");
   const created = await taskStore.createTask({
     title: "",
-    listId: props.id,
+    listId: targetListId,
     dueStartAt: dayLiteral,
     dueEndAt: dayLiteral,
   });
@@ -486,14 +510,19 @@ function onTaskContextMenu(e: MouseEvent, task: Task): void {
   ctxMenu.visible = true;
 }
 
-/** 新建任务（与当前任务同清单，空标题 + 选中打开详情） */
+/** 新建任务（与当前任务同清单，空标题 + 选中打开详情）。
+ *  智能视图模式下：归属所点任务的清单（若可取），否则默认清单；不继承 groupId */
 async function onCtxAddTask(): Promise<void> {
   const task = tasks.value.find((t) => t.id === ctxMenu.taskId);
   ctxMenu.visible = false;
+  // 清单模式用当前清单；智能视图模式用所点任务的清单或默认清单
+  const targetListId = isSmart.value
+    ? (task?.listId ?? props.defaultListId ?? "inbox")
+    : (listId.value ?? "inbox");
   const created = await taskStore.createTask({
     title: "",
-    listId: props.id,
-    groupId: task?.groupId ?? undefined,
+    listId: targetListId,
+    groupId: isSmart.value ? undefined : (task?.groupId ?? undefined),
   });
   taskStore.selectTask(created.id);
 }
@@ -766,7 +795,7 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
         >
           <span
             class="gantt__task-handle"
-            draggable="true"
+            :draggable="!isSmart"
             title="拖动排序"
             @dragstart="onRowDragStart($event, task.id)"
             @dragend="onRowDragEnd"

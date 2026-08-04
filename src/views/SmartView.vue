@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // 智能视图 —— 今天 / 未来 7 天 / 全部
-// 跨清单聚合视图，任务项额外显示清单归属色点
+// 跨清单聚合视图，任务项额外显示清单归属色点。
+// 支持列表/看板/时间线三种视图切换（与清单视图一致，偏好按 "smart:{viewId}" 独立持久化）
 import { computed, watch, onMounted } from "vue";
+import { useRoute } from "vue-router";
 import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import { formatPageDate } from "@/utils/date";
@@ -9,16 +11,31 @@ import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import { useTaskDragReorder } from "@/composables/useTaskDragReorder";
 import { useBatchSelect } from "@/composables/useBatchSelect";
 import type { SmartViewId } from "@/api/db";
+import type { ListView } from "@/composables/useViewPrefs";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 import BatchContextMenu from "@/components/BatchContextMenu.vue";
+import KanbanView from "@/views/KanbanView.vue";
+import TimelineView from "@/views/TimelineView.vue";
 
 const props = defineProps<{ view: SmartViewId }>();
 
+const route = useRoute();
 const listStore = useListStore();
 const taskStore = useTaskStore();
+
+/** 当前视图形态（读 query ?view=：list 默认 / kanban 看板 / timeline 时间线） */
+const currentView = computed<ListView>(() => {
+  const v = route.query.view;
+  if (v === "kanban") return "kanban";
+  if (v === "timeline") return "timeline";
+  return "list";
+});
+
+/** 偏好作用域（智能视图专用 namespace，与清单偏好隔离） */
+const scope = computed(() => "smart:" + props.view);
 
 const VIEW_TITLES: Record<SmartViewId, string> = {
   today: "今天",
@@ -106,7 +123,12 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="smart-view" @contextmenu="onRootContextMenu">
+  <!-- 看板视图（query ?view=kanban）：跨清单强制优先级维度，复用 loadSmartView 的数据 -->
+  <KanbanView v-if="currentView === 'kanban'" :scope="scope" :smart-view="props.view" :default-list-id="defaultListId" />
+  <!-- 时间线视图（query ?view=timeline）：跨清单，双击建任务进默认收件箱 -->
+  <TimelineView v-else-if="currentView === 'timeline'" :scope="scope" :smart-view="props.view" :default-list-id="defaultListId" />
+  <!-- 列表视图（默认） -->
+  <div v-else class="smart-view" @contextmenu="onRootContextMenu">
     <!-- 列表头 -->
     <header class="smart-view__header">
       <h1 class="smart-view__title">{{ pageTitle }}</h1>
