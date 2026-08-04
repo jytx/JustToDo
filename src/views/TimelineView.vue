@@ -267,33 +267,47 @@ function scrollToToday(): void {
 
 /** 时间轴滚动容器 ref */
 const timelineScrollEl = ref<HTMLElement | null>(null);
-/** 左侧任务列滚动容器 ref */
+/** 左侧任务列滚动容器 ref（垂直滚动唯一权威源） */
 const tasksScrollEl = ref<HTMLElement | null>(null);
 
-/** 垂直滚动同步锁：同步对端 scrollTop 时置 true，避免 A→B→A 递归触发 */
-let syncingScroll = false;
-/** 把 source 的 scrollTop 同步给 target（仅垂直方向，横向各自独立） */
-function syncVerticalScroll(source: HTMLElement, target: HTMLElement): void {
-  if (syncingScroll) return;
-  syncingScroll = true;
-  target.scrollTop = source.scrollTop;
-  syncingScroll = false;
-}
-/** 左侧任务列 scroll → 同步右侧时间轴的垂直滚动 */
-function onTasksScroll(): void {
+/**
+ * 垂直滚动同步方案：左侧为唯一竖滚容器，右侧 overflow-y:hidden 不自己竖滚。
+ * 右侧的滚轮（wheel）事件转发给左侧，由左侧滚动后再把 scrollTop 单向同步给右侧。
+ *
+ * 相比「双容器 scroll 事件互相校正」：scrollTop 始终单向流动（左→右），
+ * 物理上不存在右→左的反向回环，从根源消除 A→B→A 循环校正导致的抖动。
+ */
+/** 把左侧 scrollTop 单向同步给右侧（只写不回读，零回环） */
+function syncTimelineScrollTop(): void {
   const src = tasksScrollEl.value;
   const dst = timelineScrollEl.value;
-  if (src && dst) syncVerticalScroll(src, dst);
+  if (src && dst && Math.abs(dst.scrollTop - src.scrollTop) >= 0.5) {
+    dst.scrollTop = src.scrollTop;
+  }
 }
-
+/** 左侧任务列 scroll → 单向同步右侧 scrollTop */
+function onTasksScroll(): void {
+  syncTimelineScrollTop();
+}
+/**
+ * 右侧时间轴滚轮转发：deltaY 交给左侧滚动（deltaX 留给右侧横滚）。
+ * wheel 的 preventDefault 在 Vue 用 @wheel.passive 无法阻止，需用 .passive=false；
+ * 这里采用「主动滚动左侧 + 阻止默认」避免页面同时滚动右侧。
+ */
+function onTimelineWheel(e: WheelEvent): void {
+  if (e.deltaY === 0) return; // 只转发垂直滚轮，水平滚轮交给右侧自身横滚
+  const tasks = tasksScrollEl.value;
+  if (!tasks) return;
+  tasks.scrollTop += e.deltaY;
+  syncTimelineScrollTop();
+  e.preventDefault();
+}
+/** 右侧时间轴 scroll：仅处理横向无限扩展，不再做垂直反向同步（改由 wheel 转发单向同步） */
 /** 滚动到边缘时扩展范围（无限滚动） */
 const EDGE_THRESHOLD = 200; // 距边缘 200px 触发扩展
 function onTimelineScroll(): void {
   const el = timelineScrollEl.value;
   if (!el) return;
-  // 垂直同步：把右侧的 scrollTop 反向同步给左侧任务列
-  const tasks = tasksScrollEl.value;
-  if (tasks) syncVerticalScroll(el, tasks);
   const nearLeft = el.scrollLeft < EDGE_THRESHOLD;
   const nearRight = el.scrollLeft + el.clientWidth > el.scrollWidth - EDGE_THRESHOLD;
   if (nearLeft) {
@@ -768,11 +782,12 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
         </div>
       </div>
 
-      <!-- 右侧时间轴 -->
+      <!-- 右侧时间轴（垂直滚动由 wheel 转发给左侧统一处理，自身只横滚） -->
       <div
         ref="timelineScrollEl"
         class="gantt__timeline"
         @scroll="onTimelineScroll"
+        @wheel="onTimelineWheel"
       >
         <!-- 日期表头 -->
         <div class="gantt__dates" :style="{ width: timelineWidth + 'px' }">
@@ -1019,8 +1034,9 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
 }
 .gantt__task-name--done { color: var(--jt-text-tertiary); text-decoration: line-through; }
 
-/* 右侧时间轴 */
-.gantt__timeline { flex: 1; overflow: auto; }
+/* 右侧时间轴：横向可滚（无限扩展），垂直不自滚——由 wheel 转发给左侧统一竖滚，
+ * scrollTop 再单向同步回来，避免双容器互相同步的回环抖动 */
+.gantt__timeline { flex: 1; overflow-x: auto; overflow-y: hidden; }
 .gantt__dates {
   display: flex;
   height: 56px;
