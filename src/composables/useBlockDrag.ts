@@ -95,26 +95,28 @@ export function useBlockDrag(
    * 根据鼠标坐标更新手柄位置（idle 态：定位到 hover 块的左侧）。
    * 手柄使用 absolute 定位，坐标相对 editor wrapper（而非视口），
    * 这样手柄就在 editor DOM 内，鼠标从 editor 移到手柄不会触发 mouseleave。
+   *
+   * 容错：posAtCoords 在 padding/缝隙/NodeView 边缘可能返回 null，
+   * 此时保持上一次的手柄位置（不隐藏），避免行内有焦点时手柄闪烁难选中。
    */
   function updateHandleOnHover(view: Editor["view"], clientX: number, clientY: number): void {
     const doc = view.state.doc;
     const coords = view.posAtCoords({ left: clientX, top: clientY });
     if (!coords) {
-      handlePos.value.visible = false;
+      // 坐标解析失败（鼠标在 padding/缝隙）：不隐藏，维持上次位置
       return;
     }
     const $pos = doc.resolve(coords.pos);
     // 无论 depth 是 0（缝隙）还是 >=1（块内），index(0) 都给出顶层块索引
     const idx = $pos.index(0);
     if (idx < 0 || idx >= doc.childCount) {
-      handlePos.value.visible = false;
       return;
     }
     hoverIndex = idx;
     const blockStart = posOfTopChild(doc, idx);
     const dom = view.nodeDOM(blockStart);
     if (!(dom instanceof HTMLElement)) {
-      handlePos.value.visible = false;
+      // NodeView 模式下偶发返回非 HTMLElement：不隐藏，维持上次位置
       return;
     }
     const blockRect = dom.getBoundingClientRect();
@@ -331,11 +333,15 @@ export function useBlockDrag(
   }
 
   // 绑定/解绑编辑器事件（editor ref 变化时重新绑定）
+  // 绑定到 wrapper（view.dom.parentElement）而非 .ProseMirror：
+  // wrapper 包含左侧 24px padding（手柄区域），鼠标在手柄/padding 上移动也能
+  // 触发 mousemove 算位置，避免「鼠标移到手柄区就收不到事件」的不灵敏
   let boundDom: HTMLElement | null = null;
   function bindEditor(ed: Editor | undefined): void {
     unbindEditor();
     if (!ed) return;
-    boundDom = ed.view.dom;
+    const wrapper = ed.view.dom.parentElement as HTMLElement | null;
+    boundDom = wrapper ?? ed.view.dom;
     boundDom.addEventListener("mousemove", onEditorMouseMove);
     boundDom.addEventListener("mouseleave", onEditorMouseLeave);
   }
