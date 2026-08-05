@@ -26,6 +26,7 @@ import RichTextFloatingMenu from "./RichTextFloatingMenu.vue";
 import BlockDragHandle from "./BlockDragHandle.vue";
 import { CodeBlockFold } from "@/extensions/CodeBlockFold";
 import { HeadingFold } from "@/extensions/HeadingFold";
+import { tableExtension } from "@/extensions/TableFold";
 
 /**
  * 自定义扩展：覆盖 Tiptap 内置的 Mod-a / selectAll 行为。
@@ -321,6 +322,8 @@ const editor = useEditor({
     HeadingFold.configure({ levels: [1, 2, 3, 4, 5, 6] }),
     TaskList,
     TaskItem.configure({ nested: true }),
+    // 表格：TableKit（Table + TableRow + TableCell + TableHeader）
+    tableExtension,
     // 注：故意不加 @tiptap/extension-placeholder。
     // 它默认给每个空段落都加提示文字，回车后每行都显示，体验差。
     // 改为依赖下方 CSS `.rich-text__content:empty::before { ... }`，仅在
@@ -1193,6 +1196,44 @@ function fileToBase64(file: File): Promise<string> {
 /* 标题折叠：被 HeadingFold 的 Decoration 标记的块整体隐藏 */
 .rich-text__editor :deep(.heading-fold-hidden) {
   display: none !important;
+}
+
+/* ─── 表格 ──────────────────────────────────── */
+.rich-text__editor :deep(.rich-text__content table) {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 8px 0;
+  overflow: hidden;
+}
+.rich-text__editor :deep(.rich-text__content td),
+.rich-text__editor :deep(.rich-text__content th) {
+  border: 1px solid var(--jt-border);
+  padding: 6px 10px;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+  min-width: 60px;
+}
+.rich-text__editor :deep(.rich-text__content th) {
+  background: var(--jt-surface-sunken);
+  font-weight: 600;
+  text-align: left;
+}
+.rich-text__editor :deep(.rich-text__content p) {
+  margin: 0;
+}
+/* 选中单元格高亮（Tiptap 给选中 cell 加 .selectedCell） */
+.rich-text__editor :deep(.rich-text__content .selectedCell::after) {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--jt-primary) 12%, transparent);
+  pointer-events: none;
+}
+/* 表头列/行切换态（Tiptap 加 .isHeader） */
+.rich-text__editor :deep(.rich-text__content th.isHeader) {
+  background: color-mix(in srgb, var(--jt-primary) 10%, var(--jt-surface-sunken));
 }
 
 /* lowlight 语法高亮配色 */
