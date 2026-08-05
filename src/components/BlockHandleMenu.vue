@@ -148,31 +148,11 @@ function onInsert(t: BlockType, where: "above" | "below"): void {
   emit("close");
 }
 
-/** 展开二级菜单 */
+/** 展开/切换二级菜单（hover 和 click 都用这个）。
+ *  不做 mouseleave 自动隐藏 —— submenu 一旦展开，只有「点别的项/外部/Esc」才关闭，
+ *  避免鼠标移动路径导致的抖动和无法点中二级项的问题。 */
 function showSubmenu(which: "above" | "below"): void {
   submenu.value = which;
-}
-/** 收起二级菜单（延迟，给鼠标留出从 item 移到 submenu 的时间；
- *  submenu 内的 cancelHideOnSubmenu 会取消本次隐藏） */
-let hideTimer: ReturnType<typeof setTimeout> | null = null;
-function hideSubmenu(): void {
-  if (hideTimer) clearTimeout(hideTimer);
-  hideTimer = setTimeout(() => {
-    submenu.value = null;
-    hideTimer = null;
-  }, 200);
-}
-/** 鼠标进入二级菜单：取消待隐藏 */
-function cancelHideOnSubmenu(): void {
-  if (hideTimer) {
-    clearTimeout(hideTimer);
-    hideTimer = null;
-  }
-}
-/** 鼠标离开二级菜单：真正隐藏 */
-function hideFromSubmenu(): void {
-  if (hideTimer) clearTimeout(hideTimer);
-  submenu.value = null;
 }
 
 /** 点外部关闭：冒泡阶段监听 document mousedown。
@@ -217,11 +197,11 @@ onBeforeUnmount(() => {
 
       <div class="block-handle-menu__divider" />
 
-      <!-- 一级：添加（hover 展开二级） -->
+      <!-- 一级：添加（hover 或 click 展开二级；不自动隐藏，点别处/外部/Esc 才关） -->
       <div
         class="block-handle-menu__item block-handle-menu__item--has-sub"
         @mouseenter="showSubmenu('above')"
-        @mouseleave="hideSubmenu"
+        @click="showSubmenu('above')"
       >
         <span>在上方添加</span>
         <component
@@ -234,8 +214,6 @@ onBeforeUnmount(() => {
           v-if="submenu === 'above'"
           class="block-handle-menu__submenu"
           :class="{ 'block-handle-menu__submenu--left': submenuSide === 'left' }"
-          @mouseenter="cancelHideOnSubmenu"
-          @mouseleave="hideFromSubmenu"
         >
           <button
             v-for="t in BLOCK_TYPES"
@@ -251,7 +229,7 @@ onBeforeUnmount(() => {
       <div
         class="block-handle-menu__item block-handle-menu__item--has-sub"
         @mouseenter="showSubmenu('below')"
-        @mouseleave="hideSubmenu"
+        @click="showSubmenu('below')"
       >
         <span>在下方添加</span>
         <component
@@ -264,8 +242,6 @@ onBeforeUnmount(() => {
           v-if="submenu === 'below'"
           class="block-handle-menu__submenu"
           :class="{ 'block-handle-menu__submenu--left': submenuSide === 'left' }"
-          @mouseenter="cancelHideOnSubmenu"
-          @mouseleave="hideFromSubmenu"
         >
           <button
             v-for="t in BLOCK_TYPES"
