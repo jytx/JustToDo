@@ -63,8 +63,11 @@ const emit = defineEmits<{
  */
 const route = useRoute();
 const isFloatingView = computed<boolean>(() => {
-  const name = route.name as string;
+  const name = route.name as string | undefined;
   const view = route.query.view as string | undefined;
+  // 路由未初始化时（reload 瞬间 name 为 undefined/空）：视为悬浮视图不渲染面板，
+  // 避免 route 解析完成前面板先渲染一帧 empty 占位再消失，形成「闪一下」
+  if (!name || name === "root") return true;
   return (
     name === "week" ||
     name === "month" ||
