@@ -630,7 +630,7 @@ function onCtxEnterBatchMode(): void {
   margin-right: 2px;
   /* 对齐标题首行文字中心：align-self 顶对齐 + margin-top 推到首行中心 */
   align-self: flex-start;
-  margin-top: 3.7px;
+  margin-top: 2.4px;
 }
 
 .task-item__batch-check:hover {
@@ -728,7 +728,7 @@ function onCtxEnterBatchMode(): void {
  * 子组件 scoped，需 :deep 穿透；align-self 顶对齐 + margin-top 推到首行中心。 */
 .task-item :deep(.task-checkbox) {
   align-self: flex-start;
-  margin-top: 3.7px;
+  margin-top: 2.4px;
 }
 
 .task-item__body {
