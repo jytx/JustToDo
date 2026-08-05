@@ -808,6 +808,12 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
 .list-view__collapse :deep(.arco-collapse-item-content) {
   padding-left: 0;
 }
+/* 分组间分隔线：比 Arco 默认（neutral-3）更浅更弱，降低视觉干扰 */
+.list-view__collapse :deep(.arco-collapse-item-header) {
+  border-top: 1px solid var(--jt-border-faint);
+}
+:root { --jt-border-faint: rgba(0, 0, 0, 0.05); }
+body[arco-theme="dark"] { --jt-border-faint: rgba(255, 255, 255, 0.06); }
 
 /* === TransitionGroup FLIP 动画（拖拽实时让位）===
    关键：.task-flip-move 让位置变化的元素平滑过渡（"挤走"效果）。 */
