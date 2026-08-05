@@ -49,6 +49,9 @@ const props = defineProps<{
   panelWidth?: number;
   /** 拖拽宽度上限（默认 900；侧边栏收起时由 AppLayout 增大传入） */
   maxWidth?: number;
+  /** 悬浮 drawer 模式（日历/看板/时间线等全屏视图）：无选中任务时不渲染面板，
+   *  不做 empty 占位 —— 这些视图本身全屏，占位只属于列表视图 */
+  floating?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -758,6 +761,7 @@ onBeforeUnmount(() => {
   <Transition name="detail-drawer">
   <div
     ref="panelEl"
+    v-if="!floating || task"
     class="detail-panel"
     :style="{ width: (panelWidth ?? 480) + 'px' }"
   >

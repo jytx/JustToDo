@@ -592,7 +592,11 @@ useShortcuts({
     </div>
 
     <!-- 任务详情面板（右） -->
-    <TaskDetailPanel v-model:panel-width="panelWidth" :max-width="detailPanelMaxWidth" />
+    <TaskDetailPanel
+      v-model:panel-width="panelWidth"
+      :max-width="detailPanelMaxWidth"
+      :floating="isFloatingPanelView"
+    />
 
     <!-- 全局搜索面板 -->
     <SearchPalette />
