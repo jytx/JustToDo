@@ -799,8 +799,13 @@ pub async fn task_update(
         .map_err(|e| format!("更新任务失败: {}", e))?;
     }
     if let Some(list_id) = &input.list_id {
-        sqlx::query("UPDATE tasks SET list_id = $1, updated_at = $2 WHERE id = $3")
+        // 移动任务到新清单时，group_id 必须同步回退到新清单的默认分组，
+        // 否则旧清单的 group_id 在新清单里不存在，任务会在分组视图丢失。
+        // 若调用方显式传了 groupId（下方 group_id 分支），会覆盖此默认值。
+        let new_default_group = format!("{}-default", list_id);
+        sqlx::query("UPDATE tasks SET list_id = $1, group_id = $2, updated_at = $3 WHERE id = $4")
             .bind(list_id)
+            .bind(&new_default_group)
             .bind(&ts)
             .bind(&id)
             .execute(pool.inner())
