@@ -9,6 +9,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import type { Editor } from "@tiptap/vue-3";
 import { exitSuggestion, SuggestionPluginKey } from "@tiptap/suggestion";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
+import TableSizePicker from "./TableSizePicker.vue";
 
 export type SlashCommandItem = {
   /** 唯一 key */
@@ -37,8 +38,20 @@ const props = defineProps<{
    * 命令负责删除已输入的 "/xxx" 范围并切换 block 类型。
    */
   onSelectCommand?: (item: SlashCommandItem) => void;
+  /** 表格项专用：hover 二级选 N×N 后调用（由 RichTextEditor 注入，
+   *  负责删除 "/表格" 范围 + insertTable(rows, cols)） */
+  onPickTable?: (rows: number, cols: number) => void;
 }>();
 
+/** 斜杠菜单表格项的 hover 二级菜单开关 */
+const tableSubmenuOpen = ref(false);
+
+/** 表格二级选中行列：调父级注入的 onPickTable（删 /表格 + 插表格） */
+function onPickTableFromSlash(rows: number, cols: number): void {
+  props.onPickTable?.(rows, cols);
+  tableSubmenuOpen.value = false;
+  emit("close");
+}
 const emit = defineEmits<{
   close: [];
 }>();
@@ -224,15 +237,33 @@ onBeforeUnmount(() => {
         >
           无匹配项
         </div>
-        <MenuPopoverItem
-          v-for="(item, i) in filteredItems"
-          :key="item.key"
-          :active="i === selectedIndex"
-          @click="selectItem(item)"
-        >
-          <span class="slash-menu__title">{{ item.title }}</span>
-          <span v-if="item.description" class="slash-menu__desc">{{ item.description }}</span>
-        </MenuPopoverItem>
+        <template v-for="(item, i) in filteredItems" :key="item.key">
+          <!-- 表格项特殊：hover 展开行列选择器二级菜单 -->
+          <div
+            v-if="item.key === 'table'"
+            class="slash-menu__table-item"
+            @mouseenter="tableSubmenuOpen = true"
+            @mouseleave="tableSubmenuOpen = false"
+          >
+            <MenuPopoverItem :active="i === selectedIndex" @click="selectItem(item)">
+              <span class="slash-menu__title">{{ item.title }}</span>
+              <span v-if="item.description" class="slash-menu__desc">{{ item.description }}</span>
+            </MenuPopoverItem>
+            <!-- 二级：行列选择器 -->
+            <div v-if="tableSubmenuOpen" class="slash-menu__table-submenu">
+              <TableSizePicker :on-pick="onPickTableFromSlash" />
+            </div>
+          </div>
+          <!-- 普通项 -->
+          <MenuPopoverItem
+            v-else
+            :active="i === selectedIndex"
+            @click="selectItem(item)"
+          >
+            <span class="slash-menu__title">{{ item.title }}</span>
+            <span v-if="item.description" class="slash-menu__desc">{{ item.description }}</span>
+          </MenuPopoverItem>
+        </template>
       </div>
     </div>
   </Teleport>
@@ -270,6 +301,24 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--jt-text-tertiary);
   font-family: var(--font-body);
+}
+
+/* 表格项容器（hover 展开二级，relative 锚定二级菜单） */
+.slash-menu__table-item {
+  position: relative;
+}
+/* 表格二级菜单：浮在一级右侧，背景浮层 */
+.slash-menu__table-submenu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  margin-left: 4px;
+  background: var(--jt-surface);
+  border-radius: 12px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.04);
+  z-index: 10;
 }
 
 .slash-menu__title {

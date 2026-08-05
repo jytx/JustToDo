@@ -236,6 +236,15 @@ function buildSlashCommandPlugin(editorInstance: TiptapEditor) {
         const buildCommandFn = (item: SlashCommandItem) => {
           props.command({ editor: props.editor, range: props.range, props: item });
         };
+        // 表格 hover 二级选中行列：删除 "/表格" 范围 + 插入指定大小表格
+        const buildPickTableFn = (rows: number, cols: number) => {
+          const ed = props.editor;
+          ed.chain()
+            .focus()
+            .deleteRange(props.range)
+            .insertTable({ rows, cols, withHeaderRow: true })
+            .run();
+        };
         return {
           items: (props.items as SlashCommandItem[]) ?? [],
           query: (props.query as string) ?? "",
@@ -245,6 +254,7 @@ function buildSlashCommandPlugin(editorInstance: TiptapEditor) {
             ? { left: rect.left, top: rect.top, bottom: rect.bottom }
             : null,
           onSelectCommand: buildCommandFn,
+          onPickTable: buildPickTableFn,
         };
       }
 
