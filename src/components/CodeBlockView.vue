@@ -208,7 +208,8 @@ function toggleFold(): void {
 }
 /* 语言项比通用菜单项更宽松（不拥挤） */
 .code-block__lang-list :deep(.menu-popover-item) {
-  height: 36px;
+  padding-top: 8px;
+  padding-bottom: 8px;
 }
 
 /* 代码区（保持原 .rich-text__content pre 的视觉） */
