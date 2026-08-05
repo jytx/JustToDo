@@ -157,6 +157,23 @@ pub async fn list_create(
     .await
     .map_err(|e| format!("创建清单失败: {}", e))?;
 
+    // 待办清单（非目录、非笔记本）创建后立即建默认分组 {id}-default。
+    // 否则新建任务的 group_id 指向不存在的分组，在分组视图凭空消失。
+    if is_folder_val == 0 && kind_val == "task" {
+        let default_group_id = format!("{}-default", id);
+        sqlx::query(
+            "INSERT OR IGNORE INTO groups (id, list_id, name, sort_order, created_at) VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(&default_group_id)
+        .bind(&id)
+        .bind("默认分组")
+        .bind(0)
+        .bind(&ts)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("创建默认分组失败: {}", e))?;
+    }
+
     Ok(TaskList {
         id,
         name,
