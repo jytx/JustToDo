@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 周视图 —— FullCalendar timeGridWeek + 真实任务数据
 // 顶部工具条由 CalendarToolbar 提供
-import { computed, ref, watch } from "vue";
+import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import FullCalendar from "@fullcalendar/vue3";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
@@ -73,6 +73,27 @@ function onGoto(date: Date): void {
 
 /** + 新建：取当前视图区间起点（本周第一天）作为预填日期，打开 QuickAddDialog */
 const onCreate = useCalendarCreateAction(getApi);
+
+/**
+ * FullCalendar 容器宽度修复（同 MonthView）：从列表视图切到日历时，
+ * TheSidebar 卸载 + main 尺寸变化可能晚于 FC 初次布局测量，
+ * 导致日历右侧留白。用 ResizeObserver 主动 updateSize 兜底。
+ */
+let ro: ResizeObserver | null = null;
+onMounted(() => {
+  nextTick(() => getApi()?.updateSize());
+  const el = document.querySelector(".fc");
+  if (el && typeof ResizeObserver !== "undefined") {
+    ro = new ResizeObserver(() => {
+      requestAnimationFrame(() => getApi()?.updateSize());
+    });
+    ro.observe(el);
+  }
+});
+onBeforeUnmount(() => {
+  ro?.disconnect();
+  ro = null;
+});
 </script>
 
 <template>

@@ -457,14 +457,7 @@ useShortcuts({
     />
 
     <!-- 主区域（中） -->
-    <main
-      class="app-layout__main"
-      :style="mainStyle"
-      :data-route="String(route.name)"
-      :data-view="String(route.query.view ?? '')"
-      :data-floating="String(isFloatingPanelView)"
-      :data-panel-w="String(panelWidth)"
-    >
+    <main class="app-layout__main" :style="mainStyle">
       <div class="app-layout__topbar" :style="topbarStyle">
         <a-button
           v-if="showGlobalActions"
@@ -688,7 +681,8 @@ useShortcuts({
   min-height: 0;
   display: flex;
   flex-direction: column;
-  transition: padding-right 0.2s ease;
+  /* 不加 padding-right transition：侧边栏卸载时 main 尺寸瞬时变化，
+     避免与 FullCalendar 的 ResizeObserver 竞争导致日历右侧空白 */
 }
 
 .app-layout__topbar {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 月视图 —— FullCalendar dayGridMonth + 真实任务数据
 // 顶部工具条由 CalendarToolbar 提供
-import { computed, ref, watch } from "vue";
+import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import FullCalendar from "@fullcalendar/vue3";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
@@ -84,6 +84,29 @@ function onGoto(date: Date): void {
 
 /** + 新建：取当前视图区间起点（当月 1 号）作为预填日期，打开 QuickAddDialog */
 const onCreate = useCalendarCreateAction(getApi);
+
+/**
+ * FullCalendar 容器宽度修复：
+ * 从列表视图切到日历时，TheSidebar 卸载 + main 尺寸变化可能晚于 FullCalendar
+ * 的初次布局测量，导致日历右侧留空白。挂载后用 ResizeObserver 主动让 FC
+ * 重测尺寸（updateSize），兜底所有宽度变化场景（侧边栏收起、面板拖拽等）。
+ */
+let ro: ResizeObserver | null = null;
+onMounted(() => {
+  nextTick(() => getApi()?.updateSize());
+  const el = document.querySelector(".fc");
+  if (el && typeof ResizeObserver !== "undefined") {
+    ro = new ResizeObserver(() => {
+      // 防抖：动画期间频繁触发，用 rAF 合并到下一帧
+      requestAnimationFrame(() => getApi()?.updateSize());
+    });
+    ro.observe(el);
+  }
+});
+onBeforeUnmount(() => {
+  ro?.disconnect();
+  ro = null;
+});
 </script>
 
 <template>
