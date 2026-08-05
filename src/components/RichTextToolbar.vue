@@ -93,19 +93,22 @@ function onPickTableSize(rows: number, cols: number): void {
   tableMenuOpen.value = false;
 }
 
-/** 切换表格选择器：计算按钮坐标并打开/关闭 */
+/** 切换表格选择器：计算按钮坐标并打开/关闭。
+ *  下方空间不足时改在按钮上方弹出，避免选择器底部超出视口被裁切。 */
 function toggleTablePicker(): void {
   if (tableMenuOpen.value) {
     tableMenuOpen.value = false;
     return;
   }
-  // 取当前点击的表格按钮坐标（事件 target）
   const btn = document.querySelector('[title="表格"]') as HTMLElement | null;
   if (btn) {
     const r = btn.getBoundingClientRect();
+    const PICKER_H = 240;
+    const spaceBelow = window.innerHeight - r.bottom;
+    const placeAbove = spaceBelow < PICKER_H && r.top > PICKER_H;
     tablePickerStyle.value = {
       left: `${r.left}px`,
-      top: `${r.bottom + 4}px`,
+      top: placeAbove ? `${r.top - PICKER_H - 4}px` : `${r.bottom + 4}px`,
     };
   }
   tableMenuOpen.value = true;

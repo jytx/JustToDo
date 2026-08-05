@@ -465,13 +465,20 @@ const tableContextMenuPos = ref({ x: 0, y: 0 });
 const tablePickerVisible = ref(false);
 const tablePickerPos = ref({ x: 0, y: 0 });
 
-/** 弹出行列选择器：锚到当前光标位置（斜杠/手柄菜单触发） */
+/** 弹出行列选择器：锚到当前光标位置（斜杠/手柄菜单触发）。
+ *  下方空间不足时改在光标上方弹出，避免选择器底部超出视口被裁切。 */
 function openTablePicker(): void {
   const ed = editor.value;
   if (!ed) return;
-  // 用光标视口坐标作为锚点
   const coords = ed.view.coordsAtPos(ed.state.selection.from);
-  tablePickerPos.value = { x: coords.left, y: coords.bottom + 6 };
+  // 选择器预估高度：10 行 × (16+2)px + padding/label ≈ 230px
+  const PICKER_H = 240;
+  const spaceBelow = window.innerHeight - coords.bottom;
+  const placeAbove = spaceBelow < PICKER_H && coords.top > PICKER_H;
+  tablePickerPos.value = {
+    x: coords.left,
+    y: placeAbove ? coords.top - PICKER_H - 6 : coords.bottom + 6,
+  };
   tablePickerVisible.value = true;
 }
 
