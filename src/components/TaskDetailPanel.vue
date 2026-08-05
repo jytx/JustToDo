@@ -762,14 +762,15 @@ onBeforeUnmount(() => {
     :style="{ width: (panelWidth ?? 480) + 'px' }"
   >
     <!-- 未选中任务时：empty 占位（面板始终占位，任务列表不拉伸） -->
+    <!-- 拖拽手柄（始终渲染：empty 占位态也能拖拽调宽） -->
+    <div class="detail-panel__resizer" @mousedown="startResize" />
+
+    <!-- 未选中任务时：empty 占位（面板始终占位，任务列表不拉伸） -->
     <div v-if="!task" class="detail-panel__empty">
       <icon-file :size="40" />
       <span class="detail-panel__empty-text">选择一个任务查看详情</span>
     </div>
     <template v-else>
-    <!-- 拖拽手柄 -->
-    <div class="detail-panel__resizer" @mousedown="startResize" />
-
     <!-- 顶部 chips 行 -->
     <div class="detail-panel__chips">
       <div v-if="!isNote" class="detail-panel__checkbox-wrap">
