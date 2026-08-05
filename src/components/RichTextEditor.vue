@@ -25,6 +25,7 @@ import SlashCommandMenu, { type SlashCommandItem } from "./SlashCommandMenu.vue"
 import RichTextFloatingMenu from "./RichTextFloatingMenu.vue";
 import BlockDragHandle from "./BlockDragHandle.vue";
 import { CodeBlockFold } from "@/extensions/CodeBlockFold";
+import { HeadingFold } from "@/extensions/HeadingFold";
 
 /**
  * 自定义扩展：覆盖 Tiptap 内置的 Mod-a / selectAll 行为。
@@ -300,8 +301,9 @@ const editor = useEditor({
       // dropcursor（拖拽时显示的横线）：默认 1px currentColor 太细不醒目，
       // 加粗到 2px 并用主题强调色，配合 drag handle 拖拽时更易判断落点
       dropcursor: { width: 2, color: "#4F46E5" },
-      // 标题放开到 H1-H6 全部六级（StarterKit 默认仅 [1,2,3]）
-      heading: { levels: [1, 2, 3, 4, 5, 6] },
+      // heading 由 HeadingFold 替代（支持折叠 + 持久化 folded attribute），
+      // 这里禁用 StarterKit 内置的避免冲突
+      heading: false,
     }),
     Underline,
     Link.configure({
@@ -315,6 +317,8 @@ const editor = useEditor({
     HardBreak,
     // 代码块：自定义 NodeView（语言切换 + 复制 + 折叠），folded attribute 持久化
     CodeBlockFold,
+    // 标题：H1-H6 + 折叠（folded attribute 持久化 + Decoration Plugin 隐藏下属块）
+    HeadingFold.configure({ levels: [1, 2, 3, 4, 5, 6] }),
     TaskList,
     TaskItem.configure({ nested: true }),
     // 注：故意不加 @tiptap/extension-placeholder。
@@ -1184,6 +1188,11 @@ function fileToBase64(file: File): Promise<string> {
   background: none;
   padding: 0;
   font-size: 12px;
+}
+
+/* 标题折叠：被 HeadingFold 的 Decoration 标记的块整体隐藏 */
+.rich-text__editor :deep(.heading-fold-hidden) {
+  display: none !important;
 }
 
 /* lowlight 语法高亮配色 */
