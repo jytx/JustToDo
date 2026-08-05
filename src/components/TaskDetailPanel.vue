@@ -32,6 +32,7 @@ import ChipPopover from "./ChipPopover.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import AiBreakdownPreview from "./AiBreakdownPreview.vue";
 import AiPolishDialog from "./AiPolishDialog.vue";
+import OutlinePanel from "./OutlinePanel.vue";
 import { useAttachmentUpload } from "@/composables/useAttachmentUpload";
 import * as db from "@/api/db";
 
@@ -299,6 +300,8 @@ const listVisible = ref(false);
 const moreVisible = ref(false);
 /** 富文本工具条浮窗（footer "A" 按钮控制） */
 const formatToolbarVisible = ref(false);
+/** 大纲浮层面板（footer 大纲按钮控制） */
+const outlineVisible = ref(false);
 /** 删除二次确认弹窗 */
 const deleteConfirmVisible = ref(false);
 /** 附件下拉浮窗（chips 行点 📎 触发） */
@@ -1107,6 +1110,16 @@ onBeforeUnmount(() => {
         {{ formatMeta(task.createdAt) }}
       </span>
 
+      <!-- 大纲（提取富文本标题树，点击跳转 + 当前章节高亮） -->
+      <button
+        class="detail-panel__format-btn"
+        :class="{ 'detail-panel__format-btn--active': outlineVisible }"
+        title="大纲"
+        @click="outlineVisible = !outlineVisible"
+      >
+        <icon-list :size="16" />
+      </button>
+
       <!-- AI 文本润色（仅 AI 启用时显示；选中文字润色选中段，无选区润色整篇） -->
       <button
         v-if="settingsStore.aiEnabled"
@@ -1184,6 +1197,13 @@ onBeforeUnmount(() => {
         </div>
       </Popover>
     </div>
+
+    <!-- 大纲浮层面板（绝对定位在 .detail-panel 内，absolute 锚点） -->
+    <OutlinePanel
+      v-if="outlineVisible"
+      :editor="richTextEditorRef?.editor"
+      @close="outlineVisible = false"
+    />
 
     <!-- 删除二次确认弹窗（统一极简卡片风） -->
     <ConfirmDialog
