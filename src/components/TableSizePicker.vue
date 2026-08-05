@@ -5,8 +5,6 @@ import { ref, computed } from "vue";
 
 /** 最大可选行列数（10×10） */
 const MAX = 10;
-/** 每个格子的 px 尺寸 */
-const CELL = 16;
 
 const props = defineProps<{
   /** 选择 (rows, cols) 后回调（由调用方执行 insertTable） */
@@ -55,7 +53,7 @@ function onLeave(): void {
 
 <template>
   <div class="table-size-picker" @mouseleave="onLeave">
-    <div class="table-size-picker__grid" :style="{ width: MAX * CELL + 'px' }">
+    <div class="table-size-picker__grid">
       <div
         v-for="cell in cells"
         :key="`${cell.r}-${cell.c}`"
@@ -71,6 +69,7 @@ function onLeave(): void {
 
 <style scoped>
 .table-size-picker {
+  box-sizing: border-box;
   padding: 8px 10px 6px;
   display: flex;
   flex-direction: column;
@@ -84,6 +83,7 @@ function onLeave(): void {
   gap: 2px;
 }
 .table-size-picker__cell {
+  box-sizing: border-box;
   width: 16px;
   height: 16px;
   border: 1px solid var(--jt-border);
