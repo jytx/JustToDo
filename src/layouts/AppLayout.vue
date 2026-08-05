@@ -145,6 +145,16 @@ const mainStyle = computed(() => {
   return { paddingRight: panelWidth.value + "px" };
 });
 
+/** 详情面板最大宽度：基础 900 + 侧边栏收起时释放的空间。
+ *  侧边栏展开占用 sidebarWidth，收起后只剩 48px，释放的部分加到面板上限。 */
+const detailPanelMaxWidth = computed(() => {
+  const SIDEBAR_COLLAPSED_W = 48;
+  const released = sidebarCollapsed.value
+    ? Math.max(0, sidebarWidth.value - SIDEBAR_COLLAPSED_W)
+    : 0;
+  return 900 + released;
+});
+
 /** 详情面板打开时，topbar 整体向右推一个面板宽度（悬浮视图除外，不缩进） */
 const topbarStyle = computed(() => {
   if (!taskStore.detailOpen || isFloatingPanelView.value) return {};
@@ -558,7 +568,7 @@ useShortcuts({
     </div>
 
     <!-- 任务详情面板（右） -->
-    <TaskDetailPanel v-model:panel-width="panelWidth" />
+    <TaskDetailPanel v-model:panel-width="panelWidth" :max-width="detailPanelMaxWidth" />
 
     <!-- 全局搜索面板 -->
     <SearchPalette />

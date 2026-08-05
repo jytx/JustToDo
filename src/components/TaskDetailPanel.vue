@@ -47,6 +47,8 @@ const { pickFiles: pickAttachmentFiles, uploading: attachmentUploading } =
 
 const props = defineProps<{
   panelWidth?: number;
+  /** 拖拽宽度上限（默认 900；侧边栏收起时由 AppLayout 增大传入） */
+  maxWidth?: number;
 }>();
 
 const emit = defineEmits<{
@@ -96,7 +98,8 @@ function startResize(e: MouseEvent) {
 
   function onMouseMove(ev: MouseEvent) {
     const delta = startX - ev.clientX;
-    const newWidth = Math.max(480, Math.min(900, startWidth + delta));
+    const max = props.maxWidth ?? 900;
+    const newWidth = Math.max(480, Math.min(max, startWidth + delta));
     emit("update:panelWidth", newWidth);
   }
 
