@@ -215,12 +215,12 @@ onBeforeUnmount(() => {
   gap: 4px;
 }
 
-/* 菜单项：原 MenuPopoverItem height 32px，14 项密集堆叠过紧。
-   显式声明更高 + 加大水平 padding，给 item 充足视觉呼吸空间 */
+/* 菜单项：H1-H6 扩展后项数增多，原 32px 固定高度过密。
+   通过加大垂直 padding 撑开 item，给视觉呼吸空间 */
 .slash-menu__container :deep(.menu-popover-item) {
-  height: 50px;
-  padding: 0 14px;
-  font-size: 13px;
+  height: auto;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 .slash-menu__empty {
