@@ -8,6 +8,7 @@ import { ref, computed } from "vue";
 import type { Editor } from "@tiptap/vue-3";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
+import TableSizePicker from "./TableSizePicker.vue";
 import { uploadAndInsertImage } from "@/utils/imageUpload";
 
 const props = withDefaults(
@@ -80,6 +81,15 @@ function onHeadingSelect(key: string) {
 
 /** 标题级别菜单开关（仅非 compact 模式使用） */
 const headingMenuOpen = ref(false);
+/** 表格行列选择器菜单开关（hover 工具栏表格按钮展开） */
+const tableMenuOpen = ref(false);
+
+/** 行列选择器确认：插入指定大小的表格 */
+function onPickTableSize(rows: number, cols: number): void {
+  if (!props.editor) return;
+  props.editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
+  tableMenuOpen.value = false;
+}
 
 /** 标题级别列表（H1-H6）—— 供下拉菜单 v-for 渲染 */
 const HEADING_LEVELS = [1, 2, 3, 4, 5, 6] as const;
@@ -297,29 +307,34 @@ async function onImagePicked(e: Event) {
     >
       <icon-minus :size="compact ? 14 : 16" />
     </a-button>
-    <a-button
-      size="mini"
-      shape="circle"
-      type="text"
-      @click="editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()"
-      title="表格"
-    >
-      <!-- 表格图标：自定义内联 SVG（Arco 无表格图标） -->
-      <svg
-        :width="compact ? 14 : 16"
-        :height="compact ? 14 : 16"
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.3"
-      >
-        <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
-        <line x1="1.5" y1="6" x2="14.5" y2="6" />
-        <line x1="1.5" y1="9.5" x2="14.5" y2="9.5" />
-        <line x1="5.5" y1="2.5" x2="5.5" y2="13.5" />
-        <line x1="10" y1="2.5" x2="10" y2="13.5" />
-      </svg>
-    </a-button>
+    <MenuPopover v-model:visible="tableMenuOpen" placement="bottom-right">
+      <template #trigger>
+        <a-button
+          size="mini"
+          shape="circle"
+          type="text"
+          title="表格"
+          @click="tableMenuOpen = !tableMenuOpen"
+        >
+          <!-- 表格图标：自定义内联 SVG（Arco 无表格图标） -->
+          <svg
+            :width="compact ? 14 : 16"
+            :height="compact ? 14 : 16"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.3"
+          >
+            <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
+            <line x1="1.5" y1="6" x2="14.5" y2="6" />
+            <line x1="1.5" y1="9.5" x2="14.5" y2="9.5" />
+            <line x1="5.5" y1="2.5" x2="5.5" y2="13.5" />
+            <line x1="10" y1="2.5" x2="10" y2="13.5" />
+          </svg>
+        </a-button>
+      </template>
+      <TableSizePicker :on-pick="onPickTableSize" />
+    </MenuPopover>
     <a-button
       size="mini"
       shape="circle"
