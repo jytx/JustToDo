@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 清单视图 —— 任务列表区主视图
 // 含：列表头（标题/日期/计数）、按分组展示未完成任务、完成区折叠、添加栏、空状态
-import { computed, watch, onMounted, ref } from "vue";
+import { computed, watch, onMounted, onBeforeUnmount, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
@@ -241,6 +241,20 @@ onMounted(async () => {
   // 默认展开所有分组
   activeGroupKeys.value = groupStore.currentGroups.map((g) => g.id);
 });
+
+/** Cmd/Ctrl+A 全选：多选模式下选中当前视图所有未完成任务。
+ *  焦点在输入框时不拦截（保留浏览器文本全选）。 */
+function onSelectAllKeydown(e: KeyboardEvent): void {
+  if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.key !== "a") return;
+  if (!taskStore.batchMode) return;
+  const el = document.activeElement;
+  const tag = el?.tagName ?? "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || (el as HTMLElement)?.isContentEditable) return;
+  e.preventDefault();
+  taskStore.selectAllBatch(taskStore.openTasks.map((t) => t.id));
+}
+onMounted(() => window.addEventListener("keydown", onSelectAllKeydown));
+onBeforeUnmount(() => window.removeEventListener("keydown", onSelectAllKeydown));
 
 /** 确认新建分组（newGroupSortOrder 由调用方预设：null=追加末尾，数字=指定位置） */
 async function confirmNewGroup(): Promise<void> {

@@ -835,6 +835,13 @@ export const useTaskStore = defineStore("task", () => {
     batchAnchorId.value = id;
   }
 
+  /** Cmd/Ctrl+A 全选：把传入的全部任务 id 设为批量选中（仅多选模式下生效）。
+   *  传入空数组时不操作（避免误清空）。 */
+  function selectAllBatch(ids: string[]): void {
+    if (!batchMode.value || ids.length === 0) return;
+    batchSelectedIds.value = new Set(ids);
+  }
+
   /** Shift+点击：范围选（从锚点到当前任务，基于 openTasks 顺序）。
    *  无锚点或锚点不在当前列表时退化为单点选。 */
   function rangeBatchSelect(id: string): void {

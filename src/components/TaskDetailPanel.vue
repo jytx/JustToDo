@@ -176,7 +176,10 @@ async function setPriority(p: Priority) {
 const listOptions = computed(() => {
   const kind = task.value?.kind === "note" ? "note" : "task";
   const source = kind === "note" ? listStore.noteLists : listStore.taskLists;
-  return source.map((l) => ({ id: l.id, name: l.name, color: l.color }));
+  // 仅展示可承载条目的清单/笔记本本身，排除目录（目录仅作分组容器，不能放置任务）
+  return source
+    .filter((l) => !l.isFolder)
+    .map((l) => ({ id: l.id, name: l.name, color: l.color }));
 });
 const currentList = computed(() =>
   listOptions.value.find((l) => l.id === task.value?.listId) ?? null,
