@@ -305,7 +305,6 @@ onBeforeUnmount(() => {
 }
 .block-handle-menu__item--has-sub {
   justify-content: space-between;
-  position: relative;
 }
 .block-handle-menu__arrow {
   color: var(--jt-text-tertiary);
@@ -318,13 +317,17 @@ onBeforeUnmount(() => {
   margin: 4px 8px;
 }
 
-/* 二级菜单：浮在一级右侧（默认），top:0 与一级容器顶部对齐避免溢出 */
+/* 二级菜单：浮在一级右侧（默认），top:0 锚到一级容器顶部对齐避免溢出菜单框。
+ *  absolute 锚到 .block-handle-menu（fixed，是定位上下文；item 的 relative 已去掉） */
 .block-handle-menu__submenu {
   position: absolute;
   left: 100%;
   top: 0;
   margin-left: 4px;
   min-width: 160px;
+  /* 二级菜单项数多（15），max-height 兜底防纵向溢出视口 */
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   background: var(--jt-surface);
   border-radius: 12px;
   box-shadow:
