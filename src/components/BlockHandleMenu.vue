@@ -181,6 +181,44 @@ function showSubmenu(which: "above" | "below" | "table"): void {
   submenu.value = which;
 }
 
+/** above/below 二级菜单里「表格」项的三级选择器开关（'above'/'below'/null） */
+const insertTableSub = ref<null | "above" | "below">(null);
+
+/** 构建指定大小的表格节点（table>tableRow>tableHeader/tableCell>paragraph） */
+function buildTableNode(rows: number, cols: number): Record<string, unknown> {
+  const headerRow = {
+    type: "tableRow",
+    content: Array.from({ length: cols }, () => ({
+      type: "tableHeader",
+      content: [{ type: "paragraph" }],
+    })),
+  };
+  const bodyRows = Array.from({ length: Math.max(0, rows - 1) }, () => ({
+    type: "tableRow",
+    content: Array.from({ length: cols }, () => ({
+      type: "tableCell",
+      content: [{ type: "paragraph" }],
+    })),
+  }));
+  return { type: "table", content: [headerRow, ...bodyRows] };
+}
+
+/** above/below 二级里表格项 hover 展开三级选择器 */
+function showInsertTableSub(which: "above" | "below"): void {
+  insertTableSub.value = which;
+}
+function hideInsertTableSub(): void {
+  insertTableSub.value = null;
+}
+
+/** above/below 三级选择器选中行列：在对应位置插入表格 */
+function onInsertTable(where: "above" | "below", rows: number, cols: number): void {
+  const insertPos = where === "above" ? props.blockPos : props.blockPos + props.blockSize;
+  props.editor.chain().focus().insertContentAt(insertPos, buildTableNode(rows, cols)).run();
+  props.editor.chain().focus().setTextSelection(insertPos + 1).run();
+  emit("close");
+}
+
 /** 表格二级菜单选中行列后：插入表格 + 关闭整个菜单 */
 function onPickTableFromMenu(rows: number, cols: number): void {
   props.editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
@@ -271,15 +309,37 @@ onBeforeUnmount(() => {
           class="block-handle-menu__submenu block-handle-menu__submenu--above"
           :class="{ 'block-handle-menu__submenu--left': submenuSide === 'left' }"
         >
-          <button
-            v-for="t in BLOCK_TYPES"
-            :key="t.key"
-            type="button"
-            class="block-handle-menu__item"
-            @click="onInsert(t, 'above')"
-          >
-            {{ t.title }}
-          </button>
+          <template v-for="t in BLOCK_TYPES" :key="t.key">
+            <!-- 表格项：hover 展开三级行列选择器 -->
+            <div
+              v-if="t.key === 'table'"
+              class="block-handle-menu__item block-handle-menu__item--has-sub block-handle-menu__insert-table-item"
+              @mouseenter="showInsertTableSub('above')"
+              @mouseleave="hideInsertTableSub"
+            >
+              <span>{{ t.title }}</span>
+              <component
+                :is="submenuSide === 'left' ? 'icon-left' : 'icon-right'"
+                :size="12"
+                class="block-handle-menu__arrow"
+              />
+              <div
+                v-if="insertTableSub === 'above'"
+                class="block-handle-menu__submenu block-handle-menu__submenu--table block-handle-menu__submenu--insert"
+                :class="{ 'block-handle-menu__submenu--left': submenuSide === 'left' }"
+              >
+                <TableSizePicker :on-pick="(r, c) => onInsertTable('above', r, c)" />
+              </div>
+            </div>
+            <button
+              v-else
+              type="button"
+              class="block-handle-menu__item"
+              @click="onInsert(t, 'above')"
+            >
+              {{ t.title }}
+            </button>
+          </template>
         </div>
       </div>
       <div
@@ -299,15 +359,36 @@ onBeforeUnmount(() => {
           class="block-handle-menu__submenu block-handle-menu__submenu--below"
           :class="{ 'block-handle-menu__submenu--left': submenuSide === 'left' }"
         >
-          <button
-            v-for="t in BLOCK_TYPES"
-            :key="t.key"
-            type="button"
-            class="block-handle-menu__item"
-            @click="onInsert(t, 'below')"
-          >
-            {{ t.title }}
-          </button>
+          <template v-for="t in BLOCK_TYPES" :key="t.key">
+            <div
+              v-if="t.key === 'table'"
+              class="block-handle-menu__item block-handle-menu__item--has-sub block-handle-menu__insert-table-item"
+              @mouseenter="showInsertTableSub('below')"
+              @mouseleave="hideInsertTableSub"
+            >
+              <span>{{ t.title }}</span>
+              <component
+                :is="submenuSide === 'left' ? 'icon-left' : 'icon-right'"
+                :size="12"
+                class="block-handle-menu__arrow"
+              />
+              <div
+                v-if="insertTableSub === 'below'"
+                class="block-handle-menu__submenu block-handle-menu__submenu--table block-handle-menu__submenu--insert"
+                :class="{ 'block-handle-menu__submenu--left': submenuSide === 'left' }"
+              >
+                <TableSizePicker :on-pick="(r, c) => onInsertTable('below', r, c)" />
+              </div>
+            </div>
+            <button
+              v-else
+              type="button"
+              class="block-handle-menu__item"
+              @click="onInsert(t, 'below')"
+            >
+              {{ t.title }}
+            </button>
+          </template>
         </div>
       </div>
     </div>
@@ -379,8 +460,8 @@ onBeforeUnmount(() => {
   left: 100%;
   /* 无 margin-left 间隙：避免鼠标从 item 移向 submenu 时穿过间隙触发 mouseleave */
   min-width: 160px;
-  max-height: calc(100vh - 32px);
-  overflow-y: auto;
+  /* 不设 overflow/max-height：above/below 二级里的表格项会展开三级选择器，
+     overflow 会裁切三级。项数固定（14），不会溢出视口 */
   background: var(--jt-surface);
   border-radius: 12px;
   box-shadow:
@@ -400,7 +481,8 @@ onBeforeUnmount(() => {
   top: 90px;
 }
 /* 「表格」项：relative 让其二级菜单锚到该项（而非一级容器顶部） */
-.block-handle-menu__item--table-sub {
+.block-handle-menu__item--table-sub,
+.block-handle-menu__insert-table-item {
   position: relative;
 }
 /* 「表格」的二级（行列选择器）：锚到表格项，top:0 对齐该项顶部、left:100% 在右侧 */
