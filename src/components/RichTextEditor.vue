@@ -905,6 +905,7 @@ function fileToBase64(file: File): Promise<string> {
         v-if="tablePickerVisible"
         class="rt-table-picker"
         :style="{ left: tablePickerPos.x + 'px', top: tablePickerPos.y + 'px' }"
+        @mousedown.stop
       >
         <TableSizePicker :on-pick="onPickTableSize" />
       </div>

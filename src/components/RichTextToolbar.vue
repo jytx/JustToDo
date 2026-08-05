@@ -374,7 +374,12 @@ async function onImagePicked(e: Event) {
     </a-button>
     <!-- 行列选择器：独立 Teleport 浮层（避免与详情面板外层 Popover 嵌套冲突） -->
     <teleport to="body">
-      <div v-if="tableMenuOpen" class="table-picker-popover" :style="tablePickerStyle">
+      <div
+        v-if="tableMenuOpen"
+        class="table-picker-popover"
+        :style="tablePickerStyle"
+        @mousedown.stop
+      >
         <TableSizePicker :on-pick="onPickTableSize" />
       </div>
     </teleport>
