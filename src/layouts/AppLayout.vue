@@ -134,6 +134,13 @@ watch(showTaskSidebar, (isTaskView) => {
   }
 });
 
+/** 详情面板打开时，主区域右侧留出面板宽度的空间（悬浮视图除外，不缩进）。
+ *  悬浮视图 = 日历(周/月/年) + 看板 + 时间线：这些视图内容宽幅/水平滚动，
+ *  被挤压会变形，故详情面板改为右侧悬浮 drawer 盖在上面 */
+const isFloatingPanelView = computed(() =>
+  isCalendarView.value || currentListView.value === "kanban" || currentListView.value === "timeline",
+);
+
 /**
  * 从非悬浮视图（列表）切到悬浮视图（看板/时间线/日历）时清空选中任务。
  *
@@ -147,13 +154,6 @@ watch(isFloatingPanelView, (floating) => {
     taskStore.selectTask(null);
   }
 });
-
-/** 详情面板打开时，主区域右侧留出面板宽度的空间（悬浮视图除外，不缩进）。
- *  悬浮视图 = 日历(周/月/年) + 看板 + 时间线：这些视图内容宽幅/水平滚动，
- *  被挤压会变形，故详情面板改为右侧悬浮 drawer 盖在上面 */
-const isFloatingPanelView = computed(() =>
-  isCalendarView.value || currentListView.value === "kanban" || currentListView.value === "timeline",
-);
 /**
  * 主区域让位样式：直接在 computed 内显式读 route.name / route.query.view 强制
  * 响应式追踪，避免 HMR 后中间 computed 链（isFloatingPanelView）失效导致
