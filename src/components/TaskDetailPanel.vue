@@ -95,7 +95,7 @@ function startResize(e: MouseEvent) {
 
   function onMouseMove(ev: MouseEvent) {
     const delta = startX - ev.clientX;
-    const newWidth = Math.max(480, Math.min(720, startWidth + delta));
+    const newWidth = Math.max(480, Math.min(900, startWidth + delta));
     emit("update:panelWidth", newWidth);
   }
 
