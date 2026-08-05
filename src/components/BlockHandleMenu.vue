@@ -221,7 +221,7 @@ onBeforeUnmount(() => {
         <!-- 表格项：hover 展开行列选择器（仿「在下方添加」二级菜单） -->
         <div
           v-if="t.key === 'table'"
-          class="block-handle-menu__item block-handle-menu__item--has-sub"
+          class="block-handle-menu__item block-handle-menu__item--has-sub block-handle-menu__item--table-sub"
           @mouseenter="showSubmenu('table')"
           @click="showSubmenu('table')"
         >
@@ -399,7 +399,11 @@ onBeforeUnmount(() => {
 .block-handle-menu__submenu--below {
   top: 90px;
 }
-/* 「表格」的二级（行列选择器）：对齐一级顶部，无 padding 让选择器自带 padding */
+/* 「表格」项：relative 让其二级菜单锚到该项（而非一级容器顶部） */
+.block-handle-menu__item--table-sub {
+  position: relative;
+}
+/* 「表格」的二级（行列选择器）：锚到表格项，top:0 对齐该项顶部、left:100% 在右侧 */
 .block-handle-menu__submenu--table {
   top: 0;
   min-width: auto;
