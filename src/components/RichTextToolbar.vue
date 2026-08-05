@@ -65,15 +65,38 @@ function removeLink() {
 function onHeadingSelect(key: string) {
   if (!props.editor) return;
   const chain = props.editor.chain().focus();
-  if (key === "p") chain.setParagraph().run();
-  else if (key === "h1") chain.toggleHeading({ level: 1 }).run();
-  else if (key === "h2") chain.toggleHeading({ level: 2 }).run();
-  else if (key === "h3") chain.toggleHeading({ level: 3 }).run();
+  if (key === "p") {
+    chain.setParagraph().run();
+  } else {
+    // key 形如 "h1".."h6"：解析末尾级别数字，统一走 toggleHeading
+    const level = Number(key.slice(1));
+    // Tiptap toggleHeading 的 level 是 1-6 字面量联合类型（Level），需断言
+    if (level >= 1 && level <= 6) {
+      chain.toggleHeading({ level: level as 1 | 2 | 3 | 4 | 5 | 6 }).run();
+    }
+  }
   headingMenuOpen.value = false;
 }
 
 /** 标题级别菜单开关（仅非 compact 模式使用） */
 const headingMenuOpen = ref(false);
+
+/** 标题级别列表（H1-H6）—— 供下拉菜单 v-for 渲染 */
+const HEADING_LEVELS = [1, 2, 3, 4, 5, 6] as const;
+
+/** 当前光标所在标题级别（无标题时为 null，按钮显示 ¶） */
+const activeHeadingLevel = computed<number | null>(() => {
+  if (!props.editor) return null;
+  for (const lv of HEADING_LEVELS) {
+    if (props.editor.isActive("heading", { level: lv })) return lv;
+  }
+  return null;
+});
+
+/** 按钮标签：H1..H6 或 ¶（正文） */
+const headingLabel = computed(() =>
+  activeHeadingLevel.value ? `H${activeHeadingLevel.value}` : "¶",
+);
 
 /**
  * 缩进：支持普通列表项（listItem）和待办列表项（taskItem）。
@@ -210,16 +233,11 @@ async function onImagePicked(e: Event) {
         <a-button
           size="mini"
           shape="circle"
-          :type="editor.isActive('heading') ? 'primary' : 'text'"
+          :type="activeHeadingLevel ? 'primary' : 'text'"
           title="标题级别"
           @click="headingMenuOpen = !headingMenuOpen"
         >
-          <span class="rich-text-toolbar__heading-label">
-            <template v-if="editor.isActive('heading', { level: 1 })">H1</template>
-            <template v-else-if="editor.isActive('heading', { level: 2 })">H2</template>
-            <template v-else-if="editor.isActive('heading', { level: 3 })">H3</template>
-            <template v-else>¶</template>
-          </span>
+          <span class="rich-text-toolbar__heading-label">{{ headingLabel }}</span>
         </a-button>
       </template>
       <MenuPopoverItem
@@ -230,25 +248,12 @@ async function onImagePicked(e: Event) {
         ¶ 正文
       </MenuPopoverItem>
       <MenuPopoverItem
-        key="h1"
-        :active="editor.isActive('heading', { level: 1 })"
-        @click="onHeadingSelect('h1')"
+        v-for="lv in HEADING_LEVELS"
+        :key="`h${lv}`"
+        :active="activeHeadingLevel === lv"
+        @click="onHeadingSelect(`h${lv}`)"
       >
-        H1 标题
-      </MenuPopoverItem>
-      <MenuPopoverItem
-        key="h2"
-        :active="editor.isActive('heading', { level: 2 })"
-        @click="onHeadingSelect('h2')"
-      >
-        H2 标题
-      </MenuPopoverItem>
-      <MenuPopoverItem
-        key="h3"
-        :active="editor.isActive('heading', { level: 3 })"
-        @click="onHeadingSelect('h3')"
-      >
-        H3 标题
+        H{{ lv }} 标题
       </MenuPopoverItem>
     </MenuPopover>
 

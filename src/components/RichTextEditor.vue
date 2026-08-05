@@ -106,6 +106,9 @@ const slashItems: SlashCommandItem[] = [
   { key: "h1", title: "H1 标题", description: "Heading 1", keywords: ["heading", "标题"] },
   { key: "h2", title: "H2 标题", description: "Heading 2", keywords: ["heading", "标题"] },
   { key: "h3", title: "H3 标题", description: "Heading 3", keywords: ["heading", "标题"] },
+  { key: "h4", title: "H4 标题", description: "Heading 4", keywords: ["heading", "标题"] },
+  { key: "h5", title: "H5 标题", description: "Heading 5", keywords: ["heading", "标题"] },
+  { key: "h6", title: "H6 标题", description: "Heading 6", keywords: ["heading", "标题"] },
   {
     key: "bullet",
     title: "无序列表",
@@ -183,6 +186,15 @@ function buildSlashCommandPlugin(editorInstance: TiptapEditor) {
           break;
         case "h3":
           c.toggleHeading({ level: 3 }).run();
+          break;
+        case "h4":
+          c.toggleHeading({ level: 4 }).run();
+          break;
+        case "h5":
+          c.toggleHeading({ level: 5 }).run();
+          break;
+        case "h6":
+          c.toggleHeading({ level: 6 }).run();
           break;
         case "bullet":
           if (!editor.isActive("bulletList")) c.toggleBulletList().run();
@@ -291,6 +303,8 @@ const editor = useEditor({
       // dropcursor（拖拽时显示的横线）：默认 1px currentColor 太细不醒目，
       // 加粗到 2px 并用主题强调色，配合 drag handle 拖拽时更易判断落点
       dropcursor: { width: 2, color: "#4F46E5" },
+      // 标题放开到 H1-H6 全部六级（StarterKit 默认仅 [1,2,3]）
+      heading: { levels: [1, 2, 3, 4, 5, 6] },
     }),
     Underline,
     Link.configure({
@@ -956,6 +970,26 @@ function fileToBase64(file: File): Promise<string> {
   letter-spacing: -0.015em;
   margin: 4px 0 2px;
   line-height: 1.3;
+}
+.rich-text__editor :deep(.rich-text__content h4) {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 4px 0 2px;
+  line-height: 1.3;
+}
+.rich-text__editor :deep(.rich-text__content h5) {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 4px 0 2px;
+  line-height: 1.4;
+}
+.rich-text__editor :deep(.rich-text__content h6) {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--jt-text-secondary);
+  margin: 4px 0 2px;
+  line-height: 1.4;
 }
 
 /* 下划线 */
