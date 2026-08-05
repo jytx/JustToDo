@@ -1717,71 +1717,60 @@ pub async fn reveal_attachment(app: AppHandle, stored_name: String) -> CmdResult
     Ok(())
 }
 
+/// 把任意文本写入系统剪贴板（跨平台 shell-out，无需引入剪贴板 crate）
+/// macOS: pbcopy；Windows: clip；Linux: xclip（失败回退 wl-copy）
+fn write_to_clipboard(text: &str) -> CmdResult<()> {
+    #[cfg(target_os = "macos")]
+    let (cmd, args): (&str, Vec<&str>) = ("pbcopy", vec![]);
+    #[cfg(target_os = "windows")]
+    let (cmd, args): (&str, Vec<&str>) = ("clip", vec![]);
+    #[cfg(target_os = "linux")]
+    let (cmd, args): (&str, Vec<&str>) = ("xclip", vec!["-selection", "clipboard"]);
+
+    let mut child = std::process::Command::new(cmd)
+        .args(&args)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .or_else(|_| {
+            // Linux 下 xclip 可能未装，回退 wl-copy（Wayland）；其他平台直接报错
+            #[cfg(target_os = "linux")]
+            {
+                std::process::Command::new("wl-copy")
+                    .stdin(std::process::Stdio::piped())
+                    .spawn()
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                Err(std::io::Error::last_os_error())
+            }
+        })
+        .map_err(|e| format!("启动剪贴板工具失败（{cmd}）: {e}"))?;
+
+    use std::io::Write;
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(text.as_bytes())
+            .map_err(|e| format!("写入剪贴板失败: {e}"))?;
+    }
+    child
+        .wait()
+        .map_err(|e| format!("剪贴板工具等待失败（{cmd}）: {e}"))?;
+    Ok(())
+}
+
 /// 把附件完整路径写入系统剪贴板
-/// macOS: pbcopy；Windows: clip；Linux: xclip/wl-copy
 #[tauri::command]
 pub async fn copy_attachment_path(app: AppHandle, stored_name: String) -> CmdResult<()> {
     let dir = get_attachment_path(app).await?;
     let filepath = PathBuf::from(&dir).join(&stored_name);
     let path_str = filepath.to_string_lossy().to_string();
+    write_to_clipboard(&path_str)
+}
 
-    #[cfg(target_os = "macos")]
-    {
-        use std::io::Write;
-        let mut child = std::process::Command::new("pbcopy")
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("启动 pbcopy 失败: {}", e))?;
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin
-                .write_all(path_str.as_bytes())
-                .map_err(|e| format!("写入剪贴板失败: {}", e))?;
-        }
-        child
-            .wait()
-            .map_err(|e| format!("pbcopy 等待失败: {}", e))?;
-    }
-    #[cfg(target_os = "windows")]
-    {
-        use std::io::Write;
-        let mut child = std::process::Command::new("clip")
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("启动 clip 失败: {}", e))?;
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin
-                .write_all(path_str.as_bytes())
-                .map_err(|e| format!("写入剪贴板失败: {}", e))?;
-        }
-        child.wait().map_err(|e| format!("clip 等待失败: {}", e))?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        use std::io::Write;
-        // 优先 xclip，失败回退 wl-copy（Wayland）
-        let result = std::process::Command::new("xclip")
-            .arg("-selection")
-            .arg("clipboard")
-            .stdin(std::process::Stdio::piped())
-            .spawn();
-        let mut child = match result {
-            Ok(c) => c,
-            Err(_) => std::process::Command::new("wl-copy")
-                .stdin(std::process::Stdio::piped())
-                .spawn()
-                .map_err(|e| format!("启动剪贴板工具失败（xclip/wl-copy）: {}", e))?,
-        };
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin
-                .write_all(path_str.as_bytes())
-                .map_err(|e| format!("写入剪贴板失败: {}", e))?;
-        }
-        child
-            .wait()
-            .map_err(|e| format!("剪贴板工具等待失败: {}", e))?;
-    }
-
-    Ok(())
+/// 把任意文本写入系统剪贴板（供富文本「复制代码块」等前端场景调用）
+#[tauri::command]
+pub async fn copy_text(text: String) -> CmdResult<()> {
+    write_to_clipboard(&text)
 }
 
 /// 简单的 base64 解码（不依赖外部 crate）

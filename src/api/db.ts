@@ -664,6 +664,11 @@ export async function copyAttachmentPath(storedName: string): Promise<void> {
   await invoke<void>("copy_attachment_path", { storedName });
 }
 
+/** 把任意文本写入系统剪贴板（供富文本「复制代码块」等场景使用） */
+export async function copyText(text: string): Promise<void> {
+  await invoke<void>("copy_text", { text });
+}
+
 // ─── 模板操作 ────────────────────────────────────────────
 // 模板是"任务参数预设"，独立于 tasks 表。
 // 应用模板由前端 store 编排：taskStore.createTask + db.updateTask(note)。

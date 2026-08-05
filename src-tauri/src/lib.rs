@@ -452,6 +452,7 @@ pub fn run() {
             commands::read_attachment_text,
             commands::reveal_attachment,
             commands::copy_attachment_path,
+            commands::copy_text,
             commands::task_get_tags,
             commands::task_get_tags_batch,
             commands::task_add_tag,
