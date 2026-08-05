@@ -24,6 +24,9 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import SlashCommandMenu, { type SlashCommandItem } from "./SlashCommandMenu.vue";
 import RichTextFloatingMenu from "./RichTextFloatingMenu.vue";
 import BlockDragHandle from "./BlockDragHandle.vue";
+import TableToolbar from "./TableToolbar.vue";
+import MenuPopoverItem from "./MenuPopoverItem.vue";
+import ContextMenu from "./ContextMenu.vue";
 import { CodeBlockFold } from "@/extensions/CodeBlockFold";
 import { HeadingFold } from "@/extensions/HeadingFold";
 import { tableExtension } from "@/extensions/TableFold";
@@ -449,6 +452,32 @@ defineExpose({
   focus: () => editor.value?.commands.focus(),
 });
 
+// ─── 表格右键菜单 ───────────────────────────────────
+/** 表格右键菜单显隐 + 定位（在 table/td/th 上右键时弹出） */
+const tableContextMenuVisible = ref(false);
+const tableContextMenuPos = ref({ x: 0, y: 0 });
+
+/** 编辑器 wrapper 上的 contextmenu：若 target 在表格内，阻止默认 + 弹菜单 */
+function onEditorContextMenu(e: MouseEvent): void {
+  const ed = editor.value;
+  if (!ed) return;
+  const target = e.target as HTMLElement | null;
+  if (!target) return;
+  // 判断点击是否在表格相关元素上
+  if (target.closest("table, td, th")) {
+    e.preventDefault();
+    tableContextMenuPos.value = { x: e.clientX, y: e.clientY };
+    tableContextMenuVisible.value = true;
+  }
+}
+
+/** 表格右键菜单的命令执行后关闭菜单 */
+function runTableCommand(fn: (ed: NonNullable<TiptapEditor>) => void): void {
+  const ed = editor.value;
+  if (ed) fn(ed);
+  tableContextMenuVisible.value = false;
+}
+
 /* === 图片 hover 放大镜状态 ===
    鼠标悬浮在 [data-resize-container] 上时，右上角浮现按钮；
    点击按钮才打开 lightbox（直接点图片进入 ProseMirror 选中态，不再触发预览）。
@@ -813,6 +842,7 @@ function fileToBase64(file: File): Promise<string> {
       @mouseover="onEditorMouseOver"
       @mouseout="onEditorMouseOut"
       @scroll="updateBtnPos"
+      @contextmenu="onEditorContextMenu"
     >
       <EditorContent :editor="editor" class="rich-text__editor" />
       <!-- 块拖拽手柄 + 落点横线（放在 wrapper 内、absolute 定位，hover 链不断）
@@ -822,6 +852,56 @@ function fileToBase64(file: File): Promise<string> {
 
     <!-- 空段落浮 + 按钮（Notion-like 入口之一） -->
     <RichTextFloatingMenu :editor="editor" />
+
+    <!-- 表格浮动工具条（光标在表格内时显示） -->
+    <TableToolbar :editor="editor" />
+
+    <!-- 表格右键菜单 -->
+    <ContextMenu
+      v-model:visible="tableContextMenuVisible"
+      :x="tableContextMenuPos.x"
+      :y="tableContextMenuPos.y"
+    >
+      <MenuPopoverItem @click="runTableCommand((e) => e.chain().focus().addColumnBefore().run())">
+        左侧插入列
+      </MenuPopoverItem>
+      <MenuPopoverItem @click="runTableCommand((e) => e.chain().focus().addColumnAfter().run())">
+        右侧插入列
+      </MenuPopoverItem>
+      <MenuPopoverItem @click="runTableCommand((e) => e.chain().focus().deleteColumn().run())">
+        删除列
+      </MenuPopoverItem>
+      <div class="detail-panel__popup-divider" />
+      <MenuPopoverItem @click="runTableCommand((e) => e.chain().focus().addRowBefore().run())">
+        上方插入行
+      </MenuPopoverItem>
+      <MenuPopoverItem @click="runTableCommand((e) => e.chain().focus().addRowAfter().run())">
+        下方插入行
+      </MenuPopoverItem>
+      <MenuPopoverItem @click="runTableCommand((e) => e.chain().focus().deleteRow().run())">
+        删除行
+      </MenuPopoverItem>
+      <div class="detail-panel__popup-divider" />
+      <MenuPopoverItem
+        :disabled="!editor?.can().mergeCells()"
+        @click="runTableCommand((e) => e.chain().focus().mergeCells().run())"
+      >
+        合并单元格
+      </MenuPopoverItem>
+      <MenuPopoverItem
+        :disabled="!editor?.can().splitCell()"
+        @click="runTableCommand((e) => e.chain().focus().splitCell().run())"
+      >
+        拆分单元格
+      </MenuPopoverItem>
+      <MenuPopoverItem @click="runTableCommand((e) => e.chain().focus().toggleHeaderRow().run())">
+        切换表头行
+      </MenuPopoverItem>
+      <div class="detail-panel__popup-divider" />
+      <MenuPopoverItem danger @click="runTableCommand((e) => e.chain().focus().deleteTable().run())">
+        删除表格
+      </MenuPopoverItem>
+    </ContextMenu>
 
     <!-- 图片 hover 放大镜按钮（fixed 定位，teleport 到 body 脱离 Tiptap 生命周期）
          节点始终挂载（避免 v-if 显隐切换重建卡顿），用 visibility + opacity 过渡控制可见性。 -->
