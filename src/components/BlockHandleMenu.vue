@@ -117,6 +117,15 @@ const menuStyle = computed(() => ({
   top: `${props.anchorRect.top}px`,
 }));
 
+/** 二级菜单展开方向：右侧空间不足时改向左展开，避免溢出视口被裁切。
+ *  一级菜单约 220px、二级约 180px，估算总需 400px 右侧空间。 */
+const submenuSide = computed<"left" | "right">(() => {
+  // 一级菜单左缘 + 估计一级宽度，得到一级右缘；再留 180px 给二级
+  const menuRightEdge = props.anchorRect.left + 22 + 240;
+  const viewportWidth = window.innerWidth;
+  return menuRightEdge + 180 > viewportWidth ? "left" : "right";
+});
+
 /** 把当前块转换为指定类型 */
 function onConvert(t: BlockType): void {
   // 先聚焦并把光标放进当前块（toggle 类命令依赖当前选区所在块）
@@ -197,11 +206,16 @@ onBeforeUnmount(() => {
         @mouseleave="hideSubmenu"
       >
         <span>在上方添加</span>
-        <icon-right :size="12" class="block-handle-menu__arrow" />
+        <component
+          :is="submenuSide === 'left' ? 'icon-left' : 'icon-right'"
+          :size="12"
+          class="block-handle-menu__arrow"
+        />
         <!-- 二级：上方 -->
         <div
           v-if="submenu === 'above'"
           class="block-handle-menu__submenu"
+          :class="{ 'block-handle-menu__submenu--left': submenuSide === 'left' }"
         >
           <button
             v-for="t in BLOCK_TYPES"
@@ -220,11 +234,16 @@ onBeforeUnmount(() => {
         @mouseleave="hideSubmenu"
       >
         <span>在下方添加</span>
-        <icon-right :size="12" class="block-handle-menu__arrow" />
+        <component
+          :is="submenuSide === 'left' ? 'icon-left' : 'icon-right'"
+          :size="12"
+          class="block-handle-menu__arrow"
+        />
         <!-- 二级：下方 -->
         <div
           v-if="submenu === 'below'"
           class="block-handle-menu__submenu"
+          :class="{ 'block-handle-menu__submenu--left': submenuSide === 'left' }"
         >
           <button
             v-for="t in BLOCK_TYPES"
@@ -299,11 +318,11 @@ onBeforeUnmount(() => {
   margin: 4px 8px;
 }
 
-/* 二级菜单：浮在一级右侧 */
+/* 二级菜单：浮在一级右侧（默认），top:0 与一级容器顶部对齐避免溢出 */
 .block-handle-menu__submenu {
   position: absolute;
   left: 100%;
-  top: -6px;
+  top: 0;
   margin-left: 4px;
   min-width: 160px;
   background: var(--jt-surface);
@@ -315,5 +334,12 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 1px;
+}
+/* 左展开变体：右侧视口空间不足时，改向一级左侧展开 */
+.block-handle-menu__submenu--left {
+  left: auto;
+  right: 100%;
+  margin-left: 0;
+  margin-right: 4px;
 }
 </style>
