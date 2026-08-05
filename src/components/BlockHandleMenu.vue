@@ -148,12 +148,10 @@ function hideSubmenu(): void {
   submenu.value = null;
 }
 
-/** 点外部关闭：监听 document mousedown（capture，先于菜单自身冒泡） */
-function onOutsideDown(e: MouseEvent): void {
-  const root = document.querySelector(".block-handle-menu");
-  if (root && !root.contains(e.target as Node)) {
-    emit("close");
-  }
+/** 点外部关闭：冒泡阶段监听 document mousedown。
+ *  菜单根元素 @mousedown.stop 阻止冒泡，所以只有外部点击会到达 document。 */
+function onOutsideDown(): void {
+  emit("close");
 }
 /** Esc 关闭 */
 function onKeydown(e: KeyboardEvent): void {
@@ -164,18 +162,20 @@ function onKeydown(e: KeyboardEvent): void {
 }
 
 onMounted(() => {
-  document.addEventListener("mousedown", onOutsideDown, true);
+  // 冒泡阶段（非 capture）：配合根元素 @mousedown.stop，菜单内点击不冒泡，
+  // 只有外部点击到达 document → 关闭
+  document.addEventListener("mousedown", onOutsideDown);
   window.addEventListener("keydown", onKeydown, true);
 });
 onBeforeUnmount(() => {
-  document.removeEventListener("mousedown", onOutsideDown, true);
+  document.removeEventListener("mousedown", onOutsideDown);
   window.removeEventListener("keydown", onKeydown, true);
 });
 </script>
 
 <template>
   <Teleport to="body">
-    <div class="block-handle-menu" :style="menuStyle">
+    <div class="block-handle-menu" :style="menuStyle" @mousedown.stop>
       <!-- 一级：转为 -->
       <div class="block-handle-menu__group-label">转为</div>
       <button
