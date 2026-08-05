@@ -1460,10 +1460,6 @@ function formatMeta(iso: string): string {
   flex-shrink: 0;
   transition: all 0.12s;
   padding: 0;
-  /* 中文字形（ink）几乎全在基线之上（ascent≈11px / descent≈1.4px），
-     input 单行文字按基线渲染导致字形视觉中心比盒中心高约 2px：
-     复选框上移 2px 与字形视觉中心对齐 */
-  transform: translateY(-2px);
 }
 
 .detail-panel__checklist-check:hover {
@@ -1482,11 +1478,8 @@ function formatMeta(iso: string): string {
   background: transparent;
   font-family: var(--font-body);
   font-size: 14px;
-  /* 行高贴合字形（14px 字号用 18px 行高），避免大行框导致字形在框内偏上、
-     与左侧复选框视觉中心错位。padding 去掉，靠 line-height 撑高即可。 */
-  line-height: 18px;
   color: var(--jt-text-primary);
-  padding: 0;
+  padding: 4px 0;
   min-width: 0;
 }
 
