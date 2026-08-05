@@ -1318,7 +1318,7 @@ function formatMeta(iso: string): string {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 14px;
   font-family: var(--font-body);
 }
 
@@ -1337,7 +1337,7 @@ function formatMeta(iso: string): string {
   /* 默认文字色：主色 + 60% 透明（颜色相对浅） */
   color: color-mix(in srgb, var(--jt-primary) 60%, transparent);
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.12s, color 0.12s;
@@ -1361,7 +1361,7 @@ function formatMeta(iso: string): string {
   border: none;
   background: transparent;
   /* 颜色继承父胶囊（默认浅一档） */
-  font-size: 13px;
+  font-size: 14px;
   font-family: var(--font-body);
   font-weight: 500;
   cursor: pointer;
@@ -1477,9 +1477,12 @@ function formatMeta(iso: string): string {
   outline: none;
   background: transparent;
   font-family: var(--font-body);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 22px;
   color: var(--jt-text-primary);
-  padding: 4px 0;
+  /* 用 line-height 撑高而非垂直 padding，保证文字在 input 内严格垂直居中，
+     与左侧 18px 复选框的视觉中心对齐（input block 元素加 padding 会导致文字偏移） */
+  padding: 0;
   min-width: 0;
 }
 
@@ -1563,7 +1566,7 @@ function formatMeta(iso: string): string {
 }
 
 .detail-panel__meta {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--jt-text-tertiary);
   font-family: var(--font-mono);
   margin-right: 4px;
@@ -1597,7 +1600,7 @@ function formatMeta(iso: string): string {
   background: transparent;
   padding: 8px 12px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--jt-text-primary);
   cursor: pointer;
   text-align: left;

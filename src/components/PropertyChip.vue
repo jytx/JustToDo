@@ -63,7 +63,7 @@ function onClick(e: MouseEvent) {
   border-radius: 6px;
   background: transparent;
   color: var(--jt-text-tertiary);
-  font-size: 13px;
+  font-size: 14px;
   font-family: var(--font-body);
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease;
@@ -95,7 +95,7 @@ function onClick(e: MouseEvent) {
 .property-chip--compact {
   height: 24px;
   padding: 0 8px;
-  font-size: 12px;
+  font-size: 13px;
   border-radius: 5px;
 }
 
