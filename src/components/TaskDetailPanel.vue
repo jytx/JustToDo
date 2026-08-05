@@ -767,7 +767,25 @@ onBeforeUnmount(() => {
 
     <!-- 未选中任务时：empty 占位（面板始终占位，任务列表不拉伸） -->
     <div v-if="!task" class="detail-panel__empty">
-      <icon-file :size="40" />
+      <!-- 滴答清单风格插画：淡色圆角卡片 + 模拟任务列表行（主题色淡化） -->
+      <div class="detail-panel__empty-art">
+        <svg width="120" height="90" viewBox="0 0 120 90" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- 卡片背景 -->
+          <rect x="10" y="8" width="100" height="74" rx="10" fill="var(--jt-primary)" opacity="0.08" />
+          <!-- 模拟任务行：圆形复选框 + 横线 -->
+          <circle cx="26" cy="25" r="5" stroke="var(--jt-primary)" stroke-width="1.5" opacity="0.45" />
+          <rect x="38" y="21" width="58" height="4" rx="2" fill="var(--jt-primary)" opacity="0.45" />
+          <rect x="38" y="29" width="40" height="3" rx="1.5" fill="var(--jt-primary)" opacity="0.25" />
+
+          <circle cx="26" cy="47" r="5" stroke="var(--jt-primary)" stroke-width="1.5" opacity="0.45" />
+          <rect x="38" y="43" width="62" height="4" rx="2" fill="var(--jt-primary)" opacity="0.45" />
+          <rect x="38" y="51" width="46" height="3" rx="1.5" fill="var(--jt-primary)" opacity="0.25" />
+
+          <circle cx="26" cy="69" r="5" stroke="var(--jt-primary)" stroke-width="1.5" opacity="0.45" />
+          <rect x="38" y="65" width="52" height="4" rx="2" fill="var(--jt-primary)" opacity="0.45" />
+          <rect x="38" y="73" width="34" height="3" rx="1.5" fill="var(--jt-primary)" opacity="0.25" />
+        </svg>
+      </div>
       <span class="detail-panel__empty-text">选择一个任务查看详情</span>
     </div>
     <template v-else>
@@ -1274,9 +1292,13 @@ function formatMeta(iso: string): string {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 16px;
   color: var(--jt-text-tertiary);
   user-select: none;
+}
+.detail-panel__empty-art {
+  /* 插画下方留白，与文字拉开距离 */
+  margin-bottom: 4px;
 }
 .detail-panel__empty-text {
   font-size: 13px;
