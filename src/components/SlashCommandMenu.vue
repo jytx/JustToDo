@@ -186,6 +186,7 @@ onBeforeUnmount(() => {
           v-for="(item, i) in filteredItems"
           :key="item.key"
           :active="i === selectedIndex"
+          @mousedown.prevent
           @click="selectItem(item)"
         >
           <span class="slash-menu__title">{{ item.title }}</span>
