@@ -341,7 +341,7 @@ onBeforeUnmount(() => {
 }
 /* 「在下方添加」的二级：位置靠下，对齐该一级项附近（两个二级位置明显错开） */
 .block-handle-menu__submenu--below {
-  top: 120px;
+  top: 90px;
 }
 /* 左展开变体：右侧视口空间不足时，改向一级左侧展开 */
 .block-handle-menu__submenu--left {
