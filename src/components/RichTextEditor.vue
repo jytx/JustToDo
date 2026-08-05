@@ -972,7 +972,10 @@ function fileToBase64(file: File): Promise<string> {
 }
 .rich-text__editor :deep(.rich-text__content ul[data-type="taskList"] li > label) {
   flex-shrink: 0;
-  margin-top: 4px;
+  /* checkbox 与首行文字视觉中心对齐（13px 字号实测校准）：
+     行高 20.8px → 行中心 10.4px；字形 ink 视觉中心偏上约 0.7px
+     → 对齐点 9.7px；checkbox 14px 半高 7px → margin-top ≈ 2.1px */
+  margin-top: 2.1px;
   user-select: none;
 }
 .rich-text__editor :deep(.rich-text__content ul[data-type="taskList"] li > div) {
