@@ -1460,8 +1460,10 @@ function formatMeta(iso: string): string {
   flex-shrink: 0;
   transition: all 0.12s;
   padding: 0;
-  /* 中文字形在 em 框内视觉重心偏上约 1px：复选框上移 1px 与字形视觉中心对齐 */
-  transform: translateY(-1px);
+  /* 中文字形（ink）几乎全在基线之上（ascent≈11px / descent≈1.4px），
+     input 单行文字按基线渲染导致字形视觉中心比盒中心高约 2px：
+     复选框上移 2px 与字形视觉中心对齐 */
+  transform: translateY(-2px);
 }
 
 .detail-panel__checklist-check:hover {
