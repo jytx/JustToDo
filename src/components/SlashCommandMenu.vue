@@ -46,7 +46,7 @@ const emit = defineEmits<{
 const selectedIndex = ref(0);
 
 /** 菜单最大高度（px）—— 与 CSS .slash-menu__container 的 max-height 保持一致 */
-const MENU_MAX_HEIGHT = 320;
+const MENU_MAX_HEIGHT = 380;
 /** 菜单与光标的垂直间距 */
 const MENU_GAP = 6;
 
@@ -200,9 +200,9 @@ onBeforeUnmount(() => {
 .slash-menu__container {
   width: max-content;
   min-width: 200px;
-  max-width: 280px;
+  max-width: 320px;
   /* 限制最大高度，超出滚动（与 JS MENU_MAX_HEIGHT 一致） */
-  max-height: 320px;
+  max-height: 380px;
   overflow-y: auto;
   background: var(--jt-surface);
   border-radius: 12px;
@@ -212,7 +212,15 @@ onBeforeUnmount(() => {
   padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+}
+
+/* 菜单项：原 MenuPopoverItem height 32px，14 项密集堆叠过紧。
+   显式声明更高 + 加大水平 padding，给 item 充足视觉呼吸空间 */
+.slash-menu__container :deep(.menu-popover-item) {
+  height: 38px;
+  padding: 0 14px;
+  font-size: 13px;
 }
 
 .slash-menu__empty {
