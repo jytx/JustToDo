@@ -94,6 +94,28 @@ const BLOCK_TYPES: BlockType[] = [
     },
     newNode: { type: "horizontalRule" },
   },
+  {
+    key: "table",
+    title: "表格",
+    convert: (editor) => {
+      // 转换为表格：insertTable 插入 3×3 带表头行的表格（表格非 toggle，插入即用）
+      editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+    },
+    // 新建表格节点需完整骨架：table > tbody > tr(row) > th/td > p
+    newNode: {
+      type: "table",
+      content: [
+        {
+          type: "tableRow",
+          content: [0, 1, 2].map(() => ({ type: "tableHeader", content: [{ type: "paragraph" }] })),
+        },
+        ...[0, 1].map(() => ({
+          type: "tableRow",
+          content: [0, 1, 2].map(() => ({ type: "tableCell", content: [{ type: "paragraph" }] })),
+        })),
+      ],
+    },
+  },
 ];
 
 const props = defineProps<{
