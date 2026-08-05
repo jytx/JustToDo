@@ -321,7 +321,7 @@ onBeforeUnmount(() => {
 .block-handle-menu__submenu {
   position: absolute;
   left: 100%;
-  top: 0;
+  top: 40px;
   /* 无 margin-left 间隙：避免鼠标从 item 移向 submenu 时穿过间隙触发 mouseleave */
   min-width: 160px;
   max-height: calc(100vh - 32px);
