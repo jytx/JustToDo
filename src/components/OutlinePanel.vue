@@ -7,7 +7,7 @@
 //   - 渲染：按 level 缩进（每级 14px），当前活跃章节高亮
 //   - 跳转：editor.commands.focus().setTextSelection(pos) + 滚动容器 scrollIntoView
 //   - 当前章节高亮：监听滚动容器 scroll，找当前可视区首个 heading
-import { computed, onMounted, onBeforeUnmount, ref } from "vue";
+import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import type { Editor } from "@tiptap/vue-3";
 
 /** 单个大纲条目 */
@@ -24,18 +24,24 @@ const props = defineProps<{
 
 const emit = defineEmits<{ close: [] }>();
 
-/** 序号计数器（每次重建大纲递增，保证 key 唯一） */
-let idCounter = 0;
+/** 从 doc 提取标题列表（ref，不是 computed——
+ *  Tiptap editor 用自定义 ref 异步触发更新，
+ *  Vue 的响应式追踪不到 editor.state.doc 的变化，需手动订阅 onUpdate 重算） */
+const headings = ref<OutlineItem[]>([]);
 
-/** 从 doc 提取标题列表 */
-const headings = computed<OutlineItem[]>(() => {
+/** 一次性扫描当前 doc，构建大纲数组 */
+function rebuildHeadings(): void {
   const ed = props.editor;
-  if (!ed) return [];
+  if (!ed) {
+    headings.value = [];
+    return;
+  }
   const items: OutlineItem[] = [];
   ed.state.doc.descendants((node, pos) => {
     if (node.type.name === "heading") {
+      // 用 pos 作为稳定 key（文档内唯一，标题移动时 pos 自动跟随变化）
       items.push({
-        id: idCounter++,
+        id: pos,
         level: node.attrs.level as number,
         text: node.textContent || "(无标题)",
         pos,
@@ -43,8 +49,34 @@ const headings = computed<OutlineItem[]>(() => {
     }
     return false; // 不深入 heading 内部（标题无子标题）
   });
-  return items;
-});
+  headings.value = items;
+}
+
+// 订阅 editor 文档更新 + 初始构建
+let detach: (() => void) | null = null;
+watch(
+  () => props.editor,
+  (ed, _old, onCleanup) => {
+    // 清理旧订阅
+    if (detach) {
+      detach();
+      detach = null;
+    }
+    if (!ed) {
+      headings.value = [];
+      return;
+    }
+    rebuildHeadings();
+    const handler = (): void => rebuildHeadings();
+    ed.on("update", handler);
+    detach = () => ed.off("update", handler);
+    onCleanup(() => {
+      detach?.();
+      detach = null;
+    });
+  },
+  { immediate: true },
+);
 
 /** 当前活跃标题序号（滚动高亮用） */
 const activeIndex = ref(-1);
@@ -104,6 +136,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   scrollEl?.removeEventListener("scroll", onScroll);
+  // 清理 editor.on('update') 订阅，避免内存泄漏
+  detach?.();
+  detach = null;
 });
 </script>
 
