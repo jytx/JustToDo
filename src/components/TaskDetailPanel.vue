@@ -757,11 +757,16 @@ onBeforeUnmount(() => {
 <template>
   <Transition name="detail-drawer">
   <div
-    v-if="task"
     ref="panelEl"
     class="detail-panel"
     :style="{ width: (panelWidth ?? 480) + 'px' }"
   >
+    <!-- 未选中任务时：empty 占位（面板始终占位，任务列表不拉伸） -->
+    <div v-if="!task" class="detail-panel__empty">
+      <icon-file :size="40" />
+      <span class="detail-panel__empty-text">选择一个任务查看详情</span>
+    </div>
+    <template v-else>
     <!-- 拖拽手柄 -->
     <div class="detail-panel__resizer" @mousedown="startResize" />
 
@@ -1229,6 +1234,7 @@ onBeforeUnmount(() => {
     />
 
     <!-- 附件浮窗（chips 行 📎 点击触发；下拉带箭头，嵌 AttachmentSection） -->
+    </template>
   </div>
   </Transition>
 </template>
@@ -1258,6 +1264,22 @@ function formatMeta(iso: string): string {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* 未选中任务时的 empty 占位（居中提示，滴答清单风格） */
+.detail-panel__empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--jt-text-tertiary);
+  user-select: none;
+}
+.detail-panel__empty-text {
+  font-size: 13px;
+  font-family: var(--font-body);
 }
 
 /* 滑入抽屉：从右侧滑入 220ms，ease-out */

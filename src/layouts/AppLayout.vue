@@ -141,7 +141,10 @@ const isFloatingPanelView = computed(() =>
   isCalendarView.value || currentListView.value === "kanban" || currentListView.value === "timeline",
 );
 const mainStyle = computed(() => {
-  if (!taskStore.detailOpen || isFloatingPanelView.value) return { paddingRight: "0px" };
+  // 始终让出详情面板宽度（滴答清单风格：任务列表不随详情开关拉伸），
+  // 未选中任务时面板显示 empty 占位而非消失。
+  // floating 视图（日历/看板/时间线）详情是悬浮 drawer，不让位。
+  if (isFloatingPanelView.value) return { paddingRight: "0px" };
   return { paddingRight: panelWidth.value + "px" };
 });
 
@@ -176,9 +179,9 @@ const stopInitialSelect = watch(
   },
 );
 
-/** 详情面板打开时，topbar 整体向右推一个面板宽度（悬浮视图除外，不缩进） */
+/** topbar 始终让出详情面板宽度（悬浮视图除外，详情悬浮 drawer 不缩进） */
 const topbarStyle = computed(() => {
-  if (!taskStore.detailOpen || isFloatingPanelView.value) return {};
+  if (isFloatingPanelView.value) return {};
   return { right: `${panelWidth.value + 24}px` };
 });
 
