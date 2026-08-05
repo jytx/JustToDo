@@ -217,11 +217,12 @@ const stopInitialSelect = watch(
 );
 
 /**
- * topbar 让位 —— 悬浮视图下显式置 right: 0（不用空对象，避免 Vue 不会清除之前
- * 列表视图写入的 right 残留值，导致切到日历视图时 topbar 仍占右侧空间）
+ * topbar 让位 —— 悬浮视图下显式 right: 24px（CSS 默认值，不用空对象，
+ * 避免 Vue 不清除之前列表视图写入的 right 残留值；同时保持与列表视图
+ * 一致的 24px 右边距，不让按钮贴到窗口边框）
  */
 const topbarStyle = computed(() => {
-  if (isFloatingPanelView.value) return { right: "0px" };
+  if (isFloatingPanelView.value) return { right: "24px" };
   return { right: `${panelWidth.value + 24}px` };
 });
 
