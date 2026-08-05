@@ -178,19 +178,23 @@ watch(detailPanelMaxWidth, (max) => {
  * 应用启动时默认打开详情面板：等当前视图任务首次加载完成后，
  * 若用户未主动选中任何任务，则选中第一个任务让面板默认展开。
  *
- * 仅在任务族视图（列表/智能/标签/笔记本）触发 —— 日历/习惯/设置视图
- * 详情面板是悬浮抽屉，默认不应自动弹出（否则启动在日历会「闪一下再消失」）。
- * 「成功选中」后才停止监听：启动在日历时 showTaskSidebar=false 不选中、
- * 不停止，等用户切到任务族视图再触发，体验与列表启动一致。
+ * 仅在「任务族 + 非悬浮视图」触发 —— 即列表视图（today/upcoming/all/
+ * list/notebook/tag 且 ?view 不是 kanban/timeline）。看板/时间线/日历/
+ * 习惯/设置 都是悬浮或非任务视图，默认不应自动弹出面板。
+ * 排除 root 中间态：启动 redirect 经过 root 时 isFloatingPanelView 可能
+ * 误判为 false，会导致日历启动闪现（选中后又被清空）。
+ * 「成功选中」后才停止监听，等用户切到列表视图仍能默认展开。
  */
 const stopInitialSelect = watch(
-  () => [taskStore.openTasks, showTaskSidebar.value],
+  () => [taskStore.openTasks, route.name, route.query.view] as const,
   () => {
+    if (route.name === "root") return;
     const tasks = taskStore.openTasks;
     if (
       tasks.length > 0 &&
       taskStore.selectedTaskId === null &&
-      showTaskSidebar.value
+      showTaskSidebar.value &&
+      !isFloatingPanelView.value
     ) {
       taskStore.selectTask(tasks[0].id);
       stopInitialSelect();
