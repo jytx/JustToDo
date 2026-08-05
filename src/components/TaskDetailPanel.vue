@@ -772,9 +772,9 @@ onBeforeUnmount(() => {
     <!-- 未选中任务时：empty 占位（面板始终占位，任务列表不拉伸） -->
     <div v-if="!task" class="detail-panel__empty">
       <!-- 滴答清单风格手绘线稿插画：极淡灰细描边、无填充、无卡片。
-           主体元素聚在中下部、四周留白，sparkle/圆点散落点缀，呈"散落在桌面上"的松散感 -->
+           元素小尺寸散落，相互间距 ≥ 书宽 15%，只保留铅笔搭书角一处有意接触 -->
       <div class="detail-panel__empty-art">
-        <svg width="420" height="320" viewBox="0 0 420 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg width="340" height="215" viewBox="0 0 380 240" fill="none" xmlns="http://www.w3.org/2000/svg">
           <g
             stroke="var(--jt-empty-art)"
             stroke-width="1.5"
@@ -782,60 +782,57 @@ onBeforeUnmount(() => {
             stroke-linejoin="round"
           >
             <!-- 翻开的笔记本（主体，居中）：书脊 + 左右两页透视 + 模拟文字行 -->
-            <g transform="translate(200,95)">
-              <path d="M0,0 L0,160" />
-              <path d="M0,0 L-80,22 L-80,176 L0,160 Z" />
-              <path d="M0,0 L80,22 L80,176 L0,160 Z" />
-              <path d="M-60,55 L-18,46 M-60,80 L-26,73 M-60,105 L-20,97 M-60,130 L-40,124" />
-              <path d="M18,46 L60,55 M26,73 L60,80 M20,97 L60,105 M40,124 L60,130" />
+            <g transform="translate(185,70)">
+              <path d="M0,0 L0,105" />
+              <path d="M0,0 L-58,17 L-58,116 L0,105 Z" />
+              <path d="M0,0 L58,17 L58,116 L0,105 Z" />
+              <path d="M-42,40 L-12,33 M-42,60 L-19,54 M-42,80 L-26,75" />
+              <path d="M12,33 L42,40 M19,54 L42,60 M26,75 L42,80" />
             </g>
-            <!-- 铅笔（右上，斜插在书上） -->
-            <g transform="translate(330,58) rotate(40)">
-              <rect x="-5" y="-12" width="10" height="12" rx="3" />
-              <rect x="-5" y="0" width="10" height="64" rx="3" />
-              <path d="M-5,64 L5,64 L0,80 Z" />
+            <!-- 铅笔（右上，笔尖轻搭在书右上角） -->
+            <g transform="translate(238,26) rotate(40)">
+              <rect x="-4" y="-10" width="8" height="10" rx="2.5" />
+              <rect x="-4" y="0" width="8" height="52" rx="2.5" />
+              <path d="M-4,52 L4,52 L0,64 Z" />
             </g>
             <!-- 咖啡杯 + 杯碟（左下，独立散落） -->
-            <g transform="translate(88,246)">
-              <ellipse cx="0" cy="28" rx="44" ry="12" />
-              <path d="M-39,0 L39,0 L29,20 Q0,31 -29,20 Z" />
-              <ellipse cx="0" cy="0" rx="32" ry="8" />
-              <path d="M39,4 Q60,0 57,18 Q55,33 30,29" />
+            <g transform="translate(40,192)">
+              <ellipse cx="0" cy="26" rx="34" ry="9" />
+              <path d="M-29,0 L29,0 L22,14 Q0,23 -22,14 Z" />
+              <ellipse cx="0" cy="0" rx="24" ry="6" />
+              <path d="M29,3 Q44,0 42,14 Q40,24 24,21" />
             </g>
-            <!-- 待办便签条（左中，右端搭在笔记本左页上） -->
-            <g transform="translate(36,148)">
-              <rect x="0" y="0" width="150" height="48" rx="6" />
-              <path d="M0,6 L0,0 L6,0" />
-              <rect x="15" y="14" width="18" height="18" rx="5" />
-              <path d="M20,23 L25,28 L30,18" />
-              <rect x="43" y="14" width="18" height="18" rx="5" />
-              <path d="M71,20 L136,20 M71,32 L114,32" />
+            <!-- 待办便签条（左中，与书留有间距） -->
+            <g transform="translate(16,86)">
+              <rect x="0" y="0" width="90" height="36" rx="5" />
+              <path d="M0,4 L0,0 L4,0" />
+              <rect x="10" y="10" width="14" height="14" rx="4" />
+              <path d="M14,17 L18,21 L21,14" />
+              <rect x="30" y="10" width="14" height="14" rx="4" />
+              <path d="M51,13 L82,13 M51,22 L70,22" />
             </g>
-            <!-- 笑脸便签（右下，叠在笔记本右页上）+ 叠角小签 -->
-            <g transform="translate(282,196)">
-              <rect x="0" y="0" width="62" height="62" rx="9" />
-              <path d="M19,36 Q31,45 43,36" />
-              <circle cx="16" cy="21" r="2.4" fill="var(--jt-empty-art)" stroke="none" />
-              <circle cx="40" cy="21" r="2.4" fill="var(--jt-empty-art)" stroke="none" />
-              <rect x="36" y="-22" width="22" height="22" rx="5" />
+            <!-- 笑脸便签（右下，与书留有间距）+ 叠角小签 -->
+            <g transform="translate(258,150)">
+              <rect x="0" y="0" width="46" height="46" rx="8" />
+              <path d="M14,27 Q23,34 32,27" />
+              <circle cx="12" cy="16" r="1.9" fill="var(--jt-empty-art)" stroke="none" />
+              <circle cx="31" cy="16" r="1.9" fill="var(--jt-empty-art)" stroke="none" />
+              <rect x="26" y="-16" width="18" height="18" rx="4" />
             </g>
             <!-- 四角星 sparkle（两笔交叉线画成），散布四周留白处 -->
-            <path d="M62,54 L62,42 M56,48 L68,48" />
-            <path d="M152,34 L152,24 M147,29 L157,29" />
-            <path d="M356,132 L356,118 M349,125 L363,125" />
-            <path d="M30,240 L30,228 M24,234 L36,234" />
-            <path d="M368,262 L368,252 M363,257 L373,257" />
-            <path d="M232,300 L232,286 M225,293 L239,293" />
+            <path d="M58,36 L58,24 M52,30 L64,30" />
+            <path d="M168,16 L168,6 M163,11 L173,11" />
+            <path d="M330,84 L330,70 M323,77 L337,77" />
+            <path d="M150,226 L150,214 M144,220 L156,220" />
+            <path d="M330,222 L330,212 M325,217 L335,217" />
           </g>
           <!-- 散落的圆点（与线条同色的实心小点） -->
-          <circle cx="104" cy="96" r="3" fill="var(--jt-empty-art)" />
-          <circle cx="384" cy="210" r="3" fill="var(--jt-empty-art)" />
-          <circle cx="208" cy="36" r="2.5" fill="var(--jt-empty-art)" />
-          <circle cx="52" cy="186" r="3" fill="var(--jt-empty-art)" />
-          <circle cx="356" cy="34" r="2.5" fill="var(--jt-empty-art)" />
+          <circle cx="108" cy="52" r="2.5" fill="var(--jt-empty-art)" />
+          <circle cx="352" cy="160" r="2.5" fill="var(--jt-empty-art)" />
+          <circle cx="120" cy="222" r="2.5" fill="var(--jt-empty-art)" />
+          <circle cx="300" cy="26" r="2.5" fill="var(--jt-empty-art)" />
         </svg>
       </div>
-      <span class="detail-panel__empty-text">选择一个任务查看详情</span>
     </div>
     <template v-else>
     <!-- 顶部 chips 行 -->
@@ -1334,25 +1331,18 @@ function formatMeta(iso: string): string {
   overflow: hidden;
 }
 
-/* 未选中任务时的 empty 占位（滴答清单风格：插画散落右下角 + 大量留白） */
+/* 未选中任务时的 empty 占位（滴答清单风格：插画散落右下角 + 大量留白，无文字） */
 .detail-panel__empty {
   flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: flex-end;
   justify-content: flex-end;
-  gap: 18px;
   padding: 0 56px 48px 0;
   user-select: none;
 }
 .detail-panel__empty-art {
   /* 线稿插画，无背景卡片 */
   line-height: 0;
-}
-.detail-panel__empty-text {
-  font-size: 13px;
-  font-family: var(--font-body);
-  color: var(--jt-text-tertiary);
 }
 
 /* 滑入抽屉：从右侧滑入 220ms，ease-out */
