@@ -25,6 +25,8 @@ interface BlockInfo {
 const props = defineProps<{
   /** Tiptap editor 实例（来自 useEditor 的 ref 解包值） */
   editor: Editor | undefined;
+  /** 表格项专用：选「表格」时弹出行列选择器（由 RichTextEditor 注入） */
+  onPickTable?: () => void;
 }>();
 
 /** 当前打开的块菜单信息（null = 关闭） */
@@ -97,6 +99,7 @@ const indicatorStyle = computed(() => ({
     :block-pos="blockMenu.blockPos"
     :block-size="blockMenu.blockSize"
     :anchor-rect="blockMenu.anchorRect"
+    :on-pick-table="onPickTable"
     @close="blockMenu = null"
   />
 </template>

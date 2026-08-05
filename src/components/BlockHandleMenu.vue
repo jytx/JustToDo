@@ -98,7 +98,7 @@ const BLOCK_TYPES: BlockType[] = [
     key: "table",
     title: "表格",
     convert: (editor) => {
-      // 转换为表格：insertTable 插入 3×3 带表头行的表格（表格非 toggle，插入即用）
+      // 转换为表格：默认插 3×3（行列选择器由 onConvert 在调用方层判断触发）
       editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
     },
     // 新建表格节点需完整骨架：table > tbody > tr(row) > th/td > p
@@ -126,6 +126,8 @@ const props = defineProps<{
   blockSize: number;
   /** 菜单定位锚点（手柄的视口坐标） */
   anchorRect: { left: number; top: number; bottom: number };
+  /** 表格项专用：选「表格」时弹出行列选择器（由 RichTextEditor 注入 openTablePicker） */
+  onPickTable?: () => void;
 }>();
 
 const emit = defineEmits<{ close: [] }>();
@@ -150,6 +152,12 @@ const submenuSide = computed<"left" | "right">(() => {
 
 /** 把当前块转换为指定类型 */
 function onConvert(t: BlockType): void {
+  // 表格项特殊：弹出行列选择器（若有回调），不在原地插固定 3×3
+  if (t.key === "table" && props.onPickTable) {
+    emit("close");
+    props.onPickTable();
+    return;
+  }
   // 先聚焦并把光标放进当前块（toggle 类命令依赖当前选区所在块）
   props.editor.chain().focus().setTextSelection(props.blockPos + 1).run();
   t.convert(props.editor);

@@ -25,6 +25,7 @@ import SlashCommandMenu, { type SlashCommandItem } from "./SlashCommandMenu.vue"
 import RichTextFloatingMenu from "./RichTextFloatingMenu.vue";
 import BlockDragHandle from "./BlockDragHandle.vue";
 import TableToolbar from "./TableToolbar.vue";
+import TableSizePicker from "./TableSizePicker.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
 import ContextMenu from "./ContextMenu.vue";
 import { CodeBlockFold } from "@/extensions/CodeBlockFold";
@@ -215,7 +216,10 @@ function buildSlashCommandPlugin(editorInstance: TiptapEditor) {
           if (!editor.isActive("codeBlock")) c.toggleCodeBlock().run();
           break;
         case "table":
-          c.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+          // 不直接插固定大小，先 run 掉已链上的 deleteRange（清 "/表格..."），
+          // 再弹出行列选择器，选 N×N 后插入
+          c.run();
+          openTablePicker();
           break;
         case "hr":
           c.setHorizontalRule().run();
@@ -457,6 +461,35 @@ defineExpose({
 const tableContextMenuVisible = ref(false);
 const tableContextMenuPos = ref({ x: 0, y: 0 });
 
+/** 表格行列选择器（斜杠菜单/块手柄菜单选「表格」时弹出，选行列后插入） */
+const tablePickerVisible = ref(false);
+const tablePickerPos = ref({ x: 0, y: 0 });
+
+/** 弹出行列选择器：锚到当前光标位置（斜杠/手柄菜单触发） */
+function openTablePicker(): void {
+  const ed = editor.value;
+  if (!ed) return;
+  // 用光标视口坐标作为锚点
+  const coords = ed.view.coordsAtPos(ed.state.selection.from);
+  tablePickerPos.value = { x: coords.left, y: coords.bottom + 6 };
+  tablePickerVisible.value = true;
+}
+
+/** 行列选择器确认：插入指定大小表格并关闭 */
+function onPickTableSize(rows: number, cols: number): void {
+  editor.value?.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
+  tablePickerVisible.value = false;
+}
+
+/** 选择器点外部关闭 */
+function onTablePickerOutside(e: MouseEvent): void {
+  if (!tablePickerVisible.value) return;
+  const pop = document.querySelector(".rt-table-picker");
+  if (pop && !pop.contains(e.target as Node)) {
+    tablePickerVisible.value = false;
+  }
+}
+
 /** 编辑器 wrapper 上的 contextmenu：若 target 在表格内，阻止默认 + 弹菜单 */
 function onEditorContextMenu(e: MouseEvent): void {
   const ed = editor.value;
@@ -683,6 +716,8 @@ onMounted(() => {
   // ESC / 方向键：用 capture 阶段抢在 AppLayout 之前处理，
   // 防止 lightbox 关闭时顺带把详情面板也关了
   window.addEventListener("keydown", onPreviewKeydown, { capture: true });
+  // 表格行列选择器点外部关闭
+  window.addEventListener("mousedown", onTablePickerOutside, true);
   // 行首左侧边缘点击修复：capture 抢在 ProseMirror 默认点击处理之前
   window.addEventListener("mousedown", onEditorGutterMouseDown, true);
   // 滚动 / 缩放窗口时同步按钮位置（按钮用了 position: fixed）
@@ -709,6 +744,7 @@ onBeforeUnmount(() => {
   cancelHide();
   detachContainerTracking();
   window.removeEventListener("keydown", onPreviewKeydown, { capture: true } as any);
+  window.removeEventListener("mousedown", onTablePickerOutside, true);
   window.removeEventListener("mousedown", onEditorGutterMouseDown, true);
   window.removeEventListener("scroll", updateBtnPos, true);
   window.removeEventListener("resize", updateBtnPos);
@@ -847,7 +883,7 @@ function fileToBase64(file: File): Promise<string> {
       <EditorContent :editor="editor" class="rich-text__editor" />
       <!-- 块拖拽手柄 + 落点横线（放在 wrapper 内、absolute 定位，hover 链不断）
            可通过 dragHandle prop 关闭（模板编辑弹窗等小场景不需要） -->
-      <BlockDragHandle v-if="dragHandle" :editor="editor" />
+      <BlockDragHandle v-if="dragHandle" :editor="editor" :on-pick-table="openTablePicker" />
     </div>
 
     <!-- 空段落浮 + 按钮（Notion-like 入口之一） -->
@@ -855,6 +891,17 @@ function fileToBase64(file: File): Promise<string> {
 
     <!-- 表格浮动工具条（光标在表格内时显示） -->
     <TableToolbar :editor="editor" />
+
+    <!-- 表格行列选择器（斜杠/块手柄菜单选「表格」时弹出，选 N×N 后插入） -->
+    <teleport to="body">
+      <div
+        v-if="tablePickerVisible"
+        class="rt-table-picker"
+        :style="{ left: tablePickerPos.x + 'px', top: tablePickerPos.y + 'px' }"
+      >
+        <TableSizePicker :on-pick="onPickTableSize" />
+      </div>
+    </teleport>
 
     <!-- 表格右键菜单 -->
     <ContextMenu
@@ -1499,4 +1546,15 @@ function fileToBase64(file: File): Promise<string> {
   white-space: nowrap;
 }
 /* 工具条已抽离到 RichTextToolbar 组件，样式也一并迁过去 */
+
+/* 表格行列选择器浮层（斜杠/块手柄菜单触发） */
+.rt-table-picker {
+  position: fixed;
+  z-index: 1200;
+  background: var(--jt-surface);
+  border-radius: 12px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.04);
+}
 </style>
