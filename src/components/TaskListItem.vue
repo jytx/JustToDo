@@ -628,10 +628,6 @@ function onCtxEnterBatchMode(): void {
   cursor: pointer;
   transition: all 0.2s ease;
   margin-right: 2px;
-  /* 对齐标题首行文字中心：align-self 顶对齐 + margin-top 推到首行中心。
-     中文字形 ink 视觉中心比盒中心高约 2px，已在上移中补偿 */
-  align-self: flex-start;
-  margin-top: 0.4px;
 }
 
 .task-item__batch-check:hover {
@@ -685,11 +681,7 @@ function onCtxEnterBatchMode(): void {
   width: 16px;
   height: 20px;
   flex-shrink: 0;
-  /* 左侧图标对齐标题首行文字中心（详见 .task-item__body 上方说明）：
-     align-self 顶部对齐 + margin-top 把中心推到首行文字中心。
-     中文字形 ink 视觉中心比盒中心高约 2px，已在上移中补偿 */
-  align-self: flex-start;
-  margin-top: -0.3px;
+  margin-top: 1px;
   color: var(--jt-text-tertiary);
   cursor: pointer;
   border-radius: 4px;
@@ -706,8 +698,7 @@ function onCtxEnterBatchMode(): void {
   width: 16px;
   height: 20px;
   flex-shrink: 0;
-  align-self: flex-start;
-  margin-top: -0.3px;
+  margin-top: 1px;
 }
 
 .task-item__list-dot {
@@ -721,18 +712,6 @@ function onCtxEnterBatchMode(): void {
 .task-item__note-icon {
   flex-shrink: 0;
   color: var(--jt-text-tertiary);
-  /* 对齐标题首行文字中心：icon-file size=14，半高 7px（ink 重心偏上 2px 已补偿） */
-  align-self: flex-start;
-  margin-top: 2.7px;
-}
-
-/* 完成复选框（TaskCheckbox 子组件，16×16）：对齐标题首行文字中心。
- * 子组件 scoped，需 :deep 穿透；align-self 顶对齐 + margin-top 推到首行中心。
- * 中文字形 ink 几乎全在基线之上（ascent≈11px / descent≈1.4px），
- * 视觉中心比盒中心高约 2px，故复选框上移 2px 与其对齐。 */
-.task-item :deep(.task-checkbox) {
-  align-self: flex-start;
-  margin-top: 0.4px;
 }
 
 .task-item__body {
@@ -744,8 +723,7 @@ function onCtxEnterBatchMode(): void {
   font-size: 14px;
   font-weight: 500;
   color: var(--jt-text-primary);
-  /* 行高收紧贴合字形（1.4≈19.6px），避免大行框让字形偏上、与复选框视觉错位 */
-  line-height: 1.4;
+  line-height: 1.5;
   word-break: break-word;
   transition: all 0.2s ease;
 }
