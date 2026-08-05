@@ -184,10 +184,10 @@ onBeforeUnmount(() => {
 <style scoped>
 .outline-panel {
   position: absolute;
-  top: 48px;
+  top: 120px;
   right: 8px;
-  bottom: 56px;
-  width: 240px;
+  bottom: 72px;
+  width: 300px;
   background: var(--jt-surface);
   border: 1px solid var(--jt-border);
   border-radius: 8px;
