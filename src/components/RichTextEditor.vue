@@ -10,7 +10,6 @@
 import { useEditor, EditorContent } from "@tiptap/vue-3";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
-import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
 import HardBreak from "@tiptap/extension-hard-break";
@@ -20,14 +19,12 @@ import Suggestion from "@tiptap/suggestion";
 import { Extension } from "@tiptap/core";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
-import { common, createLowlight } from "lowlight";
 import { watch, onBeforeUnmount, onMounted, ref, computed, createApp } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import SlashCommandMenu, { type SlashCommandItem } from "./SlashCommandMenu.vue";
 import RichTextFloatingMenu from "./RichTextFloatingMenu.vue";
 import BlockDragHandle from "./BlockDragHandle.vue";
-
-const lowlight = createLowlight(common);
+import { CodeBlockFold } from "@/extensions/CodeBlockFold";
 
 /**
  * 自定义扩展：覆盖 Tiptap 内置的 Mod-a / selectAll 行为。
@@ -316,7 +313,8 @@ const editor = useEditor({
       },
     }),
     HardBreak,
-    CodeBlockLowlight.configure({ lowlight }),
+    // 代码块：自定义 NodeView（语言切换 + 复制 + 折叠），folded attribute 持久化
+    CodeBlockFold,
     TaskList,
     TaskItem.configure({ nested: true }),
     // 注：故意不加 @tiptap/extension-placeholder。
