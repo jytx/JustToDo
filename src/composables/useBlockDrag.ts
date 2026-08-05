@@ -38,9 +38,14 @@ const HANDLE_HEIGHT = 22;
 /**
  * 块拖拽组合式函数。
  * @param editor Tiptap editor 的 ref（useEditor 返回值）
+ * @param onHandleClick 手柄「纯点击」回调（按下未移动即松开时触发），
+ *   参数为当前 hover 的顶层块索引，由调用方决定唤起什么菜单
  * @returns 响应式的手柄位置、横线位置、拖拽状态，供 UI 组件渲染
  */
-export function useBlockDrag(editor: Ref<Editor | undefined>) {
+export function useBlockDrag(
+  editor: Ref<Editor | undefined>,
+  onHandleClick?: (blockIndex: number) => void,
+) {
   /** 手柄当前位置（idle 态跟随 hover 块；dragging 态跟随鼠标） */
   const handlePos = ref<HandlePosition>({ left: 0, top: 0, visible: false });
   /** 落点横线位置（仅 dragging 态可见） */
@@ -56,6 +61,9 @@ export function useBlockDrag(editor: Ref<Editor | undefined>) {
   // 拖拽过程中的内部状态（非响应式，避免无谓渲染）
   let dragFromIndex = -1;
   let currentTarget: DropTarget | null = null;
+  /** 本次按下后是否发生过移动（区分「纯点击」与「拖拽」）。
+   *  onDragMouseUp 时若为 false，则视为点击，调 onHandleClick 而非拖拽事务。 */
+  let dragMoved = false;
 
   /** 当前 hover 到的顶层块索引（idle 态用） */
   let hoverIndex = -1;
@@ -164,6 +172,7 @@ export function useBlockDrag(editor: Ref<Editor | undefined>) {
     dragFromIndex = hoverIndex;
     isDragging.value = true;
     currentTarget = null;
+    dragMoved = false;
 
     // mousedown 时立刻把手柄重置到 idle 态位置（hover 块所在行居中），
     // 避免上一次 dragging 末尾鼠标 Y 偏出导致手柄从"野位置"开始。
@@ -214,6 +223,7 @@ export function useBlockDrag(editor: Ref<Editor | undefined>) {
   function onDragMouseMove(e: MouseEvent): void {
     const ed = editor.value;
     if (!ed) return;
+    dragMoved = true; // 发生移动，标记为拖拽（mouseup 时不再视为点击）
     updateDragState(ed.view, e.clientX, e.clientY);
   }
 
@@ -273,11 +283,17 @@ export function useBlockDrag(editor: Ref<Editor | undefined>) {
   }
   function onDragMouseUp(): void {
     const ed = editor.value;
-    // 先快照源/目标，cleanupDrag() 会重置它们
+    const wasClick = !dragMoved; // 纯点击：按下后未移动
     const fromIdx = dragFromIndex;
     const target = currentTarget;
 
     cleanupDrag();
+
+    // 纯点击：不执行拖拽事务，转交点击回调（由 RichTextEditor 唤起块操作菜单）
+    if (wasClick) {
+      if (fromIdx >= 0) onHandleClick?.(fromIdx);
+      return;
+    }
 
     if (!ed || fromIdx < 0 || !target) return;
 
@@ -308,6 +324,7 @@ export function useBlockDrag(editor: Ref<Editor | undefined>) {
     isDragging.value = false;
     indicatorPos.value.visible = false;
     dragFromIndex = -1;
+    dragMoved = false;
     currentTarget = null;
     isHoveringHandle = false;
     clearHideTimer();
