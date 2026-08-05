@@ -959,6 +959,15 @@ pub async fn task_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdRe
         .await
         .map_err(|e| format!("删除任务失败: {}", e))?;
 
+    // 若删除的是重复任务模板（recurrence_freq IS NOT NULL），级联清理生成历史表，
+    // 避免残留记录。普通实例删除不清历史（保留记录防止重生）。
+    // 查询命中 0 条也无副作用（普通任务的 id 不会作为 template_id 出现）。
+    sqlx::query("DELETE FROM recurrence_generated WHERE template_id = $1")
+        .bind(&id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("清理生成历史失败: {}", e))?;
+
     Ok(())
 }
 
@@ -1967,8 +1976,10 @@ pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<us
         .unwrap();
     let today_end_str = format_local_naive(tomorrow_start);
 
-    // 查询所有模板任务（recurrence_freq IS NOT NULL）
-    let templates = sqlx::query("SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL")
+    // 查询所有模板任务（recurrence_freq IS NOT NULL 且未完成）。
+    // 排除 done=1：已完成的模板不再生成（正常重复流程模板永不 done，
+    // 但异常 done 的模板——如用户直接勾选了模板——应停止生成）。
+    let templates = sqlx::query("SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL AND done = 0")
         .fetch_all(pool)
         .await
         .map_err(|e| format!("查询重复模板失败: {}", e))?;
@@ -1983,18 +1994,18 @@ pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<us
         };
         let interval = template.recurrence_interval.max(1);
 
-        // 基准日期：查询该模板已有实例的最新 due_end_at，没有则用模板自己的 due_end_at
-        // 用 recurrence_origin_id 关联实例与模板（而非 parent_id，后者已回归子任务语义）
-        let last_instance = sqlx::query(
-            "SELECT due_end_at FROM tasks WHERE recurrence_origin_id = $1 AND due_end_at IS NOT NULL ORDER BY due_end_at DESC LIMIT 1",
+        // 基准日期：从生成历史表查该模板最新已生成的日期（实例被删除仍保留记录），
+        // 没有历史则用模板自己的 due_end_at。
+        let last_generated = sqlx::query(
+            "SELECT due_date FROM recurrence_generated WHERE template_id = $1 ORDER BY due_date DESC LIMIT 1",
         )
         .bind(&template.id)
         .fetch_optional(pool)
         .await
-        .map_err(|e| format!("查询实例失败: {}", e))?;
+        .map_err(|e| format!("查询生成历史失败: {}", e))?;
 
-        let current_iso_opt = match (last_instance, &template.due_end_at) {
-            (Some(row), _) => row.try_get::<String, _>("due_end_at").ok(),
+        let current_iso_opt = match (last_generated, &template.due_end_at) {
+            (Some(row), _) => row.try_get::<String, _>("due_date").ok(),
             (None, Some(d)) => Some(d.clone()),
             (None, None) => continue, // 模板没有截止日期，无法生成
         };
@@ -2032,16 +2043,16 @@ pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<us
             continue;
         }
 
-        // 检查该日期是否已有实例（避免重复生成）
-        // 用 recurrence_origin_id 关联实例与模板
+        // 去重：查生成历史表（recurrence_generated），而非查现存实例。
+        // 关键：实例被用户删除后历史记录保留，去重仍生效，不会重新生成。
         let exists = sqlx::query(
-            "SELECT id FROM tasks WHERE recurrence_origin_id = $1 AND due_end_at = $2 LIMIT 1",
+            "SELECT template_id FROM recurrence_generated WHERE template_id = $1 AND due_date = $2 LIMIT 1",
         )
         .bind(&template.id)
         .bind(&next_iso)
         .fetch_optional(pool)
         .await
-        .map_err(|e| format!("检查实例存在失败: {}", e))?;
+        .map_err(|e| format!("检查生成历史失败: {}", e))?;
 
         if exists.is_none() {
             // 生成新实例
@@ -2069,9 +2080,23 @@ pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<us
             .execute(pool)
             .await
             .map_err(|e| format!("生成实例失败: {}", e))?;
+
+            // 同步记录到生成历史表（去重依据；实例删除后记录保留，防止重生）
+            sqlx::query(
+                "INSERT OR IGNORE INTO recurrence_generated (template_id, due_date, instance_id, generated_at)
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(&template.id)
+            .bind(&next_iso)
+            .bind(&new_id)
+            .bind(&ts)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("记录生成历史失败: {}", e))?;
+
             generated += 1;
         }
-        // 注意：不在此手动推进 current_iso。下次扫描时 last_instance 查询会自动取刚生成的
+        // 注意：不在此手动推进 current_iso。下次扫描时 last_generated 查询会自动取刚生成的
         // 这一期作为新基准，从而实现「每次扫描补一期」的逐步追上行为。
     }
 

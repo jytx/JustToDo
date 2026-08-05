@@ -13,6 +13,7 @@ pub const MIGRATIONS_016: &str = include_str!("migrations/016_templates_placehol
 pub const MIGRATIONS_017: &str = include_str!("migrations/017_daily_reminder_log.sql");
 pub const MIGRATIONS_021: &str = include_str!("migrations/021_list_schedules.sql");
 pub const MIGRATIONS_026: &str = include_str!("migrations/026_groups.sql");
+pub const MIGRATIONS_027: &str = include_str!("migrations/027_recurrence_history.sql");
 
 /// 检查表中是否存在某列
 async fn column_exists(pool: &SqlitePool, table: &str, column: &str) -> Result<bool, String> {
@@ -183,6 +184,12 @@ pub async fn init_pool(
 
     // 026: 任务分组（groups 表 + tasks.group_id 列 + 预置默认分组）
     run_migration_026(&pool).await?;
+
+    // 027: 重复任务生成历史表（建表 + 存量回填，纯 SQL 幂等）
+    sqlx::query(MIGRATIONS_027)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("执行迁移 027_recurrence_history 失败: {}", e))?;
 
     Ok(pool)
 }
