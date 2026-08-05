@@ -128,6 +128,7 @@ const slashItems: SlashCommandItem[] = [
   },
   { key: "quote", title: "引用", description: "Quote", keywords: ["blockquote"] },
   { key: "code", title: "代码", description: "Code block", keywords: ["pre"] },
+  { key: "table", title: "表格", description: "Table", keywords: ["table", "表格"] },
   { key: "hr", title: "分隔线", description: "Divider", keywords: ["hr", "line"] },
 ];
 
@@ -209,6 +210,9 @@ function buildSlashCommandPlugin(editorInstance: TiptapEditor) {
           break;
         case "code":
           if (!editor.isActive("codeBlock")) c.toggleCodeBlock().run();
+          break;
+        case "table":
+          c.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
           break;
         case "hr":
           c.setHorizontalRule().run();

@@ -301,6 +301,29 @@ async function onImagePicked(e: Event) {
       size="mini"
       shape="circle"
       type="text"
+      @click="editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()"
+      title="表格"
+    >
+      <!-- 表格图标：自定义内联 SVG（Arco 无表格图标） -->
+      <svg
+        :width="compact ? 14 : 16"
+        :height="compact ? 14 : 16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.3"
+      >
+        <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
+        <line x1="1.5" y1="6" x2="14.5" y2="6" />
+        <line x1="1.5" y1="9.5" x2="14.5" y2="9.5" />
+        <line x1="5.5" y1="2.5" x2="5.5" y2="13.5" />
+        <line x1="10" y1="2.5" x2="10" y2="13.5" />
+      </svg>
+    </a-button>
+    <a-button
+      size="mini"
+      shape="circle"
+      type="text"
       @click="editor.chain().focus().setHardBreak().run()"
       title="硬换行 (Shift+Enter)"
     >
