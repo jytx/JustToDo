@@ -457,7 +457,14 @@ useShortcuts({
     />
 
     <!-- 主区域（中） -->
-    <main class="app-layout__main" :style="mainStyle">
+    <main
+      class="app-layout__main"
+      :style="mainStyle"
+      :data-route="String(route.name)"
+      :data-view="String(route.query.view ?? '')"
+      :data-floating="String(isFloatingPanelView)"
+      :data-panel-w="String(panelWidth)"
+    >
       <div class="app-layout__topbar" :style="topbarStyle">
         <a-button
           v-if="showGlobalActions"
