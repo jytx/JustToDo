@@ -8,6 +8,8 @@ import { useTaskStore } from "@/stores/task";
 import { useHabitStore } from "@/stores/habit";
 import { useTemplateStore } from "@/stores/template";
 import { useListScheduleStore } from "@/stores/listSchedule";
+import { SETTINGS_KEYS } from "@/stores/settings";
+import * as db from "@/api/db";
 import { useRoute, useRouter } from "vue-router";
 import { SORT_FIELDS, SORT_FIELD_LABELS, type SortField } from "@/types";
 import AppRail from "@/components/AppRail.vue";
@@ -45,6 +47,18 @@ const sidebarCollapsed = ref(false);
 /** 侧边栏宽度（仅展开态生效；收起态固定 48px） */
 const sidebarWidth = ref(240);
 const panelWidth = ref(480);
+
+/** 详情面板宽度持久化：拖拽调整后防抖保存，下次打开保持 */
+let panelWidthSaveTimer: ReturnType<typeof setTimeout> | null = null;
+watch(panelWidth, (w) => {
+  // 防抖 400ms：拖拽过程频繁变化，避免每次都写 SQLite
+  if (panelWidthSaveTimer) clearTimeout(panelWidthSaveTimer);
+  panelWidthSaveTimer = setTimeout(() => {
+    db.setSetting(SETTINGS_KEYS.detailPanelWidth, String(w)).catch((e) =>
+      console.error("[AppLayout] 保存详情面板宽度失败:", e),
+    );
+  }, 400);
+});
 
 /** 打开 AI 助手弹窗（顶栏/快捷键入口，默认每日小结）。 */
 function openSummary(): void {
@@ -325,6 +339,16 @@ function onNavigationKeydown(e: KeyboardEvent) {
 
 onMounted(() => {
   window.addEventListener("keydown", onNavigationKeydown);
+  // 加载缓存的详情面板宽度（拖拽调整后持久化，下次打开保持）
+  db.getSetting(SETTINGS_KEYS.detailPanelWidth)
+    .then((raw) => {
+      if (raw) {
+        const w = Number(raw);
+        // 合法范围校验（与 TaskDetailPanel 的 480~900 一致）
+        if (Number.isFinite(w) && w >= 480 && w <= 900) panelWidth.value = w;
+      }
+    })
+    .catch((e) => console.error("[AppLayout] 读取详情面板宽度失败:", e));
   // 应用启动时预加载习惯列表（避免进入 /habits 时空骨架）
   // HabitView 自身 mount 时会再 load 一次（重复但幂等，后端 getHabits 成本低）
   habitStore.loadHabits().catch((e) => {

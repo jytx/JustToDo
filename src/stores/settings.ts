@@ -21,6 +21,8 @@ export const SETTINGS_KEYS = {
   recurrenceCheckInterval: "recurrence_check_interval",
   startupView: "startup_view",
   zoomLevel: "zoom_level",
+  /** 任务详情面板宽度（拖拽调整后缓存，下次打开保持） */
+  detailPanelWidth: "detail_panel_width",
   templateDefaultListId: "template_default_list_id",
   templateDefaultNoteId: "template_default_note_id",
   dailyReminderTimes: "daily_reminder_times",
