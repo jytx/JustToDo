@@ -740,7 +740,8 @@ function onCtxEnterBatchMode(): void {
   font-size: 14px;
   font-weight: 500;
   color: var(--jt-text-primary);
-  line-height: 1.5;
+  /* 行高收紧贴合字形（1.4≈19.6px），避免大行框让字形偏上、与复选框视觉错位 */
+  line-height: 1.4;
   word-break: break-word;
   transition: all 0.2s ease;
 }

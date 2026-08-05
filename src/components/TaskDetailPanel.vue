@@ -1478,10 +1478,10 @@ function formatMeta(iso: string): string {
   background: transparent;
   font-family: var(--font-body);
   font-size: 14px;
-  line-height: 22px;
+  /* 行高贴合字形（14px 字号用 18px 行高），避免大行框导致字形在框内偏上、
+     与左侧复选框视觉中心错位。padding 去掉，靠 line-height 撑高即可。 */
+  line-height: 18px;
   color: var(--jt-text-primary);
-  /* 用 line-height 撑高而非垂直 padding，保证文字在 input 内严格垂直居中，
-     与左侧 18px 复选框的视觉中心对齐（input block 元素加 padding 会导致文字偏移） */
   padding: 0;
   min-width: 0;
 }
