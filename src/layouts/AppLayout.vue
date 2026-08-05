@@ -174,18 +174,27 @@ watch(detailPanelMaxWidth, (max) => {
   if (panelWidth.value > max) panelWidth.value = max;
 });
 
-/** 应用启动时默认打开详情面板：等当前视图任务首次加载完成后，
- *  若用户未主动选中任何任务，则选中第一个任务让面板默认展开。
- *  仅触发一次（用户主动关闭面板后不强制重开）。 */
+/**
+ * 应用启动时默认打开详情面板：等当前视图任务首次加载完成后，
+ * 若用户未主动选中任何任务，则选中第一个任务让面板默认展开。
+ *
+ * 仅在任务族视图（列表/智能/标签/笔记本）触发 —— 日历/习惯/设置视图
+ * 详情面板是悬浮抽屉，默认不应自动弹出（否则启动在日历会「闪一下再消失」）。
+ * 「成功选中」后才停止监听：启动在日历时 showTaskSidebar=false 不选中、
+ * 不停止，等用户切到任务族视图再触发，体验与列表启动一致。
+ */
 const stopInitialSelect = watch(
-  () => taskStore.openTasks,
-  (tasks) => {
-    // openTasks 已过滤 done；选第一个让面板默认展开
-    if (tasks.length > 0 && taskStore.selectedTaskId === null) {
+  () => [taskStore.openTasks, showTaskSidebar.value],
+  () => {
+    const tasks = taskStore.openTasks;
+    if (
+      tasks.length > 0 &&
+      taskStore.selectedTaskId === null &&
+      showTaskSidebar.value
+    ) {
       taskStore.selectTask(tasks[0].id);
+      stopInitialSelect();
     }
-    // 任务已加载（无论是否选中），停止监听，避免后续切视图反复触发
-    if (tasks.length > 0) stopInitialSelect();
   },
 );
 
