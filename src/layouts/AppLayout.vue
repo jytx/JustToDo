@@ -179,9 +179,12 @@ const stopInitialSelect = watch(
   },
 );
 
-/** topbar 始终让出详情面板宽度（悬浮视图除外，详情悬浮 drawer 不缩进） */
+/**
+ * topbar 让位 —— 悬浮视图下显式置 right: 0（不用空对象，避免 Vue 不会清除之前
+ * 列表视图写入的 right 残留值，导致切到日历视图时 topbar 仍占右侧空间）
+ */
 const topbarStyle = computed(() => {
-  if (isFloatingPanelView.value) return {};
+  if (isFloatingPanelView.value) return { right: "0px" };
   return { right: `${panelWidth.value + 24}px` };
 });
 
