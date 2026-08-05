@@ -307,6 +307,7 @@ onBeforeUnmount(() => {
 }
 
 .block-handle-menu__item {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   width: 100%;
