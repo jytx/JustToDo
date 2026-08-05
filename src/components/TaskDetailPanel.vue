@@ -80,6 +80,12 @@ const isFloatingView = computed<boolean>(() => {
 const task = computed(() => taskStore.selectedTask);
 /** 当前选中条目是否为笔记（kind='note'）：隐藏日期/提醒/重复/复选框 */
 const isNote = computed(() => task.value?.kind === "note");
+/**
+ * Transition 名称：切到悬浮视图导致面板卸载时跳过滑出动画
+ * （否则从列表点任务→切看板/日历会看到面板快速滑出的多余动画）。
+ * 进入悬浮视图时 name 设为空 → 无 transition → 直接卸载。
+ */
+const transitionName = computed(() => (isFloatingView.value ? "" : "detail-drawer"));
 const titleDraft = ref("");
 const noteDraft = ref("");
 
@@ -813,7 +819,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <Transition name="detail-drawer">
+  <Transition :name="transitionName">
   <div
     ref="panelEl"
     v-if="!isFloatingView || task"
