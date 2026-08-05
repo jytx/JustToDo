@@ -152,8 +152,26 @@ function onInsert(t: BlockType, where: "above" | "below"): void {
 function showSubmenu(which: "above" | "below"): void {
   submenu.value = which;
 }
-/** 收起二级菜单 */
+/** 收起二级菜单（延迟，给鼠标留出从 item 移到 submenu 的时间；
+ *  submenu 内的 cancelHideOnSubmenu 会取消本次隐藏） */
+let hideTimer: ReturnType<typeof setTimeout> | null = null;
 function hideSubmenu(): void {
+  if (hideTimer) clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => {
+    submenu.value = null;
+    hideTimer = null;
+  }, 200);
+}
+/** 鼠标进入二级菜单：取消待隐藏 */
+function cancelHideOnSubmenu(): void {
+  if (hideTimer) {
+    clearTimeout(hideTimer);
+    hideTimer = null;
+  }
+}
+/** 鼠标离开二级菜单：真正隐藏 */
+function hideFromSubmenu(): void {
+  if (hideTimer) clearTimeout(hideTimer);
   submenu.value = null;
 }
 
@@ -216,6 +234,8 @@ onBeforeUnmount(() => {
           v-if="submenu === 'above'"
           class="block-handle-menu__submenu"
           :class="{ 'block-handle-menu__submenu--left': submenuSide === 'left' }"
+          @mouseenter="cancelHideOnSubmenu"
+          @mouseleave="hideFromSubmenu"
         >
           <button
             v-for="t in BLOCK_TYPES"
@@ -244,6 +264,8 @@ onBeforeUnmount(() => {
           v-if="submenu === 'below'"
           class="block-handle-menu__submenu"
           :class="{ 'block-handle-menu__submenu--left': submenuSide === 'left' }"
+          @mouseenter="cancelHideOnSubmenu"
+          @mouseleave="hideFromSubmenu"
         >
           <button
             v-for="t in BLOCK_TYPES"
@@ -323,9 +345,8 @@ onBeforeUnmount(() => {
   position: absolute;
   left: 100%;
   top: 0;
-  margin-left: 4px;
+  /* 无 margin-left 间隙：避免鼠标从 item 移向 submenu 时穿过间隙触发 mouseleave */
   min-width: 160px;
-  /* 二级菜单项数多（15），max-height 兜底防纵向溢出视口 */
   max-height: calc(100vh - 32px);
   overflow-y: auto;
   background: var(--jt-surface);
