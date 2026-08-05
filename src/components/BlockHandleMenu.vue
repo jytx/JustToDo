@@ -212,7 +212,7 @@ onBeforeUnmount(() => {
         <!-- 二级：上方 -->
         <div
           v-if="submenu === 'above'"
-          class="block-handle-menu__submenu"
+          class="block-handle-menu__submenu block-handle-menu__submenu--above"
           :class="{ 'block-handle-menu__submenu--left': submenuSide === 'left' }"
         >
           <button
@@ -240,7 +240,7 @@ onBeforeUnmount(() => {
         <!-- 二级：下方 -->
         <div
           v-if="submenu === 'below'"
-          class="block-handle-menu__submenu"
+          class="block-handle-menu__submenu block-handle-menu__submenu--below"
           :class="{ 'block-handle-menu__submenu--left': submenuSide === 'left' }"
         >
           <button
@@ -316,12 +316,11 @@ onBeforeUnmount(() => {
   margin: 4px 8px;
 }
 
-/* 二级菜单：浮在一级右侧（默认），top:0 锚到一级容器顶部对齐避免溢出菜单框。
+/* 二级菜单：浮在一级右侧。
  *  absolute 锚到 .block-handle-menu（fixed，是定位上下文；item 的 relative 已去掉） */
 .block-handle-menu__submenu {
   position: absolute;
   left: 100%;
-  top: 80px;
   /* 无 margin-left 间隙：避免鼠标从 item 移向 submenu 时穿过间隙触发 mouseleave */
   min-width: 160px;
   max-height: calc(100vh - 32px);
@@ -335,6 +334,14 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 1px;
+}
+/* 「在上方添加」的二级：位置靠上，对齐该一级项附近 */
+.block-handle-menu__submenu--above {
+  top: 40px;
+}
+/* 「在下方添加」的二级：位置靠下，对齐该一级项附近（两个二级位置明显错开） */
+.block-handle-menu__submenu--below {
+  top: 120px;
 }
 /* 左展开变体：右侧视口空间不足时，改向一级左侧展开 */
 .block-handle-menu__submenu--left {
