@@ -180,6 +180,25 @@ function onPointerDownCapture(e: PointerEvent): void {
   }
 }
 
+/** 选中项变化后，把它滚入菜单可视区（键盘 ↑↓ 连按时跟随滚动）。
+ *  watch 回调在 DOM 更新后执行，能拿到最新的 item 元素位置。 */
+watch(selectedIndex, () => {
+  const container = document.querySelector(".slash-menu__container");
+  if (!container) return;
+  const items = container.querySelectorAll<HTMLElement>(".menu-popover-item");
+  const el = items[selectedIndex.value];
+  if (!el) return;
+  const cRect = container.getBoundingClientRect();
+  const eRect = el.getBoundingClientRect();
+  // 选中项在可视区上方 → 向上滚到刚好露出项顶
+  if (eRect.top < cRect.top) {
+    container.scrollTop -= cRect.top - eRect.top;
+  } else if (eRect.bottom > cRect.bottom) {
+    // 选中项在可视区下方 → 向下滚到刚好露出项底
+    container.scrollTop += eRect.bottom - cRect.bottom;
+  }
+});
+
 onMounted(() => {
   window.addEventListener("keydown", onKeyDown, true);
   // window capture 早于 document capture，赶在 Suggestion 之前拦截菜单内点击
