@@ -591,12 +591,8 @@ useShortcuts({
       <span class="ai-loading-overlay__text">AI 正在分析...</span>
     </div>
 
-    <!-- 任务详情面板（右） -->
-    <TaskDetailPanel
-      v-model:panel-width="panelWidth"
-      :max-width="detailPanelMaxWidth"
-      :floating="isFloatingPanelView"
-    />
+    <!-- 任务详情面板（右）—— 悬浮视图判断在面板内部自洽，不依赖外部传入 -->
+    <TaskDetailPanel v-model:panel-width="panelWidth" :max-width="detailPanelMaxWidth" />
 
     <!-- 全局搜索面板 -->
     <SearchPalette />

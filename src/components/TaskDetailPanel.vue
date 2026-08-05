@@ -2,6 +2,7 @@
 // 任务详情面板 —— 滴答清单风格沉浸式
 // 顶部 chips 行 + 大标题 + 无边框 Tiptap 描述/检查项 + 底部 footer
 import { ref, watch, computed, nextTick, onMounted, onBeforeUnmount } from "vue";
+import { useRoute } from "vue-router";
 import { Message } from "@arco-design/web-vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
@@ -49,14 +50,29 @@ const props = defineProps<{
   panelWidth?: number;
   /** 拖拽宽度上限（默认 900；侧边栏收起时由 AppLayout 增大传入） */
   maxWidth?: number;
-  /** 悬浮 drawer 模式（日历/看板/时间线等全屏视图）：无选中任务时不渲染面板，
-   *  不做 empty 占位 —— 这些视图本身全屏，占位只属于列表视图 */
-  floating?: boolean;
 }>();
 
 const emit = defineEmits<{
   "update:panelWidth": [value: number];
 }>();
+
+/**
+ * 悬浮 drawer 模式（日历/看板/时间线等全屏视图）：面板自己判断，不依赖外部 prop ——
+ * 这些视图无选中任务时不渲染面板（不做 empty 占位，它们本身全屏）。
+ * 与 AppLayout 的 isFloatingPanelView 保持一致，避免 prop 链失效时面板误渲染。
+ */
+const route = useRoute();
+const isFloatingView = computed<boolean>(() => {
+  const name = route.name as string;
+  const view = route.query.view as string | undefined;
+  return (
+    name === "week" ||
+    name === "month" ||
+    name === "year" ||
+    view === "kanban" ||
+    view === "timeline"
+  );
+});
 
 const task = computed(() => taskStore.selectedTask);
 /** 当前选中条目是否为笔记（kind='note'）：隐藏日期/提醒/重复/复选框 */
@@ -797,7 +813,7 @@ onBeforeUnmount(() => {
   <Transition name="detail-drawer">
   <div
     ref="panelEl"
-    v-if="!floating || task"
+    v-if="!isFloatingView || task"
     class="detail-panel"
     :style="{ width: (panelWidth ?? 480) + 'px' }"
   >
