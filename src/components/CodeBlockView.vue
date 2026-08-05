@@ -206,6 +206,10 @@ function toggleFold(): void {
   flex-direction: column;
   gap: 2px;
 }
+/* 语言项比通用菜单项更宽松（不拥挤） */
+.code-block__lang-list :deep(.menu-popover-item) {
+  height: 36px;
+}
 
 /* 代码区（保持原 .rich-text__content pre 的视觉） */
 .code-block__pre {
