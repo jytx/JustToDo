@@ -111,10 +111,10 @@ const emit = defineEmits<{ close: [] }>();
 /** 当前展开的二级菜单方向：null / 'above' / 'below' */
 const submenu = ref<null | "above" | "below">(null);
 
-/** 菜单根的 fixed 定位（锚在手柄右侧） */
+/** 菜单根的 fixed 定位（锚在手柄右侧，略下移让菜单不贴着手柄顶部） */
 const menuStyle = computed(() => ({
   left: `${props.anchorRect.left + 22}px`,
-  top: `${props.anchorRect.top}px`,
+  top: `${props.anchorRect.top + 8}px`,
 }));
 
 /** 二级菜单展开方向：右侧空间不足时改向左展开，避免溢出视口被裁切。
