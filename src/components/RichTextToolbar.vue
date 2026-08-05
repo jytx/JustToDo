@@ -4,7 +4,7 @@
 // 支持两种模式：
 //   - inline（默认）：作为面板内联工具条使用
 //   - compact：详情面板 footer popover 浮窗里的小尺寸版
-import { ref, computed } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import type { Editor } from "@tiptap/vue-3";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
@@ -83,6 +83,8 @@ function onHeadingSelect(key: string) {
 const headingMenuOpen = ref(false);
 /** 表格行列选择器菜单开关（hover 工具栏表格按钮展开） */
 const tableMenuOpen = ref(false);
+/** 选择器浮层 fixed 定位（锚到表格按钮下方） */
+const tablePickerStyle = ref<Record<string, string>>({});
 
 /** 行列选择器确认：插入指定大小的表格 */
 function onPickTableSize(rows: number, cols: number): void {
@@ -90,6 +92,42 @@ function onPickTableSize(rows: number, cols: number): void {
   props.editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
   tableMenuOpen.value = false;
 }
+
+/** 切换表格选择器：计算按钮坐标并打开/关闭 */
+function toggleTablePicker(): void {
+  if (tableMenuOpen.value) {
+    tableMenuOpen.value = false;
+    return;
+  }
+  // 取当前点击的表格按钮坐标（事件 target）
+  const btn = document.querySelector('[title="表格"]') as HTMLElement | null;
+  if (btn) {
+    const r = btn.getBoundingClientRect();
+    tablePickerStyle.value = {
+      left: `${r.left}px`,
+      top: `${r.bottom + 4}px`,
+    };
+  }
+  tableMenuOpen.value = true;
+}
+
+/** 点外部关闭选择器（冒泡 mousedown，选择器内部不阻止也无所谓——选了就关） */
+function onTablePickerOutsideDown(e: MouseEvent): void {
+  if (!tableMenuOpen.value) return;
+  const pop = document.querySelector(".table-picker-popover");
+  const btn = document.querySelector('[title="表格"]');
+  const t = e.target as Node;
+  if (pop && !pop.contains(t) && btn && !btn.contains(t)) {
+    tableMenuOpen.value = false;
+  }
+}
+
+onMounted(() => {
+  window.addEventListener("mousedown", onTablePickerOutsideDown, true);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("mousedown", onTablePickerOutsideDown, true);
+});
 
 /** 标题级别列表（H1-H6）—— 供下拉菜单 v-for 渲染 */
 const HEADING_LEVELS = [1, 2, 3, 4, 5, 6] as const;
@@ -307,34 +345,36 @@ async function onImagePicked(e: Event) {
     >
       <icon-minus :size="compact ? 14 : 16" />
     </a-button>
-    <MenuPopover v-model:visible="tableMenuOpen" placement="bottom-right">
-      <template #trigger>
-        <a-button
-          size="mini"
-          shape="circle"
-          type="text"
-          title="表格"
-          @click="tableMenuOpen = !tableMenuOpen"
-        >
-          <!-- 表格图标：自定义内联 SVG（Arco 无表格图标） -->
-          <svg
-            :width="compact ? 14 : 16"
-            :height="compact ? 14 : 16"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.3"
-          >
-            <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
-            <line x1="1.5" y1="6" x2="14.5" y2="6" />
-            <line x1="1.5" y1="9.5" x2="14.5" y2="9.5" />
-            <line x1="5.5" y1="2.5" x2="5.5" y2="13.5" />
-            <line x1="10" y1="2.5" x2="10" y2="13.5" />
-          </svg>
-        </a-button>
-      </template>
-      <TableSizePicker :on-pick="onPickTableSize" />
-    </MenuPopover>
+    <a-button
+      size="mini"
+      shape="circle"
+      type="text"
+      :class="{ 'arco-btn-primary': tableMenuOpen }"
+      title="表格"
+      @click.stop="toggleTablePicker"
+    >
+      <!-- 表格图标：自定义内联 SVG（Arco 无表格图标） -->
+      <svg
+        :width="compact ? 14 : 16"
+        :height="compact ? 14 : 16"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.3"
+      >
+        <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
+        <line x1="1.5" y1="6" x2="14.5" y2="6" />
+        <line x1="1.5" y1="9.5" x2="14.5" y2="9.5" />
+        <line x1="5.5" y1="2.5" x2="5.5" y2="13.5" />
+        <line x1="10" y1="2.5" x2="10" y2="13.5" />
+      </svg>
+    </a-button>
+    <!-- 行列选择器：独立 Teleport 浮层（避免与详情面板外层 Popover 嵌套冲突） -->
+    <teleport to="body">
+      <div v-if="tableMenuOpen" class="table-picker-popover" :style="tablePickerStyle">
+        <TableSizePicker :on-pick="onPickTableSize" />
+      </div>
+    </teleport>
     <a-button
       size="mini"
       shape="circle"
@@ -523,5 +563,16 @@ async function onImagePicked(e: Event) {
   font-weight: 600;
   font-family: var(--font-mono, monospace);
   letter-spacing: 0.5px;
+}
+
+/* 表格行列选择器浮层（Teleport 到 body，避开详情面板外层 Popover 嵌套） */
+.table-picker-popover {
+  position: fixed;
+  z-index: 1200;
+  background: var(--jt-surface);
+  border-radius: 12px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.04);
 }
 </style>
