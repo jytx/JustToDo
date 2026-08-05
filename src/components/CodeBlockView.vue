@@ -105,11 +105,13 @@ function toggleFold(): void {
       <button
         type="button"
         class="code-block__btn"
+        :class="{ 'code-block__btn--copied': copied }"
         :title="copied ? '已复制' : '复制代码'"
         @click="onCopy"
       >
         <icon-check v-if="copied" :size="14" style="color: var(--jt-success)" />
         <icon-copy v-else :size="14" />
+        <span v-if="copied" class="code-block__btn-label">已复制</span>
       </button>
     </div>
 
@@ -179,6 +181,7 @@ function toggleFold(): void {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   width: 22px;
   height: 22px;
   border: none;
@@ -187,11 +190,22 @@ function toggleFold(): void {
   border-radius: 4px;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background-color 0.12s, color 0.12s;
+  transition: background-color 0.12s, color 0.12s, width 0.12s;
 }
 .code-block__btn:hover {
   background: var(--jt-surface-hover);
   color: var(--jt-text-primary);
+}
+/* 已复制态：按钮变宽容纳文字标签 */
+.code-block__btn--copied {
+  width: auto;
+  padding: 0 6px;
+}
+.code-block__btn-label {
+  font-size: 11px;
+  font-family: var(--font-body);
+  color: var(--jt-success);
+  white-space: nowrap;
 }
 
 /* 代码区（保持原 .rich-text__content pre 的视觉） */
