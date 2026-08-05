@@ -586,10 +586,53 @@ function onZoomBtnClick(e: MouseEvent) {
   zoomBtnVisible.value = false;
 }
 
+/** 块标签集合：用于在点击左侧边缘时，按 y 坐标找到对应的块级元素 */
+const BLOCK_TAGS = ["P", "H1", "H2", "H3", "H4", "H5", "H6", "LI", "BLOCKQUOTE", "PRE"];
+
+/**
+ * 修复「点击编辑器内容区左侧 padding 带无法定位光标到行首」：
+ *
+ * 详情面板用 borderless 模式，编辑器 wrapper 左侧有 24px padding（给块拖拽手柄让位）。
+ * 用户点这块 padding 区时，ProseMirror 的 posAtCoords 把落点解析给相邻块或文档根，
+ * 光标落不到「想点的那个块」的开头，表现为「第一行写完后无法在它前面加内容」。
+ *
+ * 策略：在编辑器 dom 上监听 mousedown（capture，抢在 ProseMirror 之前），
+ * 若点击 x 落在内容区最左边一带，按点击的 y 坐标找到垂直方向上对应的块级元素，
+ * 把光标设到该块内容开头并阻止默认点击（不让 ProseMirror 再把光标挪走）。
+ */
+function onEditorGutterMouseDown(e: MouseEvent): void {
+  const ed = editor.value;
+  const pmDom = ed?.view?.dom;
+  if (!ed || !pmDom) return;
+  // 仅处理点击在 .ProseMirror 自身或其内部（编辑器内容区）
+  if (!pmDom.contains(e.target as Node) && e.target !== pmDom) return;
+
+  const contentRect = pmDom.getBoundingClientRect();
+  // 点击 x 在内容区最左边缘带内（左侧 6px 范围）才接管
+  if (e.clientX > contentRect.left + 6) return;
+
+  // 按点击的 y 坐标，找垂直方向上命中的块级元素
+  const blocks = Array.from(pmDom.querySelectorAll<HTMLElement>(BLOCK_TAGS.join(",")));
+  const hit = blocks.find((el) => {
+    const r = el.getBoundingClientRect();
+    return e.clientY >= r.top && e.clientY <= r.bottom;
+  });
+  if (!hit) return;
+
+  // 找到该块 DOM 对应的文档位置，定位光标到块内开头
+  // posAtDOM(块, 0) 返回块内第一个可定位位置（已跳过块开始标记）
+  const blockInnerStart = ed.view.posAtDOM(hit, 0);
+  if (blockInnerStart == null || blockInnerStart < 0) return;
+  e.preventDefault();
+  ed.chain().focus().setTextSelection(blockInnerStart).run();
+}
+
 onMounted(() => {
   // ESC / 方向键：用 capture 阶段抢在 AppLayout 之前处理，
   // 防止 lightbox 关闭时顺带把详情面板也关了
   window.addEventListener("keydown", onPreviewKeydown, { capture: true });
+  // 行首左侧边缘点击修复：capture 抢在 ProseMirror 默认点击处理之前
+  window.addEventListener("mousedown", onEditorGutterMouseDown, true);
   // 滚动 / 缩放窗口时同步按钮位置（按钮用了 position: fixed）
   window.addEventListener("scroll", updateBtnPos, true);
   window.addEventListener("resize", updateBtnPos);
@@ -614,6 +657,7 @@ onBeforeUnmount(() => {
   cancelHide();
   detachContainerTracking();
   window.removeEventListener("keydown", onPreviewKeydown, { capture: true } as any);
+  window.removeEventListener("mousedown", onEditorGutterMouseDown, true);
   window.removeEventListener("scroll", updateBtnPos, true);
   window.removeEventListener("resize", updateBtnPos);
   const container = editorContainerRef.value;
