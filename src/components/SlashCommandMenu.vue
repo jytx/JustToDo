@@ -160,11 +160,34 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
+/** 拦截菜单内部的 pointerdown，阻止 Tiptap Suggestion 的「点击外部关闭」误判。
+ *
+ * 背景：Suggestion 在 document 上用 capture 阶段监听 pointerdown，判断
+ * e.target 是否在它的 element 容器内；本菜单 Teleport 到 body，DOM 不在
+ * Suggestion 的 element 内，点击会被误判为「点击外部」→ 关闭菜单 →
+ * selectItem 还没执行组件就卸载了，鼠标点击不生效。
+ *
+ * 方案：window 的 capture 早于 document 的 capture，在 window 阶段拦截：
+ * 若 pointerdown 落在菜单内，stopImmediatePropagation 阻止 Suggestion 收到。 */
+function onPointerDownCapture(e: PointerEvent): void {
+  if (!props.open) return;
+  const target = e.target as Node | null;
+  if (!target) return;
+  // 菜单 DOM（Teleport 到 body，根元素 .slash-menu）
+  const menuEl = document.querySelector(".slash-menu");
+  if (menuEl && menuEl.contains(target)) {
+    e.stopImmediatePropagation();
+  }
+}
+
 onMounted(() => {
   window.addEventListener("keydown", onKeyDown, true);
+  // window capture 早于 document capture，赶在 Suggestion 之前拦截菜单内点击
+  window.addEventListener("pointerdown", onPointerDownCapture, true);
 });
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKeyDown, true);
+  window.removeEventListener("pointerdown", onPointerDownCapture, true);
 });
 </script>
 
@@ -186,7 +209,6 @@ onBeforeUnmount(() => {
           v-for="(item, i) in filteredItems"
           :key="item.key"
           :active="i === selectedIndex"
-          @mousedown.prevent
           @click="selectItem(item)"
         >
           <span class="slash-menu__title">{{ item.title }}</span>
