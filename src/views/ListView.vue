@@ -243,18 +243,16 @@ onMounted(async () => {
 });
 
 /** Cmd/Ctrl+A 全选：多选模式下选中当前视图所有未完成任务。
- *  焦点在输入框时不拦截（保留浏览器文本全选）。 */
+ *  多选模式是用户显式进入的批量操作状态，此时 Cmd+A 语义为全选任务（优先于富文本全选）。 */
 function onSelectAllKeydown(e: KeyboardEvent): void {
   if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.key !== "a") return;
   if (!taskStore.batchMode) return;
-  const el = document.activeElement;
-  const tag = el?.tagName ?? "";
-  if (tag === "INPUT" || tag === "TEXTAREA" || (el as HTMLElement)?.isContentEditable) return;
   e.preventDefault();
-  taskStore.selectAllBatch(taskStore.openTasks.map((t) => t.id));
+  taskStore.selectAllBatch();
 }
-onMounted(() => window.addEventListener("keydown", onSelectAllKeydown));
-onBeforeUnmount(() => window.removeEventListener("keydown", onSelectAllKeydown));
+// 用捕获阶段监听：在事件到达富文本编辑器（Tiptap 会 stopPropagation）之前拦截
+onMounted(() => window.addEventListener("keydown", onSelectAllKeydown, true));
+onBeforeUnmount(() => window.removeEventListener("keydown", onSelectAllKeydown, true));
 
 /** 确认新建分组（newGroupSortOrder 由调用方预设：null=追加末尾，数字=指定位置） */
 async function confirmNewGroup(): Promise<void> {

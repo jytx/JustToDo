@@ -553,7 +553,10 @@ function onCtxEnterBatchMode(): void {
 .task-item {
   position: relative; /* 子任务进度条（绝对定位贴底）的定位基准 */
   display: flex;
-  align-items: center;
+  /* 顶部对齐：左侧图标（复选框/箭头）需与标题「首行文字」对齐，
+   * 而非与「标题+meta 整体」居中（center 会让图标落在两行中间，视觉偏低）。
+   * 各左侧图标再用 margin-top 微调到首行文字垂直中心。 */
+  align-items: flex-start;
   gap: 8px;
   padding: 10px 12px;
   border-radius: 8px;
@@ -681,7 +684,8 @@ function onCtxEnterBatchMode(): void {
   width: 16px;
   height: 20px;
   flex-shrink: 0;
-  margin-top: 1px;
+  /* 对齐标题首行文字中心：首行中心 10.5px − 自身半高 10px = 0.5px */
+  margin-top: 0.5px;
   color: var(--jt-text-tertiary);
   cursor: pointer;
   border-radius: 4px;
@@ -698,7 +702,7 @@ function onCtxEnterBatchMode(): void {
   width: 16px;
   height: 20px;
   flex-shrink: 0;
-  margin-top: 1px;
+  margin-top: 0.5px;
 }
 
 .task-item__list-dot {
