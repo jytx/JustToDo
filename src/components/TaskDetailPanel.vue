@@ -65,6 +65,39 @@ const titleDraft = ref("");
 const noteDraft = ref("");
 
 /**
+ * empty 占位的背景装饰：散布在插画外空白区域的 ✦ 四角星（滴答清单风格）。
+ * top/left/right/bottom 为相对面板的百分比定位，size 为星星边长像素。
+ */
+type StarDecoration = {
+  top?: string;
+  left?: string;
+  right?: string;
+  bottom?: string;
+  size: number;
+};
+const starDecorations: StarDecoration[] = [
+  { top: "9%", left: "7%", size: 10 }, // 左上角：微星
+  { top: "7%", right: "11%", size: 26 }, // 右上角：大星
+  { top: "4%", left: "45%", size: 13 }, // 中上：小星
+  { top: "46%", left: "12%", size: 8 }, // 中部偏左：微星
+  { top: "34%", right: "16%", size: 8 }, // 中部偏右：微星
+  { bottom: "34%", left: "6%", size: 20 }, // 左下：中星
+  { bottom: "12%", left: "40%", size: 11 }, // 中下：小星
+];
+
+/** 星星的绝对定位样式（未配置的方位字段忽略） */
+function starStyle(s: StarDecoration): Record<string, string> {
+  return {
+    top: s.top ?? "",
+    bottom: s.bottom ?? "",
+    left: s.left ?? "",
+    right: s.right ?? "",
+    width: s.size + "px",
+    height: s.size + "px",
+  };
+}
+
+/**
  * 当前任务的关联标签 —— 直接派生自 taskStore.taskTagMap（唯一数据源）。
  * 列表项、详情面板、侧边栏删除标签时都只维护这一份缓存，自动保持同步，
  * 避免原先「store 缓存 + 本地 ref」双数据源导致删除标签后界面不同步。
@@ -771,6 +804,23 @@ onBeforeUnmount(() => {
 
     <!-- 未选中任务时：empty 占位（面板始终占位，任务列表不拉伸） -->
     <div v-if="!task" class="detail-panel__empty">
+      <!-- 背景星星装饰：散布在插画外空白区域（滴答清单风格，四角星 ✦） -->
+      <svg
+        v-for="(s, i) in starDecorations"
+        :key="i"
+        class="detail-panel__star"
+        :style="starStyle(s)"
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M12,2.5 L13.6,10.4 L21.5,12 L13.6,13.6 L12,21.5 L10.4,13.6 L2.5,12 L10.4,10.4 Z"
+          stroke="var(--jt-empty-art)"
+          stroke-width="1.5"
+          stroke-linejoin="round"
+        />
+      </svg>
       <!-- 滴答清单风格手绘线稿插画：极淡灰细描边、无填充、无卡片。
            元素小尺寸散落，相互间距 ≥ 书宽 15%，只保留铅笔搭书角一处有意接触 -->
       <div class="detail-panel__empty-art">
@@ -819,12 +869,12 @@ onBeforeUnmount(() => {
               <circle cx="31" cy="16" r="1.9" fill="var(--jt-empty-art)" stroke="none" />
               <rect x="26" y="-16" width="18" height="18" rx="4" />
             </g>
-            <!-- 四角星 sparkle（两笔交叉线画成），散布四周留白处 -->
-            <path d="M58,36 L58,24 M52,30 L64,30" />
-            <path d="M168,16 L168,6 M163,11 L173,11" />
-            <path d="M330,84 L330,70 M323,77 L337,77" />
-            <path d="M150,226 L150,214 M144,220 L156,220" />
-            <path d="M330,222 L330,212 M325,217 L335,217" />
+            <!-- 四角星 sparkle（✦ 空心线稿），散布四周留白处 -->
+            <path d="M58,23 L60.9,26.9 L65,30 L60.9,33.1 L58,37 L55.1,33.1 L51,30 L55.1,26.9 Z" />
+            <path d="M168,6 L169.8,9.2 L173,11 L169.8,12.8 L168,16 L166.2,12.8 L163,11 L166.2,9.2 Z" />
+            <path d="M330,70 L332.9,73.9 L337,77 L332.9,80.1 L330,84 L327.1,80.1 L323,77 L327.1,73.9 Z" />
+            <path d="M150,214 L152.4,217.6 L156,220 L152.4,222.4 L150,226 L147.6,222.4 L144,220 L147.6,217.6 Z" />
+            <path d="M330,212.5 L331.6,215.4 L334.5,217 L331.6,218.6 L330,221.5 L328.4,218.6 L325.5,217 L328.4,215.4 Z" />
           </g>
           <!-- 散落的圆点（与线条同色的实心小点） -->
           <circle cx="108" cy="52" r="2.5" fill="var(--jt-empty-art)" />
@@ -1333,6 +1383,7 @@ function formatMeta(iso: string): string {
 
 /* 未选中任务时的 empty 占位（滴答清单风格：插画散落右下角 + 大量留白，无文字） */
 .detail-panel__empty {
+  position: relative; /* 星星装饰的定位基准 */
   flex: 1;
   display: flex;
   align-items: flex-end;
@@ -1343,6 +1394,11 @@ function formatMeta(iso: string): string {
 .detail-panel__empty-art {
   /* 线稿插画，无背景卡片 */
   line-height: 0;
+}
+.detail-panel__star {
+  /* 背景装饰星：绝对定位于面板空白处，与右下角插画互不干扰 */
+  position: absolute;
+  pointer-events: none;
 }
 
 /* 滑入抽屉：从右侧滑入 220ms，ease-out */
