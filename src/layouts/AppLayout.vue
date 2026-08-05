@@ -140,11 +140,21 @@ watch(showTaskSidebar, (isTaskView) => {
 const isFloatingPanelView = computed(() =>
   isCalendarView.value || currentListView.value === "kanban" || currentListView.value === "timeline",
 );
+/**
+ * 主区域让位样式：直接在 computed 内显式读 route.name / route.query.view 强制
+ * 响应式追踪，避免 HMR 后中间 computed 链（isFloatingPanelView）失效导致
+ * paddingRight 残留。floating 视图显式返回 0px 让位宽度。
+ */
 const mainStyle = computed(() => {
-  // 始终让出详情面板宽度（滴答清单风格：任务列表不随详情开关拉伸），
-  // 未选中任务时面板显示 empty 占位而非消失。
-  // floating 视图（日历/看板/时间线）详情是悬浮 drawer，不让位。
-  if (isFloatingPanelView.value) return { paddingRight: "0px" };
+  const name = route.name as string;
+  const view = route.query.view as string | undefined;
+  const isFloating =
+    name === "week" ||
+    name === "month" ||
+    name === "year" ||
+    view === "kanban" ||
+    view === "timeline";
+  if (isFloating) return { paddingRight: "0px" };
   return { paddingRight: panelWidth.value + "px" };
 });
 
