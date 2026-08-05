@@ -8,6 +8,7 @@
 // 命令执行后菜单自动关闭。点外部 / Esc 也关闭。
 import { computed, onMounted, onBeforeUnmount, ref } from "vue";
 import type { Editor } from "@tiptap/vue-3";
+import TableSizePicker from "./TableSizePicker.vue";
 
 /** 单个块类型定义：显示文案 + 如何「转换」当前块 + 如何「新建」一个空块 */
 interface BlockType {
@@ -133,7 +134,8 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>();
 
 /** 当前展开的二级菜单方向：null / 'above' / 'below' */
-const submenu = ref<null | "above" | "below">(null);
+/** 当前展开的二级菜单方向：null / 'above' / 'below' / 'table' */
+const submenu = ref<null | "above" | "below" | "table">(null);
 
 /** 菜单根的 fixed 定位（锚在手柄右侧，略下移让菜单不贴着手柄顶部） */
 const menuStyle = computed(() => ({
@@ -152,12 +154,6 @@ const submenuSide = computed<"left" | "right">(() => {
 
 /** 把当前块转换为指定类型 */
 function onConvert(t: BlockType): void {
-  // 表格项特殊：弹出行列选择器（若有回调），不在原地插固定 3×3
-  if (t.key === "table" && props.onPickTable) {
-    emit("close");
-    props.onPickTable();
-    return;
-  }
   // 先聚焦并把光标放进当前块（toggle 类命令依赖当前选区所在块）
   props.editor.chain().focus().setTextSelection(props.blockPos + 1).run();
   t.convert(props.editor);
@@ -181,8 +177,14 @@ function onInsert(t: BlockType, where: "above" | "below"): void {
 /** 展开/切换二级菜单（hover 和 click 都用这个）。
  *  不做 mouseleave 自动隐藏 —— submenu 一旦展开，只有「点别的项/外部/Esc」才关闭，
  *  避免鼠标移动路径导致的抖动和无法点中二级项的问题。 */
-function showSubmenu(which: "above" | "below"): void {
+function showSubmenu(which: "above" | "below" | "table"): void {
   submenu.value = which;
+}
+
+/** 表格二级菜单选中行列后：插入表格 + 关闭整个菜单 */
+function onPickTableFromMenu(rows: number, cols: number): void {
+  props.editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
+  emit("close");
 }
 
 /** 点外部关闭：冒泡阶段监听 document mousedown。
@@ -213,17 +215,41 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <div class="block-handle-menu" :style="menuStyle" @mousedown.stop>
-      <!-- 一级：转为 -->
+      <!-- 一级：转为（表格项特殊：hover 展开行列选择器二级菜单） -->
       <div class="block-handle-menu__group-label">转为</div>
-      <button
-        v-for="t in BLOCK_TYPES"
-        :key="t.key"
-        type="button"
-        class="block-handle-menu__item"
-        @click="onConvert(t)"
-      >
-        {{ t.title }}
-      </button>
+      <template v-for="t in BLOCK_TYPES" :key="t.key">
+        <!-- 表格项：hover 展开行列选择器（仿「在下方添加」二级菜单） -->
+        <div
+          v-if="t.key === 'table'"
+          class="block-handle-menu__item block-handle-menu__item--has-sub"
+          @mouseenter="showSubmenu('table')"
+          @click="showSubmenu('table')"
+        >
+          <span>{{ t.title }}</span>
+          <component
+            :is="submenuSide === 'left' ? 'icon-left' : 'icon-right'"
+            :size="12"
+            class="block-handle-menu__arrow"
+          />
+          <!-- 二级：表格行列选择器 -->
+          <div
+            v-if="submenu === 'table'"
+            class="block-handle-menu__submenu block-handle-menu__submenu--table"
+            :class="{ 'block-handle-menu__submenu--left': submenuSide === 'left' }"
+          >
+            <TableSizePicker :on-pick="(r, c) => onPickTableFromMenu(r, c)" />
+          </div>
+        </div>
+        <!-- 其他项：普通按钮，click 转换 -->
+        <button
+          v-else
+          type="button"
+          class="block-handle-menu__item"
+          @click="onConvert(t)"
+        >
+          {{ t.title }}
+        </button>
+      </template>
 
       <div class="block-handle-menu__divider" />
 
@@ -372,6 +398,13 @@ onBeforeUnmount(() => {
 /* 「在下方添加」的二级：位置靠下，对齐该一级项附近（两个二级位置明显错开） */
 .block-handle-menu__submenu--below {
   top: 90px;
+}
+/* 「表格」的二级（行列选择器）：对齐一级顶部，无 padding 让选择器自带 padding */
+.block-handle-menu__submenu--table {
+  top: 0;
+  min-width: auto;
+  padding: 0;
+  overflow: visible;
 }
 /* 左展开变体：右侧视口空间不足时，改向一级左侧展开 */
 .block-handle-menu__submenu--left {
