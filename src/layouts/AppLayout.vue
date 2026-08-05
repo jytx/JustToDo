@@ -161,6 +161,21 @@ watch(detailPanelMaxWidth, (max) => {
   if (panelWidth.value > max) panelWidth.value = max;
 });
 
+/** 应用启动时默认打开详情面板：等当前视图任务首次加载完成后，
+ *  若用户未主动选中任何任务，则选中第一个任务让面板默认展开。
+ *  仅触发一次（用户主动关闭面板后不强制重开）。 */
+const stopInitialSelect = watch(
+  () => taskStore.openTasks,
+  (tasks) => {
+    // openTasks 已过滤 done；选第一个让面板默认展开
+    if (tasks.length > 0 && taskStore.selectedTaskId === null) {
+      taskStore.selectTask(tasks[0].id);
+    }
+    // 任务已加载（无论是否选中），停止监听，避免后续切视图反复触发
+    if (tasks.length > 0) stopInitialSelect();
+  },
+);
+
 /** 详情面板打开时，topbar 整体向右推一个面板宽度（悬浮视图除外，不缩进） */
 const topbarStyle = computed(() => {
   if (!taskStore.detailOpen || isFloatingPanelView.value) return {};
