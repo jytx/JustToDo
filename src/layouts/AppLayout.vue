@@ -155,6 +155,12 @@ const detailPanelMaxWidth = computed(() => {
   return 900 + released;
 });
 
+/** 侧边栏展开/收起会导致 maxWidth 变化：当前宽度超过新上限时钳制回去，
+ *  避免面板过宽把任务列表区压扁（如收起时拖到 1092，展开后上限 900 应回退） */
+watch(detailPanelMaxWidth, (max) => {
+  if (panelWidth.value > max) panelWidth.value = max;
+});
+
 /** 详情面板打开时，topbar 整体向右推一个面板宽度（悬浮视图除外，不缩进） */
 const topbarStyle = computed(() => {
   if (!taskStore.detailOpen || isFloatingPanelView.value) return {};
