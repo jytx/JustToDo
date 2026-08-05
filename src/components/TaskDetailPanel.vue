@@ -767,23 +767,57 @@ onBeforeUnmount(() => {
 
     <!-- 未选中任务时：empty 占位（面板始终占位，任务列表不拉伸） -->
     <div v-if="!task" class="detail-panel__empty">
-      <!-- 滴答清单风格插画：淡色圆角卡片 + 模拟任务列表行（主题色淡化） -->
+      <!-- 滴答清单风格手绘线稿插画：极淡灰细描边、无填充、无卡片，元素散落在右下角 -->
       <div class="detail-panel__empty-art">
-        <svg width="120" height="90" viewBox="0 0 120 90" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <!-- 卡片背景 -->
-          <rect x="10" y="8" width="100" height="74" rx="10" fill="var(--jt-primary)" opacity="0.08" />
-          <!-- 模拟任务行：圆形复选框 + 横线 -->
-          <circle cx="26" cy="25" r="5" stroke="var(--jt-primary)" stroke-width="1.5" opacity="0.45" />
-          <rect x="38" y="21" width="58" height="4" rx="2" fill="var(--jt-primary)" opacity="0.45" />
-          <rect x="38" y="29" width="40" height="3" rx="1.5" fill="var(--jt-primary)" opacity="0.25" />
-
-          <circle cx="26" cy="47" r="5" stroke="var(--jt-primary)" stroke-width="1.5" opacity="0.45" />
-          <rect x="38" y="43" width="62" height="4" rx="2" fill="var(--jt-primary)" opacity="0.45" />
-          <rect x="38" y="51" width="46" height="3" rx="1.5" fill="var(--jt-primary)" opacity="0.25" />
-
-          <circle cx="26" cy="69" r="5" stroke="var(--jt-primary)" stroke-width="1.5" opacity="0.45" />
-          <rect x="38" y="65" width="52" height="4" rx="2" fill="var(--jt-primary)" opacity="0.45" />
-          <rect x="38" y="73" width="34" height="3" rx="1.5" fill="var(--jt-primary)" opacity="0.25" />
+        <svg width="300" height="260" viewBox="0 0 300 260" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <g
+            stroke="var(--jt-empty-art)"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <!-- 翻开的笔记本（主体）：书脊 + 左右两页透视 + 模拟文字行 -->
+            <path d="M150,45 L150,185" />
+            <path d="M150,45 L58,66 L58,198 L150,185 Z" />
+            <path d="M150,45 L242,66 L242,198 L150,185 Z" />
+            <path d="M82,98 L128,89 M82,122 L120,114 M82,146 L126,138 M82,170 L108,164" />
+            <path d="M172,89 L218,98 M180,114 L218,122 M174,138 L218,146 M192,164 L218,170" />
+            <!-- 铅笔（斜插在书上） -->
+            <g transform="translate(228,44) rotate(40)">
+              <rect x="-4" y="-9" width="8" height="9" rx="2.5" />
+              <rect x="-4" y="0" width="8" height="52" rx="2" />
+              <path d="M-4,52 L4,52 L0,66 Z" />
+            </g>
+            <!-- 咖啡杯 + 杯碟（书左下方） -->
+            <ellipse cx="88" cy="222" rx="42" ry="11" />
+            <path d="M58,200 L118,200 L110,218 Q88,228 66,218 Z" />
+            <ellipse cx="88" cy="200" rx="30" ry="8" />
+            <path d="M118,204 Q138,202 136,216 Q134,228 114,226" />
+            <!-- 待办便签条（勾选框 + 空框 + 横线） -->
+            <rect x="26" y="128" width="132" height="42" rx="5" />
+            <path d="M26,133 L26,128 L31,128" />
+            <rect x="40" y="141" width="16" height="16" rx="4" />
+            <path d="M44,149 L48,153 L52,145" />
+            <rect x="66" y="141" width="16" height="16" rx="4" />
+            <path d="M94,146 L144,146 M94,156 L128,156" />
+            <!-- 笑脸便签（右上）：微笑弧线 + 眼睛点 + 叠角小签 -->
+            <rect x="216" y="136" width="56" height="56" rx="9" />
+            <path d="M234,169 Q244,178 254,169" />
+            <circle cx="232" cy="156" r="2.2" fill="var(--jt-empty-art)" stroke="none" />
+            <circle cx="256" cy="156" r="2.2" fill="var(--jt-empty-art)" stroke="none" />
+            <rect x="248" y="120" width="20" height="20" rx="4" />
+            <!-- 四角星 sparkle（两笔交叉线画成） -->
+            <path d="M46,56 L46,44 M40,50 L52,50" />
+            <path d="M262,116 L262,104 M256,110 L268,110" />
+            <path d="M120,30 L120,22 M116,26 L124,26" />
+            <path d="M28,196 L28,188 M24,192 L32,192" />
+            <path d="M252,196 L252,188 M248,192 L256,192" />
+          </g>
+          <!-- 散落的圆点（与线条同色的实心小点） -->
+          <circle cx="64" cy="88" r="2.5" fill="var(--jt-empty-art)" />
+          <circle cx="238" cy="228" r="2.5" fill="var(--jt-empty-art)" />
+          <circle cx="176" cy="26" r="2.2" fill="var(--jt-empty-art)" />
+          <circle cx="150" cy="240" r="2.5" fill="var(--jt-empty-art)" />
         </svg>
       </div>
       <span class="detail-panel__empty-text">选择一个任务查看详情</span>
@@ -1285,24 +1319,25 @@ function formatMeta(iso: string): string {
   overflow: hidden;
 }
 
-/* 未选中任务时的 empty 占位（居中提示，滴答清单风格） */
+/* 未选中任务时的 empty 占位（滴答清单风格：插画散落右下角 + 大量留白） */
 .detail-panel__empty {
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  color: var(--jt-text-tertiary);
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 18px;
+  padding: 0 56px 48px 0;
   user-select: none;
 }
 .detail-panel__empty-art {
-  /* 插画下方留白，与文字拉开距离 */
-  margin-bottom: 4px;
+  /* 线稿插画，无背景卡片 */
+  line-height: 0;
 }
 .detail-panel__empty-text {
   font-size: 13px;
   font-family: var(--font-body);
+  color: var(--jt-text-tertiary);
 }
 
 /* 滑入抽屉：从右侧滑入 220ms，ease-out */

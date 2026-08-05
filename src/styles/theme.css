@@ -93,6 +93,7 @@ textarea,
   --jt-error: #DC2626;
   --jt-warning: #F59E0B;
   --jt-primary: #4F46E5;
+  --jt-empty-art: #E9E9E5;          /* empty 占位线稿插画的线条色（浅色主题，极淡灰） */
 }
 
 /* === 隐藏全局滚动条（保留滚动能力）===
@@ -152,6 +153,7 @@ body[arco-theme='dark'] {
   --jt-error: #DC2626;
   --jt-warning: #F59E0B;
   --jt-primary: var(--jt-accent-dark, #818CF8);
+  --jt-empty-art: #33332E;          /* empty 占位线稿插画的线条色（深色主题，极淡的深灰） */
 }
 
 /*
