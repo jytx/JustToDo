@@ -79,8 +79,11 @@ const starDecorations: StarDecoration[] = [
   { top: "9%", left: "7%", size: 10 }, // 左上角：微星
   { top: "7%", right: "11%", size: 26 }, // 右上角：大星
   { top: "4%", left: "45%", size: 13 }, // 中上：小星
+  { top: "22%", left: "32%", size: 9 }, // 中上偏左：微星
+  { top: "30%", left: "56%", size: 12 }, // 中上偏右：小星
   { top: "46%", left: "12%", size: 8 }, // 中部偏左：微星
   { top: "34%", right: "16%", size: 8 }, // 中部偏右：微星
+  { top: "58%", left: "22%", size: 8 }, // 中偏左下：微星
   { bottom: "34%", left: "6%", size: 20 }, // 左下：中星
   { bottom: "12%", left: "40%", size: 11 }, // 中下：小星
 ];
