@@ -77,17 +77,20 @@ function toggleFold(): void {
             {{ langLabel }}
           </button>
         </template>
-        <MenuPopoverItem :active="!currentLang" @click="onSelectLang('')">
-          自动检测
-        </MenuPopoverItem>
-        <MenuPopoverItem
-          v-for="lang in LANGUAGES"
-          :key="lang"
-          :active="currentLang === lang"
-          @click="onSelectLang(lang)"
-        >
-          {{ lang }}
-        </MenuPopoverItem>
+        <!-- 语言列表容器：限制最大高度 + 内部滚动，避免 35 种语言撑爆视口 -->
+        <div class="code-block__lang-list">
+          <MenuPopoverItem :active="!currentLang" @click="onSelectLang('')">
+            自动检测
+          </MenuPopoverItem>
+          <MenuPopoverItem
+            v-for="lang in LANGUAGES"
+            :key="lang"
+            :active="currentLang === lang"
+            @click="onSelectLang(lang)"
+          >
+            {{ lang }}
+          </MenuPopoverItem>
+        </div>
       </MenuPopover>
 
       <span class="code-block__spacer" />
@@ -193,6 +196,15 @@ function toggleFold(): void {
 .code-block__btn:hover {
   background: var(--jt-surface-hover);
   color: var(--jt-text-primary);
+}
+
+/* 语言下拉列表：限制最大高度 + 内部滚动，避免 35 种语言撑高文档 */
+.code-block__lang-list {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 /* 代码区（保持原 .rich-text__content pre 的视觉） */
