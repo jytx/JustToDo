@@ -333,15 +333,11 @@ export function useBlockDrag(
   }
 
   // 绑定/解绑编辑器事件（editor ref 变化时重新绑定）
-  // 绑定到 wrapper（view.dom.parentElement）而非 .ProseMirror：
-  // wrapper 包含左侧 24px padding（手柄区域），鼠标在手柄/padding 上移动也能
-  // 触发 mousemove 算位置，避免「鼠标移到手柄区就收不到事件」的不灵敏
   let boundDom: HTMLElement | null = null;
   function bindEditor(ed: Editor | undefined): void {
     unbindEditor();
     if (!ed) return;
-    const wrapper = ed.view.dom.parentElement as HTMLElement | null;
-    boundDom = wrapper ?? ed.view.dom;
+    boundDom = ed.view.dom;
     boundDom.addEventListener("mousemove", onEditorMouseMove);
     boundDom.addEventListener("mouseleave", onEditorMouseLeave);
   }
