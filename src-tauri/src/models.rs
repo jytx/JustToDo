@@ -73,6 +73,8 @@ pub struct Task {
     pub recurrence_count: Option<i32>,
     /// 重复实例的来源模板 id（null = 普通任务或自身即模板）
     pub recurrence_origin_id: Option<String>,
+    /// 重复模板是否已暂停（true = 后台 tick 跳过生成；普通任务恒为 false）
+    pub recurrence_paused: bool,
     /// 提前多少分钟提醒（null = 不提醒；0 = 准点；N = 提前 N 分钟）
     pub remind_offset_minutes: Option<i32>,
     /// 通知触发时间戳（null = 还没通知过）
@@ -155,6 +157,19 @@ pub struct Tag {
     pub created_at: String,
     /// 侧边栏手动排序 key（整数间隔，新增/拖动时取相邻中点）
     pub position: i64,
+}
+
+/// 重复任务生成历史条目（recurrence_generated 表的映射）
+/// 用于「后台任务管理」面板查看某模板已生成过哪些期
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RecurrenceHistoryEntry {
+    pub template_id: String,
+    /// 该期的截止日期（实例的 due_end_at）
+    pub due_date: String,
+    /// 生成的实例 id（实例被删除后仍保留此记录，instance_id 可能指向不存在的任务）
+    pub instance_id: Option<String>,
+    /// 生成时间戳
+    pub generated_at: String,
 }
 
 /// 任务-标签关联条目（批量查询接口用）。

@@ -191,7 +191,18 @@ pub async fn init_pool(
         .await
         .map_err(|e| format!("执行迁移 027_recurrence_history 失败: {}", e))?;
 
+    // 028: 重复任务暂停标记（recurrence_paused，0=运行中 1=已暂停）
+    run_migration_028(&pool).await?;
+
     Ok(pool)
+}
+
+/// 迁移 028：重复任务暂停标记
+/// - recurrence_paused: 0=运行中（默认），1=已暂停（后台 tick 跳过生成）
+/// 用于「后台任务管理」面板的暂停/恢复切换，不影响已生成的实例
+async fn run_migration_028(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "tasks", "recurrence_paused", "INTEGER NOT NULL DEFAULT 0").await?;
+    Ok(())
 }
 
 /// 迁移 020：清单/目录归档状态（与 018 同模式：单列添加 + DEFAULT 0）

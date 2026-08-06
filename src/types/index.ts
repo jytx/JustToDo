@@ -96,6 +96,8 @@ export interface Task {
   recurrenceCount: number | null;
   /** 重复实例的来源模板 id（null = 普通任务或自身即模板） */
   recurrenceOriginId: string | null;
+  /** 重复模板是否已暂停（true = 后台 tick 跳过生成；普通任务恒为 false） */
+  recurrencePaused: boolean;
   /** 提前多少分钟提醒（null = 不提醒；0 = 准点；N = 提前 N 分钟） */
   remindOffsetMinutes: number | null;
   /** 通知触发时间戳（null = 还没通知过） */
@@ -314,6 +316,7 @@ export interface TaskRow {
   recurrence_end_at: string | null;
   recurrence_count: number | null;
   recurrence_origin_id: string | null;
+  recurrence_paused: number;
   remind_offset_minutes: number | null;
   notified_at: string | null;
   /** JSON 字符串（后端 Vec<ChecklistItem> 序列化） */
@@ -360,6 +363,7 @@ export function mapTaskRow(row: TaskRow): Task {
     recurrenceEndAt: row.recurrence_end_at,
     recurrenceCount: row.recurrence_count,
     recurrenceOriginId: row.recurrence_origin_id,
+    recurrencePaused: !!row.recurrence_paused,
     remindOffsetMinutes: row.remind_offset_minutes,
     notifiedAt: row.notified_at,
     checklist: parseChecklist(row.checklist),
@@ -441,4 +445,15 @@ export interface Group {
   name: string;
   sortOrder: number;
   createdAt: string;
+}
+
+/** 重复任务生成历史条目（recurrence_generated 表的映射，后台任务面板查看用） */
+export interface RecurrenceHistoryEntry {
+  templateId: string;
+  /** 该期的截止日期（实例的 due_end_at） */
+  dueDate: string;
+  /** 生成的实例 id（实例被删除后仍保留，可能指向不存在的任务） */
+  instanceId: string | null;
+  /** 生成时间戳 */
+  generatedAt: string;
 }

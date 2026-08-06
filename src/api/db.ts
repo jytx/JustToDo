@@ -3,7 +3,7 @@
 // 这样绕过了 plugin-sql 前端 API 的 IPC 问题，走标准 invoke 通道
 
 import { invoke } from "@tauri-apps/api/core";
-import type { List, Task, Priority, RecurrenceFreq, ChecklistItem, Template, Attachment, AttachmentType, TaskKind, Group } from "@/types";
+import type { List, Task, Priority, RecurrenceFreq, ChecklistItem, Template, Attachment, AttachmentType, TaskKind, Group, RecurrenceHistoryEntry } from "@/types";
 
 // ─── 类型（与 Rust models.rs 对应）──────────────────────
 
@@ -176,6 +176,7 @@ interface RustTask {
   recurrence_end_at: string | null;
   recurrence_count: number | null;
   recurrence_origin_id: string | null;
+  recurrence_paused: number;
   remind_offset_minutes: number | null;
   notified_at: string | null;
   checklist: ChecklistItem[];
@@ -205,6 +206,7 @@ function mapTask(r: RustTask): Task {
     recurrenceEndAt: r.recurrence_end_at,
     recurrenceCount: r.recurrence_count,
     recurrenceOriginId: r.recurrence_origin_id,
+    recurrencePaused: !!r.recurrence_paused,
     remindOffsetMinutes: r.remind_offset_minutes,
     notifiedAt: r.notified_at,
     checklist: r.checklist,
@@ -810,4 +812,21 @@ export async function deleteGroup(id: string): Promise<void> {
 /** 批量重排分组顺序 */
 export async function reorderGroups(orderedIds: string[]): Promise<void> {
   await invoke<void>('group_reorder', { orderedIds });
+}
+
+// ─── 重复任务管理（后台任务面板用） ───────────────────────────
+
+/** 列出所有重复任务模板（含已暂停、已完成），供后台任务面板展示 */
+export async function listRecurrenceTemplates(): Promise<Task[]> {
+  return await invoke<Task[]>('recurrence_list_templates');
+}
+
+/** 暂停/恢复某个重复模板的生成（paused=true 后台 tick 跳过；false 恢复） */
+export async function pauseRecurrence(id: string, paused: boolean): Promise<void> {
+  await invoke<void>('recurrence_pause', { id, paused });
+}
+
+/** 查询某模板的生成历史（最近 20 条，按生成日期倒序） */
+export async function getRecurrenceHistory(templateId: string): Promise<RecurrenceHistoryEntry[]> {
+  return await invoke<RecurrenceHistoryEntry[]>('recurrence_history', { templateId });
 }

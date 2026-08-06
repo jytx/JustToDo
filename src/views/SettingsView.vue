@@ -15,11 +15,13 @@ import {
   IconCopy,
   IconCalendar,
   IconRobot,
+  IconSync,
 } from "@arco-design/web-vue/es/icon";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import TemplateSection from "@/components/TemplateSection.vue";
 import ListScheduleSection from "@/components/ListScheduleSection.vue";
+import BackgroundTaskSection from "@/components/BackgroundTaskSection.vue";
 import { isValidHHmm } from "@/utils/date";
 
 const settingsStore = useSettingsStore();
@@ -55,6 +57,7 @@ const sections = [
   { id: "shortcuts", icon: IconBulb, label: "快捷键" },
   { id: "templates", icon: IconCopy, label: "模板" },
   { id: "schedule", icon: IconCalendar, label: "清单生成计划" },
+  { id: "backgroundTasks", icon: IconSync, label: "后台任务" },
   { id: "data", icon: IconStorage, label: "数据" },
   { id: "ai", icon: IconRobot, label: "AI" },
   { id: "about", icon: IconInfoCircle, label: "关于" },
@@ -500,6 +503,12 @@ async function changeAttachmentPath() {
         <div v-if="activeSection === 'schedule'" class="settings-section">
           <h2 class="settings-section__title">清单生成计划</h2>
           <ListScheduleSection />
+        </div>
+
+        <!-- 后台任务（统一管理：重复任务 + 清单生成计划的运行态） -->
+        <div v-if="activeSection === 'backgroundTasks'" class="settings-section">
+          <h2 class="settings-section__title">后台任务</h2>
+          <BackgroundTaskSection />
         </div>
 
         <!-- 数据 -->

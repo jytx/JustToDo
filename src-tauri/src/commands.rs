@@ -75,6 +75,8 @@ fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
         recurrence_end_at: row.get("recurrence_end_at"),
         recurrence_count: row.get("recurrence_count"),
         recurrence_origin_id: row.try_get("recurrence_origin_id").ok().flatten(),
+        // recurrence_paused NOT NULL DEFAULT 0，try_get 容错（旧库迁移前可能无此列）
+        recurrence_paused: row.try_get("recurrence_paused").ok().unwrap_or(false),
         remind_offset_minutes: row.try_get("remind_offset_minutes").ok().flatten(),
         notified_at: row.try_get("notified_at").ok().flatten(),
         // checklist 存的是 JSON 字符串，反序列化为 Vec
@@ -748,6 +750,8 @@ pub async fn task_create(
         recurrence_end_at,
         recurrence_count,
         recurrence_origin_id: None,
+        // 新建任务默认未暂停（DB DEFAULT 0 也保证）
+        recurrence_paused: false,
         remind_offset_minutes,
         notified_at: None,
         checklist: Vec::new(),
@@ -1976,10 +1980,13 @@ pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<us
         .unwrap();
     let today_end_str = format_local_naive(tomorrow_start);
 
-    // 查询所有模板任务（recurrence_freq IS NOT NULL 且未完成）。
+    // 查询所有模板任务（recurrence_freq IS NOT NULL 且未完成 且未暂停）。
     // 排除 done=1：已完成的模板不再生成（正常重复流程模板永不 done，
     // 但异常 done 的模板——如用户直接勾选了模板——应停止生成）。
-    let templates = sqlx::query("SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL AND done = 0")
+    // 排除 recurrence_paused=1：用户在「后台任务管理」面板主动暂停的模板跳过。
+    let templates = sqlx::query(
+        "SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL AND done = 0 AND recurrence_paused = 0",
+    )
         .fetch_all(pool)
         .await
         .map_err(|e| format!("查询重复模板失败: {}", e))?;
@@ -2106,6 +2113,70 @@ pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<us
 #[tauri::command]
 pub async fn task_generate_recurring(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<usize> {
     task_generate_recurring_inner(pool.inner()).await
+}
+
+// ─── 重复任务管理（后台任务面板用） ───────────────────────────
+
+/// 列出所有重复任务模板（含已暂停、已完成），供「后台任务」面板展示。
+/// 模板识别：recurrence_freq IS NOT NULL（实例的 freq 字段为 NULL）。
+#[tauri::command]
+pub async fn recurrence_list_templates(
+    pool: State<'_, sqlx::SqlitePool>,
+) -> CmdResult<Vec<Task>> {
+    let rows = sqlx::query(
+        "SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL ORDER BY created_at DESC",
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("查询重复模板失败: {}", e))?;
+    Ok(rows.iter().map(row_to_task).collect())
+}
+
+/// 暂停/恢复某个重复模板的生成。
+/// - paused=true：后台 tick 跳过该模板，不再生成新实例（已生成的实例保留）
+/// - paused=false：恢复正常生成
+#[tauri::command]
+pub async fn recurrence_pause(
+    pool: State<'_, sqlx::SqlitePool>,
+    id: String,
+    paused: bool,
+) -> CmdResult<()> {
+    let now = format_local_naive(chrono::Local::now().naive_local());
+    sqlx::query("UPDATE tasks SET recurrence_paused = $2, updated_at = $3 WHERE id = $1")
+        .bind(&id)
+        .bind(if paused { 1 } else { 0 })
+        .bind(&now)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("更新暂停状态失败: {}", e))?;
+    Ok(())
+}
+
+/// 重复任务生成历史记录（用于查看某模板「已生成过哪些期」）。
+/// 返回最近 20 条，按生成日期倒序。
+#[tauri::command]
+pub async fn recurrence_history(
+    pool: State<'_, sqlx::SqlitePool>,
+    template_id: String,
+) -> CmdResult<Vec<RecurrenceHistoryEntry>> {
+    let rows = sqlx::query(
+        "SELECT template_id, due_date, instance_id, generated_at \
+         FROM recurrence_generated WHERE template_id = $1 \
+         ORDER BY due_date DESC LIMIT 20",
+    )
+    .bind(&template_id)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("查询生成历史失败: {}", e))?;
+    Ok(rows
+        .iter()
+        .map(|r| RecurrenceHistoryEntry {
+            template_id: r.try_get("template_id").unwrap_or_default(),
+            due_date: r.try_get("due_date").unwrap_or_default(),
+            instance_id: r.try_get("instance_id").ok().flatten(),
+            generated_at: r.try_get("generated_at").unwrap_or_default(),
+        })
+        .collect())
 }
 
 // ─── 提醒（通知） ────────────────────────────────────────────
