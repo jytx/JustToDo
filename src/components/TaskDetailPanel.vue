@@ -97,15 +97,12 @@ const task = computed(() => taskStore.selectedTask);
 /** 当前选中条目是否为笔记（kind='note'）：隐藏日期/提醒/重复/复选框 */
 const isNote = computed(() => task.value?.kind === "note");
 /**
- * Transition 名称：进入悬浮视图/路由切换时跳过动画，避免面板滑出的多余动画。
- * 悬浮视图 name 设为空 → 无 transition → 直接卸载。
- * 注意：路由切换瞬间 route.name 更新有微任务延迟，isFloatingView 可能滞后一帧，
- * 导致 leave 动画短暂播放。此处判断同时考虑「无选中任务」—— 没任务的 leave
- * 一律跳过（empty 占位/残留态不需要动画）。
+ * Transition 固定 name="detail-drawer"：
+ * - enter 保留滑入动画
+ * - leave 无 CSS（已删除 leave-active/leave-to），Vue rAF 检测后立即移除元素
+ * 不再动态切换 name —— 动态 name 在「切视图瞬间 name 变化 + v-if=false 同时发生」
+ * 时会让 Transition 卡住，元素残留不移除（表现为 empty 面板闪现/滞留）。
  */
-const transitionName = computed(() =>
-  isFloatingView.value || !task.value ? "" : "detail-drawer",
-);
 const titleDraft = ref("");
 const noteDraft = ref("");
 
@@ -839,7 +836,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <Transition :name="transitionName">
+  <Transition name="detail-drawer">
   <div
     ref="panelEl"
     v-if="(!isFloatingView || task) && !forceHidden"
