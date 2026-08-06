@@ -1464,13 +1464,13 @@ function formatMeta(iso: string): string {
   pointer-events: none;
 }
 
-/* 滑入抽屉：从右侧滑入 220ms，ease-out */
-.detail-drawer-enter-active,
-.detail-drawer-leave-active {
+/* 滑入抽屉：仅 enter 动画（从右侧滑入 220ms ease-out）。
+ * 不定义 leave 动画 —— 面板关闭（含切视图、ESC、关闭按钮）应立即消失，
+ * 避免路由切换瞬间因 transitionName 竞态导致的「一瞬间滑出」残留。 */
+.detail-drawer-enter-active {
   transition: transform 220ms ease-out;
 }
-.detail-drawer-enter-from,
-.detail-drawer-leave-to {
+.detail-drawer-enter-from {
   transform: translateX(100%);
 }
 
