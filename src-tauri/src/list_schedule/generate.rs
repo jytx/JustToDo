@@ -129,30 +129,34 @@ pub async fn ensure_scheduled_path(
                 .execute(pool)
                 .await
                 .map_err(|e| format!("创建清单失败: {}", e))?;
-                // 生成的清单（非目录）补建默认分组 {id}-default，
-                // 否则新建任务的 group_id 指向不存在的分组，在分组视图凭空消失
-                // （与 list_create 的行为保持一致）
-                if !is_folder {
-                    let default_group_id = format!("{}-default", id);
-                    sqlx::query(
-                        "INSERT OR IGNORE INTO groups (id, list_id, name, sort_order, created_at) \
-                         VALUES ($1, $2, $3, $4, $5)",
-                    )
-                    .bind(&default_group_id)
-                    .bind(&id)
-                    .bind("默认分组")
-                    .bind(0)
-                    .bind(&ts)
-                    .execute(pool)
-                    .await
-                    .map_err(|e| format!("创建默认分组失败: {}", e))?;
-                }
                 // 最末段是本次新建的
                 if is_leaf {
                     leaf_is_new = true;
                 }
                 parent_id = Some(id);
             }
+        }
+    }
+
+    // 统一兜底：最末段是清单（非目录）时，确保默认分组 {id}-default 存在。
+    // 覆盖两种情况：本次新建（上面已建，此处幂等跳过）与历史遗留清单
+    // （旧代码生成时没建分组，tick 再次命中时补上，避免任务在分组视图凭空消失）。
+    if !leaf_is_folder {
+        if let Some(leaf_id) = parent_id.as_ref() {
+            let ts = now();
+            let default_group_id = format!("{}-default", leaf_id);
+            sqlx::query(
+                "INSERT OR IGNORE INTO groups (id, list_id, name, sort_order, created_at) \
+                 VALUES ($1, $2, $3, $4, $5)",
+            )
+            .bind(&default_group_id)
+            .bind(leaf_id)
+            .bind("默认分组")
+            .bind(0)
+            .bind(&ts)
+            .execute(pool)
+            .await
+            .map_err(|e| format!("确保默认分组失败: {}", e))?;
         }
     }
 
