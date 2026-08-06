@@ -17,6 +17,7 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Suggestion from "@tiptap/suggestion";
 import { marked } from "marked";
+import TurndownService from "turndown";
 import { Extension } from "@tiptap/core";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
@@ -312,6 +313,47 @@ function uninstallSlashPlugin(editorInstance: TiptapEditor) {
 
 
 const previewSrc = computed(() => allImages.value[previewIndex.value] ?? null);
+
+// ─── 源码/预览模式切换 ───
+/** 源码模式开关：true 时显示 textarea 编辑 Markdown，false 时显示富文本 */
+const sourceMode = ref<boolean>(false);
+/** 源码模式的 Markdown 文本（切换时填充） */
+const sourceText = ref<string>("");
+/** TurndownService 实例：富文本 HTML → Markdown（切到源码模式时用） */
+const turndownService = new TurndownService({
+  headingStyle: "atx",     // 标题用 # 风格
+  codeBlockStyle: "fenced", // 代码块用 ``` 围栏
+  bulletListMarker: "-",   // 无序列表用 -
+});
+// 任务列表（checkbox）转 Markdown 任务语法：- [ ] / - [x]
+turndownService.addRule("taskListItems", {
+  filter: (node: HTMLElement) => node.nodeName === "LI" && node.getAttribute("data-type") === "taskItem",
+  replacement: (content: string, node: HTMLElement) => {
+    const checked = node.getAttribute("data-checked") === "true";
+    return `- [${checked ? "x" : " "}] ${content.trim()}\n`;
+  },
+});
+
+/** 切换到源码模式：富文本 HTML → Markdown */
+function enterSourceMode(): void {
+  if (!editor.value) return;
+  const html = editor.value.getHTML();
+  sourceText.value = turndownService.turndown(html);
+  sourceMode.value = true;
+}
+/** 切换回预览模式：Markdown → 富文本 HTML */
+function exitSourceMode(): void {
+  if (!editor.value) return;
+  const html = marked.parse(sourceText.value, { async: false }) as string;
+  editor.value.commands.setContent(html, { emitUpdate: false });
+  emit("update:modelValue", editor.value.getHTML());
+  sourceMode.value = false;
+}
+/** 切换按钮点击 */
+function toggleSourceMode(): void {
+  if (sourceMode.value) exitSourceMode();
+  else enterSourceMode();
+}
 
 /**
  * 检测剪贴板 HTML 是否只是"代码块包裹的纯文本"（伪 HTML）。
@@ -957,10 +999,28 @@ function fileToBase64(file: File): Promise<string> {
       @scroll="updateBtnPos"
       @contextmenu="onEditorContextMenu"
     >
-      <EditorContent :editor="editor" class="rich-text__editor" />
+      <!-- 富文本预览模式 -->
+      <EditorContent v-show="!sourceMode" :editor="editor" class="rich-text__editor" />
+      <!-- 源码编辑模式：textarea 直接编辑 Markdown -->
+      <textarea
+        v-show="sourceMode"
+        v-model="sourceText"
+        class="rich-text__source"
+        placeholder="输入 Markdown 源码..."
+        spellcheck="false"
+      ></textarea>
+      <!-- 源码/预览切换按钮（右上角浮动，</> 图标） -->
+      <button
+        class="rich-text__source-toggle"
+        :class="{ 'rich-text__source-toggle--on': sourceMode }"
+        :title="sourceMode ? '切换到富文本预览' : '切换到 Markdown 源码'"
+        @click="toggleSourceMode"
+      >
+        <icon-code :size="14" />
+      </button>
       <!-- 块拖拽手柄 + 落点横线（放在 wrapper 内、absolute 定位，hover 链不断）
            可通过 dragHandle prop 关闭（模板编辑弹窗等小场景不需要） -->
-      <BlockDragHandle v-if="dragHandle" :editor="editor" :on-pick-table="openTablePicker" />
+      <BlockDragHandle v-if="dragHandle && !sourceMode" :editor="editor" :on-pick-table="openTablePicker" />
     </div>
 
     <!-- 空段落浮 + 按钮（Notion-like 入口之一） -->
@@ -1116,10 +1176,57 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 .rich-text__editor-wrapper {
+  position: relative; /* 锚定源码切换按钮的 absolute 定位 */
   padding: 10px 12px;
   min-height: 160px;
   max-height: none;
   overflow-y: visible;
+}
+
+/* 源码/预览切换按钮：右上角浮动 */
+.rich-text__source-toggle {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 10;
+  border: none;
+  background: transparent;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  opacity: 0.5;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.rich-text__source-toggle:hover {
+  opacity: 1;
+  color: var(--jt-text-primary);
+  background: var(--jt-surface-hover);
+}
+/* 源码模式激活态：常显 + 主色 */
+.rich-text__source-toggle--on {
+  opacity: 1;
+  color: var(--jt-primary);
+  background: var(--jt-accent-soft);
+}
+
+/* 源码编辑模式 textarea：等宽字体，占满编辑区 */
+.rich-text__source {
+  width: 100%;
+  min-height: 150px;
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: var(--jt-surface-sunken);
+  color: var(--jt-text-primary);
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  border-radius: 6px;
+  box-sizing: border-box;
 }
 
 .rich-text--borderless .rich-text__editor-wrapper {
