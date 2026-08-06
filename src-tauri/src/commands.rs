@@ -1973,23 +1973,35 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 /// 懒生成重复任务实例（应用启动 + 后台定时调用）
 /// 对每个设置了 recurrence_freq 的模板任务，每次扫描最多补一期（不一次性补齐历史欠账）。
 /// 下一期基准由 DB 的 last_instance 查询自动提供，连续扫描会慢慢追上当前日期。
-pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<usize, String> {
+///
+/// `only_id`：传 Some(id) 时只处理该模板（用于「后台任务」面板单条手动运行），
+/// 此时跳过 done/paused 过滤（手动触发就是要跑）；None 时为全量后台扫描。
+pub async fn task_generate_recurring_inner(
+    pool: &sqlx::SqlitePool,
+    only_id: Option<&str>,
+) -> Result<usize, String> {
     let now = chrono::Local::now().naive_local();
     let tomorrow_start = (now.date() + chrono::Duration::days(1))
         .and_hms_opt(0, 0, 0)
         .unwrap();
     let today_end_str = format_local_naive(tomorrow_start);
 
-    // 查询所有模板任务（recurrence_freq IS NOT NULL 且未完成 且未暂停）。
-    // 排除 done=1：已完成的模板不再生成（正常重复流程模板永不 done，
-    // 但异常 done 的模板——如用户直接勾选了模板——应停止生成）。
-    // 排除 recurrence_paused=1：用户在「后台任务管理」面板主动暂停的模板跳过。
-    let templates = sqlx::query(
-        "SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL AND done = 0 AND recurrence_paused = 0",
-    )
+    // 查询模板任务。全量后台扫描过滤 done=0 + paused=0；
+    // 单条手动运行（only_id）跳过这两个过滤——用户明确要触发这一次。
+    let templates = if let Some(id) = only_id {
+        sqlx::query("SELECT * FROM tasks WHERE id = $1 AND recurrence_freq IS NOT NULL")
+            .bind(id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("查询重复模板失败: {}", e))?
+    } else {
+        sqlx::query(
+            "SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL AND done = 0 AND recurrence_paused = 0",
+        )
         .fetch_all(pool)
         .await
-        .map_err(|e| format!("查询重复模板失败: {}", e))?;
+        .map_err(|e| format!("查询重复模板失败: {}", e))?
+    };
 
     let mut generated = 0usize;
 
@@ -2112,7 +2124,17 @@ pub async fn task_generate_recurring_inner(pool: &sqlx::SqlitePool) -> Result<us
 
 #[tauri::command]
 pub async fn task_generate_recurring(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<usize> {
-    task_generate_recurring_inner(pool.inner()).await
+    task_generate_recurring_inner(pool.inner(), None).await
+}
+
+/// 手动运行单个重复模板的生成（「后台任务」面板单条触发）。
+/// 跳过 done/paused 过滤——用户明确要补这一期。返回是否生成了新实例。
+#[tauri::command]
+pub async fn recurrence_run_one(
+    pool: State<'_, sqlx::SqlitePool>,
+    id: String,
+) -> CmdResult<usize> {
+    task_generate_recurring_inner(pool.inner(), Some(&id)).await
 }
 
 // ─── 重复任务管理（后台任务面板用） ───────────────────────────

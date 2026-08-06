@@ -84,7 +84,7 @@ pub fn run() {
                     }
 
                     loop {
-                        match commands::task_generate_recurring_inner(&pool_clone).await {
+                        match commands::task_generate_recurring_inner(&pool_clone, None).await {
                             Ok(n) => {
                                 if n > 0 {
                                     println!("[JustToDo] 生成了 {} 个重复任务实例", n);
@@ -427,6 +427,7 @@ pub fn run() {
             commands::recurrence_list_templates,
             commands::recurrence_pause,
             commands::recurrence_history,
+            commands::recurrence_run_one,
             commands::task_check_reminders,
             commands::task_daily_reminder_scan,
             commands::get_setting,
@@ -471,6 +472,7 @@ pub fn run() {
             list_schedule::list_schedule_update,
             list_schedule::list_schedule_delete,
             list_schedule::list_schedule_run_now,
+            list_schedule::list_schedule_run_one,
             list_schedule::list_schedule_preview,
             commands::ai_test_connection,
             commands::task_get_completed_in_range,

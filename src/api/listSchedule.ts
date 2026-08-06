@@ -62,6 +62,11 @@ export async function runListScheduleNow(): Promise<number> {
   return await invoke<number>("list_schedule_run_now");
 }
 
+/** 手动运行单个计划（跳过 enabled 过滤，返回是否生成了新清单/目录） */
+export async function runListScheduleOne(id: string): Promise<number> {
+  return await invoke<number>("list_schedule_run_one", { id });
+}
+
 /** 预览结果（某条计划在指定日期的模拟运行） */
 export interface SchedulePreview {
   name: string;

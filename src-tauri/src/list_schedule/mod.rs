@@ -252,6 +252,49 @@ pub async fn list_schedule_run_now(pool: State<'_, sqlx::SqlitePool>) -> CmdResu
     list_schedule_tick(pool.inner()).await
 }
 
+/// 手动运行单个清单生成计划（「后台任务」面板单条触发）。
+/// 跳过 enabled 过滤——用户明确要触发这一次。返回是否生成了新清单/目录。
+#[tauri::command]
+pub async fn list_schedule_run_one(
+    pool: State<'_, sqlx::SqlitePool>,
+    id: String,
+) -> CmdResult<u32> {
+    let today = chrono::Local::now().date_naive();
+    // 查指定计划（不限 enabled，手动触发就是要跑）
+    let row = sqlx::query("SELECT * FROM list_schedules WHERE id = $1")
+        .bind(&id)
+        .fetch_optional(pool.inner())
+        .await
+        .map_err(|e| format!("查询计划失败: {}", e))?;
+    let Some(row) = row else {
+        return Ok(0);
+    };
+    let s = row_to_schedule(&row);
+    let mut count = 0u32;
+    let hit = if s.freq == "workday" {
+        holiday::is_workday(pool.inner(), today).await
+    } else {
+        generate::is_freq_hit(&s.freq, today)
+    };
+    if hit {
+        if let Ok(is_new) = generate::run_schedule(pool.inner(), &s, today).await {
+            if is_new {
+                count += 1;
+            }
+        }
+    }
+    if s.freq == "monthly" || s.freq == "yearly" {
+        let path = generate::render_path_template(&s.path_template, today);
+        let leaf_folder = generate::leaf_is_folder(&s.leaf_type);
+        if let Ok(is_new) = ensure_period_folder(pool.inner(), &path, leaf_folder, &s.color).await {
+            if is_new {
+                count += 1;
+            }
+        }
+    }
+    Ok(count)
+}
+
 /// 预览：模拟某一天运行会生成哪些路径（不实际创建，仅用于调试）
 ///
 /// 返回每条启用计划在该日期的预览结果：是否命中 + 渲染后的路径。

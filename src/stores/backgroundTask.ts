@@ -9,7 +9,9 @@ import {
   getRecurrenceHistory,
   listRecurrenceTemplates,
   pauseRecurrence,
+  runRecurrenceOne,
 } from "@/api/db";
+import { runListScheduleOne } from "@/api/listSchedule";
 import type { RecurrenceHistoryEntry, Task } from "@/types";
 
 export const useBackgroundTaskStore = defineStore("backgroundTask", () => {
@@ -39,10 +41,22 @@ export const useBackgroundTaskStore = defineStore("backgroundTask", () => {
     return await getRecurrenceHistory(templateId);
   }
 
+  /** 手动运行单个重复模板（跳过 paused/done 过滤），返回是否生成了新实例 */
+  async function runTemplateOne(id: string): Promise<number> {
+    return await runRecurrenceOne(id);
+  }
+
+  /** 手动运行单个清单生成计划（跳过 enabled 过滤），返回是否生成了新清单/目录 */
+  async function runScheduleOne(id: string): Promise<number> {
+    return await runListScheduleOne(id);
+  }
+
   return {
     recurringTemplates,
     loadTemplates,
     setPaused,
     fetchHistory,
+    runTemplateOne,
+    runScheduleOne,
   };
 });

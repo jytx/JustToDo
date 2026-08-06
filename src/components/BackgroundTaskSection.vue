@@ -6,6 +6,7 @@
 // 顶部提供「立即运行一次」按钮（并发触发重复任务生成 + 清单生成计划 tick）
 import { computed, onMounted, ref } from "vue";
 import { Message } from "@arco-design/web-vue";
+import { IconRefresh } from "@arco-design/web-vue/es/icon";
 import { useBackgroundTaskStore } from "@/stores/backgroundTask";
 import { useListScheduleStore } from "@/stores/listSchedule";
 import { useListStore } from "@/stores/list";
@@ -74,6 +75,36 @@ async function onRunNow(): Promise<void> {
 const pausedCount = computed(
   () => bgStore.recurringTemplates.filter((t) => t.recurrencePaused).length,
 );
+
+// ─── 单条运行（卡片上的运行按钮） ───
+const runningIds = ref<Set<string>>(new Set());
+
+/** 运行单个重复模板 */
+async function onRunTemplate(task: Task): Promise<void> {
+  runningIds.value.add(task.id);
+  try {
+    const n = await bgStore.runTemplateOne(task.id);
+    Message.success(n > 0 ? `已生成 1 个新实例` : "当前无需生成（当期已存在或未命中）");
+  } catch (e) {
+    Message.error("运行失败：" + String(e));
+  } finally {
+    runningIds.value.delete(task.id);
+  }
+}
+
+/** 运行单个清单生成计划（运行后刷新侧边栏） */
+async function onRunSchedule(s: ListSchedule): Promise<void> {
+  runningIds.value.add(s.id);
+  try {
+    const n = await bgStore.runScheduleOne(s.id);
+    await listStore.loadLists();
+    Message.success(n > 0 ? `已生成 ${n} 个清单/目录` : "当前无需生成（目标项均已存在或未命中）");
+  } catch (e) {
+    Message.error("运行失败：" + String(e));
+  } finally {
+    runningIds.value.delete(s.id);
+  }
+}
 </script>
 
 <template>
@@ -133,6 +164,16 @@ const pausedCount = computed(
               size="small"
               @update:model-value="(v) => onTogglePause(t, !(v as boolean))"
             />
+            <a-button
+              type="text"
+              size="mini"
+              class="bt-card__run"
+              :loading="runningIds.has(t.id)"
+              title="立即生成下一期"
+              @click.stop="onRunTemplate(t)"
+            >
+              <template #icon><icon-refresh :size="13" /></template>
+            </a-button>
           </div>
         </div>
       </div>
@@ -173,6 +214,16 @@ const pausedCount = computed(
               size="small"
               @update:model-value="(v) => onToggleSchedule(s, v as boolean)"
             />
+            <a-button
+              type="text"
+              size="mini"
+              class="bt-card__run"
+              :loading="runningIds.has(s.id)"
+              title="立即运行该计划"
+              @click.stop="onRunSchedule(s)"
+            >
+              <template #icon><icon-refresh :size="13" /></template>
+            </a-button>
           </div>
         </div>
       </div>
@@ -286,5 +337,13 @@ const pausedCount = computed(
 }
 .bt-card__spacer {
   flex: 1;
+}
+/* 单条运行按钮：紧凑无 padding，与开关并排 */
+.bt-card__run {
+  flex-shrink: 0;
+  color: var(--jt-text-tertiary);
+}
+.bt-card__run:hover {
+  color: var(--jt-primary);
 }
 </style>

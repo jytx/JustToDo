@@ -826,6 +826,11 @@ export async function pauseRecurrence(id: string, paused: boolean): Promise<void
   await invoke<void>('recurrence_pause', { id, paused });
 }
 
+/** 手动运行单个重复模板的生成（跳过 paused/done 过滤，返回是否生成了新实例） */
+export async function runRecurrenceOne(id: string): Promise<number> {
+  return await invoke<number>('recurrence_run_one', { id });
+}
+
 /** 查询某模板的生成历史（最近 20 条，按生成日期倒序） */
 export async function getRecurrenceHistory(templateId: string): Promise<RecurrenceHistoryEntry[]> {
   return await invoke<RecurrenceHistoryEntry[]>('recurrence_history', { templateId });
