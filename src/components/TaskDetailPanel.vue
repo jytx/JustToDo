@@ -836,7 +836,6 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <Transition name="detail-drawer">
   <div
     ref="panelEl"
     v-if="(!isFloatingView || task) && !forceHidden"
@@ -1406,7 +1405,6 @@ onBeforeUnmount(() => {
     <!-- 附件浮窗（chips 行 📎 点击触发；下拉带箭头，嵌 AttachmentSection） -->
     </template>
   </div>
-  </Transition>
 </template>
 
 <script lang="ts">
@@ -1434,7 +1432,8 @@ function formatMeta(iso: string): string {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* 全屏切换过渡：left/width 平滑变化 */
+  /* 打开滑入动画（挂载时自动播放）+ 全屏切换过渡 */
+  animation: detail-panel-slide-in 220ms ease-out;
   transition: left 0.2s ease, width 0.2s ease;
 }
 /* 全屏态：left:0 让 fixed 面板横向铺满视口（width 不设，靠 left+right 拉伸） */
@@ -1464,14 +1463,15 @@ function formatMeta(iso: string): string {
   pointer-events: none;
 }
 
-/* 滑入抽屉：仅 enter 动画（从右侧滑入 220ms ease-out）。
- * 不定义 leave 动画 —— 面板关闭（含切视图、ESC、关闭按钮）应立即消失，
- * 避免路由切换瞬间因 transitionName 竞态导致的「一瞬间滑出」残留。 */
-.detail-drawer-enter-active {
-  transition: transform 220ms ease-out;
-}
-.detail-drawer-enter-from {
-  transform: translateX(100%);
+/* 面板打开滑入动画：挂载时自动播放（纯 CSS animation，不依赖 Transition）。
+ * 卸载时直接移除 DOM —— 无 leave 动画，杜绝 Transition 卡住导致的元素残留。 */
+@keyframes detail-panel-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
 }
 
 .detail-panel__resizer {
