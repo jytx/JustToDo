@@ -16,6 +16,7 @@ import HardBreak from "@tiptap/extension-hard-break";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Suggestion from "@tiptap/suggestion";
+import { marked } from "marked";
 import { Extension } from "@tiptap/core";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
@@ -312,6 +313,32 @@ function uninstallSlashPlugin(editorInstance: TiptapEditor) {
 
 const previewSrc = computed(() => allImages.value[previewIndex.value] ?? null);
 
+/**
+ * 检测纯文本是否含块级 Markdown 结构（用于粘贴时决定是否当 Markdown 解析）。
+ * 只认"多行块级语法"（标题/列表/代码块围栏/引用/分隔线），避免误判普通文本。
+ * 单行内联语法（*斜体*、`代码`）不触发，因为普通文本也可能含这些字符。
+ */
+function looksLikeMarkdown(text: string): boolean {
+  const lines = text.split(/\r?\n/);
+  let blockMatches = 0;
+  for (const line of lines) {
+    // ATX 标题：# / ## / ... / ######
+    if (/^#{1,6}\s+\S/.test(line)) blockMatches++;
+    // 无序列表项：- / * / + 后接空格
+    else if (/^[-*+]\s+\S/.test(line)) blockMatches++;
+    // 有序列表项：1. / 12) 等
+    else if (/^\d+[.)]\s+\S/.test(line)) blockMatches++;
+    // 引用块：>
+    else if (/^>\s?/.test(line)) blockMatches++;
+    // 围栏代码块：``` 或 ~~~
+    else if (/^(```|~~~)/.test(line)) blockMatches++;
+    // 分隔线：--- / *** / ___（三个以上同类字符）
+    else if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) blockMatches++;
+  }
+  // 至少 1 个块级结构即判定为 Markdown（块级语法在普通文本中极少出现）
+  return blockMatches >= 1;
+}
+
 // editor 实例由 useEditor() 创建，再以 ref 暴露给外部（defineExpose 用）
 const editor = useEditor({
   content: props.modelValue || "",
@@ -410,6 +437,22 @@ const editor = useEditor({
             uploadImage(file);
             return true;
           }
+        }
+      }
+
+      // 3. Markdown 源码粘贴：从 .md 文件或纯文本编辑器复制的 Markdown 没有 HTML 格式，
+      //    Tiptap 默认会当纯文本/代码块插入。检测到块级 Markdown 结构时，用 marked
+      //    转成 HTML 再插入，使其渲染成富文本（标题/列表/代码块/引用等）。
+      const html = cd.getData("text/html");
+      const text = cd.getData("text/plain");
+      // 只有无 HTML 格式（纯文本来源）且含明显块级 Markdown 语法时才解析，
+      // 避免误判普通文本（单行 * 或 # 不触发，需多行结构特征）。
+      if (text && !html && looksLikeMarkdown(text)) {
+        const rendered = marked.parse(text, { async: false }) as string;
+        if (editor.value) {
+          editor.value.commands.insertContent(rendered);
+          event.preventDefault();
+          return true;
         }
       }
 
