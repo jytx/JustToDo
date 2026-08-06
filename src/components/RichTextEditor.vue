@@ -21,7 +21,7 @@ import TurndownService from "turndown";
 import { Extension } from "@tiptap/core";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
-import { watch, onBeforeUnmount, onMounted, ref, computed, createApp } from "vue";
+import { watch, onBeforeUnmount, onMounted, ref, computed, createApp, nextTick } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import SlashCommandMenu, { type SlashCommandItem } from "./SlashCommandMenu.vue";
 import RichTextFloatingMenu from "./RichTextFloatingMenu.vue";
@@ -319,6 +319,8 @@ const previewSrc = computed(() => allImages.value[previewIndex.value] ?? null);
 const sourceMode = ref<boolean>(false);
 /** 源码模式的 Markdown 文本（切换时填充） */
 const sourceText = ref<string>("");
+/** 进入源码模式时备份的原 HTML（切回时若源码未改，用此无损恢复，避免 turndown/marked 往返丢格式） */
+let sourceHtmlBackup = "";
 /** TurndownService 实例：富文本 HTML → Markdown（切到源码模式时用） */
 const turndownService = new TurndownService({
   headingStyle: "atx",     // 标题用 # 风格
@@ -334,19 +336,43 @@ turndownService.addRule("taskListItems", {
   },
 });
 
-/** 切换到源码模式：富文本 HTML → Markdown */
-function enterSourceMode(): void {
+/** 进入源码模式时备份的 Markdown（用于检测切回时是否改动过） */
+let sourceTextBackup = "";
+/** textarea DOM 引用（用于 JS 同步高度，CSS absolute 对 textarea 拉伸不可靠） */
+const sourceTextareaRef = ref<HTMLTextAreaElement | null>(null);
+
+/** 切换到源码模式：富文本 HTML → Markdown（同时备份原 HTML 供无损切回） */
+async function enterSourceMode(): Promise<void> {
   if (!editor.value) return;
-  const html = editor.value.getHTML();
-  sourceText.value = turndownService.turndown(html);
+  sourceHtmlBackup = editor.value.getHTML();
+  sourceText.value = turndownService.turndown(sourceHtmlBackup);
+  sourceTextBackup = sourceText.value;
   sourceMode.value = true;
+  // 切换后同步 textarea 高度 = 编辑区高度（textarea 的 absolute height:100% 在
+  // 某些浏览器不生效，用 JS 显式设置最可靠）
+  await nextTick();
+  syncSourceHeight();
 }
-/** 切换回预览模式：Markdown → 富文本 HTML */
+/** 同步 textarea 高度到编辑区实际高度 */
+function syncSourceHeight(): void {
+  const wrapper = editorContainerRef.value;
+  const ta = sourceTextareaRef.value;
+  if (wrapper && ta) {
+    ta.style.height = wrapper.clientHeight + "px";
+  }
+}
+/** 切换回预览模式：源码未改则用备份 HTML 无损恢复；改了则 marked 转 HTML */
 function exitSourceMode(): void {
   if (!editor.value) return;
-  const html = marked.parse(sourceText.value, { async: false }) as string;
-  editor.value.commands.setContent(html, { emitUpdate: false });
-  emit("update:modelValue", editor.value.getHTML());
+  if (sourceText.value === sourceTextBackup) {
+    // 源码未改：用原 HTML 恢复，避免 turndown→marked 往返转换丢失格式
+    editor.value.commands.setContent(sourceHtmlBackup, { emitUpdate: false });
+  } else {
+    // 源码改了：用 marked 转 HTML（用户主动编辑，接受格式变化）
+    const html = marked.parse(sourceText.value, { async: false }) as string;
+    editor.value.commands.setContent(html, { emitUpdate: false });
+    emit("update:modelValue", editor.value.getHTML());
+  }
   sourceMode.value = false;
 }
 /** 切换按钮点击 */
@@ -1000,12 +1026,17 @@ function fileToBase64(file: File): Promise<string> {
       @contextmenu="onEditorContextMenu"
     >
       <!-- 富文本预览模式 -->
-      <EditorContent v-show="!sourceMode" :editor="editor" class="rich-text__editor" />
-      <!-- 源码编辑模式：textarea 直接编辑 Markdown -->
+      <EditorContent
+        :editor="editor"
+        class="rich-text__editor"
+        :class="{ 'rich-text__editor--hidden': sourceMode }"
+      />
+      <!-- 源码编辑模式：textarea 直接编辑 Markdown（opacity 过渡，不用 v-show） -->
       <textarea
-        v-show="sourceMode"
+        ref="sourceTextareaRef"
         v-model="sourceText"
         class="rich-text__source"
+        :class="{ 'rich-text__source--visible': sourceMode }"
         placeholder="输入 Markdown 源码..."
         spellcheck="false"
       ></textarea>
@@ -1212,21 +1243,44 @@ function fileToBase64(file: File): Promise<string> {
   background: var(--jt-accent-soft);
 }
 
-/* 源码编辑模式 textarea：等宽字体，占满编辑区 */
+/* 源码编辑模式 textarea：等宽字体，绝对定位覆盖编辑区（高度由 JS 同步） */
 .rich-text__source {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   width: 100%;
-  min-height: 150px;
   border: none;
   outline: none;
-  resize: vertical;
-  background: var(--jt-surface-sunken);
+  resize: none;
+  background: var(--jt-surface);
   color: var(--jt-text-primary);
   font-family: var(--font-mono, "JetBrains Mono", monospace);
   font-size: 13px;
   line-height: 1.6;
-  padding: 8px 10px;
-  border-radius: 6px;
+  padding: 10px 12px;
   box-sizing: border-box;
+  z-index: 5;
+  /* 过渡：opacity 平滑淡入淡出（配合 visibility 避免隐藏时仍可交互） */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+.rich-text__source--visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+/* 富文本编辑器隐藏态（切到源码时淡出，不用 display:none 避免 editor 失活） */
+.rich-text__editor--hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+.rich-text__editor {
+  transition: opacity 0.15s ease, visibility 0.15s ease;
 }
 
 .rich-text--borderless .rich-text__editor-wrapper {
