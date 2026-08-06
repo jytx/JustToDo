@@ -4,7 +4,7 @@
 // 只显示有日期的任务；颜色按优先级。
 import { ref, computed, reactive, onMounted, onBeforeUnmount, watch } from "vue";
 import { useTaskStore } from "@/stores/task";
-import { getTasksByDueRange } from "@/api/db";
+import { getTasksByDueRange, getTasksByTag } from "@/api/db";
 import type { Task, Priority } from "@/types";
 import { parseLocalIso, dateToLocalIso } from "@/utils/date";
 import { subscribeTaskChanged } from "@/composables/useCalendarView";
@@ -211,21 +211,34 @@ const listId = computed(() => {
   return props.scope.startsWith("list:") ? props.scope.slice(5) : props.scope;
 });
 
-/** 加载范围内的任务（清单模式按清单过滤；智能视图模式跨清单不过滤）。
+/** 从 scope 解析出标签 id（仅标签模式；scope="tag:{id}" → id） */
+const tagId = computed(() => {
+  return props.scope.startsWith("tag:") ? props.scope.slice(4) : null;
+});
+
+/** 加载范围内的任务（清单模式按清单过滤；标签模式按标签过滤；智能视图跨清单不过滤）。
  *  注意：不按 due_start_at 排序——拖拽改日期后行顺序应保持不变
  *  （只移动横条，不重排行），用 sort_order 保持稳定顺序。 */
 const tasks = ref<Task[]>([]);
 async function loadTasks(): Promise<void> {
   const { start, end } = rangeLiteral.value;
-  const all = await getTasksByDueRange(start, end, showCompleted.value);
-  // 排序：sort_order 为主，createdAt 为次级稳定键。
-  // 必须 加次级键——sort_order 存在重复值（persistTaskOrder 间隔体系会撞值，
-  // 如多个 4000/5000），仅按 sort_order 排序不稳定；勾选完成触发 loadTasks 重拉时，
-  // 后端 ORDER BY done ASC 让返回顺序随 done 状态变化，相同 sort_order 的任务
-  // 相对位置就会被打乱，表现为"完成任务后顺序变了"。加 createdAt 后顺序完全由
-  // (sortOrder, createdAt) 决定，与 done 状态、后端返回顺序无关。
-  tasks.value = all
-    .filter((t) => (isSmart.value ? true : t.listId === listId.value))
+  // 标签模式：用 getTasksByTag 取该标签的全部任务，再按日期范围筛
+  // （getTasksByDueRange 不带 tag 过滤，会混入其他标签的任务）
+  const raw: Task[] = tagId.value
+    ? await getTasksByTag(tagId.value)
+    : await getTasksByDueRange(start, end, showCompleted.value);
+  tasks.value = raw
+    .filter((t) => {
+      // 标签模式已按 tag 拉取，仅需按日期范围 + 完成态筛
+      if (tagId.value) {
+        if (!showCompleted.value && t.done) return false;
+        return t.dueEndAt ? t.dueEndAt >= start && t.dueEndAt <= end : false;
+      }
+      // 清单模式：按 listId 过滤
+      if (!isSmart.value) return t.listId === listId.value;
+      // 智能视图：跨清单不过滤
+      return true;
+    })
     .sort((a, b) =>
       a.sortOrder !== b.sortOrder
         ? a.sortOrder - b.sortOrder
