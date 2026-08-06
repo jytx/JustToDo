@@ -38,7 +38,9 @@ const currentView = computed<ListView>(() => {
 /** 偏好作用域（智能视图专用 namespace，与清单偏好隔离） */
 const scope = computed(() => "smart:" + props.view);
 
-/** 从偏好恢复视图：query 无 view 时按上次选择补上（与清单视图一致） */
+/** 从偏好恢复视图：query 无 view 时按上次选择补上（与清单视图一致）。
+ *  智能视图（today/upcoming/all）复用同一组件，切视图时组件不重挂载，
+ *  必须在 watch(props.view) 里同步恢复。 */
 function restoreViewPref(): void {
   const pref = getViewPref(scope.value);
   // 仅在 query 没有 view 时补上（用户显式带了 view 则尊重，如点链接进来）
@@ -46,7 +48,6 @@ function restoreViewPref(): void {
     router.replace({ query: { ...route.query, view: pref.view } });
   }
 }
-restoreViewPref();
 
 const VIEW_TITLES: Record<SmartViewId, string> = {
   today: "今天",
@@ -123,11 +124,13 @@ async function onAddTask(payload: { title: string; priority: import("@/types").P
 watch(
   () => props.view,
   async (newView) => {
+    restoreViewPref();
     await taskStore.loadSmartView(newView);
   },
 );
 
 onMounted(async () => {
+  restoreViewPref();
   await listStore.loadLists();
   await taskStore.loadSmartView(props.view);
 });
