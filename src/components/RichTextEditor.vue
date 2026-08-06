@@ -314,6 +314,21 @@ function uninstallSlashPlugin(editorInstance: TiptapEditor) {
 const previewSrc = computed(() => allImages.value[previewIndex.value] ?? null);
 
 /**
+ * 检测剪贴板 HTML 是否只是"代码块包裹的纯文本"（伪 HTML）。
+ * IDE（如 WebStorm）复制 .md 文件时会把整段内容包成 <pre><code>...</code></pre>，
+ * 这不是真实富文本，应改用纯文本走 Markdown 解析，否则会被渲染成一个大代码块。
+ * 判定：去掉 pre/code 标签后，不含其他结构化标签（h1-h6/ul/ol/blockquote/p/table 等）。
+ */
+function isCodeBlockOnlyHtml(html: string): boolean {
+  // 必须以 <pre 开头（代码块包裹的典型特征）
+  if (!/<pre[\s>]/i.test(html)) return false;
+  // 去掉 pre/code/pre* 标签后，检查是否还有结构化标签
+  const stripped = html.replace(/<\/?(pre|code)[^>]*>/gi, "");
+  const hasStructure = /<(h[1-6]|ul|ol|li|blockquote|p|table|thead|tbody|tr|td|th|img|a)\b/i.test(stripped);
+  return !hasStructure;
+}
+
+/**
  * 检测纯文本是否含块级 Markdown 结构（用于粘贴时决定是否当 Markdown 解析）。
  * 只认"多行块级语法"（标题/列表/代码块围栏/引用/分隔线），避免误判普通文本。
  * 单行内联语法（*斜体*、`代码`）不触发，因为普通文本也可能含这些字符。
@@ -440,14 +455,16 @@ const editor = useEditor({
         }
       }
 
-      // 3. Markdown 源码粘贴：从 .md 文件或纯文本编辑器复制的 Markdown 没有 HTML 格式，
+      // 3. Markdown 源码粘贴：从 .md 文件或纯文本编辑器复制的 Markdown，
       //    Tiptap 默认会当纯文本/代码块插入。检测到块级 Markdown 结构时，用 marked
       //    转成 HTML 再插入，使其渲染成富文本（标题/列表/代码块/引用等）。
       const html = cd.getData("text/html");
       const text = cd.getData("text/plain");
-      // 只有无 HTML 格式（纯文本来源）且含明显块级 Markdown 语法时才解析，
-      // 避免误判普通文本（单行 * 或 # 不触发，需多行结构特征）。
-      if (text && !html && looksLikeMarkdown(text)) {
+      // 触发 Markdown 解析的条件：无 HTML（纯文本来源），或 HTML 只是代码块包裹
+      // （IDE 如 WebStorm 复制 .md 文件时会生成 <pre><code> 包裹的"伪 HTML"）。
+      // 有真实富文本 HTML（网页/Word）则走 Tiptap 默认处理，不干预。
+      const isPseudoHtml = !!html && isCodeBlockOnlyHtml(html);
+      if (text && (!html || isPseudoHtml) && looksLikeMarkdown(text)) {
         const rendered = marked.parse(text, { async: false }) as string;
         if (editor.value) {
           editor.value.commands.insertContent(rendered);
