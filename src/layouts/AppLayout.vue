@@ -69,6 +69,15 @@ watch(panelFullscreen, (fs) => {
   );
 });
 
+/** 任务被清空（关闭面板 / 切视图）时自动退出全屏，
+ *  避免全屏态下面板渲染 empty 占位铺满整个屏幕 */
+watch(
+  () => taskStore.selectedTaskId,
+  (id) => {
+    if (id === null) panelFullscreen.value = false;
+  },
+);
+
 /** 打开 AI 助手弹窗（顶栏/快捷键入口，默认每日小结）。 */
 function openSummary(): void {
   taskStore.aiSelectedTool = "daily";
