@@ -5,3 +5,6 @@ declare module "*.vue" {
   const component: DefineComponent<{}, {}, any>;
   export default component;
 }
+
+// turndown-plugin-gfm 无官方类型声明
+declare module "turndown-plugin-gfm";

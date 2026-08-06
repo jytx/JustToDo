@@ -18,6 +18,7 @@ import TaskItem from "@tiptap/extension-task-item";
 import Suggestion from "@tiptap/suggestion";
 import { marked } from "marked";
 import TurndownService from "turndown";
+import * as turndownPluginGfm from "turndown-plugin-gfm";
 import { Extension } from "@tiptap/core";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
@@ -327,6 +328,12 @@ const turndownService = new TurndownService({
   codeBlockStyle: "fenced", // 代码块用 ``` 围栏
   bulletListMarker: "-",   // 无序列表用 -
 });
+// GFM 删除线插件（~~text~~）。表格不用 gfm.tables（Tiptap 表格含 <p>/colspan 等，
+// gfm 规则转换会失败拆成零散文本；表格保留 HTML 原样，切回时不丢）
+turndownService.use(turndownPluginGfm.strikethrough);
+// 表格及其单元格保留为 HTML（turndown 默认移除未知标签保留文本，会导致表格内容散落）。
+// 保留 HTML 后，切回预览时 marked 透传这段 HTML，表格不丢。
+turndownService.keep(["table", "thead", "tbody", "tfoot", "tr", "th", "td", "col", "colgroup"]);
 // 任务列表（checkbox）转 Markdown 任务语法：- [ ] / - [x]
 turndownService.addRule("taskListItems", {
   filter: (node: HTMLElement) => node.nodeName === "LI" && node.getAttribute("data-type") === "taskItem",
