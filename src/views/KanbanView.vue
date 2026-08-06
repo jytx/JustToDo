@@ -34,8 +34,11 @@ const listStore = useListStore();
 const groupStore = useGroupStore();
 const kanbanStore = useKanbanStore();
 
-/** 是否处于智能视图模式（跨清单，强制 priority 维度） */
-const isSmart = computed(() => props.smartView !== undefined);
+/** 是否处于跨清单模式（智能视图 smartView 传入 / 标签 scope="tag:xxx"）
+ *  跨清单时强制 priority 维度，不按 listId 过滤 */
+const isSmart = computed(
+  () => props.smartView !== undefined || props.scope.startsWith("tag:"),
+);
 /** 实际生效的看板维度：智能视图强制 priority，清单模式取 store 选择 */
 const effectiveMode = computed<"priority" | "group">(() =>
   isSmart.value ? "priority" : kanbanStore.mode,

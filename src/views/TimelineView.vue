@@ -54,8 +54,11 @@ function onColResizeStart(e: MouseEvent): void {
   document.body.style.userSelect = "none";
 }
 
-/** 是否处于智能视图模式（跨清单） */
-const isSmart = computed(() => props.smartView !== undefined);
+/** 是否处于跨清单模式（智能视图 smartView 传入 / 标签 scope="tag:xxx"）
+ *  跨清单时不按 listId 过滤，禁用垂直拖拽排序 */
+const isSmart = computed(
+  () => props.smartView !== undefined || props.scope.startsWith("tag:"),
+);
 
 const taskStore = useTaskStore();
 const { batchCtxMenu, onTaskRowSelect, onBatchContextMenu } = useBatchSelect();
