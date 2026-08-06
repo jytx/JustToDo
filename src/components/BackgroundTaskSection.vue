@@ -175,6 +175,13 @@ async function onRunSchedule(s: ListSchedule): Promise<void> {
               <template #icon><icon-refresh :size="13" /></template>
             </a-button>
           </div>
+          <!-- 周期详情：起止日期 + 剩余次数 -->
+          <div class="bt-card__meta">
+            <span v-if="t.dueEndAt">到期：{{ t.dueEndAt.slice(0, 10) }}</span>
+            <span v-if="t.recurrenceEndAt">结束：{{ t.recurrenceEndAt.slice(0, 10) }}</span>
+            <span v-if="t.recurrenceCount != null">剩余 {{ t.recurrenceCount }} 次</span>
+            <span v-if="!t.dueEndAt && !t.recurrenceEndAt && t.recurrenceCount == null" class="bt-card__meta-hint">无结束限制</span>
+          </div>
         </div>
       </div>
     </div>
@@ -299,6 +306,19 @@ async function onRunSchedule(s: ListSchedule): Promise<void> {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+/* 周期详情副信息行 */
+.bt-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 11px;
+  color: var(--jt-text-tertiary);
+  padding-left: 0;
+}
+.bt-card__meta-hint {
+  color: var(--jt-text-tertiary);
+  opacity: 0.7;
 }
 .bt-card__dot {
   width: 10px;
