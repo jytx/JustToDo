@@ -137,10 +137,8 @@ const rowDragId = ref<string | null>(null);
 /** 落点：目标行 id + 位置（before/after） */
 const rowDropTarget = ref<{ id: string; pos: "before" | "after" } | null>(null);
 
-/** 手柄 dragstart：记录被拖任务。
- *  智能视图模式禁用（跨清单重排 sort_order 无意义）——模板已用 :draggable 关闭 */
+/** 手柄 dragstart：记录被拖任务（智能视图/标签视图同样支持拖拽重排） */
 function onRowDragStart(e: DragEvent, taskId: string): void {
-  if (isSmart.value) { e.preventDefault(); return; }
   rowDragId.value = taskId;
   e.dataTransfer!.effectAllowed = "move";
   e.dataTransfer!.setData("text/plain", taskId);
@@ -972,9 +970,9 @@ const timelineWidth = computed(() => columns.value.length * COL_WIDTH.value);
             <icon-right :size="12" />
           </span>
           <span v-else class="gantt__task-arrow-placeholder"></span>
-          <!-- 拖拽手柄（根任务且非智能视图；子任务无手柄） -->
+          <!-- 拖拽手柄（仅根任务；子任务无手柄） -->
           <span
-            v-if="row.depth === 0 && !isSmart"
+            v-if="row.depth === 0"
             class="gantt__task-handle"
             :draggable="true"
             title="拖动排序"
