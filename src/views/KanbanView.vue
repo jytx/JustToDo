@@ -185,6 +185,13 @@ watch(
   () => syncFromStore(),
 );
 
+/** scope 变化（如 list→tag 跨路由复用本组件）时强制重新分桶，
+ *  避免上一个视图的 localColumns 残留导致显示多余卡片 */
+watch(
+  () => props.scope,
+  () => syncFromStore(),
+);
+
 /** 根据 id 取任务对象 */
 const taskMap = computed<Map<string, Task>>(() => {
   return new Map(taskStore.openTasks.map((t) => [t.id, t]));
