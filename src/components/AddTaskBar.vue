@@ -386,8 +386,6 @@ function onDateClose() {
         variant="text"
         @open-change="(v) => (tagPopoverVisible = v)"
       />
-
-      <span class="add-task-bar__hint font-mono">⏎</span>
     </div>
   </div>
 </template>
@@ -475,12 +473,6 @@ function onDateClose() {
    pointer-events 保持 auto，让用户可以点击属性区来聚焦 */
 .add-task-bar__attrs--hidden {
   opacity: 0;
-}
-
-.add-task-bar__hint {
-  font-size: 11px;
-  color: var(--jt-text-tertiary);
-  margin-left: 4px;
 }
 
 /* 模板菜单项的 emoji 图标 */
