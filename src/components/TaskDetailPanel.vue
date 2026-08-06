@@ -62,19 +62,29 @@ const emit = defineEmits<{
  * 与 AppLayout 的 isFloatingPanelView 保持一致，避免 prop 链失效时面板误渲染。
  */
 const route = useRoute();
+/**
+ * 面板是否以「悬浮 drawer」模式工作（无选中任务时不渲染、不做 empty 占位）。
+ *
+ * empty 占位只属于列表视图（任务族 + 非悬浮）—— 即 today/upcoming/all/
+ * list/notebook/tag 且 ?view 不是 kanban/timeline。其余视图（日历/看板/
+ * 时间线/设置/习惯）一律视为悬浮，避免设置/习惯等全屏视图右侧冒出 empty 占位。
+ * 路由未初始化时（reload 瞬间）也视为悬浮，避免面板先渲染一帧再消失闪现。
+ */
 const isFloatingView = computed<boolean>(() => {
   const name = route.name as string | undefined;
   const view = route.query.view as string | undefined;
-  // 路由未初始化时（reload 瞬间 name 为 undefined/空）：视为悬浮视图不渲染面板，
-  // 避免 route 解析完成前面板先渲染一帧 empty 占位再消失，形成「闪一下」
   if (!name || name === "root") return true;
-  return (
-    name === "week" ||
-    name === "month" ||
-    name === "year" ||
-    view === "kanban" ||
-    view === "timeline"
-  );
+  // 非任务族视图（日历/设置/习惯）→ 悬浮
+  const isTaskFamily =
+    name === "today" ||
+    name === "upcoming" ||
+    name === "all" ||
+    name === "list" ||
+    name === "notebook" ||
+    name === "tag";
+  if (!isTaskFamily) return true;
+  // 任务族内看板/时间线 → 悬浮
+  return view === "kanban" || view === "timeline";
 });
 
 const task = computed(() => taskStore.selectedTask);
