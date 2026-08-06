@@ -50,10 +50,13 @@ const props = defineProps<{
   panelWidth?: number;
   /** 拖拽宽度上限（默认 900；侧边栏收起时由 AppLayout 增大传入） */
   maxWidth?: number;
+  /** 全屏态：面板横向铺满视口（盖住侧边栏+任务列表），隐藏拖拽手柄 */
+  fullscreen?: boolean;
 }>();
 
 const emit = defineEmits<{
   "update:panelWidth": [value: number];
+  "update:fullscreen": [value: boolean];
 }>();
 
 /**
@@ -834,11 +837,12 @@ onBeforeUnmount(() => {
     ref="panelEl"
     v-if="!isFloatingView || task"
     class="detail-panel"
-    :style="{ width: (panelWidth ?? 480) + 'px' }"
+    :class="{ 'detail-panel--fullscreen': fullscreen }"
+    :style="fullscreen ? {} : { width: (panelWidth ?? 480) + 'px' }"
   >
     <!-- 未选中任务时：empty 占位（面板始终占位，任务列表不拉伸） -->
     <!-- 拖拽手柄（始终渲染：empty 占位态也能拖拽调宽） -->
-    <div class="detail-panel__resizer" @mousedown="startResize" />
+    <div v-if="!fullscreen" class="detail-panel__resizer" @mousedown="startResize" />
 
     <!-- 未选中任务时：empty 占位（面板始终占位，任务列表不拉伸） -->
     <div v-if="!task" class="detail-panel__empty">
@@ -1113,6 +1117,15 @@ onBeforeUnmount(() => {
             <rect x="2" y="7.25" width="9" height="1.5" rx="0.75" fill="currentColor" />
             <rect x="2" y="11" width="6" height="1.5" rx="0.75" fill="currentColor" />
           </svg>
+        </button>
+        <!-- 全屏切换（铺满视口 / 恢复固定宽） -->
+        <button
+          class="detail-panel__more-btn"
+          :title="fullscreen ? '退出全屏' : '全屏'"
+          @click="emit('update:fullscreen', !fullscreen)"
+        >
+          <icon-fullscreen-exit v-if="fullscreen" :size="16" />
+          <icon-fullscreen v-else :size="16" />
         </button>
         <!-- 关闭详情面板（与 ESC 快捷键行为一致：清空选中任务） -->
         <button
@@ -1417,6 +1430,14 @@ function formatMeta(iso: string): string {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* 全屏切换过渡：left/width 平滑变化 */
+  transition: left 0.2s ease, width 0.2s ease;
+}
+/* 全屏态：left:0 让 fixed 面板横向铺满视口（width 不设，靠 left+right 拉伸） */
+.detail-panel--fullscreen {
+  left: 0;
+  border-left: none;
+  box-shadow: none;
 }
 
 /* 未选中任务时的 empty 占位（滴答清单风格：插画散落右下角 + 大量留白，无文字） */

@@ -47,6 +47,8 @@ const sidebarCollapsed = ref(false);
 /** 侧边栏宽度（仅展开态生效；收起态固定 48px） */
 const sidebarWidth = ref(240);
 const panelWidth = ref(480);
+/** 详情面板全屏态（点击全屏图标切换，横向铺满视口盖住侧边栏+任务列表） */
+const panelFullscreen = ref(false);
 
 /** 详情面板宽度持久化：拖拽调整后防抖保存，下次打开保持 */
 let panelWidthSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -58,6 +60,13 @@ watch(panelWidth, (w) => {
       console.error("[AppLayout] 保存详情面板宽度失败:", e),
     );
   }, 400);
+});
+
+/** 详情面板全屏态持久化：切换后立即保存 */
+watch(panelFullscreen, (fs) => {
+  db.setSetting(SETTINGS_KEYS.detailPanelFullscreen, fs ? "1" : "0").catch((e) =>
+    console.error("[AppLayout] 保存详情面板全屏态失败:", e),
+  );
 });
 
 /** 打开 AI 助手弹窗（顶栏/快捷键入口，默认每日小结）。 */
@@ -173,7 +182,8 @@ const mainStyle = computed(() => {
       name === "notebook" ||
       name === "tag");
   const isListStyle = isTaskFamily && view !== "kanban" && view !== "timeline";
-  if (!isListStyle) return { paddingRight: "0px" };
+  // 全屏态面板盖住全部内容，主区域无需让位
+  if (!isListStyle || panelFullscreen.value) return { paddingRight: "0px" };
   return { paddingRight: panelWidth.value + "px" };
 });
 
@@ -237,7 +247,8 @@ const topbarStyle = computed(() => {
       name === "notebook" ||
       name === "tag");
   const isListStyle = isTaskFamily && view !== "kanban" && view !== "timeline";
-  if (!isListStyle) return { right: "24px" };
+  // 全屏态面板盖住 topbar，让位已无意义
+  if (!isListStyle || panelFullscreen.value) return { right: "24px" };
   return { right: `${panelWidth.value + 24}px` };
 });
 
@@ -380,6 +391,12 @@ function onNavigationKeydown(e: KeyboardEvent) {
       e.preventDefault();
       return;
     }
+    // 详情面板全屏态：Esc 先退全屏（逐层关闭），再按一次才关面板
+    if (panelFullscreen.value) {
+      e.preventDefault();
+      panelFullscreen.value = false;
+      return;
+    }
     if (taskStore.detailOpen) {
       e.preventDefault();
       taskStore.selectTask(null);
@@ -439,6 +456,12 @@ onMounted(() => {
       }
     })
     .catch((e) => console.error("[AppLayout] 读取详情面板宽度失败:", e));
+  // 读取详情面板全屏态持久化值
+  db.getSetting(SETTINGS_KEYS.detailPanelFullscreen)
+    .then((raw) => {
+      if (raw === "1") panelFullscreen.value = true;
+    })
+    .catch((e) => console.error("[AppLayout] 读取详情面板全屏态失败:", e));
   // 应用启动时预加载习惯列表（避免进入 /habits 时空骨架）
   // HabitView 自身 mount 时会再 load 一次（重复但幂等，后端 getHabits 成本低）
   habitStore.loadHabits().catch((e) => {
@@ -648,7 +671,11 @@ useShortcuts({
     </div>
 
     <!-- 任务详情面板（右）—— 悬浮视图判断在面板内部自洽，不依赖外部传入 -->
-    <TaskDetailPanel v-model:panel-width="panelWidth" :max-width="detailPanelMaxWidth" />
+    <TaskDetailPanel
+      v-model:panel-width="panelWidth"
+      v-model:fullscreen="panelFullscreen"
+      :max-width="detailPanelMaxWidth"
+    />
 
     <!-- 全局搜索面板 -->
     <SearchPalette />
