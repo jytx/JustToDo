@@ -239,11 +239,14 @@ async function loadTasks(): Promise<void> {
       // 智能视图：跨清单不过滤
       return true;
     })
-    .sort((a, b) =>
-      a.sortOrder !== b.sortOrder
+    .sort((a, b) => {
+      // 已完成任务排在最下方（未完成在前，已完成在后，不再相互间隔）
+      if (a.done !== b.done) return a.done ? 1 : -1;
+      // 同完成态内：sort_order 为主，createdAt 为次级稳定键
+      return a.sortOrder !== b.sortOrder
         ? a.sortOrder - b.sortOrder
-        : a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0,
-    );
+        : a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
+    });
   // 预加载子任务缓存（供父任务展开箭头判断 + 展开后挂载无 due 的子任务行）
   void preloadTimelineSubtasks();
 }

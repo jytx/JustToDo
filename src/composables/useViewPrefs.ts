@@ -7,7 +7,7 @@
 //
 // 向后兼容：清单 scope "list:{id}" 对应的 key "jt-view-pref:list:{id}" 与旧版完全一致，
 // 已存的清单偏好不会丢失。智能视图是新增 scope，互不干扰。
-// 查不到时返回默认值（列表视图 + 优先级维度 + 显示已完成）。
+// 查不到时返回默认值（列表视图 + 优先级维度 + 不显示已完成）。
 
 import { type KanbanMode } from "@/stores/kanban";
 
@@ -20,11 +20,11 @@ interface ViewPref {
   view: ListView;
   /** 看板维度（仅看板视图有意义）：优先级 / 分组 */
   kanbanMode: KanbanMode;
-  /** 时间线是否显示已完成任务（默认 true） */
+  /** 时间线是否显示已完成任务（默认 false，不显示） */
   showCompleted: boolean;
 }
 
-const DEFAULT_PREF: ViewPref = { view: "list", kanbanMode: "priority", showCompleted: true };
+const DEFAULT_PREF: ViewPref = { view: "list", kanbanMode: "priority", showCompleted: false };
 const PREFIX = "jt-view-pref:";
 
 /** 读取某作用域的视图偏好（无记录返回默认值）。
@@ -38,7 +38,8 @@ export function getViewPref(scope: string): ViewPref {
     return {
       view,
       kanbanMode: parsed.kanbanMode === "group" ? "group" : "priority",
-      showCompleted: parsed.showCompleted !== false,
+      // 仅显式 true 才显示已完成（缺失/旧数据默认不显示）
+      showCompleted: parsed.showCompleted === true,
     };
   } catch {
     return { ...DEFAULT_PREF };
