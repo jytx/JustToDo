@@ -289,8 +289,13 @@ const listViewMenuOpen = ref(false);
 const isSmartRoute = computed(() =>
   route.name === "today" || route.name === "upcoming" || route.name === "all",
 );
-/** 是否显示视图切换菜单（清单或智能视图） */
-const showViewSwitch = computed(() => route.name === "list" || isSmartRoute.value);
+/** 是否显示视图切换菜单（清单/智能视图/标签/笔记本 均支持列表/看板/时间线切换） */
+const showViewSwitch = computed(() =>
+  route.name === "list" ||
+  route.name === "tag" ||
+  route.name === "notebook" ||
+  isSmartRoute.value,
+);
 
 /** 当前作用域（清单用 "list:{id}"，智能视图用 "smart:{viewId}"）——偏好持久化用 */
 const viewPrefScope = computed(() => {

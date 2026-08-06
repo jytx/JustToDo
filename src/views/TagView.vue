@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // 标签视图 —— 显示某个标签下的所有任务
+// 支持列表/看板/时间线三种形态（query ?view= 切换），看板/时间线复用 KanbanView/TimelineView
 import { computed, watch, onMounted } from "vue";
+import { useRoute } from "vue-router";
 import { useTaskStore } from "@/stores/task";
 import { useTagStore } from "@/stores/tag";
 import { formatPageDate } from "@/utils/date";
@@ -8,16 +10,28 @@ import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import { useTaskDragReorder } from "@/composables/useTaskDragReorder";
 import { useBatchSelect } from "@/composables/useBatchSelect";
 import type { Priority } from "@/types";
+import type { ListView } from "@/composables/useViewPrefs";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 import BatchContextMenu from "@/components/BatchContextMenu.vue";
+import KanbanView from "@/views/KanbanView.vue";
+import TimelineView from "@/views/TimelineView.vue";
 
 const props = defineProps<{ id: string }>();
 
+const route = useRoute();
 const taskStore = useTaskStore();
 const tagStore = useTagStore();
+
+/** 当前视图形态（query ?view=：list 默认 / kanban 看板 / timeline 时间线） */
+const currentView = computed<ListView>(() => {
+  const v = route.query.view;
+  if (v === "kanban") return "kanban";
+  if (v === "timeline") return "timeline";
+  return "list";
+});
 
 // 面板右键菜单：新建任务归属收件箱（与 AddTaskBar 行为一致）
 const { ctxMenu, onContextMenu, onCreateTask } = useTaskPanelContextMenu(() => "inbox");
@@ -80,7 +94,12 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="tag-view" @contextmenu="onRootContextMenu">
+  <!-- 看板视图（query ?view=kanban） -->
+  <KanbanView v-if="currentView === 'kanban'" :scope="'tag:' + props.id" default-list-id="inbox" />
+  <!-- 时间线视图（query ?view=timeline） -->
+  <TimelineView v-else-if="currentView === 'timeline'" :scope="'tag:' + props.id" default-list-id="inbox" />
+  <!-- 列表视图（默认） -->
+  <div v-else class="tag-view" @contextmenu="onRootContextMenu">
     <header class="tag-view__header">
       <h1 class="tag-view__title">{{ pageTitle }}</h1>
       <p class="tag-view__subtitle">
