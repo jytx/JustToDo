@@ -160,15 +160,20 @@ watch(isFloatingPanelView, (floating) => {
  * paddingRight 残留。floating 视图显式返回 0px 让位宽度。
  */
 const mainStyle = computed(() => {
-  const name = route.name as string;
+  const name = route.name as string | undefined;
   const view = route.query.view as string | undefined;
-  const isFloating =
-    name === "week" ||
-    name === "month" ||
-    name === "year" ||
-    view === "kanban" ||
-    view === "timeline";
-  if (isFloating) return { paddingRight: "0px" };
+  // 白名单：只有列表视图（任务族 + 非 kanban/timeline）才让出详情面板宽度；
+  // 其余视图（日历/看板/时间线/设置/习惯）都是全屏，paddingRight=0
+  const isTaskFamily =
+    !!name &&
+    (name === "today" ||
+      name === "upcoming" ||
+      name === "all" ||
+      name === "list" ||
+      name === "notebook" ||
+      name === "tag");
+  const isListStyle = isTaskFamily && view !== "kanban" && view !== "timeline";
+  if (!isListStyle) return { paddingRight: "0px" };
   return { paddingRight: panelWidth.value + "px" };
 });
 
@@ -217,12 +222,22 @@ const stopInitialSelect = watch(
 );
 
 /**
- * topbar 让位 —— 悬浮视图下显式 right: 24px（CSS 默认值，不用空对象，
- * 避免 Vue 不清除之前列表视图写入的 right 残留值；同时保持与列表视图
- * 一致的 24px 右边距，不让按钮贴到窗口边框）
+ * topbar 让位 —— 与 mainStyle 同逻辑：只有列表视图让位，其余视图 right: 24px
+ * （显式设置避免 Vue 不清除 inline 残留；保持 24px 右边距视觉一致）
  */
 const topbarStyle = computed(() => {
-  if (isFloatingPanelView.value) return { right: "24px" };
+  const name = route.name as string | undefined;
+  const view = route.query.view as string | undefined;
+  const isTaskFamily =
+    !!name &&
+    (name === "today" ||
+      name === "upcoming" ||
+      name === "all" ||
+      name === "list" ||
+      name === "notebook" ||
+      name === "tag");
+  const isListStyle = isTaskFamily && view !== "kanban" && view !== "timeline";
+  if (!isListStyle) return { right: "24px" };
   return { right: `${panelWidth.value + 24}px` };
 });
 
