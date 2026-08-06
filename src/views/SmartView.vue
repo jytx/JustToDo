@@ -3,7 +3,7 @@
 // 跨清单聚合视图，任务项额外显示清单归属色点。
 // 支持列表/看板/时间线三种视图切换（与清单视图一致，偏好按 "smart:{viewId}" 独立持久化）
 import { computed, watch, onMounted } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import { formatPageDate } from "@/utils/date";
@@ -11,7 +11,7 @@ import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import { useTaskDragReorder } from "@/composables/useTaskDragReorder";
 import { useBatchSelect } from "@/composables/useBatchSelect";
 import type { SmartViewId } from "@/api/db";
-import type { ListView } from "@/composables/useViewPrefs";
+import { getViewPref, type ListView } from "@/composables/useViewPrefs";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
@@ -23,6 +23,7 @@ import TimelineView from "@/views/TimelineView.vue";
 const props = defineProps<{ view: SmartViewId }>();
 
 const route = useRoute();
+const router = useRouter();
 const listStore = useListStore();
 const taskStore = useTaskStore();
 
@@ -36,6 +37,16 @@ const currentView = computed<ListView>(() => {
 
 /** 偏好作用域（智能视图专用 namespace，与清单偏好隔离） */
 const scope = computed(() => "smart:" + props.view);
+
+/** 从偏好恢复视图：query 无 view 时按上次选择补上（与清单视图一致） */
+function restoreViewPref(): void {
+  const pref = getViewPref(scope.value);
+  // 仅在 query 没有 view 时补上（用户显式带了 view 则尊重，如点链接进来）
+  if (!route.query.view) {
+    router.replace({ query: { ...route.query, view: pref.view } });
+  }
+}
+restoreViewPref();
 
 const VIEW_TITLES: Record<SmartViewId, string> = {
   today: "今天",
