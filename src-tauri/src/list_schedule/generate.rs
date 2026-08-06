@@ -129,6 +129,24 @@ pub async fn ensure_scheduled_path(
                 .execute(pool)
                 .await
                 .map_err(|e| format!("创建清单失败: {}", e))?;
+                // 生成的清单（非目录）补建默认分组 {id}-default，
+                // 否则新建任务的 group_id 指向不存在的分组，在分组视图凭空消失
+                // （与 list_create 的行为保持一致）
+                if !is_folder {
+                    let default_group_id = format!("{}-default", id);
+                    sqlx::query(
+                        "INSERT OR IGNORE INTO groups (id, list_id, name, sort_order, created_at) \
+                         VALUES ($1, $2, $3, $4, $5)",
+                    )
+                    .bind(&default_group_id)
+                    .bind(&id)
+                    .bind("默认分组")
+                    .bind(0)
+                    .bind(&ts)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| format!("创建默认分组失败: {}", e))?;
+                }
                 // 最末段是本次新建的
                 if is_leaf {
                     leaf_is_new = true;
