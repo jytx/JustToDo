@@ -397,12 +397,11 @@ function columnSub(d: Date, z: Zoom): string {
   return `${d.getFullYear()}`;
 }
 
-/** 工具栏标题 */
+/** 工具栏标题：取视口中心列的日期（随水平滚动变化） */
 const toolbarTitle = computed(() => {
-  const first = columns.value[0]?.date;
-  const last = columns.value[columns.value.length - 1]?.date;
-  if (!first || !last) return "";
-  return `${first.getFullYear()}年${first.getMonth() + 1}月`;
+  const d = columns.value[viewportCenterCol.value]?.date;
+  if (!d) return "";
+  return `${d.getFullYear()}年${d.getMonth() + 1}月`;
 });
 
 /** 前/后/今天导航（平移可视范围，保持列数） */
@@ -442,10 +441,13 @@ function scrollToToday(): void {
     // 今天不在当前列范围（理论上 goToday 会重置范围，兜底用天数近似）
     const offset = daysBetween(firstCol, today);
     el.scrollLeft = Math.max(0, offset * dayWidth() - el.clientWidth / 2);
+    viewportCenterCol.value = Math.floor((el.scrollLeft + el.clientWidth / 2) / COL_WIDTH.value);
     return;
   }
   // 滚动到今天所在列居中
   el.scrollLeft = colIndex * COL_WIDTH.value - el.clientWidth / 2 + COL_WIDTH.value / 2;
+  // 同步视口中心列索引（标题跟随；scroll 事件也可能触发，这里兜底）
+  viewportCenterCol.value = Math.floor((el.scrollLeft + el.clientWidth / 2) / COL_WIDTH.value);
 }
 
 /** 时间轴滚动容器 ref */
@@ -488,9 +490,15 @@ function onTimelineWheel(e: WheelEvent): void {
 /** 右侧时间轴 scroll：仅处理横向无限扩展，不再做垂直反向同步（改由 wheel 转发单向同步） */
 /** 滚动到边缘时扩展范围（无限滚动） */
 const EDGE_THRESHOLD = 200; // 距边缘 200px 触发扩展
+/** 当前视口中心所在列索引（随滚动更新，工具栏标题用） */
+const viewportCenterCol = ref(0);
 function onTimelineScroll(): void {
   const el = timelineScrollEl.value;
   if (!el) return;
+  // 更新视口中心列索引（标题跟随当前查看的时间）
+  viewportCenterCol.value = Math.floor(
+    (el.scrollLeft + el.clientWidth / 2) / COL_WIDTH.value,
+  );
   const nearLeft = el.scrollLeft < EDGE_THRESHOLD;
   const nearRight = el.scrollLeft + el.clientWidth > el.scrollWidth - EDGE_THRESHOLD;
   if (nearLeft) {
