@@ -305,10 +305,10 @@ function onDateClose() {
       @blur="handleBlur"
       @keydown.enter="submit"
     />
-    <!-- AI 自然语言解析按钮（仅任务模式 + AI 启用时显示）。
+    <!-- AI 自然语言解析按钮（仅任务模式 + AI 启用 + 输入框聚焦时显示）。
          点击解析输入，填充属性栏待确认，不直接创建。 -->
     <button
-      v-if="aiAvailable"
+      v-if="aiAvailable && focused"
       class="add-task-bar__ai-btn"
       :class="{ 'add-task-bar__ai-btn--loading': aiParsing }"
       :disabled="aiParsing || !title.trim()"
