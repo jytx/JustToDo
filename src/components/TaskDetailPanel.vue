@@ -52,6 +52,9 @@ const props = defineProps<{
   maxWidth?: number;
   /** 全屏态：面板横向铺满视口（盖住侧边栏+任务列表），隐藏拖拽手柄 */
   fullscreen?: boolean;
+  /** 路由导航进行中强制隐藏（AppLayout 的 beforeEach 提前置 true，
+   *  避免切非列表视图时 empty 占位闪现一帧） */
+  forceHidden?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -839,7 +842,7 @@ onBeforeUnmount(() => {
   <Transition :name="transitionName">
   <div
     ref="panelEl"
-    v-if="!isFloatingView || task"
+    v-if="(!isFloatingView || task) && !forceHidden"
     class="detail-panel"
     :class="{ 'detail-panel--fullscreen': fullscreen }"
     :style="fullscreen ? {} : { width: (panelWidth ?? 480) + 'px' }"

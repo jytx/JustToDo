@@ -78,6 +78,34 @@ watch(
   },
 );
 
+/**
+ * 路由导航进行中强制隐藏详情面板。
+ * 背景：切到日历/设置/习惯等非列表视图时，路由更新（含懒加载组件）有延迟，
+ * 期间 TaskDetailPanel 仍按旧路由渲染 empty 占位，切换完成后才消失，
+ * 形成「empty 闪一下」的视觉残留。在 router.beforeEach 提前隐藏面板，
+ * 路由切换完成（afterEach）后恢复——此时新路由下 isFloatingView 已生效，
+ * 非列表视图本就不渲染面板。
+ */
+const panelForceHidden = ref(false);
+router.beforeEach((to) => {
+  const name = to.name as string | undefined;
+  const isTaskFamily =
+    !!name &&
+    (name === "today" ||
+      name === "upcoming" ||
+      name === "all" ||
+      name === "list" ||
+      name === "notebook" ||
+      name === "tag");
+  const view = to.query.view as string | undefined;
+  const isListTarget = isTaskFamily && view !== "kanban" && view !== "timeline";
+  // 目标不是列表视图：立即隐藏面板（列表内部切换保持）
+  if (!isListTarget) panelForceHidden.value = true;
+});
+router.afterEach(() => {
+  panelForceHidden.value = false;
+});
+
 /** 打开 AI 助手弹窗（顶栏/快捷键入口，默认每日小结）。 */
 function openSummary(): void {
   taskStore.aiSelectedTool = "daily";
@@ -689,6 +717,7 @@ useShortcuts({
       v-model:panel-width="panelWidth"
       v-model:fullscreen="panelFullscreen"
       :max-width="detailPanelMaxWidth"
+      :force-hidden="panelForceHidden"
     />
 
     <!-- 全局搜索面板 -->
