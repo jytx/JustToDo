@@ -369,6 +369,15 @@ async function onCtxAddSubtask(): Promise<void> {
   if (sub) taskStore.selectTask(sub.id);
 }
 
+/** 更多菜单「新建子任务」：逻辑同 onCtxAddSubtask，关闭的是右侧更多菜单（menuOpen） */
+async function onMenuAddSubtask(): Promise<void> {
+  menuOpen.value = false;
+  await taskStore.createSubtask(props.task, "");
+  await taskStore.loadSubtasks(props.task.id);
+  const sub = taskStore.subtasks[taskStore.subtasks.length - 1];
+  if (sub) taskStore.selectTask(sub.id);
+}
+
 /** 删除任务（走现有的删除确认弹窗） */
 function onCtxDelete(): void {
   ctxMenu.visible = false;
@@ -502,6 +511,10 @@ function onCtxEnterBatchMode(): void {
               <icon-more :size="16" />
             </button>
           </template>
+          <MenuPopoverItem @click="onMenuAddSubtask">
+            <icon-plus :size="15" />
+            <span>{{ isNote ? "新建子笔记" : "新建子任务" }}</span>
+          </MenuPopoverItem>
           <MenuPopoverItem danger @click="onDelete">
             <icon-delete :size="15" />
             <span>{{ isNote ? "删除笔记" : "删除任务" }}</span>
