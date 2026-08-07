@@ -2,15 +2,18 @@
 // 任务列表项 —— 支持树形递归（子任务嵌套展开）
 // 含：展开箭头、复选框、标题、优先级色点、截止日期、hover 操作菜单
 import { ref, computed, watch, reactive, nextTick, onMounted, onBeforeUnmount } from "vue";
-import type { Task } from "@/types";
-import { PRIORITY_COLORS } from "@/types";
+import type { Task, Priority } from "@/types";
+import { PRIORITY_COLORS, PRIORITY_LABELS } from "@/types";
 import { formatDueDate } from "@/utils/date";
 import { useTaskStore } from "@/stores/task";
 import { useGroupStore } from "@/stores/group";
+import { useTagStore } from "@/stores/tag";
+import * as db from "@/api/db";
 import TaskCheckbox from "./TaskCheckbox.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
 import ContextMenu from "./ContextMenu.vue";
+import PriorityDot from "./PriorityDot.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -56,6 +59,7 @@ const emit = defineEmits<{
 // ─── 拖拽排序（仅根任务 depth=0 且未完成 且 当前为手动排序模式时启用） ──────────────
 const taskStore = useTaskStore();
 const groupStore = useGroupStore();
+const tagStore = useTagStore();
 
 /** 当前清单的分组列表（用于「移动到分组」） */
 const currentGroups = computed(() => groupStore.currentGroups);
@@ -64,25 +68,41 @@ const currentGroups = computed(() => groupStore.currentGroups);
 async function onMoveToGroup(groupId: string): Promise<void> {
   await taskStore.updateTask(props.task.id, { groupId });
   ctxMenu.visible = false;
-  groupSubmenuStyle.display = false;
+  menuOpen.value = false;
+  cascadeSubmenu.display = false;
 }
 
-// ─── 移动到分组的级联子菜单（参照 BatchContextMenu 的 Teleport + fixed 方案）───
-const groupSubmenuStyle = reactive({ display: false, top: "" as string | undefined, left: "" as string | undefined });
-let groupCloseTimer: number | null = null;
-const GROUP_CLOSE_DELAY = 200;
+// ─── 级联子菜单（优先级 / 标签 / 移动到分组，参照 BatchContextMenu 的 Teleport + fixed 方案）───
+/** 级联子菜单类型：priority=优先级 / tag=标签 / group=移动到分组 */
+type CascadeKind = "priority" | "tag" | "group";
 
-/** 显示分组子菜单：定位在触发项右侧 */
-async function showGroupSubmenu(triggerEl: HTMLElement): Promise<void> {
-  if (groupCloseTimer !== null) {
-    clearTimeout(groupCloseTimer);
-    groupCloseTimer = null;
+/** 级联子菜单状态：类型 + 定位 */
+const cascadeSubmenu = reactive<{
+  kind: CascadeKind | null;
+  display: boolean;
+  top: string | undefined;
+  left: string | undefined;
+}>({ kind: null, display: false, top: undefined, left: undefined });
+
+let cascadeCloseTimer: number | null = null;
+const CASCADE_CLOSE_DELAY = 200;
+
+/** 显示级联子菜单：定位在触发项右侧（超出视口则翻转到左侧） */
+async function showCascadeSubmenu(kind: CascadeKind, triggerEl: HTMLElement): Promise<void> {
+  if (cascadeCloseTimer !== null) {
+    clearTimeout(cascadeCloseTimer);
+    cascadeCloseTimer = null;
   }
-  groupSubmenuStyle.display = true;
+  // 标签列表兜底加载（侧边栏通常已加载，此处防收起/加载失败场景）
+  if (kind === "tag" && tagStore.tags.length === 0) {
+    await tagStore.loadTags();
+  }
+  cascadeSubmenu.kind = kind;
+  cascadeSubmenu.display = true;
   await nextTick();
   await new Promise((r) => requestAnimationFrame(() => r(null)));
   const tr = triggerEl.getBoundingClientRect();
-  const subEl = document.querySelector(".group-submenu") as HTMLElement | null;
+  const subEl = document.querySelector(".task-item-submenu") as HTMLElement | null;
   const subW = subEl ? subEl.offsetWidth : 180;
   const viewportW = document.documentElement.clientWidth;
   const margin = 4;
@@ -90,22 +110,58 @@ async function showGroupSubmenu(triggerEl: HTMLElement): Promise<void> {
   if (left + subW > viewportW - margin) {
     left = tr.left - subW - margin;
   }
-  groupSubmenuStyle.left = left + "px";
-  groupSubmenuStyle.top = tr.top + "px";
+  cascadeSubmenu.left = left + "px";
+  cascadeSubmenu.top = tr.top + "px";
 }
 
-function scheduleCloseGroupSubmenu(): void {
-  if (groupCloseTimer !== null) clearTimeout(groupCloseTimer);
-  groupCloseTimer = window.setTimeout(() => {
-    groupSubmenuStyle.display = false;
-    groupCloseTimer = null;
-  }, GROUP_CLOSE_DELAY);
+function scheduleCloseCascadeSubmenu(): void {
+  if (cascadeCloseTimer !== null) clearTimeout(cascadeCloseTimer);
+  cascadeCloseTimer = window.setTimeout(() => {
+    cascadeSubmenu.display = false;
+    cascadeCloseTimer = null;
+  }, CASCADE_CLOSE_DELAY);
 }
 
-function cancelCloseGroupSubmenu(): void {
-  if (groupCloseTimer !== null) {
-    clearTimeout(groupCloseTimer);
-    groupCloseTimer = null;
+function cancelCloseCascadeSubmenu(): void {
+  if (cascadeCloseTimer !== null) {
+    clearTimeout(cascadeCloseTimer);
+    cascadeCloseTimer = null;
+  }
+}
+
+// ─── 菜单设置优先级 / 标签 ─────────────────────────────
+/** 从菜单设置优先级（点击后关闭全部菜单） */
+async function onMenuSetPriority(p: Priority): Promise<void> {
+  ctxMenu.visible = false;
+  menuOpen.value = false;
+  cascadeSubmenu.display = false;
+  await taskStore.updateTask(props.task.id, { priority: p });
+}
+
+/** 菜单里切换标签关联（已关联 → 移除，未关联 → 添加）。
+ *  保持子菜单打开，方便连续调整多个标签。 */
+async function onMenuToggleTag(tagId: string): Promise<void> {
+  const has = taskTags.value.some((t) => t.id === tagId);
+  if (has) {
+    await db.removeTaskTag(props.task.id, tagId);
+  } else {
+    await db.addTaskTag(props.task.id, tagId);
+  }
+  // 刷新 store 缓存（taskTagMap 是列表项 + 详情面板的唯一数据源）
+  await taskStore.refreshTaskTags(props.task.id);
+}
+
+/** 菜单里新建标签并关联到当前任务（与详情面板创建标签同范式） */
+async function onMenuCreateTag(name: string): Promise<void> {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return;
+  let tag = tagStore.getByName(trimmed);
+  if (!tag) {
+    tag = await tagStore.createTag(trimmed);
+  }
+  if (tag) {
+    await db.addTaskTag(props.task.id, tag.id);
+    await taskStore.refreshTaskTags(props.task.id);
   }
 }
 
@@ -552,6 +608,23 @@ function onCtxEnterBatchMode(): void {
             <icon-plus :size="15" />
             <span>{{ isNote ? "新建子笔记" : "新建子任务" }}</span>
           </MenuPopoverItem>
+          <!-- 优先级 / 标签：hover 弹右侧级联子菜单 -->
+          <MenuPopoverItem
+            @mouseenter="(e: MouseEvent) => showCascadeSubmenu('priority', e.currentTarget as HTMLElement)"
+            @mouseleave="scheduleCloseCascadeSubmenu"
+          >
+            <icon-fire :size="15" />
+            <span>优先级</span>
+            <icon-right :size="12" style="margin-left: auto" />
+          </MenuPopoverItem>
+          <MenuPopoverItem
+            @mouseenter="(e: MouseEvent) => showCascadeSubmenu('tag', e.currentTarget as HTMLElement)"
+            @mouseleave="scheduleCloseCascadeSubmenu"
+          >
+            <icon-tag :size="15" />
+            <span>标签</span>
+            <icon-right :size="12" style="margin-left: auto" />
+          </MenuPopoverItem>
           <MenuPopoverItem danger @click="onDelete">
             <icon-delete :size="15" />
             <span>{{ isNote ? "删除笔记" : "删除任务" }}</span>
@@ -578,17 +651,34 @@ function onCtxEnterBatchMode(): void {
       />
     </div>
 
-    <!-- 右键菜单：多选 / 移动到分组 / 新建同级 / 新建子项 / 删除 -->
+    <!-- 右键菜单：多选 / 优先级 / 标签 / 移动到分组 / 新建同级 / 新建子项 / 删除 -->
     <ContextMenu v-model:visible="ctxMenu.visible" :x="ctxMenu.x" :y="ctxMenu.y">
       <MenuPopoverItem @click="onCtxEnterBatchMode">
         <icon-check-circle :size="15" />
         <span>多选</span>
       </MenuPopoverItem>
+      <!-- 优先级 / 标签 / 移动到分组：hover 弹右侧级联子菜单 -->
+      <MenuPopoverItem
+        @mouseenter="(e: MouseEvent) => showCascadeSubmenu('priority', e.currentTarget as HTMLElement)"
+        @mouseleave="scheduleCloseCascadeSubmenu"
+      >
+        <icon-fire :size="15" />
+        <span>优先级</span>
+        <icon-right :size="12" style="margin-left: auto" />
+      </MenuPopoverItem>
+      <MenuPopoverItem
+        @mouseenter="(e: MouseEvent) => showCascadeSubmenu('tag', e.currentTarget as HTMLElement)"
+        @mouseleave="scheduleCloseCascadeSubmenu"
+      >
+        <icon-tag :size="15" />
+        <span>标签</span>
+        <icon-right :size="12" style="margin-left: auto" />
+      </MenuPopoverItem>
       <!-- 移动到分组：hover 弹右侧级联子菜单（仅当清单有多个分组时显示） -->
       <MenuPopoverItem
         v-if="!isNote && currentGroups.length > 1"
-        @mouseenter="(e: MouseEvent) => showGroupSubmenu(e.currentTarget as HTMLElement)"
-        @mouseleave="scheduleCloseGroupSubmenu"
+        @mouseenter="(e: MouseEvent) => showCascadeSubmenu('group', e.currentTarget as HTMLElement)"
+        @mouseleave="scheduleCloseCascadeSubmenu"
       >
         <icon-folder :size="15" />
         <span>移动到分组</span>
@@ -611,20 +701,54 @@ function onCtxEnterBatchMode(): void {
     <!-- 移动到分组级联子菜单：Teleport 到 body，position:fixed -->
     <Teleport to="body">
       <div
-        v-if="groupSubmenuStyle.display"
-        class="group-submenu context-menu"
-        :style="{ position: 'fixed', top: groupSubmenuStyle.top, left: groupSubmenuStyle.left, zIndex: '10010' }"
-        @mouseenter="cancelCloseGroupSubmenu"
-        @mouseleave="scheduleCloseGroupSubmenu"
+        v-if="cascadeSubmenu.display"
+        class="task-item-submenu context-menu"
+        :style="{ position: 'fixed', top: cascadeSubmenu.top, left: cascadeSubmenu.left, zIndex: '10010' }"
+        @mouseenter="cancelCloseCascadeSubmenu"
+        @mouseleave="scheduleCloseCascadeSubmenu"
       >
-        <MenuPopoverItem
-          v-for="group in currentGroups"
-          :key="group.id"
-          :active="group.id === props.task.groupId"
-          @click="onMoveToGroup(group.id)"
-        >
-          <span>{{ group.name }}</span>
-        </MenuPopoverItem>
+        <!-- 优先级：无 / 低 / 中 / 高（当前级别高亮） -->
+        <template v-if="cascadeSubmenu.kind === 'priority'">
+          <MenuPopoverItem
+            v-for="(label, p) in PRIORITY_LABELS"
+            :key="p"
+            :active="props.task.priority === Number(p)"
+            @click="onMenuSetPriority(Number(p) as Priority)"
+          >
+            <PriorityDot :priority="(Number(p) as Priority)" :size="10" />
+            <span>{{ label }}</span>
+          </MenuPopoverItem>
+        </template>
+        <!-- 标签：点击切换关联（已关联高亮 + 勾选），底部可新建标签 -->
+        <template v-else-if="cascadeSubmenu.kind === 'tag'">
+          <MenuPopoverItem
+            v-for="opt in tagStore.tags"
+            :key="opt.id"
+            :active="taskTags.some((t) => t.id === opt.id)"
+            @click="onMenuToggleTag(opt.id)"
+          >
+            <icon-tag :size="12" />
+            <span>{{ opt.name }}</span>
+          </MenuPopoverItem>
+          <a-input
+            placeholder="+ 新建标签"
+            size="mini"
+            allow-clear
+            style="margin-top: 4px"
+            @keydown.enter="(e: any) => { onMenuCreateTag((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = ''; }"
+          />
+        </template>
+        <!-- 移动到分组：当前分组高亮 -->
+        <template v-else-if="cascadeSubmenu.kind === 'group'">
+          <MenuPopoverItem
+            v-for="group in currentGroups"
+            :key="group.id"
+            :active="group.id === props.task.groupId"
+            @click="onMoveToGroup(group.id)"
+          >
+            <span>{{ group.name }}</span>
+          </MenuPopoverItem>
+        </template>
       </div>
     </Teleport>
   </div>
@@ -918,11 +1042,12 @@ function onCtxEnterBatchMode(): void {
   margin: 4px 0;
 }
 
-/* 「移动到分组」级联子菜单：Teleport 到 body，与一级菜单（ContextMenu 的
- * .context-menu）外观保持一致。一级菜单样式是 ContextMenu.vue 的 scoped
- * 样式，在本组件里复用类名匹配不到（scoped 属性不同），必须显式补全，
- * 否则背景透明、无圆角阴影（与 BatchContextMenu 的 .batch-submenu 同理）。 */
-.group-submenu {
+/* 级联子菜单（优先级/标签/移动到分组）：Teleport 到 body，与一级菜单
+ * （ContextMenu 的 .context-menu）外观保持一致。一级菜单样式是
+ * ContextMenu.vue 的 scoped 样式，在本组件里复用类名匹配不到（scoped
+ * 属性不同），必须显式补全，否则背景透明、无圆角阴影（与
+ * BatchContextMenu 的 .batch-submenu 同理）。 */
+.task-item-submenu {
   width: max-content;
   min-width: 120px;
   max-width: 220px;
