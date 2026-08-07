@@ -16,6 +16,7 @@ import MenuPopoverItem from "./MenuPopoverItem.vue";
 import ContextMenu from "./ContextMenu.vue";
 import PriorityDot from "./PriorityDot.vue";
 import ListCascadeMenu from "./menu/ListCascadeMenu.vue";
+import AttachParentDialog from "./AttachParentDialog.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -422,6 +423,24 @@ function onDelete() {
   taskStore.requestDelete(props.task.id);
 }
 
+// ─── 关联主任务弹窗 ──────────────────────────────────
+/** 弹窗可见性 */
+const attachParentVisible = ref(false);
+
+/** 打开关联主任务弹窗（右键菜单与更多菜单共用） */
+function onMenuAttachParent(): void {
+  ctxMenu.visible = false;
+  menuOpen.value = false;
+  attachParentVisible.value = true;
+}
+
+/** 弹窗选中主任务后：先关弹窗，再调 store 持久化
+ *  （后端同步 parent_id + 跨清单的 list_id/group_id，reload 后任务从根列表消失） */
+async function onAttachParentSelect(parentId: string): Promise<void> {
+  attachParentVisible.value = false;
+  await taskStore.attachToParent(props.task.id, parentId);
+}
+
 // ─── 右键菜单 ──────────────────────────────────────
 /** 右键菜单状态：可见性 + 鼠标坐标 */
 const ctxMenu = reactive<{ visible: boolean; x: number; y: number }>({
@@ -662,6 +681,10 @@ function onCtxEnterBatchMode(): void {
             <span>移动至</span>
             <icon-right :size="12" style="margin-left: auto" />
           </MenuPopoverItem>
+          <MenuPopoverItem @click="onMenuAttachParent">
+            <icon-link :size="15" />
+            <span>关联主任务</span>
+          </MenuPopoverItem>
           <MenuPopoverItem danger @click="onDelete">
             <icon-delete :size="15" />
             <span>{{ isNote ? "删除笔记" : "删除任务" }}</span>
@@ -719,6 +742,10 @@ function onCtxEnterBatchMode(): void {
         <icon-export :size="15" />
         <span>移动至</span>
         <icon-right :size="12" style="margin-left: auto" />
+      </MenuPopoverItem>
+      <MenuPopoverItem @click="onMenuAttachParent">
+        <icon-link :size="15" />
+        <span>关联主任务</span>
       </MenuPopoverItem>
       <!-- 移动到分组：hover 弹右侧级联子菜单（仅当清单有多个分组时显示） -->
       <MenuPopoverItem
@@ -805,6 +832,14 @@ function onCtxEnterBatchMode(): void {
         </template>
       </div>
     </Teleport>
+
+    <!-- 关联主任务弹窗（右键/更多菜单触发） -->
+    <AttachParentDialog
+      v-model:visible="attachParentVisible"
+      :task-id="props.task.id"
+      :current-parent-id="props.task.parentId"
+      @select="onAttachParentSelect"
+    />
   </div>
 </template>
 

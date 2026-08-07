@@ -314,6 +314,17 @@ export async function getSubtasks(parentId: string): Promise<Task[]> {
   return rows.map(mapTask);
 }
 
+/** 查询可作为「关联主任务」的候选：全部清单的未完成一级任务（排除自身、排除归档清单） */
+export async function getRootCandidates(excludeId: string): Promise<Task[]> {
+  const rows = await invoke<RustTask[]>("task_get_root_candidates", { excludeId });
+  return rows.map(mapTask);
+}
+
+/** 把任务挂为另一任务的子任务（关联主任务；跨清单时后端同步 list_id/group_id） */
+export async function setTaskParent(taskId: string, parentId: string): Promise<void> {
+  await invoke<void>("task_set_parent", { taskId, parentId });
+}
+
 /** 按 due 日期范围拉取任务（用于日历视图）
  * 命中条件：任务区间与 [start, end] 相交；包含根任务与子任务
  * @param start 范围起始（本地字面量 "YYYY-MM-DDTHH:mm:ss"）

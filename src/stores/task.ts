@@ -1063,6 +1063,22 @@ export const useTaskStore = defineStore("task", () => {
     }
   }
 
+  /** 把任务挂为另一任务的子任务（关联主任务）。
+   *  后端同步 parent_id + 跨清单时的 list_id/group_id；挂载后任务从根列表消失。
+   *  视图刷新用 reload()（被后端 parent_id IS NULL 自然过滤），
+   *  并刷新父任务子缓存 + 发 autoExpandParentId 信号让父行展开。 */
+  async function attachToParent(taskId: string, parentId: string): Promise<void> {
+    await db.setTaskParent(taskId, parentId);
+    // 若父任务的子缓存已加载过，刷新它（让新子任务即时出现在树形列表）
+    if (parentId in subtaskCache.value) {
+      await loadSubtasksToCache(parentId);
+    }
+    // 通知父任务行自动展开
+    autoExpandParentId.value = parentId;
+    // 重新加载当前视图：变子的任务被后端 parent_id IS NULL 过滤，从根列表消失
+    await reload();
+  }
+
   /** 从缓存获取子任务 */
   function getCachedSubtasks(parentId: string): Task[] {
     return subtaskCache.value[parentId] ?? [];
@@ -1246,6 +1262,7 @@ export const useTaskStore = defineStore("task", () => {
     loadSubtasksToCache,
     getCachedSubtasks,
     getSubtasks,
+    attachToParent,
     preloadSubtaskCounts,
     refreshTaskTags,
     // 检查项操作

@@ -423,6 +423,8 @@ pub fn run() {
             commands::task_delete,
             commands::task_get_by_id,
             commands::task_get_subtasks,
+            commands::task_get_root_candidates,
+            commands::task_set_parent,
             commands::task_generate_recurring,
             commands::recurrence_list_templates,
             commands::recurrence_pause,

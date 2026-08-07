@@ -1006,6 +1006,67 @@ pub async fn task_get_subtasks(
     Ok(rows.iter().map(row_to_task).collect())
 }
 
+/// 查询可作为「关联主任务」的候选：全部清单的未完成一级任务。
+/// 排除自身（exclude_id）+ 排除归档清单内任务。
+/// 候选都是一级任务，挂载后变二级就不再出现在候选里，天然无循环挂载风险。
+#[tauri::command]
+pub async fn task_get_root_candidates(
+    pool: State<'_, sqlx::SqlitePool>,
+    exclude_id: String,
+) -> CmdResult<Vec<Task>> {
+    let rows = sqlx::query(
+        "SELECT * FROM tasks
+         WHERE parent_id IS NULL AND done = 0 AND kind = 'task'
+           AND id != $1
+           AND list_id NOT IN (SELECT id FROM lists WHERE archived = 1)
+         ORDER BY list_id, sort_order ASC",
+    )
+    .bind(exclude_id)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("查询候选主任务失败: {}", e))?;
+
+    Ok(rows.iter().map(row_to_task).collect())
+}
+
+/// 把任务挂为另一任务的子任务（关联主任务）。
+/// 跨清单时同步子任务的 list_id / group_id 到父任务所在清单，避免跨清单 group_id 孤儿。
+/// 父任务必须存在（调用方保证）。
+#[tauri::command]
+pub async fn task_set_parent(
+    pool: State<'_, sqlx::SqlitePool>,
+    task_id: String,
+    parent_id: String,
+) -> CmdResult<()> {
+    // 查父任务的 list_id（用于跨清单同步）
+    let parent: Option<(String,)> = sqlx::query_as("SELECT list_id FROM tasks WHERE id = $1")
+        .bind(&parent_id)
+        .fetch_optional(pool.inner())
+        .await
+        .map_err(|e| format!("查询父任务失败: {}", e))?;
+    let parent_list_id = parent
+        .map(|(l,)| l)
+        .ok_or_else(|| format!("父任务不存在: {}", parent_id))?;
+    let group_id = format!("{}-default", parent_list_id);
+
+    let ts = now();
+    sqlx::query(
+        "UPDATE tasks
+         SET parent_id = $1, list_id = $2, group_id = $3, updated_at = $4
+         WHERE id = $5",
+    )
+    .bind(&parent_id)
+    .bind(&parent_list_id)
+    .bind(&group_id)
+    .bind(&ts)
+    .bind(&task_id)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| format!("关联主任务失败: {}", e))?;
+
+    Ok(())
+}
+
 // ─── 标签操作 ────────────────────────────────────────────
 
 #[tauri::command]
