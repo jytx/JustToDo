@@ -365,8 +365,7 @@ function onContextMenu(e: MouseEvent): void {
  *  - 当前是顶层任务（parentId=null）→ 新建顶层任务
  *  - 当前是子任务（parentId 非空）→ 新建同父子任务
  *  走「空标题 + 选中打开详情面板」范式，让用户直接输入标题。 */
-async function onCtxAddSiblingTask(): Promise<void> {
-  ctxMenu.visible = false;
+async function addSiblingTaskAndSelect(): Promise<void> {
   const created = await taskStore.createTask({
     title: "",
     listId: props.task.listId,
@@ -376,6 +375,12 @@ async function onCtxAddSiblingTask(): Promise<void> {
     groupId: props.task.groupId ?? undefined,
   });
   taskStore.selectTask(created.id);
+}
+
+/** 右键菜单「新建任务（同级）」：关闭的是右键菜单（ctxMenu） */
+async function onCtxAddSiblingTask(): Promise<void> {
+  ctxMenu.visible = false;
+  await addSiblingTaskAndSelect();
 }
 
 /** 新建子任务：在当前任务下创建下级任务，创建后自动展开显示。
@@ -392,6 +397,12 @@ async function addSubtaskAndExpand(): Promise<void> {
 async function onCtxAddSubtask(): Promise<void> {
   ctxMenu.visible = false;
   await addSubtaskAndExpand();
+}
+
+/** 更多菜单「新建任务（同级）」：关闭的是右侧更多菜单（menuOpen） */
+async function onMenuAddSiblingTask(): Promise<void> {
+  menuOpen.value = false;
+  await addSiblingTaskAndSelect();
 }
 
 /** 更多菜单「新建子任务」：关闭的是右侧更多菜单（menuOpen） */
@@ -533,6 +544,10 @@ function onCtxEnterBatchMode(): void {
               <icon-more :size="16" />
             </button>
           </template>
+          <MenuPopoverItem @click="onMenuAddSiblingTask">
+            <icon-plus :size="15" />
+            <span>{{ isNote ? "新建笔记" : "新建任务" }}</span>
+          </MenuPopoverItem>
           <MenuPopoverItem @click="onMenuAddSubtask">
             <icon-plus :size="15" />
             <span>{{ isNote ? "新建子笔记" : "新建子任务" }}</span>
