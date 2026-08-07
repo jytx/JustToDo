@@ -445,6 +445,34 @@ function cancelEditTitle(): void {
   editingTitleValue.value = props.task.title;
 }
 
+/** 创建副本：复制当前任务的标题/优先级/日期/备注/重复/提醒到同清单新任务。
+ *  与详情面板右下角「创建副本」同范式（createTask 基础字段 + update 补全）。
+ *  复制后选中副本，便于用户继续编辑。 */
+async function onMenuDuplicate(): Promise<void> {
+  ctxMenu.visible = false;
+  menuOpen.value = false;
+  cascadeSubmenu.display = false;
+  const t = props.task;
+  const newTask = await taskStore.createTask({
+    title: `${t.title}（副本）`,
+    listId: t.listId,
+    priority: t.priority,
+    dueStartAt: t.dueStartAt,
+    dueEndAt: t.dueEndAt,
+    kind: t.kind,
+    groupId: t.groupId ?? undefined,
+  });
+  if (newTask) {
+    await taskStore.updateTask(newTask.id, {
+      note: t.note ?? "",
+      recurrenceFreq: t.recurrenceFreq,
+      recurrenceInterval: t.recurrenceInterval,
+      remindOffsetMinutes: t.remindOffsetMinutes,
+    });
+    taskStore.selectTask(newTask.id);
+  }
+}
+
 /** 子任务行点击：与 onRowClick 同逻辑，但子任务不走事件冒泡（冒泡到视图层时
  *  会丢失 subId），直接在组件内按修饰键调用 store 批量方法。
  *  Shift 范围选基于 openTasks（根任务序列，不含子任务），子任务 Shift 会退化为单选。 */
@@ -771,6 +799,10 @@ function onCtxEnterBatchMode(): void {
             <icon-link :size="15" />
             <span>关联主任务</span>
           </MenuPopoverItem>
+          <MenuPopoverItem @click="onMenuDuplicate">
+            <icon-copy :size="15" />
+            <span>创建副本</span>
+          </MenuPopoverItem>
           <MenuPopoverItem danger @click="onDelete">
             <icon-delete :size="15" />
             <span>{{ isNote ? "删除笔记" : "删除任务" }}</span>
@@ -850,6 +882,10 @@ function onCtxEnterBatchMode(): void {
       <MenuPopoverItem @click="onCtxAddSubtask">
         <icon-branch :size="15" />
         <span>{{ isNote ? "新建子笔记" : "新建子任务" }}</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem @click="onMenuDuplicate">
+        <icon-copy :size="15" />
+        <span>创建副本</span>
       </MenuPopoverItem>
       <MenuPopoverItem danger @click="onCtxDelete">
         <icon-delete :size="15" />
