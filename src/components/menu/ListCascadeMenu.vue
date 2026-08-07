@@ -67,9 +67,11 @@ function closeFolder(id: string): void {
         <span>{{ folder.name }}</span>
         <icon-right :size="12" style="margin-left: auto" />
       </MenuPopoverItem>
-      <!-- 递归子菜单：absolute 定位在目录项右侧，expanded 控制显隐 -->
+      <!-- 递归子菜单：absolute 定位在目录项右侧，expanded 控制显隐。
+           外观由本组件 .list-cascade__sub 自定义（不依赖外部 .task-item-submenu，
+           因 ListCascadeMenu 是独立组件，外部 scoped 样式不穿透到递归子级）。 -->
       <div
-        class="list-cascade__sub task-item-submenu"
+        class="list-cascade__sub"
         :class="{ 'list-cascade__sub--open': expanded[folder.id] }"
       >
         <ListCascadeMenu
@@ -102,7 +104,9 @@ function closeFolder(id: string): void {
   position: relative;
 }
 
-/* 递归子菜单：absolute 在目录项右侧，默认隐藏，open 时显示 */
+/* 递归子菜单：absolute 在目录项右侧，默认隐藏，open 时显示。
+   外观自包含（背景/圆角/阴影/宽度/padding 与一级 .task-item-submenu 一致），
+   不依赖外部 scoped 样式（ListCascadeMenu 是独立组件，外部 scoped 不穿透到递归子级）。 */
 .list-cascade__sub {
   position: absolute;
   left: 100%;
@@ -110,6 +114,16 @@ function closeFolder(id: string): void {
   display: none;
   /* 与目录项的小间距 */
   margin-left: 2px;
+  /* 容器外观（与一级 .task-item-submenu 保持视觉统一） */
+  width: max-content;
+  min-width: 120px;
+  max-width: 220px;
+  background: var(--jt-surface);
+  border-radius: 12px;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.16),
+    0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: 8px;
 }
 .list-cascade__sub--open {
   display: flex;
