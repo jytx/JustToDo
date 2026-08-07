@@ -387,7 +387,8 @@ const titleInputRef = ref<HTMLInputElement | null>(null);
 /** 编辑中的标题值（独立 ref，编辑期间不回写 props.task.title，失焦保存时才持久化） */
 const editingTitleValue = ref("");
 
-/** 单击标题进入编辑：填入当前标题，自动聚焦并选中全部（便于整体替换）。
+/** 单击标题进入编辑：填入当前标题，自动聚焦并把光标置于末尾（便于追加文字，
+ *  不全选——全选会让用户想点位置时误覆盖整段文字）。
  *  focus 用 rAF 双重保障：v-if 切换渲染 input 后，nextTick 时 DOM 可能未完全
  *  稳定（浏览器焦点栈未更新），直接 focus 偶发失效。 */
 function onTitleClick(): void {
@@ -398,7 +399,9 @@ function onTitleClick(): void {
       const input = titleInputRef.value;
       if (input) {
         input.focus();
-        input.select();
+        // 光标置于行尾（与详情面板检查项编辑同范式）
+        const len = input.value.length;
+        input.setSelectionRange(len, len);
       }
     });
   });
