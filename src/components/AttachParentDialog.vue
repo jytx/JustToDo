@@ -96,7 +96,7 @@ function onKeyDown(e: KeyboardEvent): void {
 <template>
   <a-modal
     :visible="visible"
-    :width="480"
+    :width="600"
     :mask-closable="true"
     :footer="false"
     :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
@@ -204,7 +204,7 @@ function onKeyDown(e: KeyboardEvent): void {
 }
 
 .attach-parent__results {
-  max-height: 360px;
+  max-height: 280px;
   overflow-y: auto;
   padding: 6px 8px;
 }
