@@ -36,8 +36,12 @@ function toggleFold(): void {
       <icon-right v-if="folded" :size="10" />
       <icon-down v-else :size="10" />
     </button>
-    <!-- 标题内容：NodeViewContent 渲染为对应级别的 hx，保留原生语义 -->
-    <NodeViewContent :as="`h${level}`" class="heading-block__content" />
+    <!-- 标题内容：NodeViewContent 渲染标题文字。
+         注意 as 必须固定为 div（不能随 level 渲染成 h1-h6）：若 tag 随 level
+         变化，Vue 会卸载旧元素重建新元素，ProseMirror 记录的 contentDOM 引用
+         随之失效，标题文字会丢失（如 H5 改 H4 时整行消失的 bug）。
+         标题层级样式由 .heading-block--h{N} 的 class 控制（见 RichTextEditor CSS）。 -->
+    <NodeViewContent :as="'div'" class="heading-block__content" />
   </NodeViewWrapper>
 </template>
 

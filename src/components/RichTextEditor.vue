@@ -330,6 +330,18 @@ const turndownService = new TurndownService({
 });
 // GFM 删除线插件（~~text~~）
 turndownService.use(turndownPluginGfm.strikethrough);
+// 标题 NodeView（heading-block）：编辑器内标题渲染为 .heading-block--h{N} 包裹的
+// div（NodeViewContent 固定 as=div，见 HeadingView），turndown 默认 heading 规则
+// 按 h1-h6 tagName 识别不到。这里自定义规则按 class 的级别数字转 ATX 标题（# 前缀）。
+turndownService.addRule("headingBlocks", {
+  filter: (node: HTMLElement) => /^heading-block--h[1-6]$/.test(node.className ?? ""),
+  replacement: (content: string, node: HTMLElement) => {
+    const m = /^heading-block--h([1-6])$/.exec(node.className ?? "");
+    if (!m) return content;
+    // 折叠按钮（空 button + 图标）转出的空内容直接丢弃，只保留标题文字
+    return `${"#".repeat(Number(m[1]))} ${content.trim()}\n\n`;
+  },
+});
 // 表格 → Markdown 表格语法（| col | col |）。
 // 不用 gfm.tables：Tiptap 表格单元格内含 <p>、colspan/rowspan 属性，gfm 规则
 // 处理不了会拆成零散文本。这里自定义规则：逐行取单元格纯文本，用 | 拼接。
@@ -1351,42 +1363,44 @@ function fileToBase64(file: File): Promise<string> {
   margin-bottom: 0;
 }
 
-/* 标题 — Geist 显示气质：靠字号 + 字重 + 字间距区分层级 */
-.rich-text__editor :deep(.rich-text__content h1) {
+/* 标题 — Geist 显示气质：靠字号 + 字重 + 字间距区分层级。
+   选择器基于 .heading-block--h{N} class（NodeViewContent 固定渲染 div，
+   tag 选择器 h1-h6 已不命中，层级样式必须走 class） */
+.rich-text__editor :deep(.rich-text__content .heading-block--h1 .heading-block__content) {
   font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.025em;
   margin: 8px 0 4px;
   line-height: 1.3;
 }
-.rich-text__editor :deep(.rich-text__content h2) {
+.rich-text__editor :deep(.rich-text__content .heading-block--h2 .heading-block__content) {
   font-size: 19px;
   font-weight: 600;
   letter-spacing: -0.02em;
   margin: 6px 0 4px;
   line-height: 1.3;
 }
-.rich-text__editor :deep(.rich-text__content h3) {
+.rich-text__editor :deep(.rich-text__content .heading-block--h3 .heading-block__content) {
   font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.015em;
   margin: 4px 0 2px;
   line-height: 1.3;
 }
-.rich-text__editor :deep(.rich-text__content h4) {
+.rich-text__editor :deep(.rich-text__content .heading-block--h4 .heading-block__content) {
   font-size: 14px;
   font-weight: 600;
   letter-spacing: -0.01em;
   margin: 4px 0 2px;
   line-height: 1.3;
 }
-.rich-text__editor :deep(.rich-text__content h5) {
+.rich-text__editor :deep(.rich-text__content .heading-block--h5 .heading-block__content) {
   font-size: 13px;
   font-weight: 600;
   margin: 4px 0 2px;
   line-height: 1.4;
 }
-.rich-text__editor :deep(.rich-text__content h6) {
+.rich-text__editor :deep(.rich-text__content .heading-block--h6 .heading-block__content) {
   font-size: 13px;
   font-weight: 500;
   color: var(--jt-text-secondary);
