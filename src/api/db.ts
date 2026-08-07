@@ -317,9 +317,10 @@ export async function getSubtasks(parentId: string): Promise<Task[]> {
   return rows.map(mapTask);
 }
 
-/** 查询可作为「关联主任务」的候选：全部清单的未完成一级任务（排除自身、排除归档清单） */
-export async function getRootCandidates(excludeId: string): Promise<Task[]> {
-  const rows = await invoke<RustTask[]>("task_get_root_candidates", { excludeId });
+/** 查询可作为「关联主任务/主笔记」的候选：全部清单/笔记本的未完成一级条目
+ *  （排除自身、排除归档清单；kind 过滤 'task' 或 'note'） */
+export async function getRootCandidates(excludeId: string, kind: TaskKind): Promise<Task[]> {
+  const rows = await invoke<RustTask[]>("task_get_root_candidates", { excludeId, kind });
   return rows.map(mapTask);
 }
 

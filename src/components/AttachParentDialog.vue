@@ -1,15 +1,16 @@
 <script setup lang="ts">
-// 关联主任务弹窗 —— 把当前任务挂到某个一级任务下作为子任务。
+// 关联主任务/主笔记弹窗 —— 把当前条目挂到某个一级条目下作为子条目。
 //
-// 数据：打开时调 db.getRootCandidates（全部清单的未完成一级任务，排除自身），
-// 本地用输入框文本过滤（标题包含，不区分大小写）。
+// 数据：打开时调 db.getRootCandidates（全部清单/笔记本的未完成一级条目，
+// 按 kind 过滤，排除自身），本地用输入框文本过滤（标题包含，不区分大小写）。
 // 选中后 emit('select', parentId)，由父组件调 store.attachToParent 持久化。
+// 文案随 kind 切换（任务：关联主任务/一级任务；笔记：关联主笔记/一级笔记）。
 //
 // 骨架参照 SearchPalette：a-modal + 输入框 + 键盘导航列表（↑↓ + Enter + ESC）。
 import { ref, computed, watch, nextTick } from "vue";
 import { useListStore } from "@/stores/list";
 import { getRootCandidates } from "@/api/db";
-import type { Task } from "@/types";
+import type { Task, TaskKind } from "@/types";
 
 const props = defineProps<{
   /** 弹窗可见性（v-model:visible） */
@@ -18,6 +19,8 @@ const props = defineProps<{
   taskId: string;
   /** 当前主任务 id（若有，用于高亮当前关联） */
   currentParentId: string | null;
+  /** 实体类型：'task'（默认，关联主任务）| 'note'（关联主笔记） */
+  kind: TaskKind;
 }>();
 
 const emit = defineEmits<{
@@ -32,6 +35,11 @@ const selectedIndex = ref(0);
 const query = ref("");
 /** 候选任务（打开时加载一次） */
 const candidates = ref<Task[]>([]);
+
+/** 按 kind 的文案：笔记场景用「笔记/一级笔记」，任务场景用「任务/一级任务」 */
+const label = computed(() =>
+  props.kind === "note" ? "笔记" : "任务",
+);
 
 /** 按标题过滤后的候选列表（不区分大小写） */
 const filtered = computed<Task[]>(() => {
@@ -48,7 +56,7 @@ watch(
       query.value = "";
       selectedIndex.value = 0;
       try {
-        candidates.value = await getRootCandidates(props.taskId);
+        candidates.value = await getRootCandidates(props.taskId, props.kind);
       } catch {
         candidates.value = [];
       }
@@ -106,7 +114,7 @@ function onKeyDown(e: KeyboardEvent): void {
   >
     <div class="attach-parent">
       <!-- 标题 -->
-      <div class="attach-parent__header">关联主任务</div>
+      <div class="attach-parent__header">关联主{{ label }}</div>
 
       <!-- 搜索输入 -->
       <div class="attach-parent__input-row">
@@ -115,7 +123,7 @@ function onKeyDown(e: KeyboardEvent): void {
           ref="inputRef"
           v-model="query"
           class="attach-parent__input"
-          placeholder="搜索一级任务..."
+          :placeholder="`搜索一级${label}...`"
           @keydown="onKeyDown"
         />
       </div>
@@ -126,13 +134,13 @@ function onKeyDown(e: KeyboardEvent): void {
       <div class="attach-parent__results">
         <!-- 无候选任务 -->
         <div v-if="candidates.length === 0" class="attach-parent__empty">
-          <p>暂无可关联的一级任务</p>
-          <p class="attach-parent__empty-hint">一级任务（未完成的根任务）才能作为主任务</p>
+          <p>暂无可关联的一级{{ label }}</p>
+          <p class="attach-parent__empty-hint">一级{{ label }}（未完成的根条目）才能作为主{{ label }}</p>
         </div>
 
         <!-- 搜索无结果 -->
         <div v-else-if="filtered.length === 0" class="attach-parent__empty">
-          <p>没有匹配的任务</p>
+          <p>没有匹配的{{ label }}</p>
         </div>
 
         <!-- 候选列表 -->

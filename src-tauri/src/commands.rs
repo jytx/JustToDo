@@ -1039,22 +1039,24 @@ pub async fn task_get_subtasks(
     Ok(rows.iter().map(row_to_task).collect())
 }
 
-/// 查询可作为「关联主任务」的候选：全部清单的未完成一级任务。
-/// 排除自身（exclude_id）+ 排除归档清单内任务。
-/// 候选都是一级任务，挂载后变二级就不再出现在候选里，天然无循环挂载风险。
+/// 查询可作为「关联主任务/主笔记」的候选：全部清单/笔记本的未完成一级条目。
+/// 排除自身（exclude_id）+ 排除归档清单内条目；按 kind 过滤（'task' 或 'note'）。
+/// 候选都是一级条目，挂载后变二级就不再出现在候选里，天然无循环挂载风险。
 #[tauri::command]
 pub async fn task_get_root_candidates(
     pool: State<'_, sqlx::SqlitePool>,
     exclude_id: String,
+    kind: String,
 ) -> CmdResult<Vec<Task>> {
     let rows = sqlx::query(
         "SELECT * FROM tasks
-         WHERE parent_id IS NULL AND done = 0 AND kind = 'task'
+         WHERE parent_id IS NULL AND done = 0 AND kind = $2
            AND id != $1
            AND list_id NOT IN (SELECT id FROM lists WHERE archived = 1)
          ORDER BY list_id, sort_order ASC",
     )
     .bind(exclude_id)
+    .bind(kind)
     .fetch_all(pool.inner())
     .await
     .map_err(|e| format!("查询候选主任务失败: {}", e))?;

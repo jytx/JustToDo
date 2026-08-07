@@ -804,12 +804,12 @@ function onCtxEnterBatchMode(): void {
             @mouseleave="scheduleCloseCascadeSubmenu"
           >
             <icon-export :size="15" />
-            <span>移动至</span>
+            <span>{{ isNote ? "移动到笔记本" : "移动至" }}</span>
             <icon-right :size="12" style="margin-left: auto" />
           </MenuPopoverItem>
           <MenuPopoverItem @click="onMenuAttachParent">
             <icon-link :size="15" />
-            <span>关联主任务</span>
+            <span>{{ isNote ? "关联主笔记" : "关联主任务" }}</span>
           </MenuPopoverItem>
           <MenuPopoverItem @click="onMenuAddSiblingTask">
             <icon-plus :size="15" />
@@ -882,12 +882,12 @@ function onCtxEnterBatchMode(): void {
         @mouseleave="scheduleCloseCascadeSubmenu"
       >
         <icon-export :size="15" />
-        <span>移动至</span>
+        <span>{{ isNote ? "移动到笔记本" : "移动至" }}</span>
         <icon-right :size="12" style="margin-left: auto" />
       </MenuPopoverItem>
       <MenuPopoverItem @click="onMenuAttachParent">
         <icon-link :size="15" />
-        <span>关联主任务</span>
+        <span>{{ isNote ? "关联主笔记" : "关联主任务" }}</span>
       </MenuPopoverItem>
       <!-- 移动到分组：hover 弹右侧级联子菜单（仅当清单有多个分组时显示） -->
       <MenuPopoverItem
@@ -983,11 +983,12 @@ function onCtxEnterBatchMode(): void {
       </div>
     </Teleport>
 
-    <!-- 关联主任务弹窗（右键/更多菜单触发） -->
+    <!-- 关联主任务/主笔记弹窗（右键/更多菜单触发） -->
     <AttachParentDialog
       v-model:visible="attachParentVisible"
       :task-id="props.task.id"
       :current-parent-id="props.task.parentId"
+      :kind="props.task.kind"
       @select="onAttachParentSelect"
     />
   </div>
