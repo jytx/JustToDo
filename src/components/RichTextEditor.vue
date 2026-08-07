@@ -328,12 +328,32 @@ const turndownService = new TurndownService({
   codeBlockStyle: "fenced", // 代码块用 ``` 围栏
   bulletListMarker: "-",   // 无序列表用 -
 });
-// GFM 删除线插件（~~text~~）。表格不用 gfm.tables（Tiptap 表格含 <p>/colspan 等，
-// gfm 规则转换会失败拆成零散文本；表格保留 HTML 原样，切回时不丢）
+// GFM 删除线插件（~~text~~）
 turndownService.use(turndownPluginGfm.strikethrough);
-// 表格及其单元格保留为 HTML（turndown 默认移除未知标签保留文本，会导致表格内容散落）。
-// 保留 HTML 后，切回预览时 marked 透传这段 HTML，表格不丢。
-turndownService.keep(["table", "thead", "tbody", "tfoot", "tr", "th", "td", "col", "colgroup"]);
+// 表格 → Markdown 表格语法（| col | col |）。
+// 不用 gfm.tables：Tiptap 表格单元格内含 <p>、colspan/rowspan 属性，gfm 规则
+// 处理不了会拆成零散文本。这里自定义规则：逐行取单元格纯文本，用 | 拼接。
+turndownService.addRule("tables", {
+  filter: (node: HTMLElement) => node.nodeName === "TABLE",
+  replacement: (_content: string, node: HTMLElement) => {
+    const rows: string[][] = [];
+    node.querySelectorAll("tr").forEach((tr) => {
+      const cells: string[] = [];
+      tr.querySelectorAll(":scope > td, :scope > th").forEach((cell) => {
+        // 单元格纯文本：去掉内部 <p> 的换行，压缩空格
+        const text = (cell.textContent ?? "").trim().replace(/\s*\n\s*/g, " ");
+        cells.push(text.replace(/\|/g, "\\|"));
+      });
+      if (cells.length > 0) rows.push(cells);
+    });
+    if (rows.length === 0) return "";
+    // 第一行作表头，第二行是分隔行 | --- | --- |
+    const header = `| ${rows[0].join(" | ")} |`;
+    const sep = `| ${rows[0].map(() => "---").join(" | ")} |`;
+    const body = rows.slice(1).map((r) => `| ${r.join(" | ")} |`);
+    return `\n\n${[header, sep, ...body].join("\n")}\n\n`;
+  },
+});
 // 任务列表（checkbox）转 Markdown 任务语法：- [ ] / - [x]
 turndownService.addRule("taskListItems", {
   filter: (node: HTMLElement) => node.nodeName === "LI" && node.getAttribute("data-type") === "taskItem",
