@@ -15,7 +15,7 @@
   padding: 20px 22px 16px;
 }
 
-/* === 顶部：警告图标 + 主文案（同行） === */
+/* === 顶部：警告图标 + 主文案（同行，单行不换行） === */
 .confirm-dialog__title {
   display: flex;
   align-items: center;
@@ -25,11 +25,21 @@
   font-family: var(--font-body);
   color: var(--jt-text-primary);
   line-height: 1.4;
+  /* 长名称不换行挤压弹窗：整体单行，名称部分省略 */
+  white-space: nowrap;
 }
 
 .confirm-dialog__title strong {
   font-weight: 600;
   color: var(--jt-text-primary);
+  /* 名称单行省略：inline-block + 最大宽度 + ellipsis，
+     保留前缀（删除任务「）与后缀（」？） */
+  display: inline-block;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
 }
 
 /* 警告图标圆形容器（红底） */
