@@ -123,18 +123,24 @@ export const useTaskStore = defineStore("task", () => {
     hasDetailOverlay.value = open;
   }
 
-  /** 预加载所有根任务的子任务计数到缓存（用于列表初始判断有无子任务） */
+  /** 预加载所有根任务的子任务计数到缓存（用于列表初始判断有无子任务）。
+   *  递归加载各级子任务（孙任务/曾孙任务），否则子任务层级的展开箭头缺失——
+   *  箭头条件 hasSubtasksLoaded 依赖缓存 key，子任务的子任务不在缓存里时无箭头。 */
   async function preloadSubtaskCounts() {
     const newCache: Record<string, Task[]> = {};
-    await Promise.all(
-      currentTasks.value.map(async (t) => {
-        try {
-          newCache[t.id] = await db.getSubtasks(t.id);
-        } catch {
-          newCache[t.id] = [];
-        }
-      }),
-    );
+    /** 递归：加载 taskId 的直接子任务，并对每个子任务继续递归 */
+    async function loadDescendants(taskId: string): Promise<void> {
+      if (taskId in newCache) return; // 防环/已加载
+      let subs: Task[] = [];
+      try {
+        subs = await db.getSubtasks(taskId);
+      } catch {
+        subs = [];
+      }
+      newCache[taskId] = subs;
+      await Promise.all(subs.map((s) => loadDescendants(s.id)));
+    }
+    await Promise.all(currentTasks.value.map((t) => loadDescendants(t.id)));
     subtaskCache.value = { ...subtaskCache.value, ...newCache };
   }
 

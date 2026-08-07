@@ -275,6 +275,11 @@ const hasSubtaskProgress = computed(
 );
 
 async function toggleExpand() {
+  // 展开时若缓存没有该任务的子任务 key（子任务层级的孙任务未被 preload 预加载），
+  // 先懒加载到缓存，否则展开后列表为空
+  if (!expanded.value && !hasSubtasksLoaded.value) {
+    await taskStore.loadSubtasksToCache(props.task.id);
+  }
   expanded.value = !expanded.value;
 }
 
