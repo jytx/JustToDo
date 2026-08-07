@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 任务列表项 —— 支持树形递归（子任务嵌套展开）
 // 含：展开箭头、复选框、标题、优先级色点、截止日期、hover 操作菜单
-import { ref, computed, watch, reactive, nextTick } from "vue";
+import { ref, computed, watch, reactive, nextTick, onMounted, onBeforeUnmount } from "vue";
 import type { Task } from "@/types";
 import { PRIORITY_COLORS } from "@/types";
 import { formatDueDate } from "@/utils/date";
@@ -112,6 +112,34 @@ function cancelCloseGroupSubmenu(): void {
 /** 笔记（kind='note'）：无完成/日期/重复概念，UI 隐藏这些区块。
  *  笔记仍可拖拽排序（复用任务的拖拽逻辑，仅去掉 done 限制）。 */
 const isNote = computed(() => props.task.kind === "note");
+
+// ─── 标题截断检测（仅标题被省略号截断时显示 tooltip） ───
+/** 标题 span 引用 */
+const titleEl = ref<HTMLElement | null>(null);
+/** 标题是否被截断（scrollWidth > clientWidth） */
+const titleTruncated = ref<boolean>(false);
+let titleResizeObserver: ResizeObserver | null = null;
+
+/** 检测标题是否溢出（容器变窄/标题变长时重新检测） */
+function checkTitleTruncated(): void {
+  const el = titleEl.value;
+  if (!el) return;
+  titleTruncated.value = el.scrollWidth > el.clientWidth;
+}
+
+onMounted(() => {
+  checkTitleTruncated();
+  // 监听标题自身尺寸变化（如侧边栏收起/详情面板宽度变化导致容器变宽变窄）
+  const el = titleEl.value;
+  if (el && typeof ResizeObserver !== "undefined") {
+    titleResizeObserver = new ResizeObserver(() => checkTitleTruncated());
+    titleResizeObserver.observe(el);
+  }
+});
+onBeforeUnmount(() => {
+  titleResizeObserver?.disconnect();
+  titleResizeObserver = null;
+});
 
 const canDrag = computed(
   () =>
@@ -421,7 +449,15 @@ function onCtxEnterBatchMode(): void {
       />
 
       <div class="task-item__body">
-        <span class="task-item__title" :title="task.title">{{ task.title }}</span>
+        <!-- 标题：单行省略号 + 仅在截断时显示 Arco 黑底白字 tooltip（向下展示） -->
+        <a-tooltip
+          :content="task.title"
+          position="bottom"
+          :mouse-enter-delay="0.3"
+          :disabled="!titleTruncated"
+        >
+          <span ref="titleEl" class="task-item__title">{{ task.title }}</span>
+        </a-tooltip>
         <!-- 标签 chips（独立一行，显示在标题下方） -->
         <div v-if="taskTags.length" class="task-item__tags">
           <span
