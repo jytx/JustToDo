@@ -208,6 +208,12 @@ watch(
       // 刷新一次确保 store 缓存有值，computed 才能正确派生标签。
       await taskStore.refreshTaskTags(id);
       await loadParentChain();
+      // 新建任务/子任务都是空标题：自动聚焦标题输入框，光标默认落到标题
+      // （已有标题的任务不打扰，保持现状）
+      if (!task.value?.title) {
+        await nextTick();
+        titleEl.value?.focus();
+      }
     } else {
       parentChain.value = [];
     }
