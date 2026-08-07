@@ -670,13 +670,16 @@ function onCtxEnterBatchMode(): void {
             @click.stop="onTitleClick($event)"
           >{{ task.title || "（无标题）" }}</span>
         </a-tooltip>
-        <!-- 编辑态：input 失焦/回车保存，ESC 取消 -->
+        <!-- 编辑态：input 失焦/回车保存，ESC 取消。
+             @click.stop 阻止冒泡到行的选中逻辑——selectTask 对相同 id 是
+             toggle（会关闭详情面板），编辑中点击 input 调整光标会误触。 -->
         <input
           v-else
           ref="titleInputRef"
           v-model="editingTitleValue"
           class="task-item__title-input"
           type="text"
+          @click.stop
           @keydown.enter.prevent="saveTitle"
           @keydown.esc.prevent="cancelEditTitle"
           @blur="saveTitle"
