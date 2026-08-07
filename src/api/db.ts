@@ -73,6 +73,9 @@ interface UpdateTaskInput {
   checklist?: ChecklistItem[];
   /** 附件列表（整组覆盖） */
   attachments?: Attachment[];
+  /** 实体类型：不传则不更新。'task' 待办 / 'note' 笔记
+   *  （用于「转换成笔记/任务」，转换时后端清空目标类型不用的字段） */
+  kind?: TaskKind;
 }
 
 export type SmartViewId = "today" | "upcoming" | "all";
@@ -414,6 +417,7 @@ export async function updateTask(
     remind_offset_minutes: fields.remindOffsetMinutes,
     checklist: fields.checklist,
     attachments: fields.attachments,
+    kind: fields.kind,
   };
   await invoke<void>("task_update", { id, input });
 }

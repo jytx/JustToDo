@@ -481,6 +481,19 @@ async function onMenuDuplicate(): Promise<void> {
   }
 }
 
+/** 转换实体类型：任务 ↔ 笔记。
+ *  后端在 kind 转换时清理目标类型不用的字段（笔记无日期/完成/重复/提醒），
+ *  转笔记还会落到默认笔记本的默认分组。转换后任务从当前视图消失，reload 刷新。 */
+async function onMenuConvertKind(): Promise<void> {
+  ctxMenu.visible = false;
+  menuOpen.value = false;
+  cascadeSubmenu.display = false;
+  const targetKind = isNote.value ? "task" : "note";
+  await taskStore.updateTask(props.task.id, { kind: targetKind });
+  // kind 变化后任务可能离开当前视图（任务视图不显示笔记，反之亦然），reload 刷新
+  await taskStore.reload();
+}
+
 /** 子任务行点击：与 onRowClick 同逻辑，但子任务不走事件冒泡（冒泡到视图层时
  *  会丢失 subId），直接在组件内按修饰键调用 store 批量方法。
  *  Shift 范围选基于 openTasks（根任务序列，不含子任务），子任务 Shift 会退化为单选。 */
@@ -810,6 +823,10 @@ function onCtxEnterBatchMode(): void {
             <icon-copy :size="15" />
             <span>创建副本</span>
           </MenuPopoverItem>
+          <MenuPopoverItem @click="onMenuConvertKind">
+            <icon-swap :size="15" />
+            <span>{{ isNote ? "转换成任务" : "转换成笔记" }}</span>
+          </MenuPopoverItem>
           <MenuPopoverItem danger @click="onDelete">
             <icon-delete :size="15" />
             <span>{{ isNote ? "删除笔记" : "删除任务" }}</span>
@@ -893,6 +910,10 @@ function onCtxEnterBatchMode(): void {
       <MenuPopoverItem @click="onMenuDuplicate">
         <icon-copy :size="15" />
         <span>创建副本</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem @click="onMenuConvertKind">
+        <icon-swap :size="15" />
+        <span>{{ isNote ? "转换成任务" : "转换成笔记" }}</span>
       </MenuPopoverItem>
       <MenuPopoverItem danger @click="onCtxDelete">
         <icon-delete :size="15" />

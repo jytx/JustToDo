@@ -231,6 +231,9 @@ pub struct UpdateTaskInput {
     pub checklist: Option<Vec<ChecklistItem>>,
     /// 附件列表（整组覆盖；前端负责构造完整数组）
     pub attachments: Option<Vec<Attachment>>,
+    /// 实体类型：不传则不更新。'task' 待办 / 'note' 笔记。
+    /// 用于「转换成笔记/任务」：转笔记时同步清空日期/完成/重复/提醒等笔记不用的字段。
+    pub kind: Option<String>,
 }
 
 /// 任务分组（属于清单，类比 Trello 的列）

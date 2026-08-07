@@ -913,6 +913,39 @@ pub async fn task_update(
             .map_err(|e| format!("更新附件失败: {}", e))?;
     }
 
+    // kind 转换（任务↔笔记）：转换时清理目标类型不用的字段。
+    //  - 转笔记（kind='note'）：清空日期/完成态/重复/提醒（笔记无这些概念）
+    //  - 转任务（kind='task'）：同上字段一并清空（由调用方决定是否后续重新设置）
+    // 同时落默认笔记本（notebook）或收件箱（inbox）的默认分组，避免跨容器 group_id 孤儿。
+    if let Some(kind) = &input.kind {
+        if kind == "note" {
+            sqlx::query(
+                "UPDATE tasks
+                 SET kind = 'note', done = 0, completed_at = NULL,
+                     due_start_at = NULL, due_end_at = NULL,
+                     recurrence_freq = NULL, recurrence_interval = 1,
+                     recurrence_end_at = NULL, recurrence_count = NULL,
+                     remind_offset_minutes = NULL, notified_at = NULL,
+                     list_id = 'default-notebook',
+                     group_id = 'default-notebook-default',
+                     updated_at = $1
+                 WHERE id = $2",
+            )
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("转换笔记失败: {}", e))?;
+        } else {
+            sqlx::query("UPDATE tasks SET kind = 'task', updated_at = $1 WHERE id = $2")
+                .bind(&ts)
+                .bind(&id)
+                .execute(pool.inner())
+                .await
+                .map_err(|e| format!("转换任务失败: {}", e))?;
+        }
+    }
+
     Ok(())
 }
 
