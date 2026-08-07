@@ -8,6 +8,7 @@ import { formatDueDate } from "@/utils/date";
 import { useTaskStore } from "@/stores/task";
 import { useGroupStore } from "@/stores/group";
 import { useTagStore } from "@/stores/tag";
+import { useListStore } from "@/stores/list";
 import * as db from "@/api/db";
 import TaskCheckbox from "./TaskCheckbox.vue";
 import MenuPopover from "./MenuPopover.vue";
@@ -60,9 +61,19 @@ const emit = defineEmits<{
 const taskStore = useTaskStore();
 const groupStore = useGroupStore();
 const tagStore = useTagStore();
+const listStore = useListStore();
 
 /** 当前清单的分组列表（用于「移动到分组」） */
 const currentGroups = computed(() => groupStore.currentGroups);
+
+/** 「移动至」可选清单：仅未归档的真实清单/笔记本（排除目录），按当前任务 kind
+ *  隔离两棵树（笔记只列笔记本；任务只列清单）。当前所属清单高亮提示。 */
+const movableLists = computed(() => {
+  const source = props.task.kind === "note" ? listStore.noteLists : listStore.taskLists;
+  return source
+    .filter((l) => !l.isFolder)
+    .map((l) => ({ id: l.id, name: l.name, color: l.color }));
+});
 
 /** 移动任务到指定分组 */
 async function onMoveToGroup(groupId: string): Promise<void> {
@@ -72,9 +83,24 @@ async function onMoveToGroup(groupId: string): Promise<void> {
   cascadeSubmenu.display = false;
 }
 
-// ─── 级联子菜单（优先级 / 标签 / 移动到分组，参照 BatchContextMenu 的 Teleport + fixed 方案）───
-/** 级联子菜单类型：priority=优先级 / tag=标签 / group=移动到分组 */
-type CascadeKind = "priority" | "tag" | "group";
+/** 移动任务到指定清单（updateTask 传 listId，后端同步 group_id 回默认分组） */
+async function onMoveToList(listId: string): Promise<void> {
+  if (listId === props.task.listId) {
+    // 已在目标清单：仅关闭菜单，避免无意义更新
+    ctxMenu.visible = false;
+    menuOpen.value = false;
+    cascadeSubmenu.display = false;
+    return;
+  }
+  await taskStore.updateTask(props.task.id, { listId });
+  ctxMenu.visible = false;
+  menuOpen.value = false;
+  cascadeSubmenu.display = false;
+}
+
+// ─── 级联子菜单（优先级 / 标签 / 移动至 / 移动到分组，参照 BatchContextMenu 的 Teleport + fixed 方案）───
+/** 级联子菜单类型：priority=优先级 / tag=标签 / list=移动至清单 / group=移动到分组 */
+type CascadeKind = "priority" | "tag" | "list" | "group";
 
 /** 级联子菜单状态：类型 + 定位 */
 const cascadeSubmenu = reactive<{
@@ -625,6 +651,15 @@ function onCtxEnterBatchMode(): void {
             <span>标签</span>
             <icon-right :size="12" style="margin-left: auto" />
           </MenuPopoverItem>
+          <!-- 移动至：hover 弹清单列表（按当前任务 kind 隔离） -->
+          <MenuPopoverItem
+            @mouseenter="(e: MouseEvent) => showCascadeSubmenu('list', e.currentTarget as HTMLElement)"
+            @mouseleave="scheduleCloseCascadeSubmenu"
+          >
+            <icon-arrow-reroute :size="15" />
+            <span>移动至</span>
+            <icon-right :size="12" style="margin-left: auto" />
+          </MenuPopoverItem>
           <MenuPopoverItem danger @click="onDelete">
             <icon-delete :size="15" />
             <span>{{ isNote ? "删除笔记" : "删除任务" }}</span>
@@ -672,6 +707,15 @@ function onCtxEnterBatchMode(): void {
       >
         <icon-tag :size="15" />
         <span>标签</span>
+        <icon-right :size="12" style="margin-left: auto" />
+      </MenuPopoverItem>
+      <!-- 移动至：hover 弹清单列表（按当前任务 kind 隔离） -->
+      <MenuPopoverItem
+        @mouseenter="(e: MouseEvent) => showCascadeSubmenu('list', e.currentTarget as HTMLElement)"
+        @mouseleave="scheduleCloseCascadeSubmenu"
+      >
+        <icon-arrow-reroute :size="15" />
+        <span>移动至</span>
         <icon-right :size="12" style="margin-left: auto" />
       </MenuPopoverItem>
       <!-- 移动到分组：hover 弹右侧级联子菜单（仅当清单有多个分组时显示） -->
@@ -737,6 +781,18 @@ function onCtxEnterBatchMode(): void {
             style="margin-top: 4px"
             @keydown.enter="(e: any) => { onMenuCreateTag((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = ''; }"
           />
+        </template>
+        <!-- 移动至清单：当前所属清单高亮 -->
+        <template v-else-if="cascadeSubmenu.kind === 'list'">
+          <MenuPopoverItem
+            v-for="opt in movableLists"
+            :key="opt.id"
+            :active="opt.id === props.task.listId"
+            @click="onMoveToList(opt.id)"
+          >
+            <span class="task-item-submenu__dot" :style="{ backgroundColor: opt.color }" />
+            <span>{{ opt.name }}</span>
+          </MenuPopoverItem>
         </template>
         <!-- 移动到分组：当前分组高亮 -->
         <template v-else-if="cascadeSubmenu.kind === 'group'">
@@ -1060,6 +1116,15 @@ function onCtxEnterBatchMode(): void {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* 子菜单项前置色点（移动至清单前显示清单色，与侧边栏/分组色点一致） */
+.task-item-submenu__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
 
 </style>
