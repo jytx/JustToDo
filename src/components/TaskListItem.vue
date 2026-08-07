@@ -15,6 +15,7 @@ import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
 import ContextMenu from "./ContextMenu.vue";
 import PriorityDot from "./PriorityDot.vue";
+import ListCascadeMenu from "./menu/ListCascadeMenu.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -66,14 +67,11 @@ const listStore = useListStore();
 /** 当前清单的分组列表（用于「移动到分组」） */
 const currentGroups = computed(() => groupStore.currentGroups);
 
-/** 「移动至」可选清单：仅未归档的真实清单/笔记本（排除目录），按当前任务 kind
- *  隔离两棵树（笔记只列笔记本；任务只列清单）。当前所属清单高亮提示。 */
-const movableLists = computed(() => {
-  const source = props.task.kind === "note" ? listStore.noteLists : listStore.taskLists;
-  return source
-    .filter((l) => !l.isFolder)
-    .map((l) => ({ id: l.id, name: l.name, color: l.color }));
-});
+/** 「移动至」可选清单树：仅未归档项，按当前任务 kind 隔离两棵树
+ *  （笔记只列笔记本；任务只列清单）。含目录与子目录，目录在子菜单里递归展开。 */
+const movableListTree = computed(() =>
+  props.task.kind === "note" ? listStore.noteListTree : listStore.listTree,
+);
 
 /** 移动任务到指定分组 */
 async function onMoveToGroup(groupId: string): Promise<void> {
@@ -786,17 +784,13 @@ function onCtxEnterBatchMode(): void {
             @keydown.enter="(e: any) => { onMenuCreateTag((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = ''; }"
           />
         </template>
-        <!-- 移动至清单：当前所属清单高亮 -->
+        <!-- 移动至清单：递归渲染目录树，目录 hover 出右侧子级菜单 -->
         <template v-else-if="cascadeSubmenu.kind === 'list'">
-          <MenuPopoverItem
-            v-for="opt in movableLists"
-            :key="opt.id"
-            :active="opt.id === props.task.listId"
-            @click="onMoveToList(opt.id)"
-          >
-            <span class="task-item-submenu__dot" :style="{ backgroundColor: opt.color }" />
-            <span>{{ opt.name }}</span>
-          </MenuPopoverItem>
+          <ListCascadeMenu
+            :nodes="movableListTree"
+            :current-list-id="props.task.listId"
+            :on-select="onMoveToList"
+          />
         </template>
         <!-- 移动到分组：当前分组高亮 -->
         <template v-else-if="cascadeSubmenu.kind === 'group'">
