@@ -387,16 +387,20 @@ const titleInputRef = ref<HTMLInputElement | null>(null);
 /** 编辑中的标题值（独立 ref，编辑期间不回写 props.task.title，失焦保存时才持久化） */
 const editingTitleValue = ref("");
 
-/** 单击标题进入编辑：填入当前标题，自动聚焦并选中全部（便于整体替换） */
+/** 单击标题进入编辑：填入当前标题，自动聚焦并选中全部（便于整体替换）。
+ *  focus 用 rAF 双重保障：v-if 切换渲染 input 后，nextTick 时 DOM 可能未完全
+ *  稳定（浏览器焦点栈未更新），直接 focus 偶发失效。 */
 function onTitleClick(): void {
   editingTitleValue.value = props.task.title;
   editingTitle.value = true;
   nextTick(() => {
-    const input = titleInputRef.value;
-    if (input) {
-      input.focus();
-      input.select();
-    }
+    requestAnimationFrame(() => {
+      const input = titleInputRef.value;
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    });
   });
 }
 
@@ -1091,10 +1095,11 @@ function onCtxEnterBatchMode(): void {
 }
 
 /* 标题编辑输入框：与 .task-item__title 视觉一致（字号/字重/行高），
-   避免编辑切换时跳动；撑满 body 宽度，无边框，主色聚焦边替代原生 outline */
+   避免编辑切换时跳动；width:100% 撑满 body（body 非 flex 容器，flex:1 无效），
+   从优先级图标右侧延伸到更多按钮前；无边框无聚焦框 */
 .task-item__title-input {
-  flex: 1;
-  min-width: 0;
+  display: block;
+  width: 100%;
   font-size: 14px;
   font-weight: 500;
   font-family: var(--font-body);
@@ -1105,10 +1110,6 @@ function onCtxEnterBatchMode(): void {
   border: none;
   outline: none;
   background: transparent;
-  border-radius: 3px;
-}
-.task-item__title-input:focus {
-  box-shadow: inset 0 0 0 1px var(--jt-primary);
 }
 
 /* 标签 chips 行（标题下方独立一行） */
