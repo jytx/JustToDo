@@ -379,6 +379,43 @@ function onRowClick(e: MouseEvent): void {
   emit("select", e);
 }
 
+// ─── 标题双击编辑 ──────────────────────────────────────
+/** 是否处于标题编辑态（双击标题进入） */
+const editingTitle = ref(false);
+/** 标题输入框引用（进入编辑态后自动聚焦） */
+const titleInputRef = ref<HTMLInputElement | null>(null);
+/** 编辑中的标题值（独立 ref，编辑期间不回写 props.task.title，失焦保存时才持久化） */
+const editingTitleValue = ref("");
+
+/** 双击标题进入编辑：填入当前标题，自动聚焦并选中全部（便于整体替换） */
+function onTitleDblClick(): void {
+  editingTitleValue.value = props.task.title;
+  editingTitle.value = true;
+  nextTick(() => {
+    const input = titleInputRef.value;
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  });
+}
+
+/** 保存标题：空标题保留原值（不创建无标题任务），有变化才调 store 持久化 */
+async function saveTitle(): Promise<void> {
+  if (!editingTitle.value) return;
+  const trimmed = editingTitleValue.value.trim();
+  editingTitle.value = false;
+  // 空标题：不保存（回退到原标题）
+  if (!trimmed || trimmed === props.task.title) return;
+  await taskStore.updateTask(props.task.id, { title: trimmed });
+}
+
+/** 取消编辑：ESC 恢复原值（不持久化） */
+function cancelEditTitle(): void {
+  editingTitle.value = false;
+  editingTitleValue.value = props.task.title;
+}
+
 /** 子任务行点击：与 onRowClick 同逻辑，但子任务不走事件冒泡（冒泡到视图层时
  *  会丢失 subId），直接在组件内按修饰键调用 store 批量方法。
  *  Shift 范围选基于 openTasks（根任务序列，不含子任务），子任务 Shift 会退化为单选。 */
@@ -594,15 +631,32 @@ function onCtxEnterBatchMode(): void {
       />
 
       <div class="task-item__body">
-        <!-- 标题：单行省略号 + 仅在截断时显示 Arco 黑底白字 tooltip（向下展示） -->
+        <!-- 标题：双击进入编辑（span ↔ input 切换）。
+             非编辑态：单行省略号 + 仅截断时显示 Arco 黑底白字 tooltip（向下） -->
         <a-tooltip
+          v-if="!editingTitle"
           :content="task.title"
           position="bottom"
           :mouse-enter-delay="0.3"
           :disabled="!titleTruncated"
         >
-          <span ref="titleEl" class="task-item__title">{{ task.title }}</span>
+          <span
+            ref="titleEl"
+            class="task-item__title"
+            @dblclick.stop="onTitleDblClick"
+          >{{ task.title || "（无标题）" }}</span>
         </a-tooltip>
+        <!-- 编辑态：input 失焦/回车保存，ESC 取消 -->
+        <input
+          v-else
+          ref="titleInputRef"
+          v-model="editingTitleValue"
+          class="task-item__title-input"
+          type="text"
+          @keydown.enter.prevent="saveTitle"
+          @keydown.esc.prevent="cancelEditTitle"
+          @blur="saveTitle"
+        />
         <!-- 标签 chips（独立一行，显示在标题下方） -->
         <div v-if="taskTags.length" class="task-item__tags">
           <span
@@ -1034,6 +1088,27 @@ function onCtxEnterBatchMode(): void {
 .task-item--done .task-item__title {
   text-decoration: line-through;
   color: var(--jt-text-tertiary);
+}
+
+/* 标题编辑输入框：与 .task-item__title 视觉一致（字号/字重/行高），
+   避免编辑切换时跳动；撑满 body 宽度，无边框，主色聚焦边替代原生 outline */
+.task-item__title-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  color: var(--jt-text-primary);
+  line-height: 1.5;
+  padding: 0;
+  margin: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  border-radius: 3px;
+}
+.task-item__title-input:focus {
+  box-shadow: inset 0 0 0 1px var(--jt-primary);
 }
 
 /* 标签 chips 行（标题下方独立一行） */
