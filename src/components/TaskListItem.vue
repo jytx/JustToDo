@@ -761,15 +761,6 @@ function onCtxEnterBatchMode(): void {
               <icon-more :size="16" />
             </button>
           </template>
-          <MenuPopoverItem @click="onMenuAddSiblingTask">
-            <icon-plus :size="15" />
-            <span>{{ isNote ? "新建笔记" : "新建任务" }}</span>
-          </MenuPopoverItem>
-          <MenuPopoverItem @click="onMenuAddSubtask">
-            <icon-plus :size="15" />
-            <span>{{ isNote ? "新建子笔记" : "新建子任务" }}</span>
-          </MenuPopoverItem>
-          <!-- 优先级 / 标签：hover 弹右侧级联子菜单 -->
           <MenuPopoverItem
             @mouseenter="(e: MouseEvent) => showCascadeSubmenu('priority', e.currentTarget as HTMLElement)"
             @mouseleave="scheduleCloseCascadeSubmenu"
@@ -798,6 +789,14 @@ function onCtxEnterBatchMode(): void {
           <MenuPopoverItem @click="onMenuAttachParent">
             <icon-link :size="15" />
             <span>关联主任务</span>
+          </MenuPopoverItem>
+          <MenuPopoverItem @click="onMenuAddSiblingTask">
+            <icon-plus :size="15" />
+            <span>{{ isNote ? "新建笔记" : "新建任务" }}</span>
+          </MenuPopoverItem>
+          <MenuPopoverItem @click="onMenuAddSubtask">
+            <icon-plus :size="15" />
+            <span>{{ isNote ? "新建子笔记" : "新建子任务" }}</span>
           </MenuPopoverItem>
           <MenuPopoverItem @click="onMenuDuplicate">
             <icon-copy :size="15" />
