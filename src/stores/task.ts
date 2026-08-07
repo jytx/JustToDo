@@ -53,6 +53,9 @@ export const useTaskStore = defineStore("task", () => {
   const batchMode = ref(false);
   /** Shift 范围选的锚点任务 id（最近一次选中/取消的任务） */
   const batchAnchorId = ref<string | null>(null);
+  /** 新建子任务后需要自动展开的父任务 id（跨实例信号：TaskListItem watch 到后
+   *  自动展开自己的箭头，随后请求清除）。null = 无待展开父任务。 */
+  const autoExpandParentId = ref<string | null>(null);
 
   /** 待打开的 AI 总结范围（跨组件传递：侧边栏/批量菜单设置 → AppLayout 弹窗读取）。
    *  SummaryScope 类型见 src/api/ai.ts；null 表示用默认的每日/周报模式。 */
@@ -415,6 +418,15 @@ export const useTaskStore = defineStore("task", () => {
       currentTasks.value.push(task);
     } else {
       subtasks.value.push(task);
+      // 同步更新 subtaskCache：子任务（含右键「新建同级」在子任务上创建的同父任务）
+      // 必须进父任务的缓存，否则父任务展开列表里看不到
+      const pid = params.parentId;
+      subtaskCache.value = {
+        ...subtaskCache.value,
+        [pid]: [...(subtaskCache.value[pid] ?? []), task],
+      };
+      // 通知父任务行自动展开（TaskListItem watch autoExpandParentId）
+      autoExpandParentId.value = pid;
     }
     // 关联标签（前端逐条写入，后端 task_tags 无批量接口）。
     // 关联后用权威的 getTaskTags 回填缓存，保证列表项 / 详情面板立即显示标签。
@@ -1072,6 +1084,8 @@ export const useTaskStore = defineStore("task", () => {
     };
     // 新建子任务默认无标签，补空数组到缓存
     taskTagMap.value = { ...taskTagMap.value, [sub.id]: [] };
+    // 通知父任务行自动展开（TaskListItem watch autoExpandParentId）
+    autoExpandParentId.value = parentTask.id;
     notifyTaskChanged();
     return sub;
   }
@@ -1248,6 +1262,7 @@ export const useTaskStore = defineStore("task", () => {
     batchSelectedIds,
     batchMode,
     batchAnchorId,
+    autoExpandParentId,
     pendingSummaryScope,
     aiLoading,
     aiSelectedTool,

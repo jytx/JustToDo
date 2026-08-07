@@ -316,6 +316,20 @@ watch(childCount, (n) => {
   }
 });
 
+// 跨实例自动展开：store 发出"新建子任务后展开父任务"信号（如右键「新建同级」在
+// 子任务上创建同父任务时，父任务是另一个实例，无法直接操作其 expanded）。
+// 本实例若匹配到信号，自动展开并清除信号。
+watch(
+  () => taskStore.autoExpandParentId,
+  (pid) => {
+    if (pid && pid === props.task.id) {
+      expanded.value = true;
+      // 清除信号（一次性），避免下次任务切换时误展开
+      taskStore.autoExpandParentId = null;
+    }
+  },
+);
+
 // ─── 任务行右侧更多菜单 ──────────────────────────────
 const menuOpen = ref(false);
 
@@ -365,13 +379,11 @@ async function onCtxAddSiblingTask(): Promise<void> {
 }
 
 /** 新建子任务：在当前任务下创建下级任务，创建后自动展开显示。
- *  复用 TaskDetailPanel.addSubtask 的范式：createSubtask(空标题) → 刷新子任务 → 选中。 */
+ *  复用 TaskDetailPanel.addSubtask 的范式：createSubtask(空标题) → 刷新子任务 → 选中。
+ *  展开由 createSubtask 发出的 autoExpandParentId 信号驱动（watch 统一处理）。 */
 async function addSubtaskAndExpand(): Promise<void> {
   await taskStore.createSubtask(props.task, "");
   await taskStore.loadSubtasks(props.task.id);
-  // 新建后自动展开父任务（箭头展开），无需用户手动点击；
-  // createSubtask 已同步更新 subtaskCache，expanded 置 true 即可渲染子任务
-  expanded.value = true;
   const sub = taskStore.subtasks[taskStore.subtasks.length - 1];
   if (sub) taskStore.selectTask(sub.id);
 }
