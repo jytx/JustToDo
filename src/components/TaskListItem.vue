@@ -379,29 +379,46 @@ function onRowClick(e: MouseEvent): void {
   emit("select", e);
 }
 
-// ─── 标题双击编辑 ──────────────────────────────────────
-/** 是否处于标题编辑态（双击标题进入） */
+// ─── 标题编辑（单击标题进入） ──────────────────────────────
+/** 是否处于标题编辑态（单击标题进入） */
 const editingTitle = ref(false);
 /** 标题输入框引用（进入编辑态后自动聚焦） */
 const titleInputRef = ref<HTMLInputElement | null>(null);
 /** 编辑中的标题值（独立 ref，编辑期间不回写 props.task.title，失焦保存时才持久化） */
 const editingTitleValue = ref("");
+/** 鼠标点击位置对应的字符偏移（编辑态光标落点） */
+const titleClickOffset = ref(0);
 
-/** 单击标题进入编辑：填入当前标题，自动聚焦并把光标置于末尾（便于追加文字，
- *  不全选——全选会让用户想点位置时误覆盖整段文字）。
+/** 把鼠标点击坐标映射为标题文字的字符偏移。
+ *  caretRangeFromPoint 返回点击处所在的文本 Range，startOffset 即字符位置；
+ *  点击在省略号/空白区域时取末尾。 */
+function offsetFromClickPoint(e: MouseEvent): number {
+  const title = titleEl.value;
+  const len = props.task.title.length;
+  if (!title) return len;
+  const range = document.caretRangeFromPoint(e.clientX, e.clientY);
+  if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
+    return Math.min(range.startOffset, len);
+  }
+  return len;
+}
+
+/** 单击标题进入编辑：填入当前标题，光标定位到鼠标点击的字符位置
+ *  （点哪编辑哪，不做全选/行尾）。
  *  focus 用 rAF 双重保障：v-if 切换渲染 input 后，nextTick 时 DOM 可能未完全
  *  稳定（浏览器焦点栈未更新），直接 focus 偶发失效。 */
-function onTitleClick(): void {
+function onTitleClick(e: MouseEvent): void {
   editingTitleValue.value = props.task.title;
+  // 先记录点击偏移（此时 span 还在 DOM 上，caretRangeFromPoint 才能命中）
+  titleClickOffset.value = offsetFromClickPoint(e);
   editingTitle.value = true;
   nextTick(() => {
     requestAnimationFrame(() => {
       const input = titleInputRef.value;
       if (input) {
         input.focus();
-        // 光标置于行尾（与详情面板检查项编辑同范式）
-        const len = input.value.length;
-        input.setSelectionRange(len, len);
+        const pos = Math.min(titleClickOffset.value, input.value.length);
+        input.setSelectionRange(pos, pos);
       }
     });
   });
@@ -650,7 +667,7 @@ function onCtxEnterBatchMode(): void {
           <span
             ref="titleEl"
             class="task-item__title"
-            @click.stop="onTitleClick"
+            @click.stop="onTitleClick($event)"
           >{{ task.title || "（无标题）" }}</span>
         </a-tooltip>
         <!-- 编辑态：input 失焦/回车保存，ESC 取消 -->
