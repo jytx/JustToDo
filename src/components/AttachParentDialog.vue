@@ -112,10 +112,9 @@ function onKeyDown(e: KeyboardEvent): void {
     wrap-class="attach-parent-wrap"
     @update:visible="(v) => emit('update:visible', v)"
   >
+    <!-- 标题放 a-modal 标准标题栏（自带右上角关闭按钮） -->
+    <template #title>关联主{{ label }}</template>
     <div class="attach-parent">
-      <!-- 标题 -->
-      <div class="attach-parent__header">关联主{{ label }}</div>
-
       <!-- 搜索输入 -->
       <div class="attach-parent__input-row">
         <icon-search :size="18" class="attach-parent__icon" />
@@ -180,13 +179,6 @@ function onKeyDown(e: KeyboardEvent): void {
 <style scoped>
 .attach-parent {
   overflow: hidden;
-}
-
-.attach-parent__header {
-  padding: 16px 20px 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--jt-text-primary);
 }
 
 .attach-parent__input-row {
