@@ -421,7 +421,7 @@ function onCtxEnterBatchMode(): void {
       />
 
       <div class="task-item__body">
-        <span class="task-item__title">{{ task.title }}</span>
+        <span class="task-item__title" :title="task.title">{{ task.title }}</span>
         <!-- 标签 chips（独立一行，显示在标题下方） -->
         <div v-if="taskTags.length" class="task-item__tags">
           <span
@@ -724,7 +724,11 @@ function onCtxEnterBatchMode(): void {
   font-weight: 500;
   color: var(--jt-text-primary);
   line-height: 1.5;
-  word-break: break-word;
+  /* 单行显示，超出省略号（长标题不再撑高任务项） */
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: all 0.2s ease;
 }
 
