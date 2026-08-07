@@ -1077,6 +1077,9 @@ export const useTaskStore = defineStore("task", () => {
     autoExpandParentId.value = parentId;
     // 重新加载当前视图：变子的任务被后端 parent_id IS NULL 过滤，从根列表消失
     await reload();
+    // 刷新侧边栏清单任务计数（任务可能跨清单，源/目标清单计数都变了）
+    await refreshCounts();
+    notifyTaskChanged();
   }
 
   /** 从缓存获取子任务 */
