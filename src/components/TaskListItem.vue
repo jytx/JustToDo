@@ -364,23 +364,28 @@ async function onCtxAddSiblingTask(): Promise<void> {
   taskStore.selectTask(created.id);
 }
 
-/** 新建子任务：在当前任务下创建下级任务。
+/** 新建子任务：在当前任务下创建下级任务，创建后自动展开显示。
  *  复用 TaskDetailPanel.addSubtask 的范式：createSubtask(空标题) → 刷新子任务 → 选中。 */
-async function onCtxAddSubtask(): Promise<void> {
-  ctxMenu.visible = false;
+async function addSubtaskAndExpand(): Promise<void> {
   await taskStore.createSubtask(props.task, "");
   await taskStore.loadSubtasks(props.task.id);
+  // 新建后自动展开父任务（箭头展开），无需用户手动点击；
+  // createSubtask 已同步更新 subtaskCache，expanded 置 true 即可渲染子任务
+  expanded.value = true;
   const sub = taskStore.subtasks[taskStore.subtasks.length - 1];
   if (sub) taskStore.selectTask(sub.id);
 }
 
-/** 更多菜单「新建子任务」：逻辑同 onCtxAddSubtask，关闭的是右侧更多菜单（menuOpen） */
+/** 右键菜单「新建子任务」 */
+async function onCtxAddSubtask(): Promise<void> {
+  ctxMenu.visible = false;
+  await addSubtaskAndExpand();
+}
+
+/** 更多菜单「新建子任务」：关闭的是右侧更多菜单（menuOpen） */
 async function onMenuAddSubtask(): Promise<void> {
   menuOpen.value = false;
-  await taskStore.createSubtask(props.task, "");
-  await taskStore.loadSubtasks(props.task.id);
-  const sub = taskStore.subtasks[taskStore.subtasks.length - 1];
-  if (sub) taskStore.selectTask(sub.id);
+  await addSubtaskAndExpand();
 }
 
 /** 删除任务（走现有的删除确认弹窗） */
