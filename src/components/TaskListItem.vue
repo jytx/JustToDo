@@ -387,8 +387,8 @@ const titleInputRef = ref<HTMLInputElement | null>(null);
 /** 编辑中的标题值（独立 ref，编辑期间不回写 props.task.title，失焦保存时才持久化） */
 const editingTitleValue = ref("");
 
-/** 双击标题进入编辑：填入当前标题，自动聚焦并选中全部（便于整体替换） */
-function onTitleDblClick(): void {
+/** 单击标题进入编辑：填入当前标题，自动聚焦并选中全部（便于整体替换） */
+function onTitleClick(): void {
   editingTitleValue.value = props.task.title;
   editingTitle.value = true;
   nextTick(() => {
@@ -643,7 +643,7 @@ function onCtxEnterBatchMode(): void {
           <span
             ref="titleEl"
             class="task-item__title"
-            @dblclick.stop="onTitleDblClick"
+            @click.stop="onTitleClick"
           >{{ task.title || "（无标题）" }}</span>
         </a-tooltip>
         <!-- 编辑态：input 失焦/回车保存，ESC 取消 -->
