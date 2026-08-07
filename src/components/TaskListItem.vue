@@ -83,7 +83,9 @@ async function onMoveToGroup(groupId: string): Promise<void> {
   cascadeSubmenu.display = false;
 }
 
-/** 移动任务到指定清单（updateTask 传 listId，后端同步 group_id 回默认分组） */
+/** 移动任务到指定清单（updateTask 传 listId，后端同步 group_id 回默认分组）。
+ *  移动后任务不再属于当前视图，调 store.reload() 重新拉取当前视图任务，
+ *  让原视图立即移除该任务（否则任务在原视图残留，需刷新页面才消失）。 */
 async function onMoveToList(listId: string): Promise<void> {
   if (listId === props.task.listId) {
     // 已在目标清单：仅关闭菜单，避免无意义更新
@@ -96,6 +98,8 @@ async function onMoveToList(listId: string): Promise<void> {
   ctxMenu.visible = false;
   menuOpen.value = false;
   cascadeSubmenu.display = false;
+  // 重新加载当前视图：从数据库拉最新任务列表，移动的任务从原视图消失
+  await taskStore.reload();
 }
 
 // ─── 级联子菜单（优先级 / 标签 / 移动至 / 移动到分组，参照 BatchContextMenu 的 Teleport + fixed 方案）───
@@ -656,7 +660,7 @@ function onCtxEnterBatchMode(): void {
             @mouseenter="(e: MouseEvent) => showCascadeSubmenu('list', e.currentTarget as HTMLElement)"
             @mouseleave="scheduleCloseCascadeSubmenu"
           >
-            <icon-arrow-reroute :size="15" />
+            <icon-export :size="15" />
             <span>移动至</span>
             <icon-right :size="12" style="margin-left: auto" />
           </MenuPopoverItem>
@@ -714,7 +718,7 @@ function onCtxEnterBatchMode(): void {
         @mouseenter="(e: MouseEvent) => showCascadeSubmenu('list', e.currentTarget as HTMLElement)"
         @mouseleave="scheduleCloseCascadeSubmenu"
       >
-        <icon-arrow-reroute :size="15" />
+        <icon-export :size="15" />
         <span>移动至</span>
         <icon-right :size="12" style="margin-left: auto" />
       </MenuPopoverItem>
