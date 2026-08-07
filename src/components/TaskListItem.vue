@@ -407,8 +407,16 @@ function offsetFromClickPoint(e: MouseEvent): number {
  *  都显示详情）。selectTask 对相同 id 是 toggle，需先判断再调用，避免
  *  已选中时被关闭。光标定位到鼠标点击的字符位置（点哪编辑哪）。
  *  focus 用 rAF 双重保障：v-if 切换渲染 input 后，nextTick 时 DOM 可能未完全
- *  稳定（浏览器焦点栈未更新），直接 focus 偶发失效。 */
+ *  稳定（浏览器焦点栈未更新），直接 focus 偶发失效。
+ *
+ *  多选模式下不进入编辑：标题点击转发为 select 事件，由视图层走批量选中
+ *  （与点击行其他区域、批量勾选框行为一致）。 */
 function onTitleClick(e: MouseEvent): void {
+  // 多选模式：转发为 select（批量选中），不进入编辑
+  if (props.batchMode) {
+    emit("select", e);
+    return;
+  }
   // 确保详情面板打开（相同 id 不重复 toggle）
   if (taskStore.selectedTaskId !== props.task.id) {
     taskStore.selectTask(props.task.id);
