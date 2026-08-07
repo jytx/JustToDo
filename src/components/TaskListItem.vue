@@ -403,11 +403,16 @@ function offsetFromClickPoint(e: MouseEvent): number {
   return len;
 }
 
-/** 单击标题进入编辑：填入当前标题，光标定位到鼠标点击的字符位置
- *  （点哪编辑哪，不做全选/行尾）。
+/** 单击标题进入编辑：同时确保详情面板打开（点击标题与点击行其他区域一致，
+ *  都显示详情）。selectTask 对相同 id 是 toggle，需先判断再调用，避免
+ *  已选中时被关闭。光标定位到鼠标点击的字符位置（点哪编辑哪）。
  *  focus 用 rAF 双重保障：v-if 切换渲染 input 后，nextTick 时 DOM 可能未完全
  *  稳定（浏览器焦点栈未更新），直接 focus 偶发失效。 */
 function onTitleClick(e: MouseEvent): void {
+  // 确保详情面板打开（相同 id 不重复 toggle）
+  if (taskStore.selectedTaskId !== props.task.id) {
+    taskStore.selectTask(props.task.id);
+  }
   editingTitleValue.value = props.task.title;
   // 先记录点击偏移（此时 span 还在 DOM 上，caretRangeFromPoint 才能命中）
   titleClickOffset.value = offsetFromClickPoint(e);
