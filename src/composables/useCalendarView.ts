@@ -5,7 +5,7 @@
 //   useCalendarCreateAction(getApi) → + 按钮：取 view.currentStart 作为默认日期，唤起 QuickAddDialog
 
 import { ref, onMounted, onUnmounted } from "vue";
-import type { CalendarOptions, EventInput, CalendarApi } from "@fullcalendar/core";
+import type { CalendarOptions, EventInput, CalendarApi, EventMountArg } from "@fullcalendar/core";
 // 中文语言包：FC v6 的 locale 模块 export default 一个 LocaleInput 对象，
 // 需显式加到 options.locales 数组里（不能靠 side-effect import 自动注册）。
 // 这样 allDayText/按钮文本/moreLinkText 等才会中文化。
@@ -318,9 +318,17 @@ function previewBarWidth(st: ResizeState, deltaDays: number): void {
 }
 
 /** 全天事件 resize：mousedown 手柄 → mousemove 实时预览（横条+文字）→ mouseup 写库 */
-function onResizeHandleMouseDown(e: MouseEvent, taskId: string, edge: "start" | "end", origStart: string, origEnd: string): void {
+function onResizeHandleMouseDown(
+  e: MouseEvent,
+  taskId: string,
+  edge: "start" | "end",
+  getDates: () => { origStart: string; origEnd: string },
+): void {
   e.preventDefault();
   e.stopPropagation();
+  // mousedown 时从 FC 事件对象读最新日期（FC 数据更新后 DOM 复用、闭包过期，
+  // 必须用 getEventById 保证 anchor 是拖拽前的最新值）
+  const { origStart, origEnd } = getDates();
   // 找 harness 元素 + 锚点格子 + 单元格宽度
   const eventEl = (e.currentTarget as HTMLElement).closest(".fc-event") as HTMLElement | null;
   const harness = eventEl?.closest(".fc-daygrid-event-harness") as HTMLElement | null;
@@ -402,17 +410,24 @@ async function onResizeMouseUp(): Promise<void> {
   previewTip = null;
   if (!st) return;
 
-  // 无条件恢复（必须在任何 return 之前）：
-  // 1. 事件元素 pointer-events（mousedown 时设了 none，不恢复则事件再也点不动）
-  // 2. harness 原始 style（拖拽中实时改过宽度，不恢复则残留"幽灵条"）
+  // 无条件恢复 pointer-events（mousedown 时设了 none，不恢复则事件再也点不动）。
+  // 注意：**不恢复 harness 原始 style**——拖拽结束时 harness 已处于最终预览宽度，
+  // 写库成功后 FC reload 会重渲染成新宽度；若在此恢复原始宽度，FC 重渲染前会
+  // 闪出旧长条（"一瞬间变长又缩短"）。只有未拖 / 超范围 / 写库失败才需要恢复。
   const eventEl = st.harness.querySelector(".fc-event") as HTMLElement | null;
   if (eventEl) eventEl.style.pointerEvents = "";
-  st.harness.setAttribute("style", st.origHarnessStyle);
+  // 恢复 harness 原始 style（非写库路径：未拖、超范围钳制、写库失败）
+  const restoreOriginal = (): void => {
+    st.harness.setAttribute("style", st.origHarnessStyle);
+  };
 
   // 用几何计算目标日期（不用 mouseup 坐标——鼠标可能在日历外松开，
   // 用最后一次 mousemove 的有效位置更可靠）
   const deltaDays = deltaDaysFromX(st, st.lastMoveX);
-  if (deltaDays === 0) return;
+  if (deltaDays === 0) {
+    restoreOriginal();
+    return;
+  }
   const targetDateStr = targetDateFromDelta(st, deltaDays);
 
   const taskStore = useTaskStore();
@@ -420,19 +435,26 @@ async function onResizeMouseUp(): Promise<void> {
     if (st.edge === "start") {
       const targetDate = new Date(targetDateStr + "T00:00:00");
       const newStart = toLocalIso(targetDate);
-      if (newStart > st.origEnd) return;
+      if (newStart > st.origEnd) {
+        restoreOriginal();
+        return;
+      }
       await taskStore.updateTask(st.taskId, { dueStartAt: newStart });
     } else {
       const endOfDay = new Date(targetDateStr + "T00:00:00");
       endOfDay.setHours(23, 59, 59, 0);
       const newEnd = toLocalIso(endOfDay);
-      if (newEnd < st.origStart) return;
+      if (newEnd < st.origStart) {
+        restoreOriginal();
+        return;
+      }
       await taskStore.updateTask(st.taskId, { dueEndAt: newEnd });
     }
     if (taskStore.selectedTaskId === st.taskId) {
       taskStore.selectTask(null);
     }
   } catch (err) {
+    restoreOriginal();
     console.error("[calendar resize] 更新失败:", err);
   }
 }
@@ -442,19 +464,8 @@ async function onResizeMouseUp(): Promise<void> {
  * - 不可拖（已完成/子任务）跳过
  * - 全天事件（daygrid）才需要（timegrid 时间段事件有 FC 原生 resizer）
  */
-export function attachResizeHandles(arg: {
-  el: HTMLElement;
-  event: {
-    id: string;
-    extendedProps?: {
-      done?: boolean;
-      parentId?: string | null;
-      origStart?: string;
-      origEnd?: string;
-    };
-  };
-}): void {
-  const { el, event } = arg;
+export function attachResizeHandles(arg: EventMountArg): void {
+  const { el, event, view } = arg;
   const done = event.extendedProps?.done ?? false;
   const parentId = event.extendedProps?.parentId ?? null;
   // 已完成 / 子任务不可 resize（与可拖规则一致）
@@ -464,16 +475,29 @@ export function attachResizeHandles(arg: {
   const endLiteral = event.extendedProps?.origEnd;
   if (!startLiteral || !endLiteral) return;
 
+  // FC 事件数据更新（拖拽写库 → reload）后 eventDidMount 不会重新触发（DOM 复用），
+  // 闭包里缓存的日期会过期——第二次拖拽会拿旧 anchor 日期，天数算错。
+  // 因此不把日期写死进闭包：每次 mousedown 时从 FC 事件对象实时读最新值
+  // （getEventById 返回的是 FC 内部事件存储的最新数据），读不到才兜底闭包值。
+  const getDates = (): { origStart: string; origEnd: string } => {
+    const latest = view.calendar.getEventById(event.id);
+    const ep = latest?.extendedProps ?? {};
+    if (ep.origStart && ep.origEnd) {
+      return { origStart: ep.origStart, origEnd: ep.origEnd };
+    }
+    return { origStart: startLiteral, origEnd: endLiteral };
+  };
+
   // 左手柄（改 start）
   const startHandle = document.createElement("div");
   startHandle.className = "jt-resizer-handle jt-resizer-handle--start";
-  bindResizeHandle(startHandle, event.id, "start", startLiteral, endLiteral);
+  bindResizeHandle(startHandle, event.id, "start", getDates);
   el.appendChild(startHandle);
 
   // 右手柄（改 end）
   const endHandle = document.createElement("div");
   endHandle.className = "jt-resizer-handle jt-resizer-handle--end";
-  bindResizeHandle(endHandle, event.id, "end", startLiteral, endLiteral);
+  bindResizeHandle(endHandle, event.id, "end", getDates);
   el.appendChild(endHandle);
 }
 
@@ -483,8 +507,15 @@ export function attachResizeHandles(arg: {
  *  FC 整体移动（eventDrop）。
  *  因此手柄必须在 capture 阶段拦截 pointerdown（stopImmediatePropagation 阻止
  *  传播到 FC 的 document 监听）+ preventDefault，并自行启动 resize。
- *  兼容不支持 Pointer Events 的环境：mousedown 同样处理（防重复启动用标志）。 */
-function bindResizeHandle(handle: HTMLElement, taskId: string, edge: "start" | "end", origStart: string, origEnd: string): void {
+ *  兼容不支持 Pointer Events 的环境：mousedown 同样处理（防重复启动用标志）。
+ *  @param getDates mousedown 时取最新日期的回调（从 FC 事件对象实时读，
+ *                  避免 FC 复用 DOM 时闭包日期过期） */
+function bindResizeHandle(
+  handle: HTMLElement,
+  taskId: string,
+  edge: "start" | "end",
+  getDates: () => { origStart: string; origEnd: string },
+): void {
   const start = (e: MouseEvent): void => {
     // 无论是否已启动 resize，都必须拦截传播 + 阻止默认——
     // 真实浏览器中 pointerdown 之后还会派发兼容的 mousedown，
@@ -496,7 +527,7 @@ function bindResizeHandle(handle: HTMLElement, taskId: string, edge: "start" | "
     // 不能用闭包标志（FC reload 复用事件元素时闭包残留 true，第二次拖不动），
     // 用全局 resizeState（mouseup 后置 null）判断。
     if (resizeState) return;
-    onResizeHandleMouseDown(e, taskId, edge, origStart, origEnd);
+    onResizeHandleMouseDown(e, taskId, edge, getDates);
   };
   // capture + stopImmediatePropagation：在 FC 的 document pointerdown 监听之前拦截
   handle.addEventListener("pointerdown", start, true);
