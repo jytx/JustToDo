@@ -297,18 +297,20 @@ let previewTip: HTMLDivElement | null = null;
  *    - left: 0（默认）+ right: -N（负值，延伸到右边 N px）
  *    - 宽度 = cellWidth + N（harness 自适应）
  *  拖 end：改 right（更负=更长，往回收=更短）
- *  拖 start：改 left（正值=起点右移、整体缩短；负值=起点左移、延长）
+ *  拖 start：改 left（起点移动），right 保持不变（右边缘不动）
+ *    - 拖右（deltaDays>0，缩短）：left 增加 → 起点右移
+ *    - 拖左（deltaDays<0，延长）：left 减少 → 起点左移
  *  deltaDays > 0 延长，< 0 缩短。 */
 function previewBarWidth(st: ResizeState, deltaDays: number): void {
   const px = deltaDays * st.cellWidth;
   const origRight = parseFloat(st.origHarnessStyle.match(/right:\s*(-?[\d.]+)/)?.[1] ?? "0");
   const origLeft = parseFloat(st.origHarnessStyle.match(/left:\s*(-?[\d.]+)/)?.[1] ?? "0");
   if (st.edge === "end") {
-    // 延长：right 更负（origRight - px，px>0 时 -px 让 right 更负=更长）
+    // 拖 end：right 联动（更负=更长）
     st.harness.style.right = (origRight - px) + "px";
   } else {
-    // start：起点右移=缩短。deltaDays>0 延长 → left 更负（左移）；<0 缩短 → left 正值（右移）
-    st.harness.style.left = (origLeft - px) + "px";
+    // 拖 start：left 联动（起点移动），right 保持（右边缘不动）
+    st.harness.style.left = (origLeft + px) + "px";
   }
 }
 
