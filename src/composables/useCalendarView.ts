@@ -271,21 +271,26 @@ interface ResizeState {
   taskId: string;
   /** 拖的是哪端 */
   edge: "start" | "end";
-  /** 鼠标按下时的 x 坐标 */
-  startX: number;
   /** 原开始日期（本地字面量） */
   origStart: string;
   /** 原结束日期（本地字面量） */
   origEnd: string;
+  /** 事件 harness 元素（实时改宽度用） */
+  harness: HTMLElement;
+  /** harness 原始 style（mouseup 恢复用） */
+  origHarnessStyle: string;
+  /** 鼠标按下时命中的日期格子（锚点，计算位移天数的基准） */
+  anchorDate: string;
+  /** 单元格宽度（px，按格子对齐用） */
+  cellWidth: number;
 }
 
 let resizeState: ResizeState | null = null;
 /** 拖拽预览气泡元素（实时显示目标日期） */
 let previewTip: HTMLDivElement | null = null;
 
-/** 找鼠标下的 FC 日期格子，返回它的 data-date（YYYY-MM-DD）或 null。
- *  用 elementsFromPoint（复数）遍历：事件横条会遮挡格子，单点 elementFromPoint
- *  返回的是事件元素，需要遍历层叠列表找带 data-date 的格子。 */
+/** 找坐标下的 FC 日期格子，返回它的 data-date（YYYY-MM-DD）或 null。
+ *  用 elementsFromPoint（复数）穿透事件横条遮挡。 */
 function dateUnderCursor(clientX: number, clientY: number): string | null {
   const stack = document.elementsFromPoint(clientX, clientY) as HTMLElement[];
   for (const el of stack) {
@@ -296,18 +301,54 @@ function dateUnderCursor(clientX: number, clientY: number): string | null {
   return null;
 }
 
-/** 全天事件 resize：mousedown 手柄 → mousemove 实时预览 → mouseup 写库 */
+/** 两个 YYYY-MM-DD 之间的天数差（b - a，可负） */
+function daysBetween(aDate: string, bDate: string): number {
+  const a = new Date(aDate + "T00:00:00");
+  const b = new Date(bDate + "T00:00:00");
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+/** 实时更新事件横条宽度（视觉跟手）。
+ *  FC daygrid harness 用 absolute 定位在起始格子内：
+ *    - left: 0（默认）+ right: -N（负值，延伸到右边 N px）
+ *    - 宽度 = cellWidth + N（harness 自适应）
+ *  拖 end：改 right（更负=更长，往回收=更短）
+ *  拖 start：改 left（正值=起点右移、整体缩短；负值=起点左移、延长）
+ *  deltaDays > 0 延长，< 0 缩短。 */
+function previewBarWidth(st: ResizeState, deltaDays: number): void {
+  const px = deltaDays * st.cellWidth;
+  const origRight = parseFloat(st.origHarnessStyle.match(/right:\s*(-?[\d.]+)/)?.[1] ?? "0");
+  const origLeft = parseFloat(st.origHarnessStyle.match(/left:\s*(-?[\d.]+)/)?.[1] ?? "0");
+  if (st.edge === "end") {
+    // 延长：right 更负（origRight - px，px>0 时 -px 让 right 更负=更长）
+    st.harness.style.right = (origRight - px) + "px";
+  } else {
+    // start：起点右移=缩短。deltaDays>0 延长 → left 更负（左移）；<0 缩短 → left 正值（右移）
+    st.harness.style.left = (origLeft - px) + "px";
+  }
+}
+
+/** 全天事件 resize：mousedown 手柄 → mousemove 实时预览（横条+文字）→ mouseup 写库 */
 function onResizeHandleMouseDown(e: MouseEvent, taskId: string, edge: "start" | "end", origStart: string, origEnd: string): void {
   e.preventDefault();
   e.stopPropagation();
-  resizeState = { taskId, edge, startX: e.clientX, origStart, origEnd };
-  // 拖拽中让事件横条 pointer-events:none，使 elementFromPoint 能穿透到下方日期格子
-  // （多日事件横条会遮挡目标格子，导致 hit-test 命中事件自身而非格子）
+  // 找 harness 元素 + 锚点格子 + 单元格宽度
   const eventEl = (e.currentTarget as HTMLElement).closest(".fc-event") as HTMLElement | null;
-  if (eventEl) {
-    eventEl.style.pointerEvents = "none";
-    resizeEventEl = eventEl;
-  }
+  const harness = eventEl?.closest(".fc-daygrid-event-harness") as HTMLElement | null;
+  if (!eventEl || !harness) return;
+  // 锚点：用事件原始日期（不 hit-test，避免手柄在格子边缘时命中相邻格子）。
+  // start 锚点 = origStart 那天；end 锚点 = origEnd 那天。
+  const anchorDate = edge === "start" ? toIsoDate(origStart) : toIsoDate(origEnd);
+  // 单元格宽度：取任意格子的宽度
+  const cell = document.querySelector("[data-date]") as HTMLElement | null;
+  const cellWidth = cell ? cell.offsetWidth : 200;
+  resizeState = {
+    taskId, edge, origStart, origEnd,
+    harness, origHarnessStyle: harness.getAttribute("style") ?? "",
+    anchorDate, cellWidth,
+  };
+  // 拖拽中让事件横条 pointer-events:none，使 elementFromPoint 能穿透到下方日期格子
+  eventEl.style.pointerEvents = "none";
   // 创建预览气泡（参照 TimelineView 横条的 .gantt__bar-tip）
   previewTip = document.createElement("div");
   previewTip.className = "jt-resizer-tip";
@@ -316,20 +357,22 @@ function onResizeHandleMouseDown(e: MouseEvent, taskId: string, edge: "start" | 
   document.addEventListener("mouseup", onResizeMouseUp);
 }
 
-/** 拖拽中被禁用 pointer-events 的事件元素（mouseup 时恢复） */
-let resizeEventEl: HTMLElement | null = null;
-
-/** mousemove：实时显示目标日期（hit-test 鼠标下的日期格子）+ 移动气泡 */
+/** mousemove：实时改横条宽度 + 显示目标日期气泡 */
 function onResizeMouseMove(e: MouseEvent): void {
   if (!resizeState || !previewTip) return;
   document.body.style.cursor = "ew-resize";
-  // 鼠标下的目标日期
+  // 鼠标下的目标日期（用 elementsFromPoint 穿透事件遮挡）
   const targetDate = dateUnderCursor(e.clientX, e.clientY);
+  if (!targetDate) return;
+  // 位移天数 = targetDate - anchorDate（按整天对齐，无估算）
+  const deltaDays = daysBetween(resizeState.anchorDate, targetDate);
+  // 实时改横条宽度（视觉跟手）
+  previewBarWidth(resizeState, deltaDays);
   // 气泡跟随鼠标，显示目标日期 + 起止预览
-  let text = targetDate ?? "—";
-  if (targetDate && resizeState.edge === "start") {
+  let text: string;
+  if (resizeState.edge === "start") {
     text = `开始 → ${targetDate}\n（结束 ${toIsoDate(resizeState.origEnd)}）`;
-  } else if (targetDate && resizeState.edge === "end") {
+  } else {
     text = `结束 → ${targetDate}\n（开始 ${toIsoDate(resizeState.origStart)}）`;
   }
   previewTip.textContent = text;
@@ -342,38 +385,36 @@ async function onResizeMouseUp(e: MouseEvent): Promise<void> {
   document.removeEventListener("mousemove", onResizeMouseMove);
   document.removeEventListener("mouseup", onResizeMouseUp);
   document.body.style.cursor = "";
-  // 恢复事件元素的 pointer-events
-  if (resizeEventEl) {
-    resizeEventEl.style.pointerEvents = "";
-    resizeEventEl = null;
+  const st = resizeState;
+  resizeState = null;
+  // 恢复事件元素 pointer-events + harness 原始 style（FC reload 会重渲染，这里兜底）
+  if (st) {
+    const eventEl = st.harness.querySelector(".fc-event") as HTMLElement | null;
+    if (eventEl) eventEl.style.pointerEvents = "";
+    st.harness.setAttribute("style", st.origHarnessStyle);
   }
   previewTip?.remove();
   previewTip = null;
-  const st = resizeState;
-  resizeState = null;
   if (!st) return;
 
-  // 目标日期取鼠标下格子的 data-date（精确，无估算偏移）
+  // 目标日期取鼠标下格子的 data-date
   const targetDateStr = dateUnderCursor(e.clientX, e.clientY);
   if (!targetDateStr) return;
-  const targetDate = new Date(targetDateStr + "T00:00:00");
 
   const taskStore = useTaskStore();
   try {
     if (st.edge === "start") {
-      // 改 start：新 start = targetDate 00:00，钳制不超过 end
+      const targetDate = new Date(targetDateStr + "T00:00:00");
       const newStart = toLocalIso(targetDate);
       if (newStart > st.origEnd) return;
       await taskStore.updateTask(st.taskId, { dueStartAt: newStart });
     } else {
-      // 改 end：新 end = targetDate 23:59:59，钳制不早于 start
-      const endOfDay = new Date(targetDate);
+      const endOfDay = new Date(targetDateStr + "T00:00:00");
       endOfDay.setHours(23, 59, 59, 0);
       const newEnd = toLocalIso(endOfDay);
       if (newEnd < st.origStart) return;
       await taskStore.updateTask(st.taskId, { dueEndAt: newEnd });
     }
-    // 关闭详情面板（避免面板里旧日期与新不一致）
     if (taskStore.selectedTaskId === st.taskId) {
       taskStore.selectTask(null);
     }
