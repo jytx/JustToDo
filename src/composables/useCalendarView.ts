@@ -382,7 +382,7 @@ function onResizeMouseMove(e: MouseEvent): void {
   previewTip.style.top = e.clientY + 14 + "px";
 }
 
-/** mouseup：用鼠标下的目标日期写库（只更新被拖的一端） */
+/** mouseup：用几何计算的目标日期写库（只更新被拖的一端） */
 async function onResizeMouseUp(e: MouseEvent): Promise<void> {
   document.removeEventListener("pointermove", onResizeMouseMove);
   document.removeEventListener("pointerup", onResizeMouseUp);
@@ -395,14 +395,17 @@ async function onResizeMouseUp(e: MouseEvent): Promise<void> {
   previewTip = null;
   if (!st) return;
 
+  // 无条件恢复（必须在任何 return 之前）：
+  // 1. 事件元素 pointer-events（mousedown 时设了 none，不恢复则事件再也点不动）
+  // 2. harness 原始 style（拖拽中实时改过宽度，不恢复则残留"幽灵条"）
+  const eventEl = st.harness.querySelector(".fc-event") as HTMLElement | null;
+  if (eventEl) eventEl.style.pointerEvents = "";
+  st.harness.setAttribute("style", st.origHarnessStyle);
+
   // 用几何计算目标日期（不再 hit-test，避免遮挡/跨行命中错误格子）
   const deltaDays = deltaDaysFromX(st, e.clientX);
   if (deltaDays === 0) return;
   const targetDateStr = targetDateFromDelta(st, deltaDays);
-  // 再恢复事件元素 pointer-events + harness 原始 style（FC reload 会重渲染）
-  const eventEl = st.harness.querySelector(".fc-event") as HTMLElement | null;
-  if (eventEl) eventEl.style.pointerEvents = "";
-  st.harness.setAttribute("style", st.origHarnessStyle);
 
   const taskStore = useTaskStore();
   try {
