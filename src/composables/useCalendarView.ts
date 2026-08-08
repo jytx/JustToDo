@@ -387,18 +387,16 @@ async function onResizeMouseUp(e: MouseEvent): Promise<void> {
   document.body.style.cursor = "";
   const st = resizeState;
   resizeState = null;
-  // 恢复事件元素 pointer-events + harness 原始 style（FC reload 会重渲染，这里兜底）
-  if (st) {
-    const eventEl = st.harness.querySelector(".fc-event") as HTMLElement | null;
-    if (eventEl) eventEl.style.pointerEvents = "";
-    st.harness.setAttribute("style", st.origHarnessStyle);
-  }
   previewTip?.remove();
   previewTip = null;
   if (!st) return;
 
-  // 目标日期取鼠标下格子的 data-date
+  // 先取目标日期（此时事件元素 pointer-events 仍为 none，hit-test 能穿透命中格子）
   const targetDateStr = dateUnderCursor(e.clientX, e.clientY);
+  // 再恢复事件元素 pointer-events + harness 原始 style（FC reload 会重渲染）
+  const eventEl = st.harness.querySelector(".fc-event") as HTMLElement | null;
+  if (eventEl) eventEl.style.pointerEvents = "";
+  st.harness.setAttribute("style", st.origHarnessStyle);
   if (!targetDateStr) return;
 
   const taskStore = useTaskStore();
@@ -453,17 +451,26 @@ export function attachResizeHandles(arg: {
   // 左手柄（改 start）
   const startHandle = document.createElement("div");
   startHandle.className = "jt-resizer-handle jt-resizer-handle--start";
-  startHandle.addEventListener("mousedown", (e) =>
-    onResizeHandleMouseDown(e, event.id, "start", startLiteral, endLiteral),
-  );
+  // capture 阶段拦截：FC 的拖拽监听在 .fc-event-draggable 上，手柄在其内部，
+  // mousedown 冒泡到事件元素会触发 FC 整体移动。用 capture + stopImmediatePropagation
+  // 在 FC 的监听器之前拦截，阻止事件派发到 FC。
+  startHandle.addEventListener("mousedown", (e) => {
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+    e.preventDefault();
+    onResizeHandleMouseDown(e, event.id, "start", startLiteral, endLiteral);
+  }, true);
   el.appendChild(startHandle);
 
   // 右手柄（改 end）
   const endHandle = document.createElement("div");
   endHandle.className = "jt-resizer-handle jt-resizer-handle--end";
-  endHandle.addEventListener("mousedown", (e) =>
-    onResizeHandleMouseDown(e, event.id, "end", startLiteral, endLiteral),
-  );
+  endHandle.addEventListener("mousedown", (e) => {
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+    e.preventDefault();
+    onResizeHandleMouseDown(e, event.id, "end", startLiteral, endLiteral);
+  }, true);
   el.appendChild(endHandle);
 }
 
