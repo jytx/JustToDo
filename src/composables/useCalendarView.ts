@@ -499,6 +499,56 @@ export function attachResizeHandles(arg: EventMountArg): void {
   endHandle.className = "jt-resizer-handle jt-resizer-handle--end";
   bindResizeHandle(endHandle, event.id, "end", getDates);
   el.appendChild(endHandle);
+
+  // 事件元素级边缘拦截（双保险）：手柄是 appendChild 的自定义节点，
+  // FC reload 复用/重建事件 DOM 时手柄可能丢失或错位，且单天事件手柄命中区
+  // 只有 10px，用户点偏一点就会落到事件体上触发 FC 原生拖拽（整体移动 +
+  // 单天事件 end 丢失只改 start，导致任务变成区间）。
+  // 这里直接在事件元素 capture 阶段拦截左右边缘 12px 内的按下，
+  // 命中即启动 resize；事件体中间放行给 FC 正常拖拽。
+  bindEventEdgeResize(el, event.id, getDates);
+}
+
+/** 事件元素左右边缘的命中宽度（px）——此宽度内的按下视为 resize 而非移动 */
+const EDGE_HIT_WIDTH = 12;
+
+/** 在事件元素本身上拦截边缘按下（不依赖手柄 DOM 是否存活）。
+ *  - 命中左右边缘 → 拦截传播 + 启动 resize（与手柄逻辑一致）
+ *  - 事件体中间 → 放行（FC 原生拖拽改期）
+ *  capture + stopImmediatePropagation：抢在 FC 的 containerEl mousedown（bubble）
+ *  之前拦截，FC 收不到就不会启动整体移动。
+ *  防重：eventDidMount 对同一元素只调用一次；FC 重建元素时会创建新元素
+ *  （dataset 无标记 → 重绑），复用元素时监听仍在（无需重绑）。 */
+function bindEventEdgeResize(
+  el: HTMLElement,
+  eventId: string,
+  getDates: () => { origStart: string; origEnd: string },
+): void {
+  if (el.dataset.jtEdgeBound === "1") return;
+  el.dataset.jtEdgeBound = "1";
+  const onEdgeDown = (e: MouseEvent): void => {
+    // 只响应鼠标左键
+    if (e.button !== 0) return;
+    const rect = el.getBoundingClientRect();
+    const distLeft = e.clientX - rect.left;
+    const distRight = rect.right - e.clientX;
+    let edge: "start" | "end" | null = null;
+    if (distLeft >= 0 && distLeft <= EDGE_HIT_WIDTH) {
+      edge = "start";
+    } else if (distRight >= 0 && distRight <= EDGE_HIT_WIDTH) {
+      edge = "end";
+    }
+    // 事件体中间：放行给 FC 整体拖拽
+    if (!edge) return;
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+    e.preventDefault();
+    // 防重复启动（pointerdown + mousedown 双触发 / 手柄与事件层双拦截）
+    if (resizeState) return;
+    onResizeHandleMouseDown(e, eventId, edge, getDates);
+  };
+  el.addEventListener("pointerdown", onEdgeDown, true);
+  el.addEventListener("mousedown", onEdgeDown, true);
 }
 
 /** 给 resize 手柄绑定启动逻辑。
@@ -713,7 +763,12 @@ export async function onCalendarEventChange(info: {
     id: string;
     start: Date | null;
     end: Date | null;
-    extendedProps?: { done?: boolean; parentId?: string | null };
+    extendedProps?: {
+      done?: boolean;
+      parentId?: string | null;
+      origStart?: string;
+      origEnd?: string;
+    };
   };
   oldEvent: { start: Date | null; end: Date | null };
   revert: () => void;
@@ -762,6 +817,14 @@ export async function onCalendarEventChange(info: {
       endForDb = prev;
     }
     newEnd = toLocalIso(endForDb);
+  } else if (event.extendedProps?.origEnd) {
+    // FC 丢弃了 end（oldEvent.end 或 event.end 为 null，如单天/倒挂数据）：
+    // 若只更新 start 会让 end 残留旧值，任务变成倒挂区间。
+    // 用原始 DB end 加上 start 的位移，保证整个任务整体平移。
+    const deltaMs = startDate.getTime() - toDate(oldEvent.start).getTime();
+    const origEndDate = toDate(event.extendedProps.origEnd);
+    const shifted = new Date(origEndDate.getTime() + deltaMs);
+    newEnd = toLocalIso(shifted);
   }
   const newStart = toLocalIso(startDate);
   const taskStore = useTaskStore();
