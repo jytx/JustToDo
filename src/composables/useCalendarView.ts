@@ -323,10 +323,11 @@ function onResizeHandleMouseDown(e: MouseEvent, taskId: string, edge: "start" | 
   // 锚点：用事件原始日期（不 hit-test，避免手柄在格子边缘时命中相邻格子）。
   // start 锚点 = origStart 那天；end 锚点 = origEnd 那天。
   const anchorDate = edge === "start" ? toIsoDate(origStart) : toIsoDate(origEnd);
-  // 单元格宽度：取锚点格子的宽度
+  // 单元格宽度：优先取锚点格子；锚点日期不在当前视图（跨周/跨月事件）时
+  // 兜底取任意可见格子，再不行用 200px。绝不能提前 return（否则拖不动）。
   const anchorCell = document.querySelector(`[data-date="${anchorDate}"]`) as HTMLElement | null;
-  if (!anchorCell) return;
-  const cellWidth = anchorCell.offsetWidth;
+  const anyCell = document.querySelector("[data-date]") as HTMLElement | null;
+  const cellWidth = anchorCell?.offsetWidth ?? anyCell?.offsetWidth ?? 200;
   resizeState = {
     taskId, edge, origStart, origEnd,
     harness, origHarnessStyle: harness.getAttribute("style") ?? "",
