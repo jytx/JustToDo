@@ -173,9 +173,7 @@ export function taskToEvent(task: Task, selectedId: string | null = null): Calen
   const draggable = canDragTask(task);
   event.startEditable = draggable;
   event.durationEditable = draggable;
-  // 允许从头端 resize（默认 false，只能拖尾端）。
-  // 启用后事件左右两端都可拖拽改期（拖左端改 dueStartAt、拖右端改 dueEndAt）
-  event.eventResizableFromStart = draggable;
+  // 头部 resize 由全局 eventResizableFromStart 控制（非 per-event）
 
   return event;
 }
@@ -230,6 +228,16 @@ export function createCalendarOptions(
     // 开启事件拖拽 + 改时长；具体哪些事件可拖由 taskToEvent 写入的
     // event.startEditable / durationEditable（per-event）控制
     editable: true,
+    // 显式开启 resize（默认 true，但显式设避免任何覆盖链路导致 undefined）：
+    //   - eventDurationEditable：允许拖尾端改 end
+    //   - eventStartEditable：允许拖拽移动（与 per-event startEditable 配合）
+    //   - eventResizableFromStart：允许拖头端改 start（默认 false）
+    eventDurationEditable: true,
+    eventStartEditable: true,
+    eventResizableFromStart: true,
+    // 全天事件（daygrid）自定义 resize 手柄：FC v6 daygrid 不渲染原生 resizer，
+    // 这里在事件挂载后注入自定义手柄 div，绑 mousedown 实现按天 resize
+    eventDidMount: attachResizeHandles,
     // 单天任务在 dayGridMonth 上 hit area 很小，FC 默认要求长按 1s 才进 drag
     // 用户体验差：缩短到 200ms，几乎是"按下就能拖"
     // 多日任务 hit area 大，不会触发这个阈值，所以不冲突
@@ -241,7 +249,130 @@ export function createCalendarOptions(
   };
 }
 
-// ─── 模块级事件总线：任务变更通知 ─────────────────────────
+// ─── 自定义 resize 手柄（全天事件用）─────────────────────
+// FullCalendar v6 的 daygrid（月/年视图 + 周视图全天区）不渲染 resizer，
+// 只有 timegrid 时间段事件才有。我们的任务都是全天事件，落在 daygrid，
+// 所以没有原生 resize 手柄。
+// 这里用 eventDidMount 注入两个自定义手柄 div（左=改 start、右=改 end），
+// 绑 mousedown 自己实现按天 resize（参照 TimelineView 横条的 ew-resize 范式）。
+// 命中区域：事件左右各 10px；hover 事件时手柄白色高亮（CSS 在 theme.css）。
+
+/** resize 拖拽中的状态 */
+interface ResizeState {
+  /** 被拖的任务 id */
+  taskId: string;
+  /** 拖的是哪端 */
+  edge: "start" | "end";
+  /** 鼠标按下时的 x 坐标 */
+  startX: number;
+  /** 原开始日期（本地字面量） */
+  origStart: string;
+  /** 原结束日期（本地字面量） */
+  origEnd: string;
+}
+
+let resizeState: ResizeState | null = null;
+
+/** 全天事件 resize：mousedown 手柄 → mousemove 按天改 start/end → mouseup 写库 */
+function onResizeHandleMouseDown(e: MouseEvent, taskId: string, edge: "start" | "end", origStart: string, origEnd: string): void {
+  e.preventDefault();
+  e.stopPropagation();
+  resizeState = { taskId, edge, startX: e.clientX, origStart, origEnd };
+  document.addEventListener("mousemove", onResizeMouseMove);
+  document.addEventListener("mouseup", onResizeMouseUp);
+}
+
+/** mousemove：仅更新光标提示（实时改 FC DOM 复杂，mouseup 时一次性写库更稳） */
+function onResizeMouseMove(): void {
+  if (!resizeState) return;
+  document.body.style.cursor = "ew-resize";
+}
+
+/** mouseup：按位移天数写库（只更新被拖的一端） */
+async function onResizeMouseUp(e: MouseEvent): Promise<void> {
+  document.removeEventListener("mousemove", onResizeMouseMove);
+  document.removeEventListener("mouseup", onResizeMouseUp);
+  document.body.style.cursor = "";
+  const st = resizeState;
+  resizeState = null;
+  if (!st) return;
+
+  // 位移天数（四舍五入，按整天对齐）
+  const dx = e.clientX - st.startX;
+  // 用事件元素宽度估算单日像素（事件元素此时可能已不在 DOM，用近似 90px/天兜底）
+  const approxDayPx = 90;
+  const deltaDays = Math.round(dx / approxDayPx);
+  if (deltaDays === 0) return;
+
+  const taskStore = useTaskStore();
+  try {
+    if (st.edge === "start") {
+      // 改 start：新 start = origStart + deltaDays，不能晚于 end
+      const newStart = shiftDateLiteral(st.origStart, deltaDays);
+      // 钳制：start 不超过 end
+      if (newStart > st.origEnd) return;
+      await taskStore.updateTask(st.taskId, { dueStartAt: newStart });
+    } else {
+      // 改 end：新 end = origEnd + deltaDays，不能早于 start
+      const newEnd = shiftDateLiteral(st.origEnd, deltaDays);
+      if (newEnd < st.origStart) return;
+      await taskStore.updateTask(st.taskId, { dueEndAt: newEnd });
+    }
+    // 关闭详情面板（避免面板里旧日期与新不一致）
+    if (taskStore.selectedTaskId === st.taskId) {
+      taskStore.selectTask(null);
+    }
+  } catch (err) {
+    console.error("[calendar resize] 更新失败:", err);
+  }
+}
+
+/** 本地时间字面量 "YYYY-MM-DDTHH:mm:ss" ± N 天 */
+function shiftDateLiteral(literal: string, days: number): string {
+  const d = new Date(literal);
+  d.setDate(d.getDate() + days);
+  return toLocalIso(d);
+}
+
+/**
+ * eventDidMount：给可拖的全天事件注入自定义 resize 手柄。
+ * - 不可拖（已完成/子任务）跳过
+ * - 全天事件（daygrid）才需要（timegrid 时间段事件有 FC 原生 resizer）
+ */
+export function attachResizeHandles(arg: {
+  el: HTMLElement;
+  event: { id: string; start: Date | null; end: Date | null; extendedProps?: { done?: boolean; parentId?: string | null; allDay?: boolean } };
+}): void {
+  const { el, event } = arg;
+  const done = event.extendedProps?.done ?? false;
+  const parentId = event.extendedProps?.parentId ?? null;
+  // 已完成 / 子任务不可 resize（与可拖规则一致）
+  if (done || parentId) return;
+  if (!event.start) return;
+  // end 可能 null（开放区间），此时不给 end 手柄
+  const startLiteral = toLocalIso(event.start);
+  const endLiteral = event.end ? toLocalIso(event.end) : null;
+
+  // 左手柄（改 start）
+  const startHandle = document.createElement("div");
+  startHandle.className = "jt-resizer-handle jt-resizer-handle--start";
+  startHandle.addEventListener("mousedown", (e) =>
+    onResizeHandleMouseDown(e, event.id, "start", startLiteral, endLiteral ?? startLiteral),
+  );
+  el.appendChild(startHandle);
+
+  // 右手柄（改 end，仅当有 end）
+  if (endLiteral) {
+    const endHandle = document.createElement("div");
+    endHandle.className = "jt-resizer-handle jt-resizer-handle--end";
+    endHandle.addEventListener("mousedown", (e) =>
+      onResizeHandleMouseDown(e, event.id, "end", startLiteral, endLiteral),
+    );
+    el.appendChild(endHandle);
+  }
+}
+
+
 // 任意位置（QuickAddDialog / TaskDetailPanel / SearchPalette 等）新建 / 更新 / 删除 / 勾选
 // 任务后，调用 `notifyTaskChanged()`，所有挂载中的日历视图会自动 reload。
 
