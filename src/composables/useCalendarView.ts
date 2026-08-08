@@ -279,34 +279,17 @@ interface ResizeState {
   harness: HTMLElement;
   /** harness 原始 style（mouseup 恢复用） */
   origHarnessStyle: string;
-  /** 鼠标按下时命中的日期格子（锚点，计算位移天数的基准） */
+  /** 锚点日期（origStart 或 origEnd，计算位移的日期基准） */
   anchorDate: string;
-  /** 单元格宽度（px，按格子对齐用） */
+  /** 锚点格子的 left 坐标（clientX 系，计算位移天数的像素基准） */
+  anchorLeft: number;
+  /** 单元格宽度（px） */
   cellWidth: number;
 }
 
 let resizeState: ResizeState | null = null;
 /** 拖拽预览气泡元素（实时显示目标日期） */
 let previewTip: HTMLDivElement | null = null;
-
-/** 找坐标下的 FC 日期格子，返回它的 data-date（YYYY-MM-DD）或 null。
- *  用 elementsFromPoint（复数）穿透事件横条遮挡。 */
-function dateUnderCursor(clientX: number, clientY: number): string | null {
-  const stack = document.elementsFromPoint(clientX, clientY) as HTMLElement[];
-  for (const el of stack) {
-    if (el.hasAttribute("data-date")) return el.getAttribute("data-date");
-    const cell = el.closest("[data-date]") as HTMLElement | null;
-    if (cell) return cell.getAttribute("data-date");
-  }
-  return null;
-}
-
-/** 两个 YYYY-MM-DD 之间的天数差（b - a，可负） */
-function daysBetween(aDate: string, bDate: string): number {
-  const a = new Date(aDate + "T00:00:00");
-  const b = new Date(bDate + "T00:00:00");
-  return Math.round((b.getTime() - a.getTime()) / 86400000);
-}
 
 /** 实时更新事件横条宽度（视觉跟手）。
  *  FC daygrid harness 用 absolute 定位在起始格子内：
@@ -339,13 +322,16 @@ function onResizeHandleMouseDown(e: MouseEvent, taskId: string, edge: "start" | 
   // 锚点：用事件原始日期（不 hit-test，避免手柄在格子边缘时命中相邻格子）。
   // start 锚点 = origStart 那天；end 锚点 = origEnd 那天。
   const anchorDate = edge === "start" ? toIsoDate(origStart) : toIsoDate(origEnd);
-  // 单元格宽度：取任意格子的宽度
-  const cell = document.querySelector("[data-date]") as HTMLElement | null;
-  const cellWidth = cell ? cell.offsetWidth : 200;
+  // 锚点格子的 left 坐标（纯几何计算位移用，不依赖鼠标 y/遮挡）
+  const anchorCell = document.querySelector(`[data-date="${anchorDate}"]`) as HTMLElement | null;
+  if (!anchorCell) return;
+  const anchorLeft = anchorCell.getBoundingClientRect().left;
+  // 单元格宽度：取锚点格子的宽度
+  const cellWidth = anchorCell.offsetWidth;
   resizeState = {
     taskId, edge, origStart, origEnd,
     harness, origHarnessStyle: harness.getAttribute("style") ?? "",
-    anchorDate, cellWidth,
+    anchorDate, anchorLeft, cellWidth,
   };
   // 拖拽中让事件横条 pointer-events:none，使 elementFromPoint 能穿透到下方日期格子
   eventEl.style.pointerEvents = "none";
@@ -357,15 +343,26 @@ function onResizeHandleMouseDown(e: MouseEvent, taskId: string, edge: "start" | 
   document.addEventListener("mouseup", onResizeMouseUp);
 }
 
+/** 用鼠标 x 坐标算位移天数（纯几何，不依赖 elementsFromPoint）。
+ *  deltaDays = round((mouseX - anchorLeft) / cellWidth)。
+ *  不受鼠标 y 坐标 / 事件遮挡影响，比 hit-test 稳定。 */
+function deltaDaysFromX(st: ResizeState, clientX: number): number {
+  return Math.round((clientX - st.anchorLeft) / st.cellWidth);
+}
+
+/** 把锚点日期 + 位移天数 → 目标日期字面量 YYYY-MM-DD */
+function targetDateFromDelta(st: ResizeState, deltaDays: number): string {
+  const d = new Date(st.anchorDate + "T00:00:00");
+  d.setDate(d.getDate() + deltaDays);
+  return toIsoDate(d);
+}
+
 /** mousemove：实时改横条宽度 + 显示目标日期气泡 */
 function onResizeMouseMove(e: MouseEvent): void {
   if (!resizeState || !previewTip) return;
   document.body.style.cursor = "ew-resize";
-  // 鼠标下的目标日期（用 elementsFromPoint 穿透事件遮挡）
-  const targetDate = dateUnderCursor(e.clientX, e.clientY);
-  if (!targetDate) return;
-  // 位移天数 = targetDate - anchorDate（按整天对齐，无估算）
-  const deltaDays = daysBetween(resizeState.anchorDate, targetDate);
+  const deltaDays = deltaDaysFromX(resizeState, e.clientX);
+  const targetDate = targetDateFromDelta(resizeState, deltaDays);
   // 实时改横条宽度（视觉跟手）
   previewBarWidth(resizeState, deltaDays);
   // 气泡跟随鼠标，显示目标日期 + 起止预览
@@ -391,13 +388,14 @@ async function onResizeMouseUp(e: MouseEvent): Promise<void> {
   previewTip = null;
   if (!st) return;
 
-  // 先取目标日期（此时事件元素 pointer-events 仍为 none，hit-test 能穿透命中格子）
-  const targetDateStr = dateUnderCursor(e.clientX, e.clientY);
+  // 用几何计算目标日期（不再 hit-test，避免遮挡/跨行命中错误格子）
+  const deltaDays = deltaDaysFromX(st, e.clientX);
+  if (deltaDays === 0) return;
+  const targetDateStr = targetDateFromDelta(st, deltaDays);
   // 再恢复事件元素 pointer-events + harness 原始 style（FC reload 会重渲染）
   const eventEl = st.harness.querySelector(".fc-event") as HTMLElement | null;
   if (eventEl) eventEl.style.pointerEvents = "";
   st.harness.setAttribute("style", st.origHarnessStyle);
-  if (!targetDateStr) return;
 
   const taskStore = useTaskStore();
   try {
