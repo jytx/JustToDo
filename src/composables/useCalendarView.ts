@@ -279,6 +279,8 @@ interface ResizeState {
   harness: HTMLElement;
   /** harness 原始 style（mouseup 恢复用） */
   origHarnessStyle: string;
+  /** harness 原始是否绝对定位（单天 harness 是 relative，拖拽中临时转 abs） */
+  wasAbs: boolean;
   /** 锚点日期（origStart 或 origEnd，计算位移的日期基准） */
   anchorDate: string;
   /** 鼠标按下时的 x 坐标（位移的像素基准——手柄在事件边缘，格子 left 作
@@ -341,9 +343,23 @@ function onResizeHandleMouseDown(
   const anchorCell = document.querySelector(`[data-date="${anchorDate}"]`) as HTMLElement | null;
   const anyCell = document.querySelector("[data-date]") as HTMLElement | null;
   const cellWidth = anchorCell?.offsetWidth ?? anyCell?.offsetWidth ?? 200;
+
+  // 单天 harness 是 position: relative（无 harness-abs class），跨格 harness
+  // 才是 absolute。relative 元素设 right/left 会**整体平移**而不是**延伸宽度**
+  // （right: -418px 把整个任务条推到 2 格外，宽还是 1 格——"拖拽中任务条
+  // 跟着鼠标走，松手后才变长"就是这个）。拖拽中临时转绝对定位（与跨格
+  // harness 一致），top 保持原始行位置，预览才是"原地拉长"。
+  const wasAbs = harness.classList.contains("fc-daygrid-event-harness-abs");
+  if (!wasAbs) {
+    harness.classList.add("fc-daygrid-event-harness-abs");
+    const rowTop = parseFloat(harness.style.marginTop) || 0;
+    harness.style.marginTop = "0px";
+    harness.style.top = rowTop + "px";
+  }
   resizeState = {
     taskId, edge, origStart, origEnd,
     harness, origHarnessStyle: harness.getAttribute("style") ?? "",
+    wasAbs,
     anchorDate, startX: e.clientX, lastMoveX: e.clientX, cellWidth,
   };
   // 拖拽中让事件横条 pointer-events:none，使 elementFromPoint 能穿透到下方日期格子
@@ -419,6 +435,8 @@ async function onResizeMouseUp(): Promise<void> {
   // 恢复 harness 原始 style（非写库路径：未拖、超范围钳制、写库失败）
   const restoreOriginal = (): void => {
     st.harness.setAttribute("style", st.origHarnessStyle);
+    // 单天 harness 拖拽中临时转的 abs class 一并恢复
+    if (!st.wasAbs) st.harness.classList.remove("fc-daygrid-event-harness-abs");
   };
 
   // 用几何计算目标日期（不用 mouseup 坐标——鼠标可能在日历外松开，
