@@ -474,17 +474,17 @@ export function attachResizeHandles(arg: {
  *  传播到 FC 的 document 监听）+ preventDefault，并自行启动 resize。
  *  兼容不支持 Pointer Events 的环境：mousedown 同样处理（防重复启动用标志）。 */
 function bindResizeHandle(handle: HTMLElement, taskId: string, edge: "start" | "end", origStart: string, origEnd: string): void {
-  let started = false;
   const start = (e: MouseEvent): void => {
     // 无论是否已启动 resize，都必须拦截传播 + 阻止默认——
     // 真实浏览器中 pointerdown 之后还会派发兼容的 mousedown，
-    // 若此时 started=true 直接 return 而不拦截，mousedown 会冒泡到
-    // .fc 根触发 FC 整体拖拽（任务条被拖走）。
+    // 若此时直接 return 而不拦截，mousedown 会冒泡到 .fc 根触发 FC 整体拖拽。
     e.stopImmediatePropagation();
     e.stopPropagation();
     e.preventDefault();
-    if (started) return;
-    started = true;
+    // 防重复启动：pointerdown + mousedown 双触发时第二次跳过。
+    // 不能用闭包标志（FC reload 复用事件元素时闭包残留 true，第二次拖不动），
+    // 用全局 resizeState（mouseup 后置 null）判断。
+    if (resizeState) return;
     onResizeHandleMouseDown(e, taskId, edge, origStart, origEnd);
   };
   // capture + stopImmediatePropagation：在 FC 的 document pointerdown 监听之前拦截
