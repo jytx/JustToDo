@@ -297,6 +297,26 @@ let resizeState: ResizeState | null = null;
 /** 拖拽预览气泡元素（实时显示目标日期） */
 let previewTip: HTMLDivElement | null = null;
 
+/** 一天的毫秒数（钳制计算用） */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** 拖拽天数实时钳制：缩到单天（start = end）后不能再往回收。
+ *   - 拖 end：end 最早只能缩到 start（minDelta = start 日期 - 锚点日期，≤ 0）
+ *   - 拖 start：start 最晚只能到 end（maxDelta = end 日期 - 锚点日期，≥ 0）
+ *  预览（横条宽度）、气泡（目标日期）、写库（mouseup）统一走这里，
+ *  避免拖拽中横条缩成一点、松手后弹回。 */
+function clampDeltaDays(st: ResizeState, deltaDays: number): number {
+  const anchorMs = new Date(st.anchorDate + "T00:00:00").getTime();
+  if (st.edge === "end") {
+    const startMs = new Date(toIsoDate(st.origStart) + "T00:00:00").getTime();
+    const minDelta = Math.round((startMs - anchorMs) / DAY_MS);
+    return Math.max(deltaDays, minDelta);
+  }
+  const endMs = new Date(toIsoDate(st.origEnd) + "T00:00:00").getTime();
+  const maxDelta = Math.round((endMs - anchorMs) / DAY_MS);
+  return Math.min(deltaDays, maxDelta);
+}
+
 /** 实时更新事件横条宽度（视觉跟手）。
  *  FC daygrid harness 用 absolute 定位在起始格子内：
  *    - left: 0（默认）+ right: -N（负值，延伸到右边 N px）
@@ -307,6 +327,8 @@ let previewTip: HTMLDivElement | null = null;
  *    - 拖左（deltaDays<0，延长）：left 减少 → 起点左移
  *  deltaDays > 0 延长，< 0 缩短。 */
 function previewBarWidth(st: ResizeState, deltaDays: number): void {
+  // 实时钳制（缩到单天为止），预览与写库口径一致
+  deltaDays = clampDeltaDays(st, deltaDays);
   const px = deltaDays * st.cellWidth;
   const origRight = parseFloat(st.origHarnessStyle.match(/right:\s*(-?[\d.]+)/)?.[1] ?? "0");
   const origLeft = parseFloat(st.origHarnessStyle.match(/left:\s*(-?[\d.]+)/)?.[1] ?? "0");
@@ -397,7 +419,8 @@ function onResizeMouseMove(e: MouseEvent): void {
   document.body.style.cursor = "ew-resize";
   // 记录最后有效位置（mouseup 可能在日历外，松手坐标不可靠）
   resizeState.lastMoveX = e.clientX;
-  const deltaDays = deltaDaysFromX(resizeState, e.clientX);
+  // 实时钳制：缩到单天后不再往回收（横条 + 气泡口径一致）
+  const deltaDays = clampDeltaDays(resizeState, deltaDaysFromX(resizeState, e.clientX));
   const targetDate = targetDateFromDelta(resizeState, deltaDays);
   // 实时改横条宽度（视觉跟手）
   previewBarWidth(resizeState, deltaDays);
@@ -440,8 +463,9 @@ async function onResizeMouseUp(): Promise<void> {
   };
 
   // 用几何计算目标日期（不用 mouseup 坐标——鼠标可能在日历外松开，
-  // 用最后一次 mousemove 的有效位置更可靠）
-  const deltaDays = deltaDaysFromX(st, st.lastMoveX);
+  // 用最后一次 mousemove 的有效位置更可靠）；钳制后超范围必然落在
+  // 单天下限（start=end），写库即缩到单天，不会弹回
+  const deltaDays = clampDeltaDays(st, deltaDaysFromX(st, st.lastMoveX));
   if (deltaDays === 0) {
     restoreOriginal();
     return;
