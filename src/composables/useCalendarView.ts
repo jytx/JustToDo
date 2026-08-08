@@ -284,6 +284,9 @@ interface ResizeState {
   /** 鼠标按下时的 x 坐标（位移的像素基准——手柄在事件边缘，格子 left 作
    *  锚点会偏 1 格，导致预览条瞬间多长 1 格） */
   startX: number;
+  /** 最后一次 mousemove 的有效 x 坐标（mouseup 用——鼠标可能在日历外松开，
+   *  松手坐标不在格子上会导致 deltaDays 异常） */
+  lastMoveX: number;
   /** 单元格宽度（px） */
   cellWidth: number;
 }
@@ -333,7 +336,7 @@ function onResizeHandleMouseDown(e: MouseEvent, taskId: string, edge: "start" | 
   resizeState = {
     taskId, edge, origStart, origEnd,
     harness, origHarnessStyle: harness.getAttribute("style") ?? "",
-    anchorDate, startX: e.clientX, cellWidth,
+    anchorDate, startX: e.clientX, lastMoveX: e.clientX, cellWidth,
   };
   // 拖拽中让事件横条 pointer-events:none，使 elementFromPoint 能穿透到下方日期格子
   eventEl.style.pointerEvents = "none";
@@ -368,6 +371,8 @@ function targetDateFromDelta(st: ResizeState, deltaDays: number): string {
 function onResizeMouseMove(e: MouseEvent): void {
   if (!resizeState || !previewTip) return;
   document.body.style.cursor = "ew-resize";
+  // 记录最后有效位置（mouseup 可能在日历外，松手坐标不可靠）
+  resizeState.lastMoveX = e.clientX;
   const deltaDays = deltaDaysFromX(resizeState, e.clientX);
   const targetDate = targetDateFromDelta(resizeState, deltaDays);
   // 实时改横条宽度（视觉跟手）
@@ -385,7 +390,7 @@ function onResizeMouseMove(e: MouseEvent): void {
 }
 
 /** mouseup：用几何计算的目标日期写库（只更新被拖的一端） */
-async function onResizeMouseUp(e: MouseEvent): Promise<void> {
+async function onResizeMouseUp(): Promise<void> {
   document.removeEventListener("pointermove", onResizeMouseMove);
   document.removeEventListener("pointerup", onResizeMouseUp);
   document.removeEventListener("mousemove", onResizeMouseMove);
@@ -404,8 +409,9 @@ async function onResizeMouseUp(e: MouseEvent): Promise<void> {
   if (eventEl) eventEl.style.pointerEvents = "";
   st.harness.setAttribute("style", st.origHarnessStyle);
 
-  // 用几何计算目标日期（不再 hit-test，避免遮挡/跨行命中错误格子）
-  const deltaDays = deltaDaysFromX(st, e.clientX);
+  // 用几何计算目标日期（不用 mouseup 坐标——鼠标可能在日历外松开，
+  // 用最后一次 mousemove 的有效位置更可靠）
+  const deltaDays = deltaDaysFromX(st, st.lastMoveX);
   if (deltaDays === 0) return;
   const targetDateStr = targetDateFromDelta(st, deltaDays);
 
