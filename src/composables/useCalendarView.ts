@@ -339,10 +339,12 @@ function onResizeHandleMouseDown(e: MouseEvent, taskId: string, edge: "start" | 
   previewTip = document.createElement("div");
   previewTip.className = "jt-resizer-tip";
   document.body.appendChild(previewTip);
-  // 用 pointermove/pointerup（与 FC 一致）：pointerdown 的 preventDefault 会抑制
-  // 兼容的 mouse 事件派发，若监听 mouse 事件将收不到后续移动/松开
+  // 双监听 pointer + mouse：不同浏览器对 pointerdown preventDefault 是否抑制
+  // 兼容 mouse 事件行为不一（WKWebView 不抑制），都挂上保证后续移动/松开能收到
   document.addEventListener("pointermove", onResizeMouseMove);
   document.addEventListener("pointerup", onResizeMouseUp);
+  document.addEventListener("mousemove", onResizeMouseMove);
+  document.addEventListener("mouseup", onResizeMouseUp);
 }
 
 /** 用鼠标 x 坐标算位移天数（纯几何，不依赖 elementsFromPoint）。
@@ -384,6 +386,8 @@ function onResizeMouseMove(e: MouseEvent): void {
 async function onResizeMouseUp(e: MouseEvent): Promise<void> {
   document.removeEventListener("pointermove", onResizeMouseMove);
   document.removeEventListener("pointerup", onResizeMouseUp);
+  document.removeEventListener("mousemove", onResizeMouseMove);
+  document.removeEventListener("mouseup", onResizeMouseUp);
   document.body.style.cursor = "";
   const st = resizeState;
   resizeState = null;
@@ -472,11 +476,15 @@ export function attachResizeHandles(arg: {
 function bindResizeHandle(handle: HTMLElement, taskId: string, edge: "start" | "end", origStart: string, origEnd: string): void {
   let started = false;
   const start = (e: MouseEvent): void => {
-    if (started) return;
-    started = true;
+    // 无论是否已启动 resize，都必须拦截传播 + 阻止默认——
+    // 真实浏览器中 pointerdown 之后还会派发兼容的 mousedown，
+    // 若此时 started=true 直接 return 而不拦截，mousedown 会冒泡到
+    // .fc 根触发 FC 整体拖拽（任务条被拖走）。
     e.stopImmediatePropagation();
     e.stopPropagation();
     e.preventDefault();
+    if (started) return;
+    started = true;
     onResizeHandleMouseDown(e, taskId, edge, origStart, origEnd);
   };
   // capture + stopImmediatePropagation：在 FC 的 document pointerdown 监听之前拦截
