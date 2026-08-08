@@ -339,8 +339,10 @@ function onResizeHandleMouseDown(e: MouseEvent, taskId: string, edge: "start" | 
   previewTip = document.createElement("div");
   previewTip.className = "jt-resizer-tip";
   document.body.appendChild(previewTip);
-  document.addEventListener("mousemove", onResizeMouseMove);
-  document.addEventListener("mouseup", onResizeMouseUp);
+  // 用 pointermove/pointerup（与 FC 一致）：pointerdown 的 preventDefault 会抑制
+  // 兼容的 mouse 事件派发，若监听 mouse 事件将收不到后续移动/松开
+  document.addEventListener("pointermove", onResizeMouseMove);
+  document.addEventListener("pointerup", onResizeMouseUp);
 }
 
 /** 用鼠标 x 坐标算位移天数（纯几何，不依赖 elementsFromPoint）。
@@ -380,8 +382,8 @@ function onResizeMouseMove(e: MouseEvent): void {
 
 /** mouseup：用鼠标下的目标日期写库（只更新被拖的一端） */
 async function onResizeMouseUp(e: MouseEvent): Promise<void> {
-  document.removeEventListener("mousemove", onResizeMouseMove);
-  document.removeEventListener("mouseup", onResizeMouseUp);
+  document.removeEventListener("pointermove", onResizeMouseMove);
+  document.removeEventListener("pointerup", onResizeMouseUp);
   document.body.style.cursor = "";
   const st = resizeState;
   resizeState = null;
@@ -450,27 +452,36 @@ export function attachResizeHandles(arg: {
   // 左手柄（改 start）
   const startHandle = document.createElement("div");
   startHandle.className = "jt-resizer-handle jt-resizer-handle--start";
-  // capture 阶段拦截：FC 的拖拽监听在 .fc-event-draggable 上，手柄在其内部，
-  // mousedown 冒泡到事件元素会触发 FC 整体移动。用 capture + stopImmediatePropagation
-  // 在 FC 的监听器之前拦截，阻止事件派发到 FC。
-  startHandle.addEventListener("mousedown", (e) => {
-    e.stopImmediatePropagation();
-    e.stopPropagation();
-    e.preventDefault();
-    onResizeHandleMouseDown(e, event.id, "start", startLiteral, endLiteral);
-  }, true);
+  bindResizeHandle(startHandle, event.id, "start", startLiteral, endLiteral);
   el.appendChild(startHandle);
 
   // 右手柄（改 end）
   const endHandle = document.createElement("div");
   endHandle.className = "jt-resizer-handle jt-resizer-handle--end";
-  endHandle.addEventListener("mousedown", (e) => {
+  bindResizeHandle(endHandle, event.id, "end", startLiteral, endLiteral);
+  el.appendChild(endHandle);
+}
+
+/** 给 resize 手柄绑定启动逻辑。
+ *  FC 的 interaction 插件用 PointerDragging 监听 **pointerdown**（不是 mousedown），
+ *  绑在事件元素 .fc-event-draggable 上。手柄在其内部，pointerdown 会冒泡触发
+ *  FC 整体移动（eventDrop）。
+ *  因此手柄必须在 capture 阶段拦截 pointerdown（stopImmediatePropagation 阻止
+ *  传播到 FC 的 document 监听）+ preventDefault，并自行启动 resize。
+ *  兼容不支持 Pointer Events 的环境：mousedown 同样处理（防重复启动用标志）。 */
+function bindResizeHandle(handle: HTMLElement, taskId: string, edge: "start" | "end", origStart: string, origEnd: string): void {
+  let started = false;
+  const start = (e: MouseEvent): void => {
+    if (started) return;
+    started = true;
     e.stopImmediatePropagation();
     e.stopPropagation();
     e.preventDefault();
-    onResizeHandleMouseDown(e, event.id, "end", startLiteral, endLiteral);
-  }, true);
-  el.appendChild(endHandle);
+    onResizeHandleMouseDown(e, taskId, edge, origStart, origEnd);
+  };
+  // capture + stopImmediatePropagation：在 FC 的 document pointerdown 监听之前拦截
+  handle.addEventListener("pointerdown", start, true);
+  handle.addEventListener("mousedown", start, true);
 }
 
 
