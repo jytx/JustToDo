@@ -444,3 +444,18 @@ body[arco-theme="dark"] .jt-task-event--selected .fc-event-title,
 body[arco-theme="dark"] .jt-task-event--selected .fc-event-time {
   color: var(--jt-accent) !important;
 }
+
+/* ── 事件头尾 resize 手柄（参照 TimelineView 横条的 hover 高亮范式）──
+ * FC v6 的手柄 DOM：<div class="fc-event-resizer fc-event-resizer-start/end">
+ *   - 默认 hover 时只 display:block，但**无背景色** → 用户根本看不到手柄
+ *   - 这里：① 调大命中厚度（CSS 变量 8px → 10px，更易抓）
+ *          ② hover 事件时给手柄白色半透明背景（与 TimelineView 横条 ::before/::after 一致）
+ *   - FC 默认定位（居中在事件左右边缘）保留不动
+ *   - 已完成 / 子任务不显示（与可拖规则一致） */
+:root {
+  --fc-event-resizer-thickness: 10px;
+}
+.jt-task-event:not(.jt-task-event--done):not(.jt-task-event--subtask):hover .fc-event-resizer {
+  background-color: rgba(255, 255, 255, 0.4);
+  border-radius: 3px;
+}

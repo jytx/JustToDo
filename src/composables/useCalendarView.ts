@@ -173,6 +173,9 @@ export function taskToEvent(task: Task, selectedId: string | null = null): Calen
   const draggable = canDragTask(task);
   event.startEditable = draggable;
   event.durationEditable = draggable;
+  // 允许从头端 resize（默认 false，只能拖尾端）。
+  // 启用后事件左右两端都可拖拽改期（拖左端改 dueStartAt、拖右端改 dueEndAt）
+  event.eventResizableFromStart = draggable;
 
   return event;
 }
