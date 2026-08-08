@@ -281,8 +281,9 @@ interface ResizeState {
   origHarnessStyle: string;
   /** 锚点日期（origStart 或 origEnd，计算位移的日期基准） */
   anchorDate: string;
-  /** 锚点格子的 left 坐标（clientX 系，计算位移天数的像素基准） */
-  anchorLeft: number;
+  /** 鼠标按下时的 x 坐标（位移的像素基准——手柄在事件边缘，格子 left 作
+   *  锚点会偏 1 格，导致预览条瞬间多长 1 格） */
+  startX: number;
   /** 单元格宽度（px） */
   cellWidth: number;
 }
@@ -322,16 +323,14 @@ function onResizeHandleMouseDown(e: MouseEvent, taskId: string, edge: "start" | 
   // 锚点：用事件原始日期（不 hit-test，避免手柄在格子边缘时命中相邻格子）。
   // start 锚点 = origStart 那天；end 锚点 = origEnd 那天。
   const anchorDate = edge === "start" ? toIsoDate(origStart) : toIsoDate(origEnd);
-  // 锚点格子的 left 坐标（纯几何计算位移用，不依赖鼠标 y/遮挡）
+  // 单元格宽度：取锚点格子的宽度
   const anchorCell = document.querySelector(`[data-date="${anchorDate}"]`) as HTMLElement | null;
   if (!anchorCell) return;
-  const anchorLeft = anchorCell.getBoundingClientRect().left;
-  // 单元格宽度：取锚点格子的宽度
   const cellWidth = anchorCell.offsetWidth;
   resizeState = {
     taskId, edge, origStart, origEnd,
     harness, origHarnessStyle: harness.getAttribute("style") ?? "",
-    anchorDate, anchorLeft, cellWidth,
+    anchorDate, startX: e.clientX, cellWidth,
   };
   // 拖拽中让事件横条 pointer-events:none，使 elementFromPoint 能穿透到下方日期格子
   eventEl.style.pointerEvents = "none";
@@ -344,10 +343,11 @@ function onResizeHandleMouseDown(e: MouseEvent, taskId: string, edge: "start" | 
 }
 
 /** 用鼠标 x 坐标算位移天数（纯几何，不依赖 elementsFromPoint）。
- *  deltaDays = round((mouseX - anchorLeft) / cellWidth)。
- *  不受鼠标 y 坐标 / 事件遮挡影响，比 hit-test 稳定。 */
+ *  deltaDays = round((mouseX - startX) / cellWidth)。
+ *  startX 是 mousedown 时鼠标 x（手柄位置），这样按下瞬间位移=0，
+ *  移动 1 格 = 1 天。不受鼠标 y 坐标 / 事件遮挡影响。 */
 function deltaDaysFromX(st: ResizeState, clientX: number): number {
-  return Math.round((clientX - st.anchorLeft) / st.cellWidth);
+  return Math.round((clientX - st.startX) / st.cellWidth);
 }
 
 /** 把锚点日期 + 位移天数 → 目标日期字面量 YYYY-MM-DD */
