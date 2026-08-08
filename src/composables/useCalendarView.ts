@@ -35,6 +35,10 @@ export interface CalendarTaskEvent extends EventInput {
   priority: number;
   /** 父任务 ID（用于分组展示；null = 根任务） */
   parentId: string | null;
+  /** 原始 DB 日期字面量（含端点语义；FC 全天事件 end 排他，需存原始值供 resize） */
+  origStart: string;
+  /** 原始 DB 结束日期字面量（含端点语义） */
+  origEnd: string;
 }
 
 export type CalendarStatus = "idle" | "loading" | "success" | "error";
@@ -148,6 +152,10 @@ export function taskToEvent(task: Task, selectedId: string | null = null): Calen
     priority: task.priority,
     done: task.done,
     parentId: task.parentId,
+    // 原始 DB 日期字面量（含端点语义）。FC 全天事件的 end 是排他的（lastDay+1），
+    // resize 时需要原始 DB 日期，存 extendedProps 避开 FC 转换
+    origStart: task.dueStartAt,
+    origEnd: task.dueEndAt,
   };
 
   if (task.done) {
@@ -272,49 +280,96 @@ interface ResizeState {
 }
 
 let resizeState: ResizeState | null = null;
+/** 拖拽预览气泡元素（实时显示目标日期） */
+let previewTip: HTMLDivElement | null = null;
 
-/** 全天事件 resize：mousedown 手柄 → mousemove 按天改 start/end → mouseup 写库 */
+/** 找鼠标下的 FC 日期格子，返回它的 data-date（YYYY-MM-DD）或 null。
+ *  用 elementsFromPoint（复数）遍历：事件横条会遮挡格子，单点 elementFromPoint
+ *  返回的是事件元素，需要遍历层叠列表找带 data-date 的格子。 */
+function dateUnderCursor(clientX: number, clientY: number): string | null {
+  const stack = document.elementsFromPoint(clientX, clientY) as HTMLElement[];
+  for (const el of stack) {
+    if (el.hasAttribute("data-date")) return el.getAttribute("data-date");
+    const cell = el.closest("[data-date]") as HTMLElement | null;
+    if (cell) return cell.getAttribute("data-date");
+  }
+  return null;
+}
+
+/** 全天事件 resize：mousedown 手柄 → mousemove 实时预览 → mouseup 写库 */
 function onResizeHandleMouseDown(e: MouseEvent, taskId: string, edge: "start" | "end", origStart: string, origEnd: string): void {
   e.preventDefault();
   e.stopPropagation();
   resizeState = { taskId, edge, startX: e.clientX, origStart, origEnd };
+  // 拖拽中让事件横条 pointer-events:none，使 elementFromPoint 能穿透到下方日期格子
+  // （多日事件横条会遮挡目标格子，导致 hit-test 命中事件自身而非格子）
+  const eventEl = (e.currentTarget as HTMLElement).closest(".fc-event") as HTMLElement | null;
+  if (eventEl) {
+    eventEl.style.pointerEvents = "none";
+    resizeEventEl = eventEl;
+  }
+  // 创建预览气泡（参照 TimelineView 横条的 .gantt__bar-tip）
+  previewTip = document.createElement("div");
+  previewTip.className = "jt-resizer-tip";
+  document.body.appendChild(previewTip);
   document.addEventListener("mousemove", onResizeMouseMove);
   document.addEventListener("mouseup", onResizeMouseUp);
 }
 
-/** mousemove：仅更新光标提示（实时改 FC DOM 复杂，mouseup 时一次性写库更稳） */
-function onResizeMouseMove(): void {
-  if (!resizeState) return;
+/** 拖拽中被禁用 pointer-events 的事件元素（mouseup 时恢复） */
+let resizeEventEl: HTMLElement | null = null;
+
+/** mousemove：实时显示目标日期（hit-test 鼠标下的日期格子）+ 移动气泡 */
+function onResizeMouseMove(e: MouseEvent): void {
+  if (!resizeState || !previewTip) return;
   document.body.style.cursor = "ew-resize";
+  // 鼠标下的目标日期
+  const targetDate = dateUnderCursor(e.clientX, e.clientY);
+  // 气泡跟随鼠标，显示目标日期 + 起止预览
+  let text = targetDate ?? "—";
+  if (targetDate && resizeState.edge === "start") {
+    text = `开始 → ${targetDate}\n（结束 ${toIsoDate(resizeState.origEnd)}）`;
+  } else if (targetDate && resizeState.edge === "end") {
+    text = `结束 → ${targetDate}\n（开始 ${toIsoDate(resizeState.origStart)}）`;
+  }
+  previewTip.textContent = text;
+  previewTip.style.left = e.clientX + 14 + "px";
+  previewTip.style.top = e.clientY + 14 + "px";
 }
 
-/** mouseup：按位移天数写库（只更新被拖的一端） */
+/** mouseup：用鼠标下的目标日期写库（只更新被拖的一端） */
 async function onResizeMouseUp(e: MouseEvent): Promise<void> {
   document.removeEventListener("mousemove", onResizeMouseMove);
   document.removeEventListener("mouseup", onResizeMouseUp);
   document.body.style.cursor = "";
+  // 恢复事件元素的 pointer-events
+  if (resizeEventEl) {
+    resizeEventEl.style.pointerEvents = "";
+    resizeEventEl = null;
+  }
+  previewTip?.remove();
+  previewTip = null;
   const st = resizeState;
   resizeState = null;
   if (!st) return;
 
-  // 位移天数（四舍五入，按整天对齐）
-  const dx = e.clientX - st.startX;
-  // 用事件元素宽度估算单日像素（事件元素此时可能已不在 DOM，用近似 90px/天兜底）
-  const approxDayPx = 90;
-  const deltaDays = Math.round(dx / approxDayPx);
-  if (deltaDays === 0) return;
+  // 目标日期取鼠标下格子的 data-date（精确，无估算偏移）
+  const targetDateStr = dateUnderCursor(e.clientX, e.clientY);
+  if (!targetDateStr) return;
+  const targetDate = new Date(targetDateStr + "T00:00:00");
 
   const taskStore = useTaskStore();
   try {
     if (st.edge === "start") {
-      // 改 start：新 start = origStart + deltaDays，不能晚于 end
-      const newStart = shiftDateLiteral(st.origStart, deltaDays);
-      // 钳制：start 不超过 end
+      // 改 start：新 start = targetDate 00:00，钳制不超过 end
+      const newStart = toLocalIso(targetDate);
       if (newStart > st.origEnd) return;
       await taskStore.updateTask(st.taskId, { dueStartAt: newStart });
     } else {
-      // 改 end：新 end = origEnd + deltaDays，不能早于 start
-      const newEnd = shiftDateLiteral(st.origEnd, deltaDays);
+      // 改 end：新 end = targetDate 23:59:59，钳制不早于 start
+      const endOfDay = new Date(targetDate);
+      endOfDay.setHours(23, 59, 59, 0);
+      const newEnd = toLocalIso(endOfDay);
       if (newEnd < st.origStart) return;
       await taskStore.updateTask(st.taskId, { dueEndAt: newEnd });
     }
@@ -327,13 +382,6 @@ async function onResizeMouseUp(e: MouseEvent): Promise<void> {
   }
 }
 
-/** 本地时间字面量 "YYYY-MM-DDTHH:mm:ss" ± N 天 */
-function shiftDateLiteral(literal: string, days: number): string {
-  const d = new Date(literal);
-  d.setDate(d.getDate() + days);
-  return toLocalIso(d);
-}
-
 /**
  * eventDidMount：给可拖的全天事件注入自定义 resize 手柄。
  * - 不可拖（已完成/子任务）跳过
@@ -341,35 +389,41 @@ function shiftDateLiteral(literal: string, days: number): string {
  */
 export function attachResizeHandles(arg: {
   el: HTMLElement;
-  event: { id: string; start: Date | null; end: Date | null; extendedProps?: { done?: boolean; parentId?: string | null; allDay?: boolean } };
+  event: {
+    id: string;
+    extendedProps?: {
+      done?: boolean;
+      parentId?: string | null;
+      origStart?: string;
+      origEnd?: string;
+    };
+  };
 }): void {
   const { el, event } = arg;
   const done = event.extendedProps?.done ?? false;
   const parentId = event.extendedProps?.parentId ?? null;
   // 已完成 / 子任务不可 resize（与可拖规则一致）
   if (done || parentId) return;
-  if (!event.start) return;
-  // end 可能 null（开放区间），此时不给 end 手柄
-  const startLiteral = toLocalIso(event.start);
-  const endLiteral = event.end ? toLocalIso(event.end) : null;
+  // 从 extendedProps 读原始 DB 日期（避开 FC 全天 end 排他转换）
+  const startLiteral = event.extendedProps?.origStart;
+  const endLiteral = event.extendedProps?.origEnd;
+  if (!startLiteral || !endLiteral) return;
 
   // 左手柄（改 start）
   const startHandle = document.createElement("div");
   startHandle.className = "jt-resizer-handle jt-resizer-handle--start";
   startHandle.addEventListener("mousedown", (e) =>
-    onResizeHandleMouseDown(e, event.id, "start", startLiteral, endLiteral ?? startLiteral),
+    onResizeHandleMouseDown(e, event.id, "start", startLiteral, endLiteral),
   );
   el.appendChild(startHandle);
 
-  // 右手柄（改 end，仅当有 end）
-  if (endLiteral) {
-    const endHandle = document.createElement("div");
-    endHandle.className = "jt-resizer-handle jt-resizer-handle--end";
-    endHandle.addEventListener("mousedown", (e) =>
-      onResizeHandleMouseDown(e, event.id, "end", startLiteral, endLiteral),
-    );
-    el.appendChild(endHandle);
-  }
+  // 右手柄（改 end）
+  const endHandle = document.createElement("div");
+  endHandle.className = "jt-resizer-handle jt-resizer-handle--end";
+  endHandle.addEventListener("mousedown", (e) =>
+    onResizeHandleMouseDown(e, event.id, "end", startLiteral, endLiteral),
+  );
+  el.appendChild(endHandle);
 }
 
 

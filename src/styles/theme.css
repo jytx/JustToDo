@@ -469,3 +469,20 @@ body[arco-theme="dark"] .jt-task-event--selected .fc-event-time {
 .jt-task-event:hover .jt-resizer-handle { opacity: 1; }
 /* FC 事件元素需 relative 让手柄 absolute 定位生效 */
 .fc-event.jt-task-event { position: relative; }
+
+/* 拖拽中的目标日期预览气泡（参照 TimelineView .gantt__bar-tip）：
+ * 跟随鼠标，显示拖拽到的目标日期 + 起止预览，让用户实时看到变化 */
+.jt-resizer-tip {
+  position: fixed;
+  z-index: 10000;
+  background: var(--jt-text-primary, #1F1F1F);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: 6px;
+  white-space: pre-line;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  line-height: 1.5;
+}
