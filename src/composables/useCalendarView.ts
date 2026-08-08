@@ -529,13 +529,18 @@ function bindEventEdgeResize(
   const onEdgeDown = (e: MouseEvent): void => {
     // 只响应鼠标左键
     if (e.button !== 0) return;
-    const rect = el.getBoundingClientRect();
+    // 用 harness 矩形判定边缘（占满格子，含事件 2px margin）：单天事件的事件
+    // 元素有左右 margin（fc-event-start/end 各 2px），用户点"事件条视觉边缘"时
+    // 坐标落在事件元素 rect 之外，用 harness 判定不会落空（落空会放行给 FC
+    // 原生拖拽 → 单天任务被整体拖走）
+    const harness = el.closest(".fc-daygrid-event-harness") as HTMLElement | null;
+    const rect = (harness ?? el).getBoundingClientRect();
     const distLeft = e.clientX - rect.left;
     const distRight = rect.right - e.clientX;
     let edge: "start" | "end" | null = null;
-    if (distLeft >= 0 && distLeft <= EDGE_HIT_WIDTH) {
+    if (distLeft >= -4 && distLeft <= EDGE_HIT_WIDTH) {
       edge = "start";
-    } else if (distRight >= 0 && distRight <= EDGE_HIT_WIDTH) {
+    } else if (distRight >= -4 && distRight <= EDGE_HIT_WIDTH) {
       edge = "end";
     }
     // 事件体中间：放行给 FC 整体拖拽
