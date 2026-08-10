@@ -1292,6 +1292,7 @@ onBeforeUnmount(() => {
         size="small"
         closable
         :draggable="true"
+        class="detail-panel__tag"
         :style="{
           backgroundColor: tagBg(tag.color),
           borderColor: tagBorder(tag.color),
@@ -1743,6 +1744,11 @@ function formatMeta(iso: string): string {
   flex-wrap: wrap;
   gap: 4px;
   padding: 0 16px 4px;
+}
+
+/* 标签 chip 圆角与列表项一致（4px；Arco a-tag 默认 2px 偏方） */
+.detail-panel__tag-list :deep(.arco-tag) {
+  border-radius: 4px;
 }
 
 /* 标签拖拽：拖拽中半透明 + 落点蓝色竖线高亮（左右指示插入位置） */
