@@ -194,7 +194,19 @@ pub async fn init_pool(
     // 028: 重复任务暂停标记（recurrence_paused，0=运行中 1=已暂停）
     run_migration_028(&pool).await?;
 
+    // 029: 任务标题关联 URL（title_url，详情面板「解析网页标题」功能）
+    run_migration_029(&pool).await?;
+
     Ok(pool)
+}
+
+/// 迁移 029：任务标题关联 URL
+/// - tasks.title_url：标题关联的网页链接（null = 无链接）。
+///   详情面板标题输入 URL → 点击解析图标抓取网页标题替换标题文本，
+///   原 URL 存到本列，标题旁显示可点击链接 chip（点击用系统浏览器打开）。
+async fn run_migration_029(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "tasks", "title_url", "TEXT").await?;
+    Ok(())
 }
 
 /// 迁移 028：重复任务暂停标记

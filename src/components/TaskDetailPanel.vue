@@ -36,6 +36,7 @@ import AiPolishDialog from "./AiPolishDialog.vue";
 import OutlinePanel from "./OutlinePanel.vue";
 import { useAttachmentUpload } from "@/composables/useAttachmentUpload";
 import * as db from "@/api/db";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 const taskStore = useTaskStore();
 const listStore = useListStore();
@@ -227,6 +228,47 @@ async function saveTitle() {
   const trimmed = titleDraft.value.trim();
   if (trimmed && trimmed !== task.value.title) {
     await taskStore.updateTask(task.value.id, { title: trimmed });
+  }
+}
+
+// ─── 标题 URL 解析 ─────────────────────────────────
+/** 判断文本是否看起来像可解析的 http(s) 链接（纯函数） */
+function looksLikeUrl(text: string): boolean {
+  return /^https?:\/\/\S+$/i.test(text.trim());
+}
+
+/** 是否显示解析图标：输入内容是 URL 即显示（新建任务标题就是 URL 时也能解析）；
+ *  输入不是 URL 时让位给链接 chip（v-else-if task.titleUrl） */
+const showParseIcon = computed(() => looksLikeUrl(titleDraft.value));
+
+/** 解析请求进行中（图标转 loading，防重复点击） */
+const parsingTitle = ref(false);
+
+/** 解析 URL 标题：抓取网页 <title> 替换标题文本，原 URL 存 titleUrl（点击跳转用） */
+async function parseUrlTitle() {
+  const url = titleDraft.value.trim();
+  if (!looksLikeUrl(url) || !task.value || parsingTitle.value) return;
+  parsingTitle.value = true;
+  try {
+    const title = await db.fetchUrlTitle(url);
+    titleDraft.value = title;
+    await taskStore.updateTask(task.value.id, { title, titleUrl: url });
+    Message.success("已解析网页标题");
+  } catch (e) {
+    Message.error("解析失败：" + String(e));
+  } finally {
+    parsingTitle.value = false;
+  }
+}
+
+/** 点击链接 chip：用系统浏览器打开标题关联的 URL */
+async function openTitleLink() {
+  const url = task.value?.titleUrl;
+  if (!url) return;
+  try {
+    await openUrl(url);
+  } catch (e) {
+    Message.error("打开链接失败：" + String(e));
   }
 }
 
@@ -1181,18 +1223,43 @@ onBeforeUnmount(() => {
 
     <!-- 主区：标题 + 描述 -->
     <div class="detail-panel__main">
-      <!-- 大标题（textarea，无边框，自动撑高；空时显示 placeholder） -->
-      <textarea
-        ref="titleEl"
-        v-model="titleDraft"
-        class="detail-panel__title"
-        :class="{ 'detail-panel__title--done': task.done }"
-        rows="1"
-        placeholder="准备做什么?"
-        spellcheck="false"
-        @blur="onTitleBlur"
-        @keydown="onTitleKeydown"
-      />
+      <!-- 大标题行：textarea + 右侧操作区（解析图标 / 链接 chip） -->
+      <div class="detail-panel__title-row">
+        <!-- 大标题（textarea，无边框，自动撑高；空时显示 placeholder） -->
+        <textarea
+          ref="titleEl"
+          v-model="titleDraft"
+          class="detail-panel__title"
+          :class="{ 'detail-panel__title--done': task.done }"
+          rows="1"
+          placeholder="准备做什么?"
+          spellcheck="false"
+          @blur="onTitleBlur"
+          @keydown="onTitleKeydown"
+        />
+        <!-- 右侧操作区：输入像 URL 时显示解析图标；已关联链接时显示可点击 chip -->
+        <div class="detail-panel__title-actions">
+          <button
+            v-if="showParseIcon"
+            class="detail-panel__parse-btn"
+            :class="{ 'detail-panel__parse-btn--loading': parsingTitle }"
+            :disabled="parsingTitle"
+            :title="parsingTitle ? '解析中…' : '解析网页标题'"
+            @click="parseUrlTitle"
+          >
+            <icon-link :size="14" />
+          </button>
+          <a
+            v-else-if="task.titleUrl"
+            class="detail-panel__title-link"
+            :title="`打开链接：${task.titleUrl}`"
+            @click.prevent="openTitleLink"
+          >
+            <icon-link :size="12" />
+            <span class="detail-panel__title-link-text">{{ task.title }}</span>
+          </a>
+        </div>
+      </div>
 
       <!-- 描述（无边框 Tiptap；工具条由 footer "A" 按钮浮出） -->
       <RichTextEditor
@@ -1743,9 +1810,18 @@ function formatMeta(iso: string): string {
   color: var(--jt-error);
 }
 
+/* 标题行容器：textarea 撑满 + 右侧操作区（解析图标 / 链接 chip） */
+.detail-panel__title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
 .detail-panel__title {
   /* 与主页 AddTaskBar 一致的"无边框输入框"风格 */
   display: block;
+  flex: 1;
   width: 100%;
   box-sizing: border-box;
   font-family: var(--font-display);
@@ -1754,7 +1830,7 @@ function formatMeta(iso: string): string {
   letter-spacing: -0.02em;
   line-height: 1.5;
   color: var(--jt-text-primary);
-  margin: 0 0 16px;
+  margin: 0;
   cursor: text;
   padding: 6px 10px;
   border: none;
@@ -1783,6 +1859,73 @@ function formatMeta(iso: string): string {
 .detail-panel__title--done {
   text-decoration: line-through;
   color: var(--jt-text-tertiary);
+}
+
+/* 右侧操作区：解析图标（幽灵小按钮）与链接 chip（加粗蓝底） */
+.detail-panel__title-actions {
+  display: flex;
+  align-items: center;
+  padding-top: 4px;
+}
+
+.detail-panel__parse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.detail-panel__parse-btn:hover:not(:disabled) {
+  background: var(--jt-accent-soft);
+  color: var(--jt-accent);
+}
+
+.detail-panel__parse-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* 解析中：图标旋转提示 */
+.detail-panel__parse-btn--loading svg {
+  animation: detail-panel-title-spin 1s linear infinite;
+}
+
+.detail-panel__title-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 200px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: var(--jt-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: filter 0.15s;
+}
+
+.detail-panel__title-link:hover {
+  filter: brightness(1.12);
+}
+
+.detail-panel__title-link-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes detail-panel-title-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ─── 底部 footer ──────────────────────────────── */

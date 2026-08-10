@@ -7,6 +7,7 @@ mod list_schedule;
 mod menu;
 mod models;
 mod ai;
+mod url_title;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -490,6 +491,7 @@ pub fn run() {
             commands::group_update,
             commands::group_delete,
             commands::group_reorder,
+            url_title::fetch_url_title,
         ]);
 
     // 仅在开发模式下启用 MCP 插件（用于 AI 辅助 GUI 测试，不影响 release 构建）

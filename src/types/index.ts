@@ -111,6 +111,10 @@ export interface Task {
   kind: TaskKind;
   /** 所属分组 ID（null = 未分组，正常不会出现） */
   groupId: string | null;
+  /** 标题关联的 URL（null = 无链接）。
+   *  详情面板「解析网页标题」功能写入：输入 URL 解析出标题后，
+   *  标题文本替换为网页标题，原 URL 存这里，点击标题旁链接 chip 跳转。 */
+  titleUrl: string | null;
 }
 
 /** 检查项（独立存储；后端 JSON 数组） */
@@ -327,6 +331,8 @@ export interface TaskRow {
   kind: TaskKind;
   /** 所属分组 ID */
   group_id: string | null;
+  /** 标题关联 URL（migration 029；null = 无链接） */
+  title_url: string | null;
 }
 
 /** 清单数据库原始行 */
@@ -370,6 +376,7 @@ export function mapTaskRow(row: TaskRow): Task {
     attachments: parseAttachments(row.attachments),
     kind: row.kind,
     groupId: row.group_id,
+    titleUrl: row.title_url,
   };
 }
 

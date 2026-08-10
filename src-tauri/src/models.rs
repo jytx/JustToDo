@@ -90,6 +90,11 @@ pub struct Task {
     /// 所属分组 ID（migration 026；null = 未分组，正常不会出现，迁移时已回填默认分组）
     #[serde(default)]
     pub group_id: Option<String>,
+    /// 标题关联的 URL（migration 029；null = 无链接）。
+    /// 详情面板「解析网页标题」功能写入：输入 URL 解析出标题后，
+    /// 标题文本替换为网页标题，原 URL 存这里供点击跳转。
+    #[serde(default)]
+    pub title_url: Option<String>,
 }
 
 /// 任务模板 —— "任务参数预设"，独立于 tasks 表
@@ -234,6 +239,9 @@ pub struct UpdateTaskInput {
     /// 实体类型：不传则不更新。'task' 待办 / 'note' 笔记。
     /// 用于「转换成笔记/任务」：转笔记时同步清空日期/完成/重复/提醒等笔记不用的字段。
     pub kind: Option<String>,
+    /// 标题关联 URL（Option<Option<String>> 允许显式清空：传 null 解除链接）
+    #[serde(default, deserialize_with = "double_option")]
+    pub title_url: Option<Option<String>>,
 }
 
 /// 任务分组（属于清单，类比 Trello 的列）

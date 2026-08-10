@@ -76,6 +76,8 @@ interface UpdateTaskInput {
   /** 实体类型：不传则不更新。'task' 待办 / 'note' 笔记
    *  （用于「转换成笔记/任务」，转换时后端清空目标类型不用的字段） */
   kind?: TaskKind;
+  /** 标题关联 URL（null 显式解除链接；不传不更新） */
+  titleUrl?: string | null;
 }
 
 export type SmartViewId = "today" | "upcoming" | "all";
@@ -187,6 +189,7 @@ interface RustTask {
   /** 实体类型：'task' 待办 | 'note' 笔记 */
   kind: TaskKind;
   group_id: string | null;
+  title_url: string | null;
 }
 
 function mapTask(r: RustTask): Task {
@@ -216,6 +219,7 @@ function mapTask(r: RustTask): Task {
     attachments: r.attachments,
     kind: r.kind,
     groupId: r.group_id,
+    titleUrl: r.title_url,
   };
 }
 
@@ -367,6 +371,11 @@ export async function getTaskById(id: string): Promise<Task | null> {
   return r ? mapTask(r) : null;
 }
 
+/** 抓取网页标题（详情面板「解析 URL 标题」功能；失败抛异常，前端提示） */
+export async function fetchUrlTitle(url: string): Promise<string> {
+  return invoke<string>("fetch_url_title", { url });
+}
+
 // ─── 应用设置 ────────────────────────────────────────────
 
 /** 查询应用设置 */
@@ -419,6 +428,7 @@ export async function updateTask(
     checklist: fields.checklist,
     attachments: fields.attachments,
     kind: fields.kind,
+    title_url: fields.titleUrl,
   };
   await invoke<void>("task_update", { id, input });
 }

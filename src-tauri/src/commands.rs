@@ -98,6 +98,8 @@ fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
             .unwrap_or_else(|_| "task".to_string()),
         // group_id 用 try_get 容错（迁移前可能无此列）
         group_id: row.try_get("group_id").ok().flatten(),
+        // title_url 用 try_get 容错（migration 029 前可能无此列）
+        title_url: row.try_get("title_url").ok().flatten(),
     }
 }
 
@@ -758,6 +760,8 @@ pub async fn task_create(
         attachments: Vec::new(),
         kind,
         group_id: Some(group_id),
+        // 新建任务默认无标题链接（DB NULL 也保证）
+        title_url: None,
     })
 }
 
@@ -944,6 +948,17 @@ pub async fn task_update(
                 .await
                 .map_err(|e| format!("转换任务失败: {}", e))?;
         }
+    }
+
+    // 标题关联 URL（Option<Option<String>>：Some(Some(v)) 更新为 v，Some(None) 解除链接）
+    if let Some(title_url) = &input.title_url {
+        sqlx::query("UPDATE tasks SET title_url = $1, updated_at = $2 WHERE id = $3")
+            .bind(title_url)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新标题链接失败: {}", e))?;
     }
 
     Ok(())
