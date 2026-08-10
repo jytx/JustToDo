@@ -205,6 +205,9 @@ watch(
     noteDraft.value = task.value?.note ?? "";
     // 切换任务时重置标题编辑态（避免上一个任务的链接块编辑态残留）
     editingTitle.value = false;
+    // 取消上一个任务的自动解析调度，失败记录也一并清空（按任务隔离）
+    if (autoParseTimer) clearTimeout(autoParseTimer);
+    autoParseFailedUrls.clear();
     if (id) {
       await tagStore.loadTags();
       // 兜底：详情面板可能从 DB 单独加载任务（taskTagMap 无该任务条目），
@@ -227,6 +230,11 @@ watch(
 // ─── 标题编辑 ─────────────────────────────────────
 /** 是否处于标题编辑态（有链接时默认展示为链接块，点 ✎ 进入编辑） */
 const editingTitle = ref(false);
+
+/** 输入内容变化时调度自动解析（防抖：输入停止后延时触发） */
+watch(titleDraft, () => {
+  scheduleAutoParse();
+});
 
 /** 进入标题编辑态：以当前标题为草稿并聚焦输入框 */
 async function startEditTitle() {
@@ -251,33 +259,48 @@ async function saveTitle() {
   }
 }
 
-// ─── 标题 URL 解析 ─────────────────────────────────
+// ─── 标题 URL 自动解析 ───────────────────────────
 /** 判断文本是否看起来像可解析的 http(s) 链接（纯函数） */
 function looksLikeUrl(text: string): boolean {
   return /^https?:\/\/\S+$/i.test(text.trim());
 }
 
-/** 是否显示解析图标：输入内容是 URL 即显示（新建任务标题就是 URL 时也能解析）；
- *  输入不是 URL 时让位给链接 chip（v-else-if task.titleUrl） */
-const showParseIcon = computed(() => looksLikeUrl(titleDraft.value));
-
-/** 解析请求进行中（图标转 loading，防重复点击） */
+/** 解析请求进行中（防重入） */
 const parsingTitle = ref(false);
+/** 输入停止后等待多久开始自动解析（ms） */
+const AUTO_PARSE_DELAY = 1000;
+/** 自动解析定时器（输入继续时重置） */
+let autoParseTimer: ReturnType<typeof setTimeout> | null = null;
+/** 解析失败的 URL 集合：失败后不再自动重试（避免反复请求打扰），
+ *  直到用户把输入改成其他内容 */
+const autoParseFailedUrls = new Set<string>();
 
-/** 解析 URL 标题：抓取网页 <title> 替换标题文本，原 URL 存 titleUrl（点击跳转用） */
-async function parseUrlTitle() {
+/** 输入停止后调度自动解析：内容是 URL 且未失败过则自动抓取标题 */
+function scheduleAutoParse() {
+  if (autoParseTimer) clearTimeout(autoParseTimer);
   const url = titleDraft.value.trim();
-  if (!looksLikeUrl(url) || !task.value || parsingTitle.value) return;
+  if (!looksLikeUrl(url) || !task.value) return;
+  if (autoParseFailedUrls.has(url)) return;
+  if (task.value.titleUrl === url) return; // 已关联同一链接，无需重复解析
+  autoParseTimer = setTimeout(() => {
+    autoParseUrl(url);
+  }, AUTO_PARSE_DELAY);
+}
+
+/**
+ * 自动解析 URL 标题：成功则替换标题文本、关联 titleUrl；
+ * 保持编辑态不打断输入，用户失焦后自然切回链接展示。
+ * 失败静默（不弹错误打断输入），记录 URL 避免反复自动重试。
+ */
+async function autoParseUrl(url: string) {
+  if (parsingTitle.value || !task.value) return;
   parsingTitle.value = true;
   try {
     const title = await db.fetchUrlTitle(url);
     titleDraft.value = title;
     await taskStore.updateTask(task.value.id, { title, titleUrl: url });
-    // 解析完成：切回链接块展示（标题即链接）
-    editingTitle.value = false;
-    Message.success("已解析网页标题");
-  } catch (e) {
-    Message.error("解析失败：" + String(e));
+  } catch {
+    autoParseFailedUrls.add(url);
   } finally {
     parsingTitle.value = false;
   }
@@ -934,6 +957,8 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect();
   resizeObserver = null;
   if (resizeTimer) clearTimeout(resizeTimer);
+  // 清理标题自动解析定时器
+  if (autoParseTimer) clearTimeout(autoParseTimer);
   // 详情面板卸载时复位浮层标记，避免 AppLayout ESC 守卫读到残留 true
   taskStore.setDetailOverlay(false);
 });
@@ -1306,7 +1331,8 @@ onBeforeUnmount(() => {
             <icon-link :size="13" />
           </button>
         </div>
-        <!-- 编辑模式 / 无链接：大标题（textarea，无边框，自动撑高；空时显示 placeholder） -->
+        <!-- 编辑模式 / 无链接：大标题（textarea，无边框，自动撑高；空时显示 placeholder）。
+             输入 http(s) 链接后自动识别并解析，无需额外图标 -->
         <textarea
           v-else
           ref="titleEl"
@@ -1319,19 +1345,6 @@ onBeforeUnmount(() => {
           @blur="onTitleBlur"
           @keydown="onTitleKeydown"
         />
-        <!-- 右侧操作区：仅编辑模式渲染；输入像 URL 时显示解析图标 -->
-        <div v-if="editingTitle || !task.titleUrl" class="detail-panel__title-actions">
-          <button
-            v-if="showParseIcon"
-            class="detail-panel__parse-btn"
-            :class="{ 'detail-panel__parse-btn--loading': parsingTitle }"
-            :disabled="parsingTitle"
-            :title="parsingTitle ? '解析中…' : '解析网页标题'"
-            @click="parseUrlTitle"
-          >
-            <icon-link :size="14" />
-          </button>
-        </div>
       </div>
 
       <!-- 链接编辑弹窗：修改标题文字与 URL -->
@@ -1950,44 +1963,6 @@ function formatMeta(iso: string): string {
   color: var(--jt-text-tertiary);
 }
 
-/* 右侧操作区：解析图标（幽灵小按钮）与链接 chip（加粗蓝底） */
-.detail-panel__title-actions {
-  display: flex;
-  align-items: center;
-  /* 与标题第一行垂直居中：textarea padding-top 6px + 行高 33px/2 = 22.5px，
-     按钮高 28px 中心 14px，差值 8.5px ≈ 9px */
-  padding-top: 9px;
-}
-
-.detail-panel__parse-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--jt-text-tertiary);
-  cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
-}
-
-.detail-panel__parse-btn:hover:not(:disabled) {
-  background: var(--jt-accent-soft);
-  color: var(--jt-accent);
-}
-
-.detail-panel__parse-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-/* 解析中：图标旋转提示 */
-.detail-panel__parse-btn--loading svg {
-  animation: detail-panel-title-spin 1s linear infinite;
-}
-
 /* 链接展示区：外观与 .detail-panel__title（textarea）完全一致，
    点击空白处进入编辑；行内链接文字点击跳转 */
 .detail-panel__title-link-area {
@@ -2067,12 +2042,6 @@ function formatMeta(iso: string): string {
 
 .detail-panel__link-editor-label:first-child {
   margin-top: 0;
-}
-
-@keyframes detail-panel-title-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* ─── 底部 footer ──────────────────────────────── */
