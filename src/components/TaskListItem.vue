@@ -17,6 +17,7 @@ import ContextMenu from "./ContextMenu.vue";
 import PriorityDot from "./PriorityDot.vue";
 import ListCascadeMenu from "./menu/ListCascadeMenu.vue";
 import AttachParentDialog from "./AttachParentDialog.vue";
+import { useTaskTagReorder } from "@/composables/useTaskTagReorder";
 
 const props = withDefaults(
   defineProps<{
@@ -337,6 +338,18 @@ const childSubtasks = computed(() =>
 
 // ─── 任务标签（从 store 缓存读取，用于任务项显示） ───────────────────────────────
 const taskTags = computed(() => taskStore.taskTagMap[props.task.id] ?? []);
+
+// ─── 任务标签拖拽排序（每任务独立顺序；与任务行拖拽用自定义 MIME 隔离） ──────────
+const {
+  localTags: localTaskTags,
+  draggingTagId,
+  dragOver: tagDragOver,
+  onTagDragStart,
+  onTagDragOver,
+  onTagDragLeave,
+  onTagDrop,
+  onTagDragEnd,
+} = useTaskTagReorder(props.task.id, taskTags);
 
 /** 是否有子任务（需要先加载才知道）——先假设可能有，首次展开时加载 */
 const hasSubtasksLoaded = computed(() => props.task.id in taskStore.subtaskCache);
@@ -738,12 +751,25 @@ function onCtxEnterBatchMode(): void {
           @keydown.esc.prevent="cancelEditTitle"
           @blur="saveTitle"
         />
-        <!-- 标签 chips（独立一行，显示在标题下方） -->
+        <!-- 标签 chips（独立一行，显示在标题下方；可拖拽调整顺序） -->
         <div v-if="taskTags.length" class="task-item__tags">
           <span
-            v-for="tag in taskTags"
+            v-for="tag in localTaskTags"
             :key="tag.id"
             class="task-item__tag"
+            :class="{
+              'task-item__tag--dragging': draggingTagId === tag.id,
+              'task-item__tag--drop-before':
+                tagDragOver.id === tag.id && tagDragOver.pos === 'before',
+              'task-item__tag--drop-after':
+                tagDragOver.id === tag.id && tagDragOver.pos === 'after',
+            }"
+            draggable="true"
+            @dragstart="onTagDragStart($event, tag.id)"
+            @dragover="onTagDragOver($event, tag.id)"
+            @dragleave="onTagDragLeave($event, tag.id)"
+            @drop="onTagDrop($event, tag.id)"
+            @dragend="onTagDragEnd"
           >{{ tag.name }}</span>
         </div>
         <div v-if="task.recurrenceFreq || dueInfo" class="task-item__meta">
@@ -1222,6 +1248,21 @@ function onCtxEnterBatchMode(): void {
   background-color: var(--jt-accent-soft);
   color: var(--jt-text-secondary);
   white-space: nowrap;
+  cursor: grab;
+}
+
+/* 拖拽中的标签半透明 */
+.task-item__tag--dragging {
+  opacity: 0.4;
+}
+
+/* 拖拽落点高亮：用左侧/右侧蓝色竖线指示插入位置 */
+.task-item__tag--drop-before {
+  box-shadow: -2px 0 0 0 var(--jt-primary);
+}
+
+.task-item__tag--drop-after {
+  box-shadow: 2px 0 0 0 var(--jt-primary);
 }
 
 /* 已完成任务的标签弱化（与标题删除线一致的处理） */

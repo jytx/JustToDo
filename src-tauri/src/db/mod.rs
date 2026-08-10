@@ -197,6 +197,9 @@ pub async fn init_pool(
     // 029: 任务标题关联 URL（title_url，详情面板「解析网页标题」功能）
     run_migration_029(&pool).await?;
 
+    // 030: task_tags 加 sort_order —— 任务项内标签的独立显示顺序
+    run_migration_030(&pool).await?;
+
     Ok(pool)
 }
 
@@ -206,6 +209,19 @@ pub async fn init_pool(
 ///   原 URL 存到本列，标题旁显示可点击链接 chip（点击用系统浏览器打开）。
 async fn run_migration_029(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "tasks", "title_url", "TEXT").await?;
+    Ok(())
+}
+
+/// 迁移 030：task_tags 加 sort_order —— 任务项内标签的独立显示顺序
+///
+/// 之前标签显示顺序由全局 tags.position 决定（同一标签在所有任务里位置固定），
+/// 无法做到"任务 A 里 [工作, 紧急]、任务 B 里 [紧急, 工作]"各自不同的排列。
+/// 加列后，task_tags.sort_order 记录每个任务内标签的局部顺序：
+/// - 新增关联时追加到末尾（task_add_tag 计算 MAX(sort_order)+1）
+/// - 拖拽排序时按 i*1000 全量重写（task_reorder_tags，对齐 group_reorder 模式）
+/// - 旧数据缺省为 0，查询时按 sort_order ASC 兜底 created_at ASC
+async fn run_migration_030(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "task_tags", "sort_order", "INTEGER NOT NULL DEFAULT 0").await?;
     Ok(())
 }
 

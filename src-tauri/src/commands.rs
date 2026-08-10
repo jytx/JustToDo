@@ -1937,7 +1937,7 @@ pub async fn task_get_tags(
     let rows = sqlx::query(
         "SELECT t.id, t.name, t.created_at, t.position FROM tags t
          JOIN task_tags tt ON t.id = tt.tag_id
-         WHERE tt.task_id = $1 ORDER BY t.position ASC, t.created_at ASC",
+         WHERE tt.task_id = $1 ORDER BY tt.sort_order ASC, t.created_at ASC",
     )
     .bind(task_id)
     .fetch_all(pool.inner())
@@ -1972,7 +1972,7 @@ pub async fn task_get_tags_batch(
         "SELECT tt.task_id, t.id, t.name, t.created_at, t.position
          FROM task_tags tt JOIN tags t ON t.id = tt.tag_id
          WHERE tt.task_id IN ({})
-         ORDER BY t.position ASC, t.created_at ASC",
+         ORDER BY tt.sort_order ASC, t.created_at ASC",
         placeholders.join(", ")
     );
     let mut query = sqlx::query(&sql);
@@ -2002,12 +2002,17 @@ pub async fn task_add_tag(
     task_id: String,
     tag_id: String,
 ) -> CmdResult<()> {
-    sqlx::query("INSERT OR IGNORE INTO task_tags (task_id, tag_id) VALUES ($1, $2)")
-        .bind(task_id)
-        .bind(tag_id)
-        .execute(pool.inner())
-        .await
-        .map_err(|e| format!("添加任务标签失败: {}", e))?;
+    // sort_order 追加到末尾：取该任务已有标签的最大 sort_order + 1（无标签时为 0）。
+    // INSERT OR IGNORE 保证幂等（已关联的标签不会被重复插入，sort_order 保持原值）。
+    sqlx::query(
+        "INSERT OR IGNORE INTO task_tags (task_id, tag_id, sort_order)
+         SELECT $1, $2, COALESCE((SELECT MAX(sort_order) FROM task_tags WHERE task_id = $1), -1) + 1",
+    )
+    .bind(task_id)
+    .bind(tag_id)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| format!("添加任务标签失败: {}", e))?;
     Ok(())
 }
 
@@ -2023,6 +2028,27 @@ pub async fn task_remove_tag(
         .execute(pool.inner())
         .await
         .map_err(|e| format!("移除任务标签失败: {}", e))?;
+    Ok(())
+}
+
+/// 重排某任务内的标签顺序（每个任务独立的局部顺序，不影响全局 tags.position）。
+/// 入参为该任务内标签的有序 id 数组，按 i*1000 全量重写 task_tags.sort_order
+/// （对齐 group_reorder 模式）。仅更新 task_id 匹配的行。
+#[tauri::command]
+pub async fn task_reorder_tags(
+    pool: State<'_, sqlx::SqlitePool>,
+    task_id: String,
+    ordered_tag_ids: Vec<String>,
+) -> CmdResult<()> {
+    for (i, tag_id) in ordered_tag_ids.iter().enumerate() {
+        sqlx::query("UPDATE task_tags SET sort_order = $1 WHERE task_id = $2 AND tag_id = $3")
+            .bind((i * 1000) as i64)
+            .bind(&task_id)
+            .bind(tag_id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("重排任务标签失败: {}", e))?;
+    }
     Ok(())
 }
 

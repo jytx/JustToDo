@@ -464,6 +464,7 @@ pub fn run() {
             commands::task_get_tags_batch,
             commands::task_add_tag,
             commands::task_remove_tag,
+            commands::task_reorder_tags,
             commands::task_get_by_tag,
             commands::template_get_all,
             commands::template_create,

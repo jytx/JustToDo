@@ -190,6 +190,28 @@ export const useTaskStore = defineStore("task", () => {
     }
   }
 
+  /** 重排某任务内的标签顺序（拖拽调整后调用，乐观更新本地缓存） */
+  async function reorderTaskTags(taskId: string, orderedTagIds: string[]): Promise<void> {
+    // 乐观更新：按新顺序重排本地缓存，UI 立即响应
+    const current = taskTagMap.value[taskId];
+    if (current && current.length > 0) {
+      const map = new Map(current.map((t) => [t.id, t]));
+      const reordered: Tag[] = [];
+      for (const id of orderedTagIds) {
+        const tag = map.get(id);
+        if (tag) reordered.push(tag);
+      }
+      taskTagMap.value = { ...taskTagMap.value, [taskId]: reordered };
+    }
+    try {
+      await db.reorderTaskTags(taskId, orderedTagIds);
+    } catch (e) {
+      console.error("[TaskStore] 重排任务标签失败:", e);
+      // 失败时回滚为后端实际顺序
+      await refreshTaskTags(taskId);
+    }
+  }
+
   async function loadTasks(listId: string, keepSelection = false) {
     loading.value = true;
     currentListId.value = listId;
@@ -1268,6 +1290,7 @@ export const useTaskStore = defineStore("task", () => {
     attachToParent,
     preloadSubtaskCounts,
     refreshTaskTags,
+    reorderTaskTags,
     // 检查项操作
     addChecklistItem,
     insertChecklistItemAfter,

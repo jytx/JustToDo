@@ -629,6 +629,14 @@ export async function removeTaskTag(taskId: string, tagId: string): Promise<void
   await invoke<void>("task_remove_tag", { taskId, tagId });
 }
 
+/** 重排某任务内的标签顺序（每个任务独立的局部顺序） */
+export async function reorderTaskTags(
+  taskId: string,
+  orderedTagIds: string[],
+): Promise<void> {
+  await invoke<void>("task_reorder_tags", { taskId, orderedTagIds });
+}
+
 export async function getTasksByTag(
   tagId: string,
   sortField?: string,
