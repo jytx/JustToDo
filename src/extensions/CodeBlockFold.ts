@@ -23,7 +23,19 @@ export const CodeBlockFold = CodeBlockLowlight.extend({
   },
 
   addNodeView() {
-    return VueNodeViewRenderer(CodeBlockView);
+    const editor = this.editor;
+    return VueNodeViewRenderer(CodeBlockView, {
+      // IME composition（中文输入法）期间跳过 Vue 组件重渲染。
+      // 与 HeadingFold 同理：避免 rerenderComponent 干扰 ProseMirror 的
+      // composition 协调导致中文输入错位。
+      update: ({ updateProps }): boolean => {
+        if (editor.view.composing) {
+          return true;
+        }
+        updateProps();
+        return true;
+      },
+    });
   },
 }).configure({ lowlight });
 

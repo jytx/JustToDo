@@ -73,7 +73,22 @@ export const HeadingFold = Heading.extend({
   },
 
   addNodeView() {
-    return VueNodeViewRenderer(HeadingView);
+    const editor = this.editor;
+    return VueNodeViewRenderer(HeadingView, {
+      // IME composition（中文输入法）期间跳过 Vue 组件重渲染。
+      // VueNodeView.update 默认在 node 引用变化时无条件 rerenderComponent，
+      // 会干扰 ProseMirror 的 composition 协调，导致中文输入错位
+      // （拼音留在标题、中文跑到下一行）。
+      // composition 期间返回 true 让 ProseMirror 正常更新 children（含
+      // protectLocalComposition 保护），但不调 updateProps() 跳过 Vue rerender。
+      update: ({ updateProps }): boolean => {
+        if (editor.view.composing) {
+          return true;
+        }
+        updateProps();
+        return true;
+      },
+    });
   },
 
   addProseMirrorPlugins() {
