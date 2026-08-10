@@ -366,7 +366,7 @@ function applyAiSummary(): void {
               :active="appliedTagIds.has(t.id)"
               @click="applySingleTag(t.id)"
             >
-              <icon-tag :size="14" class="batch-menu__tag-icon" />
+              <span class="batch-menu__dot" :style="{ backgroundColor: t.color }" />
               <span>{{ t.name }}</span>
             </MenuPopoverItem>
           </div>

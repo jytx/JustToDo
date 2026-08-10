@@ -200,6 +200,9 @@ pub async fn init_pool(
     // 030: task_tags 加 sort_order —— 任务项内标签的独立显示顺序
     run_migration_030(&pool).await?;
 
+    // 031: tags 加 color —— 标签自定义颜色（淡色底 chip 显示）
+    run_migration_031(&pool).await?;
+
     Ok(pool)
 }
 
@@ -222,6 +225,16 @@ async fn run_migration_029(pool: &SqlitePool) -> Result<(), String> {
 /// - 旧数据缺省为 0，查询时按 sort_order ASC 兜底 created_at ASC
 async fn run_migration_030(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "task_tags", "sort_order", "INTEGER NOT NULL DEFAULT 0").await?;
+    Ok(())
+}
+
+/// 迁移 031：tags 加 color —— 标签自定义颜色
+///
+/// 标签 chip 的底色由该字段决定（前端 color-mix 生成淡色背景）。
+/// 默认值 '#EF4444'（LIST_COLORS 第一个颜色，红色），存量标签统一获得红色，
+/// 用户可在侧边栏「编辑标签」弹窗里逐个修改。
+async fn run_migration_031(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "tags", "color", "TEXT NOT NULL DEFAULT '#EF4444'").await?;
     Ok(())
 }
 

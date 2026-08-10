@@ -166,6 +166,7 @@ export const useTaskStore = defineStore("task", () => {
           name: link.tag_name,
           createdAt: link.tag_created_at,
           position: link.tag_position,
+          color: link.tag_color,
         };
         if (!map[link.task_id]) map[link.task_id] = [];
         map[link.task_id].push(tag);

@@ -13,6 +13,8 @@ export interface Tag {
   createdAt: string;
   /** 侧边栏手动排序 key（整数间隔；旧数据 = 0） */
   position: number;
+  /** 标签颜色（十六进制，如 "#EF4444"；旧数据缺省为 "#EF4444"） */
+  color: string;
 }
 
 /** 批量查询返回的任务-标签关联条目（与 Rust TaskTagLink 对应，snake_case） */
@@ -22,6 +24,7 @@ export interface TaskTagLink {
   tag_name: string;
   tag_created_at: string;
   tag_position: number;
+  tag_color: string;
 }
 
 interface TaskList {
@@ -452,16 +455,16 @@ export async function getTags(): Promise<Tag[]> {
   return await invoke<Tag[]>("tag_get_all");
 }
 
-export async function createTag(name: string): Promise<Tag> {
-  return await invoke<Tag>("tag_create", { name });
+export async function createTag(name: string, color: string): Promise<Tag> {
+  return await invoke<Tag>("tag_create", { name, color });
 }
 
 export async function deleteTag(id: string): Promise<void> {
   await invoke<void>("tag_delete", { id });
 }
 
-export async function renameTag(id: string, name: string): Promise<void> {
-  await invoke<void>("tag_rename", { id, name });
+export async function renameTag(id: string, name: string, color?: string): Promise<void> {
+  await invoke<void>("tag_rename", { id, name, color: color ?? null });
 }
 
 /** 批量更新标签位置（侧边栏拖拽排序后调用） */

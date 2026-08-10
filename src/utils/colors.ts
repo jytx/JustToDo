@@ -18,3 +18,18 @@ export function randomListColor(): string {
   const idx = Math.floor(Math.random() * LIST_COLORS.length);
   return LIST_COLORS[idx]!;
 }
+
+/**
+ * 生成标签 chip 的淡色背景 CSS 值（12% 透明叠加）。
+ * 所有渲染标签 chip 的地方复用，保持淡色底风格一致。
+ */
+export function tagBg(color: string): string {
+  return `color-mix(in srgb, ${color} 12%, transparent)`;
+}
+
+/**
+ * 生成标签 chip 的边框 CSS 值（22% 透明叠加，轻微描边增加区分度）。
+ */
+export function tagBorder(color: string): string {
+  return `color-mix(in srgb, ${color} 22%, transparent)`;
+}

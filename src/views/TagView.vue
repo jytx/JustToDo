@@ -101,7 +101,10 @@ onMounted(async () => {
   <!-- 列表视图（默认） -->
   <div v-else class="tag-view" @contextmenu="onRootContextMenu">
     <header class="tag-view__header">
-      <h1 class="tag-view__title">{{ pageTitle }}</h1>
+      <h1 class="tag-view__title">
+        <span v-if="currentTag" class="tag-view__dot" :style="{ backgroundColor: currentTag.color }" />
+        {{ pageTitle }}
+      </h1>
       <p class="tag-view__subtitle">
         {{ formatPageDate() }} · {{ openCount }} 个待办
       </p>
@@ -216,6 +219,18 @@ onMounted(async () => {
   color: var(--jt-text-primary);
   margin: 0;
   line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 标题旁的标签色点装饰 */
+.tag-view__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
 }
 
 .tag-view__subtitle {

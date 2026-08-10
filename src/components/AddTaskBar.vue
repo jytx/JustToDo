@@ -11,6 +11,7 @@ import { useTagStore } from "@/stores/tag";
 import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import { todayRange } from "@/utils/date";
+import { LIST_COLORS } from "@/utils/colors";
 import { parseTask } from "@/api/ai";
 import PriorityDot from "./PriorityDot.vue";
 import MenuPopover from "./MenuPopover.vue";
@@ -216,7 +217,7 @@ async function resolveTagIds(names: string[]): Promise<string[]> {
       ids.push(existing.id);
     } else {
       // 不存在则创建
-      const created = await tagStore.createTag(trimmed);
+      const created = await tagStore.createTag(trimmed, LIST_COLORS[0]);
       if (created) ids.push(created.id);
     }
   }

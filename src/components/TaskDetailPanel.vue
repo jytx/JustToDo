@@ -36,6 +36,7 @@ import AiPolishDialog from "./AiPolishDialog.vue";
 import OutlinePanel from "./OutlinePanel.vue";
 import { useAttachmentUpload } from "@/composables/useAttachmentUpload";
 import { useTaskTagReorder } from "@/composables/useTaskTagReorder";
+import { tagBg, tagBorder, LIST_COLORS } from "@/utils/colors";
 import * as db from "@/api/db";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
@@ -479,7 +480,7 @@ async function onRecurrenceConfirm(freq: RecurrenceFreq | null, interval: number
 const availableTagOptions = computed(() =>
   tagStore.tags
     .filter((t) => !taskTags.value.some((tt) => tt.id === t.id))
-    .map((t) => ({ id: t.id, name: t.name })),
+    .map((t) => ({ id: t.id, name: t.name, color: t.color })),
 );
 const tagLabel = computed(() => {
   if (taskTags.value.length === 0) return "标签";
@@ -499,7 +500,7 @@ async function createNewTag(name: string) {
   if (!trimmed || !task.value) return;
   let tag = tagStore.getByName(trimmed);
   if (!tag) {
-    tag = await tagStore.createTag(trimmed);
+    tag = await tagStore.createTag(trimmed, LIST_COLORS[0]);
   }
   await db.addTaskTag(task.value.id, tag.id);
   // 刷新 store 缓存（taskTagMap 是列表项 + 详情面板的唯一数据源）
@@ -1194,7 +1195,7 @@ onBeforeUnmount(() => {
                 class="detail-panel__popup-item"
                 @click="addExistingTag(opt.id); tagVisible = false"
               >
-                <icon-tag :size="12" />
+                <span class="detail-panel__popup-dot" :style="{ backgroundColor: opt.color }" />
                 <span>{{ opt.name }}</span>
               </button>
               <a-input
@@ -1291,6 +1292,10 @@ onBeforeUnmount(() => {
         size="small"
         closable
         :draggable="true"
+        :style="{
+          backgroundColor: tagBg(tag.color),
+          borderColor: tagBorder(tag.color),
+        }"
         :class="{
           'detail-panel__tag--dragging': draggingTagId === tag.id,
           'detail-panel__tag--drop-before':
@@ -2115,6 +2120,15 @@ function formatMeta(iso: string): string {
 
 .detail-panel__popup--tag {
   min-width: 200px;
+}
+
+/* 选标签下拉里标签项的色点 */
+.detail-panel__popup-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
 }
 
 .detail-panel__popup-item {

@@ -6,6 +6,7 @@
 // 这里只负责收集 ID —— 包括"输入新标签名 → getByName/createTag 拿到 id 后加入数组"。
 import { ref, computed, nextTick, watch } from "vue";
 import { useTagStore } from "@/stores/tag";
+import { tagBg, LIST_COLORS } from "@/utils/colors";
 import Popover from "./Popover.vue";
 
 const props = defineProps<{
@@ -81,7 +82,7 @@ async function submitNewTag(): Promise<void> {
   if (!name) return;
   let tag = tagStore.getByName(name);
   if (!tag) {
-    tag = await tagStore.createTag(name);
+    tag = await tagStore.createTag(name, LIST_COLORS[0]);
   }
   addTag(tag.id);
   newTagName.value = "";
@@ -138,7 +139,7 @@ function onAfterOpen(): void {
           class="tag-select__option"
           @click="addTag(tag.id)"
         >
-          <icon-tag :size="12" />
+          <span class="tag-select__dot" :style="{ backgroundColor: tag.color }" />
           <span>{{ tag.name }}</span>
         </button>
       </div>
@@ -164,6 +165,7 @@ function onAfterOpen(): void {
       v-for="tag in selectedTags"
       :key="tag.id"
       class="tag-select__chip"
+      :style="{ backgroundColor: tagBg(tag.color) }"
     >
       <span class="tag-select__chip-name">{{ tag.name }}</span>
       <button
@@ -252,6 +254,15 @@ function onAfterOpen(): void {
   gap: 2px;
 }
 
+/* 可选列表项的色点（标识标签颜色） */
+.tag-select__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
 /* 弹层内的可选标签项 */
 .tag-select__option {
   display: flex;
@@ -321,8 +332,8 @@ function onAfterOpen(): void {
   height: 22px;
   padding: 0 4px 0 8px;
   border-radius: 11px;
-  background-color: var(--jt-accent-soft);
-  color: var(--jt-primary);
+  /* 底色由 inline style 按标签颜色控制；文字色统一灰色 */
+  color: var(--jt-text-secondary);
   font-size: 11px;
   font-family: var(--font-body);
   line-height: 1;

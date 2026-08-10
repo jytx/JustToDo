@@ -1122,7 +1122,7 @@ pub async fn task_set_parent(
 #[tauri::command]
 pub async fn tag_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<Tag>> {
     let rows = sqlx::query(
-        "SELECT id, name, created_at, position FROM tags ORDER BY position ASC, created_at ASC",
+        "SELECT id, name, created_at, position, color FROM tags ORDER BY position ASC, created_at ASC",
     )
     .fetch_all(pool.inner())
     .await
@@ -1135,6 +1135,7 @@ pub async fn tag_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<Tag
             name: r.get("name"),
             created_at: r.get("created_at"),
             position: r.get("position"),
+            color: r.get("color"),
         })
         .collect())
 }
@@ -1157,14 +1158,19 @@ pub async fn tag_reorder(
 }
 
 #[tauri::command]
-pub async fn tag_create(pool: State<'_, sqlx::SqlitePool>, name: String) -> CmdResult<Tag> {
+pub async fn tag_create(
+    pool: State<'_, sqlx::SqlitePool>,
+    name: String,
+    color: String,
+) -> CmdResult<Tag> {
     let id = uuid();
     let ts = now();
 
-    sqlx::query("INSERT INTO tags (id, name, created_at) VALUES ($1, $2, $3)")
+    sqlx::query("INSERT INTO tags (id, name, created_at, color) VALUES ($1, $2, $3, $4)")
         .bind(&id)
         .bind(&name)
         .bind(&ts)
+        .bind(&color)
         .execute(pool.inner())
         .await
         .map_err(|e| format!("创建标签失败: {}", e))?;
@@ -1174,6 +1180,7 @@ pub async fn tag_create(pool: State<'_, sqlx::SqlitePool>, name: String) -> CmdR
         name,
         created_at: ts,
         position: 0,
+        color,
     })
 }
 
@@ -1299,13 +1306,25 @@ pub async fn tag_rename(
     pool: State<'_, sqlx::SqlitePool>,
     id: String,
     name: String,
+    color: Option<String>,
 ) -> CmdResult<()> {
-    sqlx::query("UPDATE tags SET name = $1 WHERE id = $2")
-        .bind(&name)
-        .bind(&id)
-        .execute(pool.inner())
-        .await
-        .map_err(|e| format!("重命名标签失败: {}", e))?;
+    // color 为 Some 时同时更新 name + color；为 None 时只改 name（向后兼容）
+    if let Some(c) = &color {
+        sqlx::query("UPDATE tags SET name = $1, color = $2 WHERE id = $3")
+            .bind(&name)
+            .bind(c)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新标签失败: {}", e))?;
+    } else {
+        sqlx::query("UPDATE tags SET name = $1 WHERE id = $2")
+            .bind(&name)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("重命名标签失败: {}", e))?;
+    }
     Ok(())
 }
 
@@ -1935,7 +1954,7 @@ pub async fn task_get_tags(
     task_id: String,
 ) -> CmdResult<Vec<crate::models::Tag>> {
     let rows = sqlx::query(
-        "SELECT t.id, t.name, t.created_at, t.position FROM tags t
+        "SELECT t.id, t.name, t.created_at, t.position, t.color FROM tags t
          JOIN task_tags tt ON t.id = tt.tag_id
          WHERE tt.task_id = $1 ORDER BY tt.sort_order ASC, t.created_at ASC",
     )
@@ -1951,6 +1970,7 @@ pub async fn task_get_tags(
             name: r.get("name"),
             created_at: r.get("created_at"),
             position: r.get("position"),
+            color: r.get("color"),
         })
         .collect())
 }
@@ -1969,7 +1989,7 @@ pub async fn task_get_tags_batch(
     // 动态构造占位符：$1, $2, ...（sqlx 用 $N 而非 ?）
     let placeholders: Vec<String> = (1..=task_ids.len()).map(|i| format!("${i}")).collect();
     let sql = format!(
-        "SELECT tt.task_id, t.id, t.name, t.created_at, t.position
+        "SELECT tt.task_id, t.id, t.name, t.created_at, t.position, t.color
          FROM task_tags tt JOIN tags t ON t.id = tt.tag_id
          WHERE tt.task_id IN ({})
          ORDER BY tt.sort_order ASC, t.created_at ASC",
@@ -1992,6 +2012,7 @@ pub async fn task_get_tags_batch(
             tag_name: r.get("name"),
             tag_created_at: r.get("created_at"),
             tag_position: r.get("position"),
+            tag_color: r.get("color"),
         })
         .collect())
 }

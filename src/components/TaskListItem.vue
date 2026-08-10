@@ -5,6 +5,7 @@ import { ref, computed, watch, reactive, nextTick, onMounted, onBeforeUnmount } 
 import type { Task, Priority } from "@/types";
 import { PRIORITY_COLORS, PRIORITY_LABELS } from "@/types";
 import { formatDueDate } from "@/utils/date";
+import { tagBg, tagBorder, LIST_COLORS } from "@/utils/colors";
 import { useTaskStore } from "@/stores/task";
 import { useGroupStore } from "@/stores/group";
 import { useTagStore } from "@/stores/tag";
@@ -187,7 +188,7 @@ async function onMenuCreateTag(name: string): Promise<void> {
   if (!trimmed) return;
   let tag = tagStore.getByName(trimmed);
   if (!tag) {
-    tag = await tagStore.createTag(trimmed);
+    tag = await tagStore.createTag(trimmed, LIST_COLORS[0]);
   }
   if (tag) {
     await db.addTaskTag(props.task.id, tag.id);
@@ -757,6 +758,10 @@ function onCtxEnterBatchMode(): void {
             v-for="tag in localTaskTags"
             :key="tag.id"
             class="task-item__tag"
+            :style="{
+              backgroundColor: tagBg(tag.color),
+              borderColor: tagBorder(tag.color),
+            }"
             :class="{
               'task-item__tag--dragging': draggingTagId === tag.id,
               'task-item__tag--drop-before':
@@ -976,7 +981,7 @@ function onCtxEnterBatchMode(): void {
             :active="taskTags.some((t) => t.id === opt.id)"
             @click="onMenuToggleTag(opt.id)"
           >
-            <icon-tag :size="12" />
+            <span class="task-item__cascade-dot" :style="{ backgroundColor: opt.color }" />
             <span>{{ opt.name }}</span>
           </MenuPopoverItem>
           <a-input
@@ -1239,13 +1244,22 @@ function onCtxEnterBatchMode(): void {
   margin-top: 4px;
 }
 
-/* 单个标签 chip —— 轻量视觉，不抢标题焦点 */
+/* 级联子菜单里标签项的色点 */
+.task-item__cascade-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+/* 单个标签 chip —— 轻量视觉，不抢标题焦点；底色/边框/文字色由 inline style 按标签颜色控制 */
 .task-item__tag {
   font-size: 11px;
   line-height: 1.4;
   padding: 0 6px;
   border-radius: 4px;
-  background-color: var(--jt-accent-soft);
+  border: 1px solid transparent;
   color: var(--jt-text-secondary);
   white-space: nowrap;
   cursor: grab;

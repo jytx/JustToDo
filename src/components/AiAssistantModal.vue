@@ -18,6 +18,7 @@ import {
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
+import { LIST_COLORS } from "@/utils/colors";
 import type { Priority } from "@/types";
 import AiBreakdownPreview from "@/components/AiBreakdownPreview.vue";
 
@@ -190,7 +191,7 @@ async function execute(): Promise<void> {
             if (existing) {
               tagIds.push(existing.id);
             } else {
-              const created_tag = await tagStore.createTag(trimmed);
+              const created_tag = await tagStore.createTag(trimmed, LIST_COLORS[0]);
               if (created_tag) tagIds.push(created_tag.id);
             }
           }

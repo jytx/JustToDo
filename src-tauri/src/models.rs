@@ -162,6 +162,8 @@ pub struct Tag {
     pub created_at: String,
     /// 侧边栏手动排序 key（整数间隔，新增/拖动时取相邻中点）
     pub position: i64,
+    /// 标签颜色（十六进制，如 "#EF4444"；旧数据缺省为 "#EF4444"）
+    pub color: String,
 }
 
 /// 重复任务生成历史条目（recurrence_generated 表的映射）
@@ -189,6 +191,7 @@ pub struct TaskTagLink {
     pub tag_name: String,
     pub tag_created_at: String,
     pub tag_position: i64,
+    pub tag_color: String,
 }
 
 /// 创建任务的参数

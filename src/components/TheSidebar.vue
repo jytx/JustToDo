@@ -411,9 +411,12 @@ function startNewList(kind: "task" | "note" = "task") {
 const showCreateTagDialog = ref(false);
 const newTagName = ref("");
 const newTagNameInputRef = ref<HTMLInputElement | null>(null);
+/** 新建标签颜色（默认第一个颜色；弹窗里可选） */
+const newTagColor = ref<string>(LIST_COLORS[0]);
 
 function startNewTag() {
   newTagName.value = "";
+  newTagColor.value = LIST_COLORS[0];
   showCreateTagDialog.value = true;
   nextTick(() => {
     newTagNameInputRef.value?.focus();
@@ -426,21 +429,24 @@ async function confirmNewTag() {
     showCreateTagDialog.value = false;
     return;
   }
-  await tagStore.createTag(name);
+  await tagStore.createTag(name, newTagColor.value);
   showCreateTagDialog.value = false;
 }
 
 /** 编辑标签弹窗状态 */
 const showEditTagDialog = ref(false);
-const editingTag = ref<{ id: string; name: string } | null>(null);
+const editingTag = ref<{ id: string; name: string; color: string } | null>(null);
 const editTagName = ref("");
 const editTagNameInputRef = ref<HTMLInputElement | null>(null);
+/** 编辑标签颜色（回填当前标签颜色，可改） */
+const editTagColor = ref<string>(LIST_COLORS[0]);
 
-/** 从标签菜单发起编辑：回填当前名称并打开弹窗 */
-function startEditTag(tag: { id: string; name: string }) {
+/** 从标签菜单发起编辑：回填当前名称 + 颜色并打开弹窗 */
+function startEditTag(tag: { id: string; name: string; color: string }) {
   tagMenuOpen[tag.id] = false;
-  editingTag.value = { id: tag.id, name: tag.name };
+  editingTag.value = { id: tag.id, name: tag.name, color: tag.color };
   editTagName.value = tag.name;
+  editTagColor.value = tag.color;
   showEditTagDialog.value = true;
   nextTick(() => {
     editTagNameInputRef.value?.focus();
@@ -449,35 +455,53 @@ function startEditTag(tag: { id: string; name: string }) {
   });
 }
 
-/** 保存标签重命名（空名视为取消） */
+/** 保存标签重命名 + 颜色（空名视为取消；名称和颜色都未变也视为取消） */
 async function saveTagEdit() {
   if (!editingTag.value) return;
   const name = editTagName.value.trim();
-  if (!name || name === editingTag.value.name) {
+  const colorChanged = editTagColor.value !== editingTag.value.color;
+  if (!name || (name === editingTag.value.name && !colorChanged)) {
     showEditTagDialog.value = false;
     return;
   }
-  await tagStore.renameTag(editingTag.value.id, name);
+  // 名称变了或颜色变了才提交；颜色变了就一并传 color
+  await tagStore.renameTag(
+    editingTag.value.id,
+    name,
+    colorChanged ? editTagColor.value : undefined,
+  );
   showEditTagDialog.value = false;
   editingTag.value = null;
 }
 
-/** 颜色选择器状态（list：新建清单 / edit：编辑 / subfolder：新建子目录，各自独立 anchor） */
-const colorPickerOpen = reactive<{ list: boolean; edit: boolean; subfolder: boolean }>({
+/** 颜色选择器状态（各自独立 anchor；list/edit 清单、subfolder 子目录、tagCreate/tagEdit 标签） */
+const colorPickerOpen = reactive<{
+  list: boolean;
+  edit: boolean;
+  subfolder: boolean;
+  tagCreate: boolean;
+  tagEdit: boolean;
+}>({
   list: false,
   edit: false,
   subfolder: false,
+  tagCreate: false,
+  tagEdit: false,
 });
 
-/** 颜色 trigger 元素缓存（list：新建 / edit：编辑 / subfolder：新建子目录） */
+/** 颜色 trigger 元素缓存（与 colorPickerOpen 的 key 一一对应） */
 const colorTriggerEls = reactive<{
   list: HTMLElement | null;
   edit: HTMLElement | null;
   subfolder: HTMLElement | null;
+  tagCreate: HTMLElement | null;
+  tagEdit: HTMLElement | null;
 }>({
   list: null,
   edit: null,
   subfolder: null,
+  tagCreate: null,
+  tagEdit: null,
 });
 
 /** 关闭所有颜色 picker（切换前调用，避免多个同时打开） */
@@ -485,11 +509,17 @@ function closeAllColorPickers(): void {
   colorPickerOpen.list = false;
   colorPickerOpen.edit = false;
   colorPickerOpen.subfolder = false;
+  colorPickerOpen.tagCreate = false;
+  colorPickerOpen.tagEdit = false;
 }
 
 /** 点击颜色 trigger —— 切换 popper + 缓存 trigger 元素
- *  scope: "list"（新建清单）/ "edit"（编辑清单）/ "subfolder"（新建子目录） */
-function onClickColorTrigger(e: MouseEvent, scope: "list" | "edit" | "subfolder"): void {
+ *  scope: "list"（新建清单）/ "edit"（编辑清单）/ "subfolder"（新建子目录）/
+ *         "tagCreate"（新建标签）/ "tagEdit"（编辑标签） */
+function onClickColorTrigger(
+  e: MouseEvent,
+  scope: "list" | "edit" | "subfolder" | "tagCreate" | "tagEdit",
+): void {
   const el = e.currentTarget as HTMLElement;
   closeAllColorPickers();
   colorTriggerEls[scope] = el;
@@ -1034,7 +1064,7 @@ onMounted(async () => {
           @mousemove="cancelHideRailTip"
           @mouseleave="hideRailTip"
         >
-          <icon-tag :size="18" />
+          <span class="sidebar__rail-dot" :style="{ backgroundColor: tag.color }" />
         </router-link>
       </template>
 
@@ -1264,7 +1294,7 @@ onMounted(async () => {
         @dragend="onTagDragEnd"
         @contextmenu.prevent="openCtxMenu($event, { kind: 'tag', tag })"
       >
-        <icon-tag :size="16" class="sidebar__item-icon" />
+        <span class="sidebar__tag-color" :style="{ backgroundColor: tag.color }" />
         <span class="sidebar__item-title">{{ tag.name }}</span>
         <span v-if="taskStore.tagCounts[tag.id]" class="sidebar__count">{{ taskStore.tagCounts[tag.id] }}</span>
         <MenuPopover
@@ -1468,7 +1498,20 @@ onMounted(async () => {
           @keydown.escape.stop="showCreateTagDialog = false"
         />
       </div>
+      <div class="sidebar-create__divider" />
       <div class="sidebar-create__attrs">
+        <button
+          data-color-trigger="tagCreate"
+          type="button"
+          class="sidebar-create__trigger"
+          @click="onClickColorTrigger($event, 'tagCreate')"
+        >
+          <span
+            class="sidebar-create__color-dot"
+            :style="{ backgroundColor: newTagColor }"
+          />
+          <span>颜色</span>
+        </button>
         <span class="sidebar-create__spacer" />
         <span class="sidebar-create__hint">回车保存</span>
       </div>
@@ -1494,7 +1537,20 @@ onMounted(async () => {
           @keydown.escape.stop="showEditTagDialog = false"
         />
       </div>
+      <div class="sidebar-create__divider" />
       <div class="sidebar-create__attrs">
+        <button
+          data-color-trigger="tagEdit"
+          type="button"
+          class="sidebar-create__trigger"
+          @click="onClickColorTrigger($event, 'tagEdit')"
+        >
+          <span
+            class="sidebar-create__color-dot"
+            :style="{ backgroundColor: editTagColor }"
+          />
+          <span>颜色</span>
+        </button>
         <span class="sidebar-create__spacer" />
         <span class="sidebar-create__hint">回车保存</span>
       </div>
@@ -1629,6 +1685,42 @@ onMounted(async () => {
         :class="{ 'sidebar-create__color-swatch--active': editListColor === c }"
         :style="{ backgroundColor: c }"
         @click="editListColor = c; colorPickerOpen.edit = false"
+      />
+    </div>
+  </TeleportPopper>
+
+  <!-- 新建标签颜色 picker 弹层 -->
+  <TeleportPopper
+    v-model:visible="colorPickerOpen.tagCreate"
+    :anchor="colorTriggerEls.tagCreate"
+    placement="bottom-left"
+  >
+    <div class="sidebar-create__color-picker">
+      <button
+        v-for="c in LIST_COLORS"
+        :key="c"
+        class="sidebar-create__color-swatch"
+        :class="{ 'sidebar-create__color-swatch--active': newTagColor === c }"
+        :style="{ backgroundColor: c }"
+        @click="newTagColor = c; colorPickerOpen.tagCreate = false"
+      />
+    </div>
+  </TeleportPopper>
+
+  <!-- 编辑标签颜色 picker 弹层 -->
+  <TeleportPopper
+    v-model:visible="colorPickerOpen.tagEdit"
+    :anchor="colorTriggerEls.tagEdit"
+    placement="bottom-left"
+  >
+    <div class="sidebar-create__color-picker">
+      <button
+        v-for="c in LIST_COLORS"
+        :key="c"
+        class="sidebar-create__color-swatch"
+        :class="{ 'sidebar-create__color-swatch--active': editTagColor === c }"
+        :style="{ backgroundColor: c }"
+        @click="editTagColor = c; colorPickerOpen.tagEdit = false"
       />
     </div>
   </TeleportPopper>
@@ -1912,6 +2004,15 @@ onMounted(async () => {
 
 .sidebar__item-icon {
   flex-shrink: 0;
+}
+
+/* 标签项的色点（展开态，替代统一图标）——与清单/笔记本色点视觉一致 */
+.sidebar__tag-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
 }
 
 .sidebar__item-title {

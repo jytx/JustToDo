@@ -24,6 +24,35 @@ function stripTagFromMap(
   return changed ? next : map;
 }
 
+/**
+ * 纯函数：更新映射中指定标签的属性（名称/颜色等），返回新映射（含该标签的任务
+ * 产生新数组引用以触发响应式）。用于编辑标签后同步 taskTagMap，
+ * 使任务列表项 / 详情面板的 chip 立即更新。
+ */
+function patchTagInMap(
+  map: Record<string, Tag[]>,
+  tagId: string,
+  patch: Partial<Pick<Tag, "name" | "color">>,
+): Record<string, Tag[]> {
+  let changed = false;
+  const next: Record<string, Tag[]> = {};
+  for (const [taskId, tags] of Object.entries(map)) {
+    const idx = tags.findIndex((t) => t.id === tagId);
+    if (idx === -1) {
+      next[taskId] = tags;
+    } else {
+      // 替换该标签对象 + 产生新数组引用，触发响应式更新
+      next[taskId] = tags.map((t) =>
+        t.id === tagId
+          ? { ...t, ...(patch.name !== undefined ? { name: patch.name } : {}), ...(patch.color !== undefined ? { color: patch.color } : {}) }
+          : t,
+      );
+      changed = true;
+    }
+  }
+  return changed ? next : map;
+}
+
 export const useTagStore = defineStore("tag", () => {
   const tags = ref<Tag[]>([]);
   const loading = ref(false);
@@ -37,8 +66,8 @@ export const useTagStore = defineStore("tag", () => {
     }
   }
 
-  async function createTag(name: string) {
-    const tag = await db.createTag(name);
+  async function createTag(name: string, color: string) {
+    const tag = await db.createTag(name, color);
     tags.value.push(tag);
     return tag;
   }
@@ -52,17 +81,28 @@ export const useTagStore = defineStore("tag", () => {
     taskStore.taskTagMap = stripTagFromMap(taskStore.taskTagMap, id);
   }
 
-  /** 重命名标签（不改 position / createdAt） */
-  async function renameTag(id: string, name: string) {
-    await db.renameTag(id, name);
+  /** 重命名标签 / 改颜色（不改 position / createdAt）。
+   *  color 为 undefined 时只改 name（向后兼容）；传字符串时同时更新颜色。 */
+  async function renameTag(id: string, name: string, color?: string) {
+    await db.renameTag(id, name, color);
     const tag = tags.value.find((t) => t.id === id);
     if (tag) {
       tag.name = name;
+      if (color !== undefined) tag.color = color;
+    }
+    // 改了标签属性后，任务列表项 / 详情面板的 chip 缓存也需刷新（颜色/名称变了）
+    if (color !== undefined) {
+      const taskStore = useTaskStore();
+      taskStore.taskTagMap = patchTagInMap(taskStore.taskTagMap, id, { name, color });
     }
   }
 
   function getByName(name: string): Tag | undefined {
     return tags.value.find((t) => t.name === name);
+  }
+
+  function getById(id: string): Tag | undefined {
+    return tags.value.find((t) => t.id === id);
   }
 
   /**
@@ -85,5 +125,5 @@ export const useTagStore = defineStore("tag", () => {
     await db.reorderTags(merged.map((t) => [t.id, t.position]));
   }
 
-  return { tags, loading, loadTags, createTag, deleteTag, renameTag, getByName, reorderTags };
+  return { tags, loading, loadTags, createTag, deleteTag, renameTag, getByName, getById, reorderTags };
 });
