@@ -474,6 +474,50 @@ async function saveTagEdit() {
   editingTag.value = null;
 }
 
+// ─── 行内色板：点侧边栏标签色点直接换色（不用进编辑弹窗） ──────────────
+/** 行内色板状态：当前操作的标签 id + trigger 元素 */
+const inlineColorTagId = ref<string | null>(null);
+const inlineColorTriggerEl = ref<HTMLElement | null>(null);
+const inlineColorOpen = ref(false);
+
+/** 点击色点：阻止冒泡（避免触发 router-link 导航）+ 打开行内色板 */
+function onClickTagColorDot(e: MouseEvent, tag: { id: string }): void {
+  e.preventDefault();
+  e.stopPropagation();
+  closeAllColorPickers();
+  inlineColorTagId.value = tag.id;
+  inlineColorTriggerEl.value = e.currentTarget as HTMLElement;
+  inlineColorOpen.value = true;
+}
+
+/** 行内选色：即时调 renameTag 只改颜色，立即生效 */
+async function onPickInlineTagColor(color: string): Promise<void> {
+  const tagId = inlineColorTagId.value;
+  inlineColorOpen.value = false;
+  if (!tagId) return;
+  const tag = tagStore.tags.find((t) => t.id === tagId);
+  if (!tag || tag.color === color) return;
+  await tagStore.renameTag(tagId, tag.name, color);
+}
+
+/** 行内色板当前高亮的颜色（当前操作标签的 color） */
+const inlineColorActiveColor = computed(() => {
+  const tagId = inlineColorTagId.value;
+  const tag = tagStore.tags.find((t) => t.id === tagId);
+  return tag?.color ?? "";
+});
+
+/** 编辑弹窗选色：即时保存颜色（用输入框当前名称），不等到回车。
+ *  选色后更新 editTagColor + editingTag 的 color 基准，这样回车时不会重复提交颜色。 */
+async function onPickEditTagColor(color: string): Promise<void> {
+  colorPickerOpen.tagEdit = false;
+  if (!editingTag.value || editingTag.value.color === color) return;
+  const name = editTagName.value.trim() || editingTag.value.name;
+  editTagColor.value = color;
+  editingTag.value = { ...editingTag.value, color };
+  await tagStore.renameTag(editingTag.value.id, name, color);
+}
+
 /** 颜色选择器状态（各自独立 anchor；list/edit 清单、subfolder 子目录、tagCreate/tagEdit 标签） */
 const colorPickerOpen = reactive<{
   list: boolean;
@@ -1294,7 +1338,12 @@ onMounted(async () => {
         @dragend="onTagDragEnd"
         @contextmenu.prevent="openCtxMenu($event, { kind: 'tag', tag })"
       >
-        <span class="sidebar__tag-color" :style="{ backgroundColor: tag.color }" />
+        <span
+          class="sidebar__tag-color sidebar__tag-color--clickable"
+          :style="{ backgroundColor: tag.color }"
+          :title="`更改 ${tag.name} 颜色`"
+          @click="onClickTagColorDot($event, tag)"
+        />
         <span class="sidebar__item-title">{{ tag.name }}</span>
         <span v-if="taskStore.tagCounts[tag.id]" class="sidebar__count">{{ taskStore.tagCounts[tag.id] }}</span>
         <MenuPopover
@@ -1720,7 +1769,25 @@ onMounted(async () => {
         class="sidebar-create__color-swatch"
         :class="{ 'sidebar-create__color-swatch--active': editTagColor === c }"
         :style="{ backgroundColor: c }"
-        @click="editTagColor = c; colorPickerOpen.tagEdit = false"
+        @click="onPickEditTagColor(c)"
+      />
+    </div>
+  </TeleportPopper>
+
+  <!-- 行内色板：点侧边栏标签色点直接弹板换色（选色即时生效，不进编辑弹窗） -->
+  <TeleportPopper
+    v-model:visible="inlineColorOpen"
+    :anchor="inlineColorTriggerEl"
+    placement="bottom-left"
+  >
+    <div class="sidebar-create__color-picker">
+      <button
+        v-for="c in LIST_COLORS"
+        :key="c"
+        class="sidebar-create__color-swatch"
+        :class="{ 'sidebar-create__color-swatch--active': inlineColorActiveColor === c }"
+        :style="{ backgroundColor: c }"
+        @click="onPickInlineTagColor(c)"
       />
     </div>
   </TeleportPopper>
@@ -2013,6 +2080,15 @@ onMounted(async () => {
   border-radius: 50%;
   flex-shrink: 0;
   display: inline-block;
+}
+
+/* 可点击的色点：点按弹出色板换色 */
+.sidebar__tag-color--clickable {
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+.sidebar__tag-color--clickable:hover {
+  transform: scale(1.3);
 }
 
 .sidebar__item-title {
