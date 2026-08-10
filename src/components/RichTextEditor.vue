@@ -19,7 +19,7 @@ import Suggestion from "@tiptap/suggestion";
 import { marked } from "marked";
 import TurndownService from "turndown";
 import * as turndownPluginGfm from "turndown-plugin-gfm";
-import { Extension } from "@tiptap/core";
+import { Extension, createDocument } from "@tiptap/core";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { watch, onBeforeUnmount, onMounted, ref, computed, createApp, nextTick } from "vue";
@@ -107,6 +107,36 @@ const uploading = ref(false);
  * 详见 editorProps.handleDOMEvents 注释。
  */
 let compStartPos: number | null = null;
+
+/**
+ * 程序化写入编辑器内容，但不记入 ProseMirror 的 undo 栈。
+ *
+ * Tiptap 的 setContent 命令内部用 tr.replaceWith(...) 替换整篇文档，
+ * 只设了 preventUpdate meta，没有设 addToHistory:false —— 导致每次
+ * 外部数据回流（切任务回来 / AI 润色确认 / 源码模式切回 / store 更新）
+ * 都会往 undo 栈塞一条「整篇文档替换」的大记录，打乱正常按键产生的
+ * 小记录边界，表现为 Cmd+Z 一次跳过多步。
+ *
+ * 本函数直接用底层 ProseMirror transaction + addToHistory:false meta，
+ * 让程序化设置内容不进 undo 历史。emitUpdate 控制是否触发 onUpdate
+ * 回调（与 setContent 的 emitUpdate 语义一致）。
+ */
+function setContentSilently(
+  ed: TiptapEditor,
+  content: string,
+  emitUpdate: boolean,
+): void {
+  const doc = createDocument(
+    content,
+    ed.schema,
+    {},
+    { errorOnInvalidContent: false },
+  );
+  const tr = ed.state.tr.replaceWith(0, ed.state.doc.content.size, doc);
+  tr.setMeta("addToHistory", false);
+  tr.setMeta("preventUpdate", !emitUpdate);
+  ed.view.dispatch(tr);
+}
 
 /** 图片预览 lightbox */
 const allImages = ref<string[]>([]);
@@ -414,11 +444,13 @@ function exitSourceMode(): void {
   if (!editor.value) return;
   if (sourceText.value === sourceTextBackup) {
     // 源码未改：用原 HTML 恢复，避免 turndown→marked 往返转换丢失格式
-    editor.value.commands.setContent(sourceHtmlBackup, { emitUpdate: false });
+    // 用 setContentSilently 避免这次整篇替换污染 undo 栈
+    setContentSilently(editor.value, sourceHtmlBackup, false);
   } else {
     // 源码改了：用 marked 转 HTML（用户主动编辑，接受格式变化）
     const html = marked.parse(sourceText.value, { async: false }) as string;
-    editor.value.commands.setContent(html, { emitUpdate: false });
+    // 整篇替换不入 undo 栈（用户是在源码模式里编辑的，撤销语义不适用于富文本侧）
+    setContentSilently(editor.value, html, false);
     emit("update:modelValue", editor.value.getHTML());
   }
   sourceMode.value = false;
@@ -655,7 +687,10 @@ watch(
   () => props.modelValue,
   (val) => {
     if (editor.value && val !== editor.value.getHTML()) {
-      editor.value.commands.setContent(val || "", { emitUpdate: false });
+      // 外部数据回流（切任务 / store 更新 / 父组件赋值），
+      // 用 setContentSilently 避免整篇替换污染 undo 栈，
+      // 否则 Cmd+Z 会一次跳过多步（撤销粒度混乱）
+      setContentSilently(editor.value, val || "", false);
     }
   },
 );
@@ -668,6 +703,13 @@ defineExpose({
   },
   /** 聚焦编辑器（点击工具条按钮前自动调用，确保命令作用于当前内容） */
   focus: () => editor.value?.commands.focus(),
+  /**
+   * 程序化写入内容但不入 undo 栈（供父组件如 AI 润色确认写回时调用）。
+   * 详见 setContentSilently 函数注释。
+   */
+  setContentSilently: (content: string, emitUpdate: boolean) => {
+    if (editor.value) setContentSilently(editor.value, content, emitUpdate);
+  },
 });
 
 // ─── 表格右键菜单 ───────────────────────────────────

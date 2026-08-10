@@ -899,8 +899,9 @@ function onPolishConfirm(editedText: string): void {
       .insertContentAt(from, editedText)
       .run();
   } else {
-    // 无选区：整体替换
-    editor.commands.setContent(editedText);
+    // 无选区：整体替换 —— 用 setContentSilently 避免污染 undo 栈，
+    // 否则润色确认后 Cmd+Z 会一次跳过多步
+    richTextEditorRef.value?.setContentSilently(editedText, true);
   }
   // 写回后 editor 的 onUpdate 会触发 update:modelValue → 自动 saveNote
   polishVisible.value = false;
