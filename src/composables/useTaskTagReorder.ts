@@ -1,27 +1,27 @@
 // 任务项内标签拖拽排序 composable —— 拖动任务项上的标签 chip，调整该任务内标签的显示顺序。
 //
+// 设计对齐任务拖拽（useTaskDragReorder）：容器级 dragover + 鼠标坐标实时让位，
+// 配合 TransitionGroup 的 FLIP 动画，拖动过程中其他标签平滑让位（不是松手才跳位）。
 // 与任务行拖拽（TaskListItem 的 onDragStart 等，用 text/plain）、侧边栏标签拖拽
 // （TheSidebar，用 text/plain）完全隔离：
 // - 本 composable 用自定义 MIME「application/x-task-tag-reorder」标记拖拽类型；
 //   任务行拖拽和侧边栏标签拖拽都不写这个 MIME，三方互不干扰。
-// - 所有 chip 拖拽事件处理器内 stopPropagation，阻断冒泡到外层 .task-item 的任务行
+// - 所有拖拽事件处理器内 stopPropagation，阻断冒泡到外层 .task-item 的任务行
 //   drag handler（避免触发任务重排 / FLIP 让位 / 覆写 text/plain）。
 //
-// 与 useGroupReorder（纵向 before/after）的区别：标签 chip 是横向排列（flex-wrap），
-// 落点判定按 chip 的 getBoundingClientRect 中心点左右半区（左半=before / 右半=after）。
+// 与任务拖拽（纵向单列）的区别：标签 chip 是横向排列（flex-wrap 可换行），
+// 落点判定用「鼠标 X 与 chip 中心比较」（横向版 computeTargetIndex），
+// 并按鼠标 Y 先锁定所在行，避免换行时跨行误判。
 //
 // 持久化调 taskStore.reorderTaskTags（乐观更新 taskTagMap + 调 task_reorder_tags 命令），
 // 后端按 i*1000 全量重写 task_tags.sort_order。
 
-import { ref, reactive, watch, type Ref } from "vue";
+import { ref, watch, type Ref } from "vue";
 import type { Tag } from "@/api/db";
 import { useTaskStore } from "@/stores/task";
 
 /** 标签拖拽专用的 dataTransfer MIME，与任务拖拽（text/plain）区分 */
 export const TASK_TAG_REORDER_MIME = "application/x-task-tag-reorder";
-
-/** 落点位置：目标标签的左侧 / 右侧 */
-type DropPos = "before" | "after";
 
 /**
  * 任务项内标签拖拽排序
@@ -29,7 +29,7 @@ type DropPos = "before" | "after";
  * @param getTaskId 获取当前任务 id 的 getter（持久化时用；用 getter 而非固定字符串，
  *                  支持详情面板切换任务后仍持久化到正确的 task）
  * @param sourceTags 响应式的外部标签数据源（来自 taskStore.taskTagMap[taskId]）
- * @returns 本地有序标签数组 + 拖拽状态 + 事件处理器
+ * @returns 本地有序标签数组 + 拖拽状态 + 容器级事件处理器
  */
 export function useTaskTagReorder(getTaskId: () => string, sourceTags: Ref<Tag[]>) {
   const taskStore = useTaskStore();
@@ -40,8 +40,8 @@ export function useTaskTagReorder(getTaskId: () => string, sourceTags: Ref<Tag[]
   /** 正在被拖动的标签 id */
   const draggingTagId = ref<string | null>(null);
 
-  /** 落点高亮：目标标签 id + 位置（before/after）；id 为空串表示无落点 */
-  const dragOver = reactive<{ id: string; pos: DropPos }>({ id: "", pos: "before" });
+  /** 标签容器 DOM 引用（容器级 dragover/drop 监听锚点，坐标计算用） */
+  const containerRef = ref<HTMLElement | null>(null);
 
   /** 拖拽进行中（禁止外部 watch 覆盖本地中间态） */
   let isDragging = false;
@@ -49,8 +49,6 @@ export function useTaskTagReorder(getTaskId: () => string, sourceTags: Ref<Tag[]
   let persisting = false;
   /** 本次拖拽是否有变化 */
   let dragChanged = false;
-  /** 拖拽源标签 id 快照（dragend 清空 ref 后兜底用） */
-  let lastDragId: string | null = null;
 
   /** 同步外部数据到 localTags（非拖拽期间由 watch 自动调用） */
   function syncFromStore(tags: Tag[]): void {
@@ -76,7 +74,6 @@ export function useTaskTagReorder(getTaskId: () => string, sourceTags: Ref<Tag[]
   function onTagDragStart(e: DragEvent, tagId: string): void {
     e.stopPropagation(); // 阻止冒泡到 .task-item 的 onDragStart（否则会覆写 text/plain 为 task id）
     draggingTagId.value = tagId;
-    lastDragId = tagId;
     isDragging = true;
     dragChanged = false;
     e.dataTransfer!.setData(TASK_TAG_REORDER_MIME, tagId);
@@ -88,61 +85,82 @@ export function useTaskTagReorder(getTaskId: () => string, sourceTags: Ref<Tag[]
     e.dataTransfer!.dropEffect = "move";
   }
 
-  /** chip dragover：算左右落点 before/after，实时重排本地数组 + 调度 autoPersist。
-   *  实时重排让标签在拖动过程中就"让位"（与任务拖拽体验一致），不等到 drop。 */
-  function onTagDragOver(e: DragEvent, tagId: string): void {
+  /**
+   * 根据鼠标坐标计算 dragging 应该插入的目标 index（横向 wrap 版）。
+   *
+   * 1. 先按鼠标 Y 锁定所在行（Y 在 chip 垂直范围内的 chip 集合）；
+   *    鼠标在行间隙时兜底用全部 chip。
+   * 2. 在该行内按 X 比较：找到第一个「鼠标在其左半段」的 chip，
+   *    dragging 插到它前面；鼠标在所有 chip 右半段则插到末尾。
+   * 3. dragging 自己跳过。
+   */
+  function computeTargetIndex(clientX: number, clientY: number): number {
+    if (!containerRef.value) return -1;
+    const chips = Array.from(
+      containerRef.value.querySelectorAll<HTMLElement>("[data-tag-id]"),
+    );
+    const otherChips = chips.filter(
+      (c) => c.getAttribute("data-tag-id") !== draggingTagId.value,
+    );
+    if (otherChips.length === 0) return -1;
+
+    // 鼠标所在行：Y 落在 chip 垂直范围内的集合
+    const rowChips = otherChips.filter((c) => {
+      const r = c.getBoundingClientRect();
+      return clientY >= r.top && clientY <= r.bottom;
+    });
+    const candidates = rowChips.length > 0 ? rowChips : otherChips;
+
+    for (let i = 0; i < candidates.length; i++) {
+      const rect = candidates[i].getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      // 鼠标在该 chip 左半段（含中心）→ 插到该 chip 前面
+      if (clientX <= centerX) {
+        const id = candidates[i].getAttribute("data-tag-id")!;
+        const withoutDragging = localTags.value.filter(
+          (t) => t.id !== draggingTagId.value,
+        );
+        return withoutDragging.findIndex((t) => t.id === id);
+      }
+    }
+    // 鼠标在所有 chip 右侧 → 插到末尾
+    return localTags.value.length - 1;
+  }
+
+  /** 容器级 dragover：实时重排 localTags，触发 FLIP 让位动画（不等到 drop） */
+  function onContainerDragOver(e: DragEvent): void {
     if (!isTagDrag(e)) return; // 任务拖拽：不干预（放行给外层）
     e.preventDefault(); // 允许 drop
     e.stopPropagation(); // 阻断任务行 onDragOver（否则会显示任务重排高亮 + FLIP 让位）
     e.dataTransfer!.dropEffect = "move";
 
     const draggedId = draggingTagId.value;
-    if (!draggedId || draggedId === tagId) return; // 无效源或拖到自己
+    if (!draggedId) return; // 未识别拖拽源
 
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const pos: DropPos = x < rect.width / 2 ? "before" : "after";
-    dragOver.id = tagId;
-    dragOver.pos = pos;
-    reorderLocal(draggedId, tagId, pos);
-    scheduleAutoPersist();
-  }
+    const targetIdx = computeTargetIndex(e.clientX, e.clientY);
+    if (targetIdx < 0) return;
 
-  /** chip dragleave：清落点高亮（仅真正离开时） */
-  function onTagDragLeave(e: DragEvent, tagId: string): void {
-    if (!isTagDrag(e)) return;
-    const related = e.relatedTarget as HTMLElement | null;
-    if (related && (e.currentTarget as HTMLElement).contains(related)) return;
-    if (dragOver.id === tagId) {
-      dragOver.id = "";
+    const withoutDragging = localTags.value.filter((t) => t.id !== draggedId);
+    const clampedIdx = Math.max(0, Math.min(targetIdx, withoutDragging.length));
+    const draggedTag = localTags.value.find((t) => t.id === draggedId);
+    if (!draggedTag) return;
+    withoutDragging.splice(clampedIdx, 0, draggedTag);
+
+    // 仅当顺序真正变化时才赋值（避免无限 dragover 触发响应式更新）
+    const changed = withoutDragging.some((t, i) => t.id !== localTags.value[i]?.id);
+    if (changed) {
+      localTags.value = withoutDragging;
+      dragChanged = true;
+      scheduleAutoPersist();
     }
   }
 
-  /** chip drop：dragover 已实时重排，这里直接持久化 */
-  function onTagDrop(e: DragEvent, tagId: string): void {
+  /** 容器级 drop：dragover 已实时重排，这里直接持久化 */
+  function onContainerDrop(e: DragEvent): void {
     if (!isTagDrag(e)) return; // 任务拖拽：放行给外层
     e.preventDefault();
     e.stopPropagation(); // 阻断任务行 onDrop（否则会误触发任务重排）
-
-    const draggedId = draggingTagId.value ?? lastDragId;
-    if (!draggedId || draggedId === tagId) {
-      clearDragState();
-      return;
-    }
     void persist();
-  }
-
-  /** 重排本地数组：把 draggedId 移到 targetId 的 before/after 位置 */
-  function reorderLocal(draggedId: string, targetId: string, pos: DropPos): void {
-    const ids = localTags.value.filter((t) => t.id !== draggedId);
-    const targetIndex = ids.findIndex((t) => t.id === targetId);
-    if (targetIndex === -1) return;
-    const draggedTag = localTags.value.find((t) => t.id === draggedId);
-    if (!draggedTag) return;
-    const insertIndex = pos === "before" ? targetIndex : targetIndex + 1;
-    ids.splice(insertIndex, 0, draggedTag);
-    localTags.value = ids;
-    dragChanged = true;
   }
 
   /** autoPersist 计时器（dragover 停止 500ms 后兜底持久化，WKWebView drop/dragend 不可靠） */
@@ -177,7 +195,6 @@ export function useTaskTagReorder(getTaskId: () => string, sourceTags: Ref<Tag[]
   function clearDragState(): void {
     isDragging = false;
     draggingTagId.value = null;
-    dragOver.id = "";
   }
 
   /** chip dragend：清状态 + 兜底持久化 */
@@ -187,24 +204,27 @@ export function useTaskTagReorder(getTaskId: () => string, sourceTags: Ref<Tag[]
     else clearDragState();
   }
 
+  /** 容器 DOM 设置器：模板 ref 回调调用（TransitionGroup 是组件，ref 拿到实例需取 $el） */
+  function setContainerEl(el: unknown): void {
+    containerRef.value = (el as { $el?: HTMLElement } | null)?.$el ?? (el as HTMLElement | null);
+  }
+
   return {
     /** 本地有序标签数组（渲染数据源） */
     localTags,
-    /** 正在被拖动的标签 id */
+    /** 正在被拖动的标签 id（给源 chip 加半透明样式） */
     draggingTagId,
-    /** 落点高亮状态 */
-    dragOver,
+    /** 容器 DOM 设置器（模板 ref 回调调用；TransitionGroup 是组件需取 $el） */
+    setContainerEl,
     /** 手动同步外部数据（一般由 watch 自动触发，极少手动调） */
     syncFromStore,
     /** chip dragstart */
     onTagDragStart,
-    /** chip dragover */
-    onTagDragOver,
-    /** chip dragleave */
-    onTagDragLeave,
-    /** chip drop */
-    onTagDrop,
     /** chip dragend */
     onTagDragEnd,
+    /** 容器级 dragover（挂到标签列表容器） */
+    onContainerDragOver,
+    /** 容器级 drop（挂到标签列表容器） */
+    onContainerDrop,
   };
 }

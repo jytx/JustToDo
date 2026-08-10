@@ -160,12 +160,11 @@ const taskTags = computed<db.Tag[]>(() => {
 const {
   localTags: localTaskTags,
   draggingTagId,
-  dragOver: tagDragOver,
+  setContainerEl: setTagListContainerEl,
   onTagDragStart,
-  onTagDragOver,
-  onTagDragLeave,
-  onTagDrop,
   onTagDragEnd,
+  onContainerDragOver,
+  onContainerDrop,
 } = useTaskTagReorder(() => task.value?.id ?? "", taskTags);
 
 /** 父任务链（面包屑导航）—— 从直接父级到根级 */
@@ -1285,8 +1284,18 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 标签 chip 列表（已关联的；可拖拽调整顺序） -->
-    <div v-if="taskTags.length" class="detail-panel__tag-list">
+    <!-- 标签 chip 列表（已关联的；可拖拽调整顺序）
+         TransitionGroup 提供 FLIP 让位动画：拖拽过程中其他标签实时平滑让位。
+         dragover/drop 挂在容器上（鼠标在 chip 间隙也持续触发）。 -->
+    <TransitionGroup
+      v-if="taskTags.length"
+      tag="div"
+      name="tag-flip"
+      class="detail-panel__tag-list"
+      :ref="setTagListContainerEl"
+      @dragover="onContainerDragOver"
+      @drop="onContainerDrop"
+    >
       <a-tag
         v-for="tag in localTaskTags"
         :key="tag.id"
@@ -1294,27 +1303,19 @@ onBeforeUnmount(() => {
         closable
         :draggable="true"
         class="detail-panel__tag"
+        :data-tag-id="tag.id"
         :style="{
           backgroundColor: tagBg(tag.color),
           borderColor: tagBorder(tag.color),
         }"
-        :class="{
-          'detail-panel__tag--dragging': draggingTagId === tag.id,
-          'detail-panel__tag--drop-before':
-            tagDragOver.id === tag.id && tagDragOver.pos === 'before',
-          'detail-panel__tag--drop-after':
-            tagDragOver.id === tag.id && tagDragOver.pos === 'after',
-        }"
+        :class="{ 'detail-panel__tag--dragging': draggingTagId === tag.id }"
         @close="removeTaskTag(tag.id)"
         @dragstart="onTagDragStart($event, tag.id)"
-        @dragover="onTagDragOver($event, tag.id)"
-        @dragleave="onTagDragLeave($event, tag.id)"
-        @drop="onTagDrop($event, tag.id)"
         @dragend="onTagDragEnd"
       >
         {{ tag.name }}
       </a-tag>
-    </div>
+    </TransitionGroup>
 
     <!-- 面包屑（父任务链）
          整条链路显示在一个胶囊里：祖父 / 父 / 父亲名
@@ -1755,15 +1756,14 @@ function formatMeta(iso: string): string {
   line-height: 14px;
 }
 
-/* 标签拖拽：拖拽中半透明 + 落点蓝色竖线高亮（左右指示插入位置） */
+/* 标签拖拽：拖拽中半透明 */
 .detail-panel__tag-list :deep(.detail-panel__tag--dragging) {
   opacity: 0.4;
 }
-.detail-panel__tag-list :deep(.detail-panel__tag--drop-before) {
-  box-shadow: -2px 0 0 0 var(--jt-primary);
-}
-.detail-panel__tag-list :deep(.detail-panel__tag--drop-after) {
-  box-shadow: 2px 0 0 0 var(--jt-primary);
+
+/* FLIP 让位动画：拖拽过程中其他标签平滑移动让位（与任务项拖拽一致） */
+.tag-flip-move {
+  transition: transform 0.18s ease;
 }
 
 /* ─── 面包屑（子任务返回区） ─────────────── */

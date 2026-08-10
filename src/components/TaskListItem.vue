@@ -344,12 +344,11 @@ const taskTags = computed(() => taskStore.taskTagMap[props.task.id] ?? []);
 const {
   localTags: localTaskTags,
   draggingTagId,
-  dragOver: tagDragOver,
+  setContainerEl: setTagListContainerEl,
   onTagDragStart,
-  onTagDragOver,
-  onTagDragLeave,
-  onTagDrop,
   onTagDragEnd,
+  onContainerDragOver,
+  onContainerDrop,
 } = useTaskTagReorder(() => props.task.id, taskTags);
 
 /** 是否有子任务（需要先加载才知道）——先假设可能有，首次展开时加载 */
@@ -752,31 +751,33 @@ function onCtxEnterBatchMode(): void {
           @keydown.esc.prevent="cancelEditTitle"
           @blur="saveTitle"
         />
-        <!-- 标签 chips（独立一行，显示在标题下方；可拖拽调整顺序） -->
-        <div v-if="taskTags.length" class="task-item__tags">
+        <!-- 标签 chips（独立一行，显示在标题下方；可拖拽调整顺序）
+             TransitionGroup 提供 FLIP 让位动画：拖拽过程中其他标签实时平滑让位，
+             与任务项拖拽体验一致。dragover/drop 挂在容器上（鼠标在 chip 间隙也持续触发）。 -->
+        <TransitionGroup
+          v-if="taskTags.length"
+          tag="div"
+          name="tag-flip"
+          class="task-item__tags"
+          :ref="setTagListContainerEl"
+          @dragover="onContainerDragOver"
+          @drop="onContainerDrop"
+        >
           <span
             v-for="tag in localTaskTags"
             :key="tag.id"
             class="task-item__tag"
+            :class="{ 'task-item__tag--dragging': draggingTagId === tag.id }"
+            :data-tag-id="tag.id"
             :style="{
               backgroundColor: tagBg(tag.color),
               borderColor: tagBorder(tag.color),
             }"
-            :class="{
-              'task-item__tag--dragging': draggingTagId === tag.id,
-              'task-item__tag--drop-before':
-                tagDragOver.id === tag.id && tagDragOver.pos === 'before',
-              'task-item__tag--drop-after':
-                tagDragOver.id === tag.id && tagDragOver.pos === 'after',
-            }"
             draggable="true"
             @dragstart="onTagDragStart($event, tag.id)"
-            @dragover="onTagDragOver($event, tag.id)"
-            @dragleave="onTagDragLeave($event, tag.id)"
-            @drop="onTagDrop($event, tag.id)"
             @dragend="onTagDragEnd"
           >{{ tag.name }}</span>
-        </div>
+        </TransitionGroup>
         <div v-if="task.recurrenceFreq || dueInfo" class="task-item__meta">
           <span v-if="task.recurrenceFreq" class="task-item__recurrence" title="重复任务">
             <icon-refresh :size="12" />
@@ -1270,13 +1271,9 @@ function onCtxEnterBatchMode(): void {
   opacity: 0.4;
 }
 
-/* 拖拽落点高亮：用左侧/右侧蓝色竖线指示插入位置 */
-.task-item__tag--drop-before {
-  box-shadow: -2px 0 0 0 var(--jt-primary);
-}
-
-.task-item__tag--drop-after {
-  box-shadow: 2px 0 0 0 var(--jt-primary);
+/* FLIP 让位动画：拖拽过程中其他标签平滑移动让位（与任务项拖拽一致） */
+.tag-flip-move {
+  transition: transform 0.18s ease;
 }
 
 /* 已完成任务的标签弱化（与标题删除线一致的处理） */
