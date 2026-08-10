@@ -203,6 +203,8 @@ watch(
   async (id) => {
     titleDraft.value = task.value?.title ?? "";
     noteDraft.value = task.value?.note ?? "";
+    // 切换任务时重置标题编辑态（避免上一个任务的链接块编辑态残留）
+    editingTitle.value = false;
     if (id) {
       await tagStore.loadTags();
       // 兜底：详情面板可能从 DB 单独加载任务（taskTagMap 无该任务条目），
@@ -223,6 +225,17 @@ watch(
 );
 
 // ─── 标题编辑 ─────────────────────────────────────
+/** 是否处于标题编辑态（有链接时默认展示为链接块，点 ✎ 进入编辑） */
+const editingTitle = ref(false);
+
+/** 进入标题编辑态：以当前标题为草稿并聚焦输入框 */
+async function startEditTitle() {
+  editingTitle.value = true;
+  titleDraft.value = task.value?.title ?? "";
+  await nextTick();
+  titleEl.value?.focus();
+}
+
 async function saveTitle() {
   if (!task.value) return;
   const trimmed = titleDraft.value.trim();
@@ -253,6 +266,8 @@ async function parseUrlTitle() {
     const title = await db.fetchUrlTitle(url);
     titleDraft.value = title;
     await taskStore.updateTask(task.value.id, { title, titleUrl: url });
+    // 解析完成：切回链接块展示（标题即链接）
+    editingTitle.value = false;
     Message.success("已解析网页标题");
   } catch (e) {
     Message.error("解析失败：" + String(e));
@@ -829,6 +844,8 @@ function onTitleBlur() {
   if (titleDraft.value !== (task.value.title ?? "")) {
     saveTitle();
   }
+  // 失焦退出编辑态（有链接的任务切回链接块展示）
+  editingTitle.value = false;
 }
 
 function onTitleKeydown(e: KeyboardEvent) {
@@ -1223,10 +1240,29 @@ onBeforeUnmount(() => {
 
     <!-- 主区：标题 + 描述 -->
     <div class="detail-panel__main">
-      <!-- 大标题行：textarea + 右侧操作区（解析图标 / 链接 chip） -->
+      <!-- 大标题行：有链接时链接以行内样式呈现（富文本风格），
+           点链接文字跳转、点行内空白处仍进入编辑 -->
       <div class="detail-panel__title-row">
-        <!-- 大标题（textarea，无边框，自动撑高；空时显示 placeholder） -->
+        <!-- 链接展示：外观与 textarea 一致（透明输入框），行内嵌蓝底链接 chip -->
+        <div
+          v-if="task.titleUrl && !editingTitle"
+          class="detail-panel__title-link-area"
+          :class="{ 'detail-panel__title--done': task.done }"
+          title="点击编辑标题"
+          @click="startEditTitle"
+        >
+          <a
+            class="detail-panel__title-inline-link"
+            :title="`打开链接：${task.titleUrl}`"
+            @click.prevent.stop="openTitleLink"
+          >
+            <icon-link :size="13" />
+            <span class="detail-panel__title-inline-link-text">{{ task.title }}</span>
+          </a>
+        </div>
+        <!-- 编辑模式 / 无链接：大标题（textarea，无边框，自动撑高；空时显示 placeholder） -->
         <textarea
+          v-else
           ref="titleEl"
           v-model="titleDraft"
           class="detail-panel__title"
@@ -1237,8 +1273,8 @@ onBeforeUnmount(() => {
           @blur="onTitleBlur"
           @keydown="onTitleKeydown"
         />
-        <!-- 右侧操作区：输入像 URL 时显示解析图标；已关联链接时显示可点击 chip -->
-        <div class="detail-panel__title-actions">
+        <!-- 右侧操作区：仅编辑模式渲染；输入像 URL 时显示解析图标 -->
+        <div v-if="editingTitle || !task.titleUrl" class="detail-panel__title-actions">
           <button
             v-if="showParseIcon"
             class="detail-panel__parse-btn"
@@ -1249,15 +1285,6 @@ onBeforeUnmount(() => {
           >
             <icon-link :size="14" />
           </button>
-          <a
-            v-else-if="task.titleUrl"
-            class="detail-panel__title-link"
-            :title="`打开链接：${task.titleUrl}`"
-            @click.prevent="openTitleLink"
-          >
-            <icon-link :size="12" />
-            <span class="detail-panel__title-link-text">{{ task.title }}</span>
-          </a>
         </div>
       </div>
 
@@ -1865,7 +1892,9 @@ function formatMeta(iso: string): string {
 .detail-panel__title-actions {
   display: flex;
   align-items: center;
-  padding-top: 4px;
+  /* 与标题第一行垂直居中：textarea padding-top 6px + 行高 33px/2 = 22.5px，
+     按钮高 28px 中心 14px，差值 8.5px ≈ 9px */
+  padding-top: 9px;
 }
 
 .detail-panel__parse-btn {
@@ -1897,27 +1926,49 @@ function formatMeta(iso: string): string {
   animation: detail-panel-title-spin 1s linear infinite;
 }
 
-.detail-panel__title-link {
+/* 链接展示区：外观与 .detail-panel__title（textarea）完全一致，
+   点击空白处进入编辑；行内链接 chip 点击跳转 */
+.detail-panel__title-link-area {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-height: 45px; /* 与 textarea：padding 6px×2 + 行高 33px */
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background-color: transparent;
+  cursor: text;
+  transition: background-color 0.15s;
+}
+
+.detail-panel__title-link-area:hover {
+  background-color: var(--jt-surface-hover);
+}
+
+/* 行内链接 chip（富文本风格的链接样式）：加粗蓝底白字 */
+.detail-panel__title-inline-link {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  max-width: 200px;
-  padding: 3px 10px;
+  max-width: 100%;
+  padding: 1px 8px;
   border-radius: 6px;
   background: var(--jt-accent);
   color: #fff;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
-  white-space: nowrap;
+  line-height: 1.5;
   text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
   transition: filter 0.15s;
 }
 
-.detail-panel__title-link:hover {
-  filter: brightness(1.12);
+.detail-panel__title-inline-link:hover {
+  filter: brightness(1.1);
 }
 
-.detail-panel__title-link-text {
+.detail-panel__title-inline-link-text {
   overflow: hidden;
   text-overflow: ellipsis;
 }
