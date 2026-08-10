@@ -242,7 +242,12 @@ async function saveTitle() {
   // 允许保存空标题（用户删空后失焦应保留删除结果，而不是恢复旧标题）；
   // 与旧值相同（含 Escape 还原场景）才跳过
   if (trimmed !== task.value.title) {
-    await taskStore.updateTask(task.value.id, { title: trimmed });
+    // 删空标题时一并解除链接：行内已无数据，链接图标不再显示，
+    // 若不解除会留下无法访问的隐藏 titleUrl
+    await taskStore.updateTask(
+      task.value.id,
+      trimmed ? { title: trimmed } : { title: trimmed, titleUrl: null },
+    );
   }
 }
 
@@ -1277,9 +1282,10 @@ onBeforeUnmount(() => {
       <!-- 大标题行：有链接时标题文本为嵌入式蓝色链接（GitHub/富文本风格），
            点文字跳转、点 🔗 图标弹窗编辑（文字 + URL）、点行内空白进入编辑 -->
       <div class="detail-panel__title-row">
-        <!-- 链接展示：外观与 textarea 一致（透明输入框），内嵌链接文字 + 编辑图标 -->
+        <!-- 链接展示：外观与 textarea 一致（透明输入框），内嵌链接文字 + 编辑图标。
+             标题为空（已删空）时不显示链接形态（行内无数据，图标无意义） -->
         <div
-          v-if="task.titleUrl && !editingTitle"
+          v-if="task.titleUrl && task.title && !editingTitle"
           class="detail-panel__title-link-area"
           :class="{ 'detail-panel__title--done': task.done }"
           title="点击编辑标题"

@@ -21,10 +21,12 @@ pub async fn fetch_url_title(url: String) -> Result<String, String> {
         return Err("仅支持 http/https 链接".to_string());
     }
 
-    // 独立客户端：超时 + 浏览器 UA（部分站点对无 UA 请求返回 403）
+    // 独立客户端：超时 + 完整浏览器 UA。
+    // 注意：简化 UA（如 "JustToDo/2.0"）会被部分站点（如 baidu）识别为爬虫，
+    // 返回无 <title> 的降级/重定向页，导致解析失败
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(8))
-        .user_agent("Mozilla/5.0 (compatible; JustToDo/2.0)")
+        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
