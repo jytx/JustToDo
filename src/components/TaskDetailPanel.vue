@@ -35,6 +35,7 @@ import AiBreakdownPreview from "./AiBreakdownPreview.vue";
 import AiPolishDialog from "./AiPolishDialog.vue";
 import OutlinePanel from "./OutlinePanel.vue";
 import { useAttachmentUpload } from "@/composables/useAttachmentUpload";
+import { useTaskTagReorder } from "@/composables/useTaskTagReorder";
 import * as db from "@/api/db";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
@@ -153,6 +154,18 @@ const taskTags = computed<db.Tag[]>(() => {
   if (!id) return [];
   return taskStore.taskTagMap[id] ?? [];
 });
+
+// ─── 标签拖拽排序（与列表项共用 taskTagMap 数据源，重排后两边自动同步） ──────────
+const {
+  localTags: localTaskTags,
+  draggingTagId,
+  dragOver: tagDragOver,
+  onTagDragStart,
+  onTagDragOver,
+  onTagDragLeave,
+  onTagDrop,
+  onTagDragEnd,
+} = useTaskTagReorder(() => task.value?.id ?? "", taskTags);
 
 /** 父任务链（面包屑导航）—— 从直接父级到根级 */
 const parentChain = ref<Task[]>([]);
@@ -1270,14 +1283,27 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 标签 chip 列表（已关联的） -->
+    <!-- 标签 chip 列表（已关联的；可拖拽调整顺序） -->
     <div v-if="taskTags.length" class="detail-panel__tag-list">
       <a-tag
-        v-for="tag in taskTags"
+        v-for="tag in localTaskTags"
         :key="tag.id"
         size="small"
         closable
+        :draggable="true"
+        :class="{
+          'detail-panel__tag--dragging': draggingTagId === tag.id,
+          'detail-panel__tag--drop-before':
+            tagDragOver.id === tag.id && tagDragOver.pos === 'before',
+          'detail-panel__tag--drop-after':
+            tagDragOver.id === tag.id && tagDragOver.pos === 'after',
+        }"
         @close="removeTaskTag(tag.id)"
+        @dragstart="onTagDragStart($event, tag.id)"
+        @dragover="onTagDragOver($event, tag.id)"
+        @dragleave="onTagDragLeave($event, tag.id)"
+        @drop="onTagDrop($event, tag.id)"
+        @dragend="onTagDragEnd"
       >
         {{ tag.name }}
       </a-tag>
@@ -1712,6 +1738,17 @@ function formatMeta(iso: string): string {
   flex-wrap: wrap;
   gap: 4px;
   padding: 0 16px 4px;
+}
+
+/* 标签拖拽：拖拽中半透明 + 落点蓝色竖线高亮（左右指示插入位置） */
+.detail-panel__tag-list :deep(.detail-panel__tag--dragging) {
+  opacity: 0.4;
+}
+.detail-panel__tag-list :deep(.detail-panel__tag--drop-before) {
+  box-shadow: -2px 0 0 0 var(--jt-primary);
+}
+.detail-panel__tag-list :deep(.detail-panel__tag--drop-after) {
+  box-shadow: 2px 0 0 0 var(--jt-primary);
 }
 
 /* ─── 面包屑（子任务返回区） ─────────────── */

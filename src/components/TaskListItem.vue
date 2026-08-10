@@ -349,7 +349,7 @@ const {
   onTagDragLeave,
   onTagDrop,
   onTagDragEnd,
-} = useTaskTagReorder(props.task.id, taskTags);
+} = useTaskTagReorder(() => props.task.id, taskTags);
 
 /** 是否有子任务（需要先加载才知道）——先假设可能有，首次展开时加载 */
 const hasSubtasksLoaded = computed(() => props.task.id in taskStore.subtaskCache);

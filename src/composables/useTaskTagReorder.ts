@@ -26,11 +26,12 @@ type DropPos = "before" | "after";
 /**
  * 任务项内标签拖拽排序
  *
- * @param taskId 当前任务 id（持久化时用）
+ * @param getTaskId 获取当前任务 id 的 getter（持久化时用；用 getter 而非固定字符串，
+ *                  支持详情面板切换任务后仍持久化到正确的 task）
  * @param sourceTags 响应式的外部标签数据源（来自 taskStore.taskTagMap[taskId]）
  * @returns 本地有序标签数组 + 拖拽状态 + 事件处理器
  */
-export function useTaskTagReorder(taskId: string, sourceTags: Ref<Tag[]>) {
+export function useTaskTagReorder(getTaskId: () => string, sourceTags: Ref<Tag[]>) {
   const taskStore = useTaskStore();
 
   /** 本地有序标签数组（拖拽中实时调整，驱动渲染） */
@@ -164,7 +165,7 @@ export function useTaskTagReorder(taskId: string, sourceTags: Ref<Tag[]>) {
     persisting = true;
     try {
       const orderedIds = localTags.value.map((t) => t.id);
-      await taskStore.reorderTaskTags(taskId, orderedIds);
+      await taskStore.reorderTaskTags(getTaskId(), orderedIds);
     } finally {
       dragChanged = false;
       persisting = false;
