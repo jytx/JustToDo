@@ -644,6 +644,15 @@ const editor = useEditor({
       //
       // 修复：compositionstart 记录 selection 起始位置，insertFromComposition
       // 时 preventDefault 浏览器默认插入，改用 transaction 精确替换拼音区间。
+      //
+      // 注意：这里**不能**设 tr.setMeta("composition", true)。
+      // prosemirror-history 的分组逻辑（applyTransaction line 276-281）中，
+      // prevComposition 的更新规则是「composition 非 null 时才覆盖 prevComposition」。
+      // 一旦设了 composition:true，prevComposition 被永久置为 true，后续所有非
+      // composition 事务（如回车 setHardBreak）因 prevComposition(true) != composition(null)
+      // 仍可能合并，且紧接着的下一个 composition 事务因 prevComposition==composition
+      // 跳过时间判断直接合并 —— 导致「输入一行+回车」被并成一个 undo 组，
+      // 表现为 Cmd+Z 一次撤掉整行而非逐步撤销。
       compositionstart: (view) => {
         compStartPos = view.state.selection.from;
         return false;
@@ -655,7 +664,6 @@ const editor = useEditor({
           const { state } = view;
           const from = compStartPos ?? state.selection.from;
           const tr = state.tr.insertText(ie.data, from, state.selection.to);
-          tr.setMeta("composition", true);
           view.dispatch(tr);
           compStartPos = null;
           return true;
