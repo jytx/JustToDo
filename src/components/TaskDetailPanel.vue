@@ -287,6 +287,38 @@ async function openTitleLink() {
   }
 }
 
+// ─── 链接编辑弹窗（改标题文字 + URL） ──────────────
+const linkEditorVisible = ref(false);
+const linkTitleDraft = ref("");
+const linkUrlDraft = ref("");
+
+/** 打开链接编辑弹窗：预填当前标题与 URL */
+function openLinkEditor() {
+  if (!task.value) return;
+  linkTitleDraft.value = task.value.title;
+  linkUrlDraft.value = task.value.titleUrl ?? "";
+  linkEditorVisible.value = true;
+}
+
+/** 保存链接编辑：校验后更新标题与 URL，切回链接展示 */
+async function saveLinkEdit() {
+  if (!task.value) return;
+  const title = linkTitleDraft.value.trim();
+  const url = linkUrlDraft.value.trim();
+  if (!title || !url) {
+    Message.warning("标题文字和 URL 不能为空");
+    return;
+  }
+  if (!/^https?:\/\//i.test(url)) {
+    Message.warning("URL 需以 http:// 或 https:// 开头");
+    return;
+  }
+  titleDraft.value = title;
+  await taskStore.updateTask(task.value.id, { title, titleUrl: url });
+  linkEditorVisible.value = false;
+  Message.success("链接已更新");
+}
+
 // ─── 描述编辑 ─────────────────────────────────────
 async function saveNote(value: string) {
   if (!task.value) return;
@@ -1240,10 +1272,10 @@ onBeforeUnmount(() => {
 
     <!-- 主区：标题 + 描述 -->
     <div class="detail-panel__main">
-      <!-- 大标题行：有链接时链接以行内样式呈现（富文本风格），
-           点链接文字跳转、点行内空白处仍进入编辑 -->
+      <!-- 大标题行：有链接时标题文本为嵌入式蓝色链接（GitHub/富文本风格），
+           点文字跳转、点 🔗 图标弹窗编辑（文字 + URL）、点行内空白进入编辑 -->
       <div class="detail-panel__title-row">
-        <!-- 链接展示：外观与 textarea 一致（透明输入框），行内嵌蓝底链接 chip -->
+        <!-- 链接展示：外观与 textarea 一致（透明输入框），内嵌链接文字 + 编辑图标 -->
         <div
           v-if="task.titleUrl && !editingTitle"
           class="detail-panel__title-link-area"
@@ -1251,14 +1283,20 @@ onBeforeUnmount(() => {
           title="点击编辑标题"
           @click="startEditTitle"
         >
+          <!-- 标题文本：蓝色加粗链接，点击直接跳转 -->
           <a
-            class="detail-panel__title-inline-link"
+            class="detail-panel__title-text-link"
             :title="`打开链接：${task.titleUrl}`"
             @click.prevent.stop="openTitleLink"
+          >{{ task.title }}</a>
+          <!-- 🔗 图标：点击弹出编辑弹窗（可改标题文字与 URL） -->
+          <button
+            class="detail-panel__title-link-icon"
+            title="编辑链接"
+            @click.stop="openLinkEditor"
           >
             <icon-link :size="13" />
-            <span class="detail-panel__title-inline-link-text">{{ task.title }}</span>
-          </a>
+          </button>
         </div>
         <!-- 编辑模式 / 无链接：大标题（textarea，无边框，自动撑高；空时显示 placeholder） -->
         <textarea
@@ -1287,6 +1325,22 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
+
+      <!-- 链接编辑弹窗：修改标题文字与 URL -->
+      <a-modal
+        :visible="linkEditorVisible"
+        title="编辑链接"
+        :width="420"
+        @cancel="linkEditorVisible = false"
+        @ok="saveLinkEdit"
+      >
+        <div class="detail-panel__link-editor">
+          <label class="detail-panel__link-editor-label">标题文字</label>
+          <a-input v-model="linkTitleDraft" placeholder="链接显示的标题" @keyup.enter="saveLinkEdit" />
+          <label class="detail-panel__link-editor-label">URL</label>
+          <a-input v-model="linkUrlDraft" placeholder="https://..." @keyup.enter="saveLinkEdit" />
+        </div>
+      </a-modal>
 
       <!-- 描述（无边框 Tiptap；工具条由 footer "A" 按钮浮出） -->
       <RichTextEditor
@@ -1927,7 +1981,7 @@ function formatMeta(iso: string): string {
 }
 
 /* 链接展示区：外观与 .detail-panel__title（textarea）完全一致，
-   点击空白处进入编辑；行内链接 chip 点击跳转 */
+   点击空白处进入编辑；行内链接文字点击跳转 */
 .detail-panel__title-link-area {
   display: flex;
   align-items: center;
@@ -1936,6 +1990,13 @@ function formatMeta(iso: string): string {
   box-sizing: border-box;
   padding: 6px 10px;
   border-radius: 6px;
+  /* 与标题输入框相同的字体规格（链接文字以标题字号嵌入） */
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.5;
+  color: var(--jt-text-primary);
   background-color: transparent;
   cursor: text;
   transition: background-color 0.15s;
@@ -1945,32 +2006,59 @@ function formatMeta(iso: string): string {
   background-color: var(--jt-surface-hover);
 }
 
-/* 行内链接 chip（富文本风格的链接样式）：加粗蓝底白字 */
-.detail-panel__title-inline-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  padding: 1px 8px;
-  border-radius: 6px;
-  background: var(--jt-accent);
-  color: #fff;
-  font-size: 15px;
+/* 行内链接文字（嵌入式蓝色链接，GitHub/富文本风格）：点击直接跳转 */
+.detail-panel__title-text-link {
+  color: var(--jt-accent);
   font-weight: 600;
-  line-height: 1.5;
   text-decoration: none;
   cursor: pointer;
-  white-space: nowrap;
-  transition: filter 0.15s;
+  border-radius: 4px;
+  padding: 0 2px;
+  transition: background-color 0.15s;
 }
 
-.detail-panel__title-inline-link:hover {
-  filter: brightness(1.1);
+.detail-panel__title-text-link:hover {
+  background: var(--jt-accent-soft);
+  text-decoration: underline;
 }
 
-.detail-panel__title-inline-link-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* 已完成任务的链接文字：划线 */
+.detail-panel__title--done .detail-panel__title-text-link {
+  text-decoration: line-through;
+}
+
+/* 🔗 图标按钮：点击弹出链接编辑弹窗 */
+.detail-panel__title-link-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.detail-panel__title-link-icon:hover {
+  background: var(--jt-accent-soft);
+  color: var(--jt-accent);
+}
+
+/* 链接编辑弹窗表单 */
+.detail-panel__link-editor-label {
+  display: block;
+  margin: 10px 0 6px;
+  font-size: 13px;
+  color: var(--jt-text-secondary);
+}
+
+.detail-panel__link-editor-label:first-child {
+  margin-top: 0;
 }
 
 @keyframes detail-panel-title-spin {
