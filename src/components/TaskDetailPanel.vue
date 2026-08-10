@@ -1746,9 +1746,12 @@ function formatMeta(iso: string): string {
   padding: 0 16px 4px;
 }
 
-/* 标签 chip 圆角与列表项一致（4px；Arco a-tag 默认 2px 偏方） */
+/* 标签 chip 圆角与列表项一致（4px；Arco a-tag 默认 2px 偏方）。
+   同时收紧 line-height（Arco 默认 18px 高于 12px 字号，行框内文字偏上 1px），
+   让文字垂直居中与列表项标签（偏移 0）一致。 */
 .detail-panel__tag-list :deep(.arco-tag) {
   border-radius: 4px;
+  line-height: 14px;
 }
 
 /* 标签拖拽：拖拽中半透明 + 落点蓝色竖线高亮（左右指示插入位置） */
