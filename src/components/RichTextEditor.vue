@@ -99,6 +99,15 @@ const emit = defineEmits<{
 
 const uploading = ref(false);
 
+/**
+ * IME composition 起始位置（compositionstart 时记录）。
+ * WebKit 的 deleteCompositionText 不可取消（cancelable=false），执行后
+ * ProseMirror 的 selection 会错误偏移到标题节点外。insertFromComposition
+ * 时用此变量记录的正确起始位置插入中文，绕过 selection 偏移问题。
+ * 详见 editorProps.handleDOMEvents 注释。
+ */
+let compStartPos: number | null = null;
+
 /** 图片预览 lightbox */
 const allImages = ref<string[]>([]);
 const previewIndex = ref(0);
@@ -593,6 +602,34 @@ const editor = useEditor({
         }
       }
       return false;
+    },
+    handleDOMEvents: {
+      // ── WebKit IME composition 修复 ──────────────────────
+      // Tauri 用 WKWebView（WebKit），ProseMirror 识别为 Safari。IME 回车确认
+      // 中文时，deleteCompositionText（cancelable=false 无法拦截）执行后
+      // ProseMirror 的 selection 会错误偏移到标题节点外（如从 pos 7 跳到 9），
+      // 导致 insertFromComposition 把中文插到下一行段落而非标题内。
+      //
+      // 修复：compositionstart 记录 selection 起始位置，insertFromComposition
+      // 时 preventDefault 浏览器默认插入，改用 transaction 精确替换拼音区间。
+      compositionstart: (view) => {
+        compStartPos = view.state.selection.from;
+        return false;
+      },
+      beforeinput: (view, event) => {
+        const ie = event as InputEvent;
+        if (ie.inputType === "insertFromComposition" && ie.data) {
+          ie.preventDefault();
+          const { state } = view;
+          const from = compStartPos ?? state.selection.from;
+          const tr = state.tr.insertText(ie.data, from, state.selection.to);
+          tr.setMeta("composition", true);
+          view.dispatch(tr);
+          compStartPos = null;
+          return true;
+        }
+        return false;
+      },
     },
   },
 });
