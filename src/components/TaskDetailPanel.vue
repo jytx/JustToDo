@@ -239,7 +239,9 @@ async function startEditTitle() {
 async function saveTitle() {
   if (!task.value) return;
   const trimmed = titleDraft.value.trim();
-  if (trimmed && trimmed !== task.value.title) {
+  // 允许保存空标题（用户删空后失焦应保留删除结果，而不是恢复旧标题）；
+  // 与旧值相同（含 Escape 还原场景）才跳过
+  if (trimmed !== task.value.title) {
     await taskStore.updateTask(task.value.id, { title: trimmed });
   }
 }
