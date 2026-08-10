@@ -31,17 +31,37 @@ function updatePosition() {
   const placement = props.placement ?? "bottom-left";
 
   let left = aRect.left;
-  let top = aRect.bottom + offset;
+  // 默认向下弹出（bottom 系）；top 系向上弹出
+  let top = placement.startsWith("top")
+    ? aRect.top - pRect.height - offset
+    : aRect.bottom + offset;
 
-  // bottom-right: popper 右边对齐 trigger 右边
-  if (placement === "bottom-right") {
+  // bottom-right / top-right: popper 右边对齐 trigger 右边
+  if (placement === "bottom-right" || placement === "top-right") {
     left = aRect.right - pRect.width;
+  }
+
+  // 垂直自动翻转：期望方向空间不足、反方向空间足够时翻转。
+  // 典型场景：侧边栏底部最后一个标签的色板，向下弹会超出视口无法点击。
+  const spaceBelow = window.innerHeight - aRect.bottom - offset;
+  const spaceAbove = aRect.top - offset;
+  const wantsBelow = placement.startsWith("bottom");
+  const flip = wantsBelow
+    ? spaceBelow < pRect.height && spaceAbove >= pRect.height
+    : spaceAbove < pRect.height && spaceBelow >= pRect.height;
+  if (flip) {
+    top = wantsBelow
+      ? aRect.top - pRect.height - offset // 向下放不下 → 改为向上
+      : aRect.bottom + offset; // 向上放不下 → 改为向下
   }
 
   // 防止右侧溢出
   const maxLeft = window.innerWidth - pRect.width - 8;
   if (left > maxLeft) left = maxLeft;
   if (left < 8) left = 8;
+
+  // 防止顶部溢出（极端情况两个方向都不足时兜底）
+  if (top < 8) top = 8;
 
   pos.value = { left, top };
 }
