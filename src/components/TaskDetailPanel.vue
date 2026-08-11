@@ -495,20 +495,30 @@ async function onRecurrenceConfirm(freq: RecurrenceFreq | null, interval: number
 }
 
 // ─── 标签 ─────────────────────────────────────────
+// 标签下拉列全部标签（含已选）—— 多选模式下靠 active 态区分已选/未选，
+// 而非把已选过滤掉。这样用户可在同一弹层里连续勾选/取消多个标签。
 const availableTagOptions = computed(() =>
-  tagStore.tags
-    .filter((t) => !taskTags.value.some((tt) => tt.id === t.id))
-    .map((t) => ({ id: t.id, name: t.name, color: t.color })),
+  tagStore.tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
 );
+/** 判断某标签是否已关联到当前任务（模板 active 态用） */
+function isTagSelected(tagId: string): boolean {
+  return taskTags.value.some((tt) => tt.id === tagId);
+}
+
 const tagLabel = computed(() => {
   if (taskTags.value.length === 0) return "标签";
   if (taskTags.value.length === 1) return taskTags.value[0].name;
   return `${taskTags.value[0].name} +${taskTags.value.length - 1}`;
 });
 
-async function addExistingTag(tagId: string) {
+/** 标签 toggle（多选模式核心）：已选 → 移除；未选 → 添加。不关弹层，可连续操作。 */
+async function toggleTaskTag(tagId: string) {
   if (!task.value || !tagId) return;
-  await db.addTaskTag(task.value.id, tagId);
+  if (isTagSelected(tagId)) {
+    await db.removeTaskTag(task.value.id, tagId);
+  } else {
+    await db.addTaskTag(task.value.id, tagId);
+  }
   // 刷新 store 缓存（taskTagMap 是列表项 + 详情面板的唯一数据源）
   await taskStore.refreshTaskTags(task.value.id);
 }
@@ -1213,17 +1223,23 @@ onBeforeUnmount(() => {
                 :key="opt.id"
                 type="button"
                 class="detail-panel__popup-item"
-                @click="addExistingTag(opt.id); tagVisible = false"
+                :class="{ 'detail-panel__popup-item--active': isTagSelected(opt.id) }"
+                @click="toggleTaskTag(opt.id)"
               >
                 <span class="detail-panel__popup-dot" :style="{ backgroundColor: opt.color }" />
                 <span>{{ opt.name }}</span>
+                <icon-check
+                  v-if="isTagSelected(opt.id)"
+                  :size="12"
+                  class="detail-panel__popup-check"
+                />
               </button>
               <a-input
                 placeholder="+ 新建标签"
                 size="mini"
                 allow-clear
                 style="margin-top: 4px"
-                @keydown.enter="(e: any) => { createNewTag(e.target.value); (e.target as HTMLInputElement).value = ''; tagVisible = false; }"
+                @keydown.enter="(e: any) => { createNewTag(e.target.value); (e.target as HTMLInputElement).value = ''; }"
               />
             </div>
           </template>
@@ -2184,6 +2200,11 @@ function formatMeta(iso: string): string {
 .detail-panel__popup-item--active {
   background: var(--jt-accent-soft);
   color: var(--jt-primary);
+}
+
+/* 多选打勾图标（标签已选时显示，推到行尾） */
+.detail-panel__popup-check {
+  margin-left: auto;
 }
 
 .detail-panel__popup-item--danger {
