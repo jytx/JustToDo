@@ -113,12 +113,14 @@ export function nowLocalIso(date: Date = new Date()): string {
   return `${y}-${mo}-${d}T${h}:${mi}:${s}`;
 }
 
-/** 今天的日期范围：本地 00:00:00 ~ 23:59:59（字面量，无时区标记）。 */
+/** 今天的日期范围：本地 00:00:00 ~ 23:55:00（字面量，无时区标记）。
+ *  结束时间用 23:55 而非 23:59：时间选择器分钟网格步进为 5（0,5,…,55），
+ *  23:55 是可选项，用户修改时间后还能选回默认值；23:59 会"改不回去"。 */
 export function todayRange(): [string, string] {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   const end = new Date();
-  end.setHours(23, 59, 59, 0);
+  end.setHours(23, 55, 0, 0);
   return [nowLocalIso(start), nowLocalIso(end)];
 }
 
