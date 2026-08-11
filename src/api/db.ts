@@ -52,6 +52,8 @@ interface CreateTaskInput {
   recurrenceEndAt?: string | null;
   recurrenceCount?: number | null;
   remindOffsetMinutes?: number | null;
+  /** 指定时刻提醒（与 remindOffsetMinutes 互斥；不传 = 未启用） */
+  remindAt?: string | null;
   /** 实体类型：不传默认 'task'（待办）；'note' = 笔记 */
   kind?: TaskKind;
   /** 所属分组 ID（不传则用清单的默认分组） */
@@ -72,6 +74,8 @@ interface UpdateTaskInput {
   recurrenceEndAt?: string | null;
   recurrenceCount?: number | null;
   remindOffsetMinutes?: number | null;
+  /** 指定时刻提醒（与 remindOffsetMinutes 互斥；null 清空） */
+  remindAt?: string | null;
   /** 检查项列表（整组覆盖） */
   checklist?: ChecklistItem[];
   /** 附件列表（整组覆盖） */
@@ -186,6 +190,7 @@ interface RustTask {
   recurrence_origin_id: string | null;
   recurrence_paused: number;
   remind_offset_minutes: number | null;
+  remind_at: string | null;
   notified_at: string | null;
   checklist: ChecklistItem[];
   attachments: Attachment[];
@@ -217,6 +222,7 @@ function mapTask(r: RustTask): Task {
     recurrenceOriginId: r.recurrence_origin_id,
     recurrencePaused: !!r.recurrence_paused,
     remindOffsetMinutes: r.remind_offset_minutes,
+    remindAt: r.remind_at,
     notifiedAt: r.notified_at,
     checklist: r.checklist,
     attachments: r.attachments,
@@ -404,6 +410,7 @@ export async function createTask(params: CreateTaskInput): Promise<Task> {
     recurrence_end_at: params.recurrenceEndAt ?? null,
     recurrence_count: params.recurrenceCount ?? null,
     remind_offset_minutes: params.remindOffsetMinutes ?? null,
+    remind_at: params.remindAt ?? null,
     kind: params.kind ?? "task",
     group_id: params.groupId ?? null,
   };
@@ -428,6 +435,7 @@ export async function updateTask(
     recurrence_end_at: fields.recurrenceEndAt,
     recurrence_count: fields.recurrenceCount,
     remind_offset_minutes: fields.remindOffsetMinutes,
+    remind_at: fields.remindAt,
     checklist: fields.checklist,
     attachments: fields.attachments,
     kind: fields.kind,

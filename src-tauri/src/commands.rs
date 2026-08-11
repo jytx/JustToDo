@@ -78,6 +78,7 @@ fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
         // recurrence_paused NOT NULL DEFAULT 0，try_get 容错（旧库迁移前可能无此列）
         recurrence_paused: row.try_get("recurrence_paused").ok().unwrap_or(false),
         remind_offset_minutes: row.try_get("remind_offset_minutes").ok().flatten(),
+        remind_at: row.try_get("remind_at").ok().flatten(),
         notified_at: row.try_get("notified_at").ok().flatten(),
         // checklist 存的是 JSON 字符串，反序列化为 Vec
         // 字段 NOT NULL DEFAULT '[]'，所以一定存在；解析失败则为空列表
@@ -703,14 +704,15 @@ pub async fn task_create(
     let recurrence_end_at = input.recurrence_end_at.clone();
     let recurrence_count = input.recurrence_count;
     let remind_offset_minutes = input.remind_offset_minutes;
+    let remind_at = input.remind_at.clone();
     // kind 不传默认 'task'（待办）；'note' = 笔记（复用 tasks 表，但无日期/完成/重复/提醒）
     let kind = input.kind.clone().unwrap_or_else(|| "task".to_string());
     // group_id 不传则用清单的默认分组
     let group_id = input.group_id.clone().unwrap_or_else(|| format!("{}-default", input.list_id));
 
     sqlx::query(
-        "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, recurrence_freq, recurrence_interval, recurrence_end_at, recurrence_count, remind_offset_minutes, kind, group_id)
-         VALUES ($1, $2, '', $3, $4, $5, $6, $7, 0, $8, $9, $10, NULL, $11, $12, $13, $14, $15, $16, $17)",
+        "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, recurrence_freq, recurrence_interval, recurrence_end_at, recurrence_count, remind_offset_minutes, remind_at, kind, group_id)
+         VALUES ($1, $2, '', $3, $4, $5, $6, $7, 0, $8, $9, $10, NULL, $11, $12, $13, $14, $15, $16, $17, $18)",
     )
     .bind(&id)
     .bind(&input.title)
@@ -727,6 +729,7 @@ pub async fn task_create(
     .bind(&recurrence_end_at)
     .bind(recurrence_count)
     .bind(&remind_offset_minutes)
+    .bind(&remind_at)
     .bind(&kind)
     .bind(&group_id)
     .execute(pool.inner())
@@ -755,6 +758,7 @@ pub async fn task_create(
         // 新建任务默认未暂停（DB DEFAULT 0 也保证）
         recurrence_paused: false,
         remind_offset_minutes,
+        remind_at,
         notified_at: None,
         checklist: Vec::new(),
         attachments: Vec::new(),
@@ -884,11 +888,20 @@ pub async fn task_update(
             .await
             .map_err(|e| format!("更新任务失败: {}", e))?;
     }
-    // 提醒规则（Option<Option<i32>> 允许显式清空）
+    // 相对提醒规则（Option<Option<i32>> 允许显式清空）
     if let Some(remind) = &input.remind_offset_minutes {
-        // 任何对提醒规则的修改都重置 notified_at，避免改完规则却不再通知
-        sqlx::query("UPDATE tasks SET remind_offset_minutes = $1, notified_at = NULL, updated_at = $2 WHERE id = $3")
+        // 任何对提醒规则的修改都重置 notified_at，避免改完规则却不再通知；
+        // 同时清空 remind_at（与「指定时刻提醒」互斥，二者只能存其一）
+        sqlx::query("UPDATE tasks SET remind_offset_minutes = $1, remind_at = NULL, notified_at = NULL, updated_at = $2 WHERE id = $3")
             .bind(remind).bind(&ts).bind(&id)
+            .execute(pool.inner()).await
+            .map_err(|e| format!("更新提醒失败: {}", e))?;
+    }
+    // 指定时刻提醒（Option<Option<String>> 允许显式清空；与 remind_offset_minutes 互斥）
+    if let Some(remind_at) = &input.remind_at {
+        let r: Option<&str> = remind_at.as_deref();
+        sqlx::query("UPDATE tasks SET remind_at = $1, remind_offset_minutes = NULL, notified_at = NULL, updated_at = $2 WHERE id = $3")
+            .bind(r).bind(&ts).bind(&id)
             .execute(pool.inner()).await
             .map_err(|e| format!("更新提醒失败: {}", e))?;
     }
@@ -929,7 +942,7 @@ pub async fn task_update(
                      due_start_at = NULL, due_end_at = NULL,
                      recurrence_freq = NULL, recurrence_interval = 1,
                      recurrence_end_at = NULL, recurrence_count = NULL,
-                     remind_offset_minutes = NULL, notified_at = NULL,
+                     remind_offset_minutes = NULL, remind_at = NULL, notified_at = NULL,
                      list_id = 'default-notebook',
                      group_id = 'default-notebook-default',
                      updated_at = $1
@@ -2397,9 +2410,12 @@ fn format_local_naive(naive: chrono::NaiveDateTime) -> String {
     naive.format("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
-/// 扫库找"该通知但还没通知过"的任务
-/// - 标准扫描：trigger_at = due_end_at - remind_offset_minutes 分钟；trigger_at <= now
-/// - 启动补发：due_end_at 在过去 24h 内 且 notified_at IS NULL
+/// 扫库找"该通知但还没通知过"的任务。两种提醒源（互斥，不会同时命中同一任务）：
+/// - 相对提醒：remind_offset_minutes + due_end_at
+///     标准扫描 trigger_at = due_end_at - offset；trigger_at <= now
+///     启动补发 due_end_at 在过去 24h 内 且 notified_at IS NULL
+/// - 指定时刻提醒：remind_at（绝对本地时刻）
+///     remind_at 落在 [now-24h, now] 区间即触发（到点且不超过 24h 补发窗口）
 pub async fn task_check_reminders_inner(
     pool: &sqlx::SqlitePool,
     on_emit: impl Fn(&PendingReminder),
@@ -2408,26 +2424,27 @@ pub async fn task_check_reminders_inner(
     let now_str = format_local_naive(now);
     let cutoff_str = format_local_naive(now - chrono::Duration::hours(24));
 
-    // 一次性把"待通知"任务拉出来
-    // 条件：
-    //   - remind_offset_minutes IS NOT NULL
-    //   - due_end_at IS NOT NULL
-    //   - done = 0
-    //   - notified_at IS NULL
-    //   - 要么 (due_end_at - offset) <= now  ← 准点/提前已到
-    //   - 要么 due_end_at >= cutoff 且 due_end_at <= now  ← 应用启动补发窗口
+    // 一次性把"待通知"任务拉出来。公共过滤：done=0 且 notified_at IS NULL。
+    // 两个提醒源用 OR 连接（二者字段互斥，同一任务只会命中一支）：
+    //   A 相对提醒：remind_offset_minutes 与 due_end_at 都非空，
+    //     要么 (due_end_at - offset) <= now（准点/提前已到），
+    //     要么 due_end_at 在 [cutoff, now] 内（应用启动补发窗口）。
+    //   B 指定时刻：remind_at 非空且落在 [cutoff, now] 内（到点 + 24h 补发上限）。
     // SQLite 的 datetime() 无 'localtime' 时按 UTC 解释。我们的本地字面量（如
     // "2026-07-14T17:25:00"）实际表达的是墙上时刻，必须显式声明 'localtime'。
     let rows = sqlx::query(
-        "SELECT id, title, due_end_at, remind_offset_minutes FROM tasks
-         WHERE remind_offset_minutes IS NOT NULL
-           AND due_end_at IS NOT NULL
-           AND done = 0
+        "SELECT id, title, due_end_at, remind_offset_minutes, remind_at FROM tasks
+         WHERE done = 0
            AND notified_at IS NULL
            AND (
-             datetime(replace(due_end_at, 'T', ' '), '-' || remind_offset_minutes || ' minutes', 'localtime') <= datetime($1, 'localtime')
-             OR (datetime(replace(due_end_at, 'T', ' '), 'localtime') >= datetime($2, 'localtime')
-                 AND datetime(replace(due_end_at, 'T', ' '), 'localtime') <= datetime($1, 'localtime'))
+             (remind_offset_minutes IS NOT NULL AND due_end_at IS NOT NULL
+              AND (datetime(replace(due_end_at, 'T', ' '), '-' || remind_offset_minutes || ' minutes', 'localtime') <= datetime($1, 'localtime')
+                   OR (datetime(replace(due_end_at, 'T', ' '), 'localtime') >= datetime($2, 'localtime')
+                       AND datetime(replace(due_end_at, 'T', ' '), 'localtime') <= datetime($1, 'localtime'))))
+             OR
+             (remind_at IS NOT NULL
+              AND datetime(replace(remind_at, 'T', ' '), 'localtime') <= datetime($1, 'localtime')
+              AND datetime(replace(remind_at, 'T', ' '), 'localtime') >= datetime($2, 'localtime'))
            )",
     )
     .bind(&now_str)
@@ -2440,11 +2457,20 @@ pub async fn task_check_reminders_inner(
     for row in &rows {
         let task_id: String = row.get("id");
         let title: String = row.get("title");
-        let due_end_at: String = row.get("due_end_at");
-        let offset: i32 = row.get("remind_offset_minutes");
+        // 两源互斥：相对提醒分支 due_end_at/offset 有值、remind_at 为 NULL；
+        //           指定时刻分支 remind_at 有值、另两者为 NULL。均用 Option 安全取值。
+        let due_end_at: Option<String> = row.get("due_end_at");
+        let offset: Option<i32> = row.get("remind_offset_minutes");
+        let remind_at: Option<String> = row.get("remind_at");
 
-        // 生成通知文案
-        let body = build_reminder_body(&due_end_at, offset);
+        // 生成通知文案：优先指定时刻，其次相对提醒，兜底"到点了"
+        let body = if let Some(ra) = &remind_at {
+            build_reminder_body_at(ra)
+        } else if let (Some(de), Some(off)) = (&due_end_at, offset) {
+            build_reminder_body(de, off)
+        } else {
+            "到点了".to_string()
+        };
         on_emit(&PendingReminder {
             title: title.clone(),
             body,
@@ -2492,6 +2518,19 @@ fn build_reminder_body(due_end_at: &str, offset_minutes: i32) -> String {
         } else {
             format!("还剩 {} 小时（{} {}）", hours, date_str, time_str)
         }
+    }
+}
+
+/// 根据「指定时刻」生成中文通知正文。
+/// 与相对提醒（"还剩 N 分钟"）不同，指定时刻是绝对时间，文案直接体现该时刻。
+fn build_reminder_body_at(remind_at: &str) -> String {
+    match parse_local_naive(remind_at) {
+        Some(d) => {
+            let time_str = d.format("%H:%M").to_string();
+            let date_str = format!("{}月{}日", d.format("%m"), d.format("%d"));
+            format!("提醒时间到了（{} {}）", date_str, time_str)
+        }
+        None => "提醒时间到了".to_string(),
     }
 }
 

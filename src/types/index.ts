@@ -100,6 +100,9 @@ export interface Task {
   recurrencePaused: boolean;
   /** 提前多少分钟提醒（null = 不提醒；0 = 准点；N = 提前 N 分钟） */
   remindOffsetMinutes: number | null;
+  /** 指定时刻提醒（本地字面量 "YYYY-MM-DDTHH:mm:ss"；null = 未启用）
+   *  与 remindOffsetMinutes 互斥：同一时刻只有一个生效 */
+  remindAt: string | null;
   /** 通知触发时间戳（null = 还没通知过） */
   notifiedAt: string | null;
   /** 检查项列表（独立于 note 富文本；滴答清单风格） */
@@ -261,6 +264,11 @@ export function matchRemindPreset(value: number | null | undefined): number {
   return REMIND_PRESETS.length - 1; // 自定义
 }
 
+/** 提醒确认 payload —— 区分「相对偏移」与「指定时刻」两种互斥提醒 */
+export type ReminderConfirmPayload =
+  | { type: "offset"; value: number | null }
+  | { type: "at"; remindAt: string };
+
 /** 任务重复频率 */
 export type RecurrenceFreq = "daily" | "weekly" | "monthly" | "yearly";
 
@@ -322,6 +330,7 @@ export interface TaskRow {
   recurrence_origin_id: string | null;
   recurrence_paused: number;
   remind_offset_minutes: number | null;
+  remind_at: string | null;
   notified_at: string | null;
   /** JSON 字符串（后端 Vec<ChecklistItem> 序列化） */
   checklist: string;
@@ -371,6 +380,7 @@ export function mapTaskRow(row: TaskRow): Task {
     recurrenceOriginId: row.recurrence_origin_id,
     recurrencePaused: !!row.recurrence_paused,
     remindOffsetMinutes: row.remind_offset_minutes,
+    remindAt: row.remind_at,
     notifiedAt: row.notified_at,
     checklist: parseChecklist(row.checklist),
     attachments: parseAttachments(row.attachments),

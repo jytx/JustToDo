@@ -77,6 +77,10 @@ pub struct Task {
     pub recurrence_paused: bool,
     /// 提前多少分钟提醒（null = 不提醒；0 = 准点；N = 提前 N 分钟）
     pub remind_offset_minutes: Option<i32>,
+    /// 指定时刻提醒（本地字面量 "YYYY-MM-DDTHH:mm:ss"；null = 未启用）
+    /// 与 remind_offset_minutes 互斥：同一时刻只有一个生效
+    #[serde(default)]
+    pub remind_at: Option<String>,
     /// 通知触发时间戳（null = 还没通知过）
     pub notified_at: Option<String>,
     /// 检查项列表（与 note 富文本分离；migration 009 默认 "[]"）
@@ -208,6 +212,8 @@ pub struct CreateTaskInput {
     pub recurrence_end_at: Option<String>,
     pub recurrence_count: Option<i32>,
     pub remind_offset_minutes: Option<i32>,
+    /// 指定时刻提醒（与 remind_offset_minutes 互斥；不传 = 未启用）
+    pub remind_at: Option<String>,
     /// 实体类型：不传默认 'task'（待办）；'note' = 笔记
     pub kind: Option<String>,
     /// 所属分组 ID（不传则用清单的默认分组）
@@ -235,6 +241,9 @@ pub struct UpdateTaskInput {
     pub recurrence_count: Option<Option<i32>>,
     /// Option<Option<i32>> 允许显式清空提醒（传 null）
     pub remind_offset_minutes: Option<Option<i32>>,
+    /// 指定时刻提醒（与 remind_offset_minutes 互斥；传 null 清空）
+    #[serde(default, deserialize_with = "double_option")]
+    pub remind_at: Option<Option<String>>,
     /// 检查项列表（整组覆盖；前端负责构造完整数组）
     pub checklist: Option<Vec<ChecklistItem>>,
     /// 附件列表（整组覆盖；前端负责构造完整数组）

@@ -16,8 +16,10 @@ import {
   type Priority,
   type Task,
   type RecurrenceFreq,
+  type ReminderConfirmPayload,
 } from "@/types";
-// 日期工具不再直接使用 —— 详情面板的日期 chip 抽到 DueDateChip.vue 了
+// 日期工具：解析 remindAt 本地字面量用于提醒标签显示
+import { parseLocalIso } from "@/utils/date";
 import TaskCheckbox from "./TaskCheckbox.vue";
 import PriorityDot from "./PriorityDot.vue";
 import RichTextEditor from "./RichTextEditor.vue";
@@ -441,21 +443,55 @@ async function onDateClear() {
 }
 
 // ─── 提醒 ─────────────────────────────────────────
+// 两种互斥提醒：相对偏移（remindOffsetMinutes）与指定时刻（remindAt）
+
+/** 数字补零到两位（用于时分显示） */
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
 const remindLabel = computed(() => {
-  if (!task.value || task.value.remindOffsetMinutes == null) return "提醒";
-  const offset = task.value.remindOffsetMinutes;
+  const t = task.value;
+  if (!t) return "提醒";
+  // 指定时刻提醒：显示「15:00 提醒」或「8月11日 15:00」
+  if (t.remindAt) {
+    const d = parseLocalIso(t.remindAt);
+    if (d) {
+      const hm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+      const today = new Date();
+      const isSameDay =
+        d.getFullYear() === today.getFullYear() &&
+        d.getMonth() === today.getMonth() &&
+        d.getDate() === today.getDate();
+      if (isSameDay) return `${hm} 提醒`;
+      return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
+    }
+    return "指定时刻提醒";
+  }
+  if (t.remindOffsetMinutes == null) return "提醒";
+  const offset = t.remindOffsetMinutes;
   if (offset === 0) return "准点";
   if (offset < 60) return `提前 ${offset} 分钟`;
   if (offset < 1440) return `提前 ${Math.floor(offset / 60)} 小时`;
   return `提前 ${Math.floor(offset / 1440)} 天`;
 });
 
-async function onReminderConfirm(value: number | null) {
+async function onReminderConfirm(payload: ReminderConfirmPayload) {
   if (!task.value) return;
-  await taskStore.updateTask(task.value.id, {
-    remindOffsetMinutes: value,
-  });
-  await db.updateTask(task.value.id, { notifiedAt: null } as any);
+  if (payload.type === "at") {
+    // 指定时刻：设 remindAt，同时清空 remindOffsetMinutes（互斥）
+    // 后端 UPDATE 也会对称清空，这里显式传是为前端本地状态即时同步
+    await taskStore.updateTask(task.value.id, {
+      remindAt: payload.remindAt,
+      remindOffsetMinutes: null,
+    });
+  } else {
+    // 相对偏移：设 remindOffsetMinutes，同时清空 remindAt（互斥）
+    await taskStore.updateTask(task.value.id, {
+      remindOffsetMinutes: payload.value,
+      remindAt: null,
+    });
+  }
   reminderVisible.value = false;
 }
 
@@ -463,6 +499,7 @@ async function onReminderClear() {
   if (!task.value) return;
   await taskStore.updateTask(task.value.id, {
     remindOffsetMinutes: null,
+    remindAt: null,
   });
   reminderVisible.value = false;
 }
@@ -1106,7 +1143,7 @@ onBeforeUnmount(() => {
       <a-tooltip v-if="!isNote" :content="remindLabel" position="bottom">
         <ChipPopover v-model:visible="reminderVisible">
           <PropertyChip
-            :active="task.remindOffsetMinutes != null"
+            :active="task.remindOffsetMinutes != null || !!task.remindAt"
             icon-only
             :title="remindLabel"
             @click="reminderVisible = !reminderVisible"
@@ -1118,6 +1155,7 @@ onBeforeUnmount(() => {
           <template #content>
             <ReminderPopover
               :value="task.remindOffsetMinutes"
+              :remind-at="task.remindAt"
               @confirm="onReminderConfirm"
               @clear="onReminderClear"
             />

@@ -203,6 +203,9 @@ pub async fn init_pool(
     // 031: tags 加 color —— 标签自定义颜色（淡色底 chip 显示）
     run_migration_031(&pool).await?;
 
+    // 032: tasks 加 remind_at —— 指定时刻提醒（与 remind_offset_minutes 互斥）
+    run_migration_032(&pool).await?;
+
     Ok(pool)
 }
 
@@ -235,6 +238,18 @@ async fn run_migration_030(pool: &SqlitePool) -> Result<(), String> {
 /// 用户可在侧边栏「编辑标签」弹窗里逐个修改。
 async fn run_migration_031(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "tags", "color", "TEXT NOT NULL DEFAULT '#EF4444'").await?;
+    Ok(())
+}
+
+/// 迁移 032：tasks 加 remind_at —— 指定时刻提醒
+///
+/// 现有提醒机制基于「相对截止时间的偏移」remind_offset_minutes，
+/// 触发时刻 = due_end_at - offset，无法表达「截止 23:59 但想在 15:00 提醒」。
+/// 新增 remind_at 存「绝对本地时刻」（本地字面量 "YYYY-MM-DDTHH:mm:ss"，
+/// 与 due 体系一致），与 remind_offset_minutes 互斥：同一时刻只有一个生效。
+/// 存量任务天然为 null（未启用），无需回填。
+async fn run_migration_032(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "tasks", "remind_at", "TEXT").await?;
     Ok(())
 }
 
