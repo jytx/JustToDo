@@ -35,9 +35,10 @@ const emit = defineEmits<{
 const tagStore = useTagStore();
 
 const visible = ref(false);
-/** 新建标签输入框引用 —— 打开弹层后自动聚焦 */
-const newTagInputRef = ref<HTMLInputElement | null>(null);
-const newTagName = ref("");
+/** 搜索/新建输入框引用 —— 打开弹层后自动聚焦 */
+const searchInputRef = ref<HTMLInputElement | null>(null);
+/** 搜索关键词 —— 实时过滤标签列表；回车时作为新标签名或精确匹配已有标签 */
+const searchQuery = ref("");
 
 /** 弹层显隐变化时通知宿主（宿主据此决定是否保持输入框聚焦等） */
 watch(visible, (v) => emit("open-change", v));
@@ -48,10 +49,13 @@ const selectedTags = computed(() => {
   return tagStore.tags.filter((t) => ids.has(t.id));
 });
 
-/** 全部标签选项（含已选 —— 多选模式靠 active 态区分已选/未选，与详情面板一致） */
-const tagOptions = computed(() =>
-  tagStore.tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
-);
+/** 标签选项（含已选，多选模式靠 active 态区分）；按搜索关键词模糊匹配名称 */
+const tagOptions = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+  const all = tagStore.tags.map((t) => ({ id: t.id, name: t.name, color: t.color }));
+  if (!q) return all;
+  return all.filter((t) => t.name.toLowerCase().includes(q));
+});
 
 /** 判断某标签是否已选（列表项 active 态 + ✓ 显示用） */
 function isTagSelected(tagId: string): boolean {
@@ -88,22 +92,22 @@ function toggleTag(tagId: string): void {
 /** 提交新建标签：trim → getByName 命中则复用，否则 createTag；拿到 id 后加入已选。
  *  与 TaskDetailPanel.createNewTag 同一路径，保证标签全局唯一。 */
 async function submitNewTag(): Promise<void> {
-  const name = newTagName.value.trim();
+  const name = searchQuery.value.trim();
   if (!name) return;
+  // 精确匹配已有标签则复用，否则以输入文本新建
   let tag = tagStore.getByName(name);
   if (!tag) {
     tag = await tagStore.createTag(name, LIST_COLORS[0]);
   }
   addTag(tag.id);
-  newTagName.value = "";
-  // 关闭弹层（保持与详情面板"选完即关"一致）
-  visible.value = false;
+  // 清空搜索，弹窗保持打开便于连续添加多个标签
+  searchQuery.value = "";
 }
 
 /** 打开弹层时聚焦新建输入框 */
 function onAfterOpen(): void {
   nextTick(() => {
-    newTagInputRef.value?.focus();
+    searchInputRef.value?.focus();
   });
 }
 </script>
@@ -140,7 +144,16 @@ function onAfterOpen(): void {
     </template>
 
     <div class="tag-select__popup">
-      <!-- 全部标签列表（多选模式：已选项高亮 + ✓，点击 toggle，与详情面板一致） -->
+      <!-- 搜索/新建输入框（置顶，实时过滤下方标签列表） -->
+      <input
+        ref="searchInputRef"
+        v-model="searchQuery"
+        class="tag-select__new-input"
+        placeholder="搜索或新建标签"
+        @keydown.enter.prevent="submitNewTag"
+      />
+
+      <!-- 标签列表（按搜索过滤；多选模式：已选项高亮 + ✓，点击 toggle） -->
       <div v-if="tagOptions.length > 0" class="tag-select__list">
         <button
           v-for="opt in tagOptions"
@@ -148,6 +161,7 @@ function onAfterOpen(): void {
           type="button"
           class="tag-select__option"
           :class="{ 'tag-select__option--active': isTagSelected(opt.id) }"
+          @mousedown.prevent
           @click="toggleTag(opt.id)"
         >
           <span class="tag-select__dot" :style="{ backgroundColor: opt.color }" />
@@ -155,16 +169,10 @@ function onAfterOpen(): void {
           <icon-check v-if="isTagSelected(opt.id)" :size="12" class="tag-select__check" />
         </button>
       </div>
-      <div v-else class="tag-select__empty">还没有标签，新建一个吧</div>
-
-      <!-- 新建标签输入框 -->
-      <input
-        ref="newTagInputRef"
-        v-model="newTagName"
-        class="tag-select__new-input"
-        placeholder="+ 新建标签"
-        @keydown.enter.prevent="submitNewTag"
-      />
+      <!-- 无结果：有搜索词提示回车新建，无搜索词提示输入 -->
+      <div v-else class="tag-select__empty">
+        {{ searchQuery.trim() ? `没有匹配的标签，回车新建「${searchQuery.trim()}」` : "还没有标签，输入名称新建" }}
+      </div>
     </div>
   </Popover>
 </template>
