@@ -172,7 +172,9 @@ pub struct Tag {
 
 /// 重复任务生成历史条目（recurrence_generated 表的映射）
 /// 用于「后台任务管理」面板查看某模板已生成过哪些期
+/// 序列化用 camelCase（与前端 RecurrenceHistoryEntry 接口直接对应；同 Attachment 先例）
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct RecurrenceHistoryEntry {
     pub template_id: String,
     /// 该期的截止日期（实例的 due_end_at）

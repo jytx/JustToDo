@@ -861,9 +861,11 @@ export async function reorderGroups(orderedIds: string[]): Promise<void> {
 
 // ─── 重复任务管理（后台任务面板用） ───────────────────────────
 
-/** 列出所有重复任务模板（含已暂停、已完成），供后台任务面板展示 */
+/** 列出所有重复任务模板（含已暂停、已完成），供后台任务面板展示。
+ *  Rust 返回 snake_case，需经 mapTask 转成前端 Task 接口（与其余任务查询一致） */
 export async function listRecurrenceTemplates(): Promise<Task[]> {
-  return await invoke<Task[]>('recurrence_list_templates');
+  const rows = await invoke<RustTask[]>('recurrence_list_templates');
+  return rows.map(mapTask);
 }
 
 /** 暂停/恢复某个重复模板的生成（paused=true 后台 tick 跳过；false 恢复） */
