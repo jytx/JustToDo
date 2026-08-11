@@ -21,7 +21,6 @@ import TurndownService from "turndown";
 import * as turndownPluginGfm from "turndown-plugin-gfm";
 import { Extension, createDocument } from "@tiptap/core";
 import type { Editor as TiptapEditor } from "@tiptap/core";
-import { closeHistory } from "@tiptap/pm/history";
 import { TextSelection, EditorState } from "@tiptap/pm/state";
 import { watch, onBeforeUnmount, onMounted, ref, computed, createApp, nextTick } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
@@ -108,6 +107,14 @@ const uploading = ref(false);
  * 详见 editorProps.handleDOMEvents 注释。
  */
 let compStartPos: number | null = null;
+
+/**
+ * 标志位：本次 props.modelValue 变化是否来自编辑器内部（onUpdate 回调）。
+ * - true = 编辑器内部产生 → watch(modelValue) 跳过，不触发 setContentSilently
+ * - false = 外部赋值（切任务/store 更新）→ watch(modelValue) 正常处理
+ * 避免 v-model 双向绑定回流在 undo 栈制造断层。
+ */
+let internalUpdate = false;
 
 /**
  * 程序化写入编辑器内容，但不记入 ProseMirror 的 undo 栈。
@@ -375,55 +382,15 @@ function uninstallSlashPlugin(editorInstance: TiptapEditor) {
 }
 
 /**
- * 安装「回车切分 undo 组」修复。
+ * 「回车切分 undo 组」修复 —— 已废弃。
  *
- * 问题：ProseMirror 在 keydown 事件里会先 forceFlush（把待处理的文字输入 mutation
- * 立即转成 transaction），紧接着同步执行 splitBlock（回车命令）。两个 transaction
- * 的 tr.time 相同、位置相邻，被 prosemirror-history 按「连续操作」合并成同一个
- * undo 组 —— 表现为「输入文字 + 回车」一次 Cmd+Z 就全撤掉。
+ * 之前用 closeHistory 给每个 Enter 强制切分 undo 组。但 closeHistory 会创建
+ * 带 selection bookmark 的空事件，15 个回车就产生 ~13 个空 undo 事件（Cmd+Z
+ * 按了但内容不变），严重影响撤销体验。
  *
- * 修复：wrap view.dispatch，当检测到 Enter 键产生的 transaction（通过标记位识别）
- * 时，给它加 closeHistory meta，强制开启新的 undo 组。
- *
- * 注意：此修复配合 setContentAndClearHistory（切任务清栈）一起工作。在干净环境
- * 下（切任务时栈已清空），不会产生空撤销问题。
+ * 真正的根因（v-model 回流制造 undo 栈断层）已通过 internalUpdate 标志位
+ * 彻底修复，不再需要 closeHistory。
  */
-let pendingEnterCloseHistory = false;
-
-function installUndoGroupFix(ed: TiptapEditor): void {
-  const view = ed.view;
-  // 保留原始 dispatch（uninstall 时还原）
-  const origDispatch = view.dispatch.bind(view);
-  // 标记位：keydown Enter 时置 true，紧随的第一个 docChanged transaction 清除
-  pendingEnterCloseHistory = false;
-  view.dispatch = function (tr) {
-    if (pendingEnterCloseHistory && tr.docChanged) {
-      closeHistory(tr);
-      pendingEnterCloseHistory = false;
-    }
-    return origDispatch(tr);
-  };
-  // 标记位安装：keydown Enter 时置 true（capture 在 dispatch wrapper 之前）
-  const onKeyDown = function (e: KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      pendingEnterCloseHistory = true;
-    }
-  };
-  view.dom.addEventListener("keydown", onKeyDown, true);
-  // 存到 view 上方便 uninstall
-  (view as any).__undoGroupKeyDown = onKeyDown;
-  (view as any).__undoGroupOrigDispatch = origDispatch;
-}
-
-function uninstallUndoGroupFix(ed: TiptapEditor): void {
-  const view = ed.view;
-  const onKeyDown = (view as any).__undoGroupKeyDown;
-  const origDispatch = (view as any).__undoGroupOrigDispatch;
-  if (onKeyDown) view.dom.removeEventListener("keydown", onKeyDown, true);
-  if (origDispatch) view.dispatch = origDispatch;
-  (view as any).__undoGroupKeyDown = null;
-  (view as any).__undoGroupOrigDispatch = null;
-}
 
 
 
@@ -648,6 +615,11 @@ const editor = useEditor({
     // 所以改用 imperative 路径。
   ],
   onUpdate: ({ editor }) => {
+    // 标记本次 modelValue 变化来自编辑器内部（用户输入），watch(modelValue)
+    // 检测到此标志后跳过 setContentSilently，避免 v-model 双向绑定的回流。
+    // 回流会产生 addToHistory:false 的 transaction，在 undo 栈里制造断层，
+    // 导致 Cmd+Z 撤到断层处就停（无法继续撤回）。
+    internalUpdate = true;
     emit("update:modelValue", editor.getHTML());
   },
   editorProps: {
@@ -763,10 +735,8 @@ watch(
   (ed, _old, onCleanup) => {
     if (!ed) return;
     installSlashPlugin(ed);
-    installUndoGroupFix(ed);
     onCleanup(() => {
       uninstallSlashPlugin(ed);
-      uninstallUndoGroupFix(ed);
     });
   },
   { immediate: true },
@@ -775,10 +745,17 @@ watch(
 watch(
   () => props.modelValue,
   (val) => {
+    // 编辑器内部产生的变化（onUpdate → emit → 父组件回写 noteDraft），
+    // 直接跳过，不做任何 setContentSilently。
+    // 否则 addToHistory:false 的 transaction 会在 undo 栈制造断层，
+    // 导致 Cmd+Z 撤到中间某步就停。
+    if (internalUpdate) {
+      internalUpdate = false;
+      return;
+    }
     if (editor.value && val !== editor.value.getHTML()) {
-      // 外部数据回流（切任务 / store 更新 / 父组件赋值），
-      // 用 setContentSilently 避免整篇替换污染 undo 栈，
-      // 否则 Cmd+Z 会一次跳过多步（撤销粒度混乱）
+      // 真正的外部数据回流（切任务 / store 更新 / 父组件赋值），
+      // 用 setContentSilently 避免整篇替换污染 undo 栈
       setContentSilently(editor.value, val || "", false);
     }
   },
