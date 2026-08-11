@@ -21,6 +21,7 @@ import TurndownService from "turndown";
 import * as turndownPluginGfm from "turndown-plugin-gfm";
 import { Extension, createDocument } from "@tiptap/core";
 import type { Editor as TiptapEditor } from "@tiptap/core";
+import { closeHistory } from "@tiptap/pm/history";
 import { TextSelection, EditorState } from "@tiptap/pm/state";
 import { watch, onBeforeUnmount, onMounted, ref, computed, createApp, nextTick } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
@@ -374,15 +375,55 @@ function uninstallSlashPlugin(editorInstance: TiptapEditor) {
 }
 
 /**
- * 安装「回车切分 undo 组」修复 —— 已废弃。
+ * 安装「回车切分 undo 组」修复。
  *
- * 之前用 closeHistory 给每个 Enter 的 transaction 强制切分 undo 组，解决
- * 「输入文字 + 回车合并成一组」的问题。但实测发现 closeHistory 产生过多
- * 的事件分界（selection bookmark），配合后续 setContentSilently 的 addMaps，
- * 会导致 undo 栈积累大量「空 undo 事件」——Cmd+Z 按了但内容不变。
+ * 问题：ProseMirror 在 keydown 事件里会先 forceFlush（把待处理的文字输入 mutation
+ * 立即转成 transaction），紧接着同步执行 splitBlock（回车命令）。两个 transaction
+ * 的 tr.time 相同、位置相邻，被 prosemirror-history 按「连续操作」合并成同一个
+ * undo 组 —— 表现为「输入文字 + 回车」一次 Cmd+Z 就全撤掉。
  *
- * 权衡：「一次 Cmd+Z 撤多步」比「Cmd+Z 完全无效」轻微得多，因此回退此修复。
+ * 修复：wrap view.dispatch，当检测到 Enter 键产生的 transaction（通过标记位识别）
+ * 时，给它加 closeHistory meta，强制开启新的 undo 组。
+ *
+ * 注意：此修复配合 setContentAndClearHistory（切任务清栈）一起工作。在干净环境
+ * 下（切任务时栈已清空），不会产生空撤销问题。
  */
+let pendingEnterCloseHistory = false;
+
+function installUndoGroupFix(ed: TiptapEditor): void {
+  const view = ed.view;
+  // 保留原始 dispatch（uninstall 时还原）
+  const origDispatch = view.dispatch.bind(view);
+  // 标记位：keydown Enter 时置 true，紧随的第一个 docChanged transaction 清除
+  pendingEnterCloseHistory = false;
+  view.dispatch = function (tr) {
+    if (pendingEnterCloseHistory && tr.docChanged) {
+      closeHistory(tr);
+      pendingEnterCloseHistory = false;
+    }
+    return origDispatch(tr);
+  };
+  // 标记位安装：keydown Enter 时置 true（capture 在 dispatch wrapper 之前）
+  const onKeyDown = function (e: KeyboardEvent) {
+    if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      pendingEnterCloseHistory = true;
+    }
+  };
+  view.dom.addEventListener("keydown", onKeyDown, true);
+  // 存到 view 上方便 uninstall
+  (view as any).__undoGroupKeyDown = onKeyDown;
+  (view as any).__undoGroupOrigDispatch = origDispatch;
+}
+
+function uninstallUndoGroupFix(ed: TiptapEditor): void {
+  const view = ed.view;
+  const onKeyDown = (view as any).__undoGroupKeyDown;
+  const origDispatch = (view as any).__undoGroupOrigDispatch;
+  if (onKeyDown) view.dom.removeEventListener("keydown", onKeyDown, true);
+  if (origDispatch) view.dispatch = origDispatch;
+  (view as any).__undoGroupKeyDown = null;
+  (view as any).__undoGroupOrigDispatch = null;
+}
 
 
 
@@ -722,8 +763,10 @@ watch(
   (ed, _old, onCleanup) => {
     if (!ed) return;
     installSlashPlugin(ed);
+    installUndoGroupFix(ed);
     onCleanup(() => {
       uninstallSlashPlugin(ed);
+      uninstallUndoGroupFix(ed);
     });
   },
   { immediate: true },
