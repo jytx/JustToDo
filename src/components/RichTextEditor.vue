@@ -565,6 +565,9 @@ const editor = useEditor({
       // heading 由 HeadingFold 替代（支持折叠 + 持久化 folded attribute），
       // 这里禁用 StarterKit 内置的避免冲突
       heading: false,
+      // 撤销/重做栈深度：默认 100 不够（富文本块切换消耗 undo 步多，
+      // 十几行 + 几次斜杠命令就可能用完），调到 500 覆盖长文档编辑场景
+      undoRedo: { depth: 500, newGroupDelay: 500 },
     }),
     Underline,
     Link.configure({
