@@ -216,6 +216,13 @@ watch(
   async (id) => {
     titleDraft.value = task.value?.title ?? "";
     noteDraft.value = task.value?.note ?? "";
+    // 切换任务时用 setContentAndClearHistory 一步完成：写入新任务内容 + 清空
+    // 上一个任务的 undo/redo 栈。比「noteDraft 赋值 → watch(modelValue) →
+    // setContentSilently」更可靠（后者只让当前操作不入栈，不清栈里旧记录），
+    // 且避免了 setContentSilently 和 clearHistory 的时序竞争。
+    // 注意：必须在 noteDraft 赋值之后、watch(modelValue) 触发之前调用，
+    // 否则 watch(modelValue) 会再触发一次 setContentSilently。
+    richTextEditorRef.value?.setContentAndClearHistory(noteDraft.value);
     // 切换任务时重置标题编辑态（避免上一个任务的链接块编辑态残留）
     editingTitle.value = false;
     // 取消上一个任务的自动解析调度，失败记录也一并清空（按任务隔离）

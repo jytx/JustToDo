@@ -22,7 +22,7 @@ import * as turndownPluginGfm from "turndown-plugin-gfm";
 import { Extension, createDocument } from "@tiptap/core";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
-import { TextSelection } from "@tiptap/pm/state";
+import { TextSelection, EditorState } from "@tiptap/pm/state";
 import { watch, onBeforeUnmount, onMounted, ref, computed, createApp, nextTick } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import SlashCommandMenu, { type SlashCommandItem } from "./SlashCommandMenu.vue";
@@ -137,6 +137,30 @@ function setContentSilently(
   tr.setMeta("addToHistory", false);
   tr.setMeta("preventUpdate", !emitUpdate);
   ed.view.dispatch(tr);
+}
+
+/**
+ * 设置新内容并彻底清空 undo/redo 栈。
+ *
+ * 切换任务时需要：①写入新任务的内容 ②清掉上一个任务的 undo 记录。
+ * setContentSilently 只做①（当前操作不入栈），但不清理②（栈里旧记录还在）。
+ * 残留的旧记录会导致 Cmd+Z 撤到某一步时跳回上一个任务的内容。
+ *
+ * 本函数用 EditorState.create 重建 state（新 doc + 复用 plugins 但丢弃
+ * plugin state——包括 history 栈），一步完成内容切换 + history 清空。
+ */
+function setContentAndClearHistory(ed: TiptapEditor, content: string): void {
+  const doc = createDocument(
+    content,
+    ed.schema,
+    {},
+    { errorOnInvalidContent: false },
+  );
+  const newState = EditorState.create({
+    doc,
+    plugins: ed.state.plugins,
+  });
+  ed.view.updateState(newState);
 }
 
 /** 图片预览 lightbox */
@@ -771,6 +795,13 @@ defineExpose({
    */
   setContentSilently: (content: string, emitUpdate: boolean) => {
     if (editor.value) setContentSilently(editor.value, content, emitUpdate);
+  },
+  /**
+   * 设置新内容并清空 undo/redo 栈（供父组件切任务时调用）。
+   * 详见 setContentAndClearHistory 函数注释。
+   */
+  setContentAndClearHistory: (content: string) => {
+    if (editor.value) setContentAndClearHistory(editor.value, content);
   },
 });
 
