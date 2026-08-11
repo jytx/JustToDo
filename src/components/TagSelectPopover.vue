@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 标签选择 chip + popover —— 添加任务栏 / 快速添加弹窗 共用
 // 点击触发下拉：可选标签列表（已选自动过滤）+ 底部「+ 新建标签」输入框。
-// 已选标签以小 chip 平铺在属性行（可点 × 移除）。
+// 已选标签以小 chip 收纳在 popover 顶部（可点 × 移除）；
+// 属性行仅显示「标签 +N」汇总，避免多选时 chip 撑爆输入栏（参考滴答清单）。
 // 对外仅暴露 v-model:selectedTagIds（string[]），关联/落库由上层（createTask）统一处理，
 // 这里只负责收集 ID —— 包括"输入新标签名 → getByName/createTag 拿到 id 后加入数组"。
 import { ref, computed, nextTick, watch } from "vue";
@@ -130,6 +131,25 @@ function onAfterOpen(): void {
     </template>
 
     <div class="tag-select__popup">
+      <!-- 已选标签区（有已选时置顶显示，可点 × 移除；多选自动换行） -->
+      <div v-if="selectedTags.length > 0" class="tag-select__selected">
+        <span
+          v-for="tag in selectedTags"
+          :key="tag.id"
+          class="tag-select__chip"
+          :style="{ backgroundColor: tagBg(tag.color) }"
+        >
+          <span class="tag-select__chip-name">{{ tag.name }}</span>
+          <button
+            type="button"
+            class="tag-select__chip-close"
+            title="移除标签"
+            @click="removeTag(tag.id)"
+          >
+            <icon-close :size="10" />
+          </button>
+        </span>
+      </div>
       <!-- 可选标签列表（空标签时显示占位） -->
       <div v-if="availableTags.length > 0" class="tag-select__list">
         <button
@@ -155,29 +175,6 @@ function onAfterOpen(): void {
       />
     </div>
   </Popover>
-
-  <!-- 已选标签 chip 行（平铺在属性行，可点 × 移除） -->
-  <span
-    v-if="selectedTags.length > 0"
-    class="tag-select__chips"
-  >
-    <span
-      v-for="tag in selectedTags"
-      :key="tag.id"
-      class="tag-select__chip"
-      :style="{ backgroundColor: tagBg(tag.color) }"
-    >
-      <span class="tag-select__chip-name">{{ tag.name }}</span>
-      <button
-        type="button"
-        class="tag-select__chip-close"
-        title="移除标签"
-        @click="removeTag(tag.id)"
-      >
-        <icon-close :size="10" />
-      </button>
-    </span>
-  </span>
 </template>
 
 <style scoped>
@@ -316,13 +313,15 @@ function onAfterOpen(): void {
   color: var(--jt-text-tertiary);
 }
 
-/* 已选标签 chip 行 */
-.tag-select__chips {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+/* 已选标签区（popover 内置顶，多选时自动换行；与下方可选列表用分隔线区分） */
+.tag-select__selected {
+  display: flex;
   flex-wrap: wrap;
-  flex-shrink: 0;
+  gap: 4px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--jt-border);
 }
 
 .tag-select__chip {
