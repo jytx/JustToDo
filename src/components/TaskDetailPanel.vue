@@ -18,8 +18,8 @@ import {
   type RecurrenceFreq,
   type ReminderConfirmPayload,
 } from "@/types";
-// 日期工具：解析 remindAt 本地字面量用于提醒标签显示
-import { parseLocalIso } from "@/utils/date";
+// 日期工具：formatReminder 格式化提醒标签（与 TaskListItem 共用）
+import { formatReminder } from "@/utils/date";
 import TaskCheckbox from "./TaskCheckbox.vue";
 import PriorityDot from "./PriorityDot.vue";
 import RichTextEditor from "./RichTextEditor.vue";
@@ -444,36 +444,11 @@ async function onDateClear() {
 
 // ─── 提醒 ─────────────────────────────────────────
 // 两种互斥提醒：相对偏移（remindOffsetMinutes）与指定时刻（remindAt）
-
-/** 数字补零到两位（用于时分显示） */
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
+// 文案格式化抽到 utils/date.ts 的 formatReminder，与 TaskListItem 共用
 const remindLabel = computed(() => {
   const t = task.value;
   if (!t) return "提醒";
-  // 指定时刻提醒：显示「15:00 提醒」或「8月11日 15:00」
-  if (t.remindAt) {
-    const d = parseLocalIso(t.remindAt);
-    if (d) {
-      const hm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-      const today = new Date();
-      const isSameDay =
-        d.getFullYear() === today.getFullYear() &&
-        d.getMonth() === today.getMonth() &&
-        d.getDate() === today.getDate();
-      if (isSameDay) return `${hm} 提醒`;
-      return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
-    }
-    return "指定时刻提醒";
-  }
-  if (t.remindOffsetMinutes == null) return "提醒";
-  const offset = t.remindOffsetMinutes;
-  if (offset === 0) return "准点";
-  if (offset < 60) return `提前 ${offset} 分钟`;
-  if (offset < 1440) return `提前 ${Math.floor(offset / 60)} 小时`;
-  return `提前 ${Math.floor(offset / 1440)} 天`;
+  return formatReminder(t.remindOffsetMinutes, t.remindAt);
 });
 
 async function onReminderConfirm(payload: ReminderConfirmPayload) {

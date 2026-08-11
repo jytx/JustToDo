@@ -310,3 +310,40 @@ export function isValidHHmm(s: string): boolean {
   if (!Number.isInteger(hh) || !Number.isInteger(mm)) return false;
   return hh >= 0 && hh < 24 && mm >= 0 && mm < 60;
 }
+
+/** 数字补零到两位（时分显示用） */
+export function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/**
+ * 把提醒规则格式化为短文本。两种互斥提醒（详情面板 remindLabel 与任务列表图标 title 共用）：
+ *   - 指定时刻 remindAt：今天显示「HH:mm 提醒」，其他日期显示「M月D日 HH:mm」
+ *   - 相对偏移 remindOffsetMinutes：准点 / 提前 N 分钟 / 提前 N 小时 / 提前 N 天
+ *   - 两者都为 null：返回"提醒"（占位文案）
+ *
+ * 纯函数：仅依赖入参，不读全局状态。
+ */
+export function formatReminder(
+  remindOffsetMinutes: number | null,
+  remindAt: string | null,
+): string {
+  if (remindAt) {
+    const d = parseLocalIso(remindAt);
+    if (d) {
+      const hm = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+      const today = new Date();
+      const isSameDay =
+        d.getFullYear() === today.getFullYear() &&
+        d.getMonth() === today.getMonth() &&
+        d.getDate() === today.getDate();
+      return isSameDay ? `${hm} 提醒` : `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
+    }
+    return "指定时刻提醒";
+  }
+  if (remindOffsetMinutes == null) return "提醒";
+  if (remindOffsetMinutes === 0) return "准点";
+  if (remindOffsetMinutes < 60) return `提前 ${remindOffsetMinutes} 分钟`;
+  if (remindOffsetMinutes < 1440) return `提前 ${Math.floor(remindOffsetMinutes / 60)} 小时`;
+  return `提前 ${Math.floor(remindOffsetMinutes / 1440)} 天`;
+}

@@ -4,7 +4,7 @@
 import { ref, computed, watch, reactive, nextTick, onMounted, onBeforeUnmount } from "vue";
 import type { Task, Priority } from "@/types";
 import { PRIORITY_COLORS, PRIORITY_LABELS } from "@/types";
-import { formatDueDate } from "@/utils/date";
+import { formatDueDate, formatReminder } from "@/utils/date";
 import { tagBg, tagBorder, LIST_COLORS } from "@/utils/colors";
 import { useTaskStore } from "@/stores/task";
 import { useGroupStore } from "@/stores/group";
@@ -321,6 +321,13 @@ watch(isFocused, (focused) => {
 });
 
 const dueInfo = computed(() => formatDueDate(props.task.dueStartAt, props.task.dueEndAt));
+
+/** 提醒信息：有任一种提醒（相对偏移 / 指定时刻）时返回 { label }，否则 null */
+const remindInfo = computed(() => {
+  const t = props.task;
+  if (t.remindOffsetMinutes == null && !t.remindAt) return null;
+  return { label: formatReminder(t.remindOffsetMinutes, t.remindAt) };
+});
 
 /** 优先级对应的颜色（高=红 中=橙 低=蓝）*/
 const priorityColor = computed<string>(() => {
@@ -778,9 +785,12 @@ function onCtxEnterBatchMode(): void {
             @dragend="onTagDragEnd"
           >{{ tag.name }}</span>
         </TransitionGroup>
-        <div v-if="task.recurrenceFreq || dueInfo" class="task-item__meta">
+        <div v-if="task.recurrenceFreq || dueInfo || remindInfo" class="task-item__meta">
           <span v-if="task.recurrenceFreq" class="task-item__recurrence" title="重复任务">
             <icon-refresh :size="12" />
+          </span>
+          <span v-if="remindInfo" class="task-item__remind" :title="remindInfo.label">
+            <icon-notification :size="12" />
           </span>
           <span
             v-if="dueInfo"
@@ -1290,6 +1300,13 @@ function onCtxEnterBatchMode(): void {
 }
 
 .task-item__recurrence {
+  display: inline-flex;
+  align-items: center;
+  color: var(--jt-primary);
+  opacity: 0.7;
+}
+
+.task-item__remind {
   display: inline-flex;
   align-items: center;
   color: var(--jt-primary);
