@@ -296,30 +296,33 @@ function onDateClose() {
 
 <template>
   <div class="add-task-bar" :class="{ 'add-task-bar--focused': focused }">
-    <icon-plus :size="18" class="add-task-bar__icon" />
-    <input
-      ref="inputRef"
-      v-model="title"
-      class="add-task-bar__input"
-      :placeholder="isNote ? '添加笔记' : '添加任务'"
-      @focus="focused = true"
-      @blur="handleBlur"
-      @keydown.enter="submit"
-    />
-    <!-- AI 自然语言解析按钮（仅任务模式 + AI 启用 + 输入框聚焦时显示）。
-         点击解析输入，填充属性栏待确认，不直接创建。 -->
-    <button
-      v-if="aiAvailable && focused"
-      class="add-task-bar__ai-btn"
-      :class="{ 'add-task-bar__ai-btn--loading': aiParsing }"
-      :disabled="aiParsing || !title.trim()"
-      :title="'AI 解析（如：明天3点开会 #工作 高优）'"
-      @mousedown.prevent
-      @click="onAiParse"
-    >
-      <icon-robot :size="16" />
-    </button>
-    <!-- 优先级 + 日期（flex-wrap 宽度不够时自动换行） -->
+    <!-- 第一行：标题输入区（+ 图标 / 输入框 / AI 解析按钮） -->
+    <div class="add-task-bar__main">
+      <icon-plus :size="18" class="add-task-bar__icon" />
+      <input
+        ref="inputRef"
+        v-model="title"
+        class="add-task-bar__input"
+        :placeholder="isNote ? '添加笔记' : '添加任务'"
+        @focus="focused = true"
+        @blur="handleBlur"
+        @keydown.enter="submit"
+      />
+      <!-- AI 自然语言解析按钮（仅任务模式 + AI 启用 + 输入框聚焦时显示）。
+           点击解析输入，填充属性栏待确认，不直接创建。 -->
+      <button
+        v-if="aiAvailable && focused"
+        class="add-task-bar__ai-btn"
+        :class="{ 'add-task-bar__ai-btn--loading': aiParsing }"
+        :disabled="aiParsing || !title.trim()"
+        :title="'AI 解析（如：明天3点开会 #工作 高优）'"
+        @mousedown.prevent
+        @click="onAiParse"
+      >
+        <icon-robot :size="16" />
+      </button>
+    </div>
+    <!-- 第二行：功能性属性（优先级 / 模板 / 日期 / 标签），聚焦时显示 -->
     <div
       class="add-task-bar__attrs"
       :class="{ 'add-task-bar__attrs--hidden': !focused }"
@@ -394,14 +397,20 @@ function onDateClose() {
 <style scoped>
 .add-task-bar {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px 16px;
   background-color: var(--jt-surface-sunken);
   border-radius: 12px;
   margin: 0 16px 16px;
   transition: all 0.2s ease;
+}
+
+/* 第一行：+ 图标 + 标题输入框 + AI 解析按钮，横向排列 */
+.add-task-bar__main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .add-task-bar--focused {
@@ -464,7 +473,8 @@ function onDateClose() {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  flex-shrink: 0;
+  /* 缩进对齐第一行标题文字（+ 图标 18px + gap 8px） */
+  padding-left: 26px;
   opacity: 1;
   transition: opacity 0.2s ease;
   pointer-events: auto;
