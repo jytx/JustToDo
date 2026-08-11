@@ -296,7 +296,7 @@ function onDateClose() {
 
 <template>
   <div class="add-task-bar" :class="{ 'add-task-bar--focused': focused }">
-    <!-- 第一行：标题输入区（+ 图标 / 输入框 / AI 解析按钮） -->
+    <!-- 第一行：标题输入区（+ 图标 / 输入框） -->
     <div class="add-task-bar__main">
       <icon-plus :size="18" class="add-task-bar__icon" />
       <input
@@ -308,26 +308,26 @@ function onDateClose() {
         @blur="handleBlur"
         @keydown.enter="submit"
       />
-      <!-- AI 自然语言解析按钮（仅任务模式 + AI 启用 + 输入框聚焦时显示）。
-           点击解析输入，填充属性栏待确认，不直接创建。 -->
-      <button
-        v-if="aiAvailable && focused"
-        class="add-task-bar__ai-btn"
-        :class="{ 'add-task-bar__ai-btn--loading': aiParsing }"
-        :disabled="aiParsing || !title.trim()"
-        :title="'AI 解析（如：明天3点开会 #工作 高优）'"
-        @mousedown.prevent
-        @click="onAiParse"
-      >
-        <icon-robot :size="16" />
-      </button>
     </div>
-    <!-- 第二行：功能性属性（优先级 / 模板 / 日期 / 标签），聚焦时显示 -->
+    <!-- 第二行：功能性属性（AI 解析 / 优先级 / 模板 / 日期 / 标签），聚焦时显示 -->
     <div
       class="add-task-bar__attrs"
       :class="{ 'add-task-bar__attrs--hidden': !focused }"
       @mousedown="onAttrMousedown"
     >
+      <!-- AI 自然语言解析按钮（仅任务模式 + AI 启用）。
+           点击解析输入，填充属性栏待确认，不直接创建。 -->
+      <button
+        v-if="aiAvailable"
+        class="add-task-bar__ai-btn"
+        :class="{ 'add-task-bar__ai-btn--loading': aiParsing }"
+        :disabled="aiParsing || !title.trim()"
+        :title="'AI 解析（如：明天3点开会 #工作 高优）'"
+        @click="onAiParse"
+      >
+        <icon-robot :size="16" />
+      </button>
+
       <MenuPopover v-model:visible="showPriorityMenu">
         <template #trigger>
           <a-button
