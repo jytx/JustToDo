@@ -1,12 +1,14 @@
 <script setup lang="ts">
 // 后台任务 —— 设置页 section 容器
-// 统一管理两类后台任务的运行态：
+// 统一管理三类后台任务的运行态：
 //   1. 重复任务模板（暂停/恢复 + 查看频率）
 //   2. 清单生成计划（启用/停用，复用 listScheduleStore）
+//   3. 定时提醒（只读列表，见 ReminderListSection.vue）
 // 顶部提供「立即运行一次」按钮（并发触发重复任务生成 + 清单生成计划 tick）
 import { computed, onMounted, ref } from "vue";
 import { Message } from "@arco-design/web-vue";
 import { IconRefresh } from "@arco-design/web-vue/es/icon";
+import ReminderListSection from "./ReminderListSection.vue";
 import { useBackgroundTaskStore } from "@/stores/backgroundTask";
 import { useListScheduleStore } from "@/stores/listSchedule";
 import { useListStore } from "@/stores/list";
@@ -235,6 +237,8 @@ async function onRunSchedule(s: ListSchedule): Promise<void> {
         </div>
       </div>
     </div>
+    <!-- 区块 3：定时提醒（只读列表，点击卡片打开任务详情） -->
+    <ReminderListSection />
   </div>
 </template>
 

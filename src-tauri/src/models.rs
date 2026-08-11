@@ -183,6 +183,34 @@ pub struct RecurrenceHistoryEntry {
     pub generated_at: String,
 }
 
+/// 后台任务面板展示的「定时提醒」条目。
+/// trigger_at 为计算后的触发时刻：
+///   - 指定时刻提醒（remind_at 非空）→ 直接取 remind_at
+///   - 相对偏移提醒（remind_offset_minutes + due_end_at）→ due_end_at - offset
+///   - 两者都算不出（如 offset 设了但无截止时间）→ 任务永远不会触发，查询时已排除
+/// 序列化用 camelCase（与前端 UpcomingReminder 接口直接对应；同 Attachment 先例）
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UpcomingReminder {
+    pub task_id: String,
+    pub title: String,
+    pub list_id: Option<String>,
+    /// 所属清单名称（LEFT JOIN lists；任务不在任何清单时为空）
+    pub list_name: Option<String>,
+    /// 所属清单颜色（前端画颜色点）
+    pub list_color: Option<String>,
+    /// 指定时刻提醒原始值（null = 未启用；此时看 offset_minutes）
+    pub remind_at: Option<String>,
+    /// 相对偏移分钟数原始值（null = 未启用）
+    pub offset_minutes: Option<i32>,
+    /// 任务截止时间（计算 trigger_at 的原料；null = 无截止时间）
+    pub due_end_at: Option<String>,
+    /// 计算后的触发时刻（本地字面量 "YYYY-MM-DDTHH:mm:ss"）
+    pub trigger_at: Option<String>,
+    /// 通知触发时间戳（null = 还没通知过，将在到点后由后台扫描补发）
+    pub notified_at: Option<String>,
+}
+
 /// 任务-标签关联条目（批量查询接口用）。
 /// 扁平结构：一条记录 = 一个任务的一个标签关联。
 /// 前端拿到后按 task_id 分组成 taskId → Tag[] 映射。

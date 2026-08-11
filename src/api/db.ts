@@ -3,7 +3,7 @@
 // 这样绕过了 plugin-sql 前端 API 的 IPC 问题，走标准 invoke 通道
 
 import { invoke } from "@tauri-apps/api/core";
-import type { List, Task, Priority, RecurrenceFreq, ChecklistItem, Template, Attachment, AttachmentType, TaskKind, Group, RecurrenceHistoryEntry } from "@/types";
+import type { List, Task, Priority, RecurrenceFreq, ChecklistItem, Template, Attachment, AttachmentType, TaskKind, Group, RecurrenceHistoryEntry, UpcomingReminder } from "@/types";
 
 // ─── 类型（与 Rust models.rs 对应）──────────────────────
 
@@ -879,4 +879,12 @@ export async function runRecurrenceOne(id: string): Promise<number> {
 /** 查询某模板的生成历史（最近 20 条，按生成日期倒序） */
 export async function getRecurrenceHistory(templateId: string): Promise<RecurrenceHistoryEntry[]> {
   return await invoke<RecurrenceHistoryEntry[]>('recurrence_history', { templateId });
+}
+
+// ─── 定时提醒列表（后台任务面板用） ───────────────────────────
+
+/** 列出所有设置了提醒的未完成任务（含计算后的触发时刻，按触发时刻升序）。
+ *  后端已排除「算不出触发时刻」的任务（如 offset 设了但无截止时间）。 */
+export async function listUpcomingReminders(): Promise<UpcomingReminder[]> {
+  return await invoke<UpcomingReminder[]>('reminder_upcoming_list');
 }

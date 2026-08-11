@@ -2488,6 +2488,65 @@ pub async fn task_check_reminders_inner(
     Ok(count)
 }
 
+/// 后台任务面板：列出所有设置了提醒的未完成任务（含计算后的触发时刻）。
+/// 触发时刻 trigger_at 的计算规则与 task_check_reminders_inner 一致：
+///   - 指定时刻 remind_at 非空 → 直接取 remind_at
+///   - 相对偏移 remind_offset_minutes + due_end_at 非空 → due_end_at - offset 分钟
+///   - 都算不出（如 offset 设了但无截止时间）→ 该任务永远不会触发提醒，直接排除
+/// 结果按触发时刻升序（最近的在前）；notified_at 非空表示已通知过（前端灰化展示）。
+#[tauri::command]
+pub async fn reminder_upcoming_list(
+    pool: State<'_, sqlx::SqlitePool>,
+) -> CmdResult<Vec<UpcomingReminder>> {
+    let rows = sqlx::query(
+        "SELECT t.id, t.title, t.list_id, t.remind_at, t.remind_offset_minutes,
+                t.due_end_at, t.notified_at, l.name AS list_name, l.color AS list_color
+         FROM tasks t
+         LEFT JOIN lists l ON t.list_id = l.id
+         WHERE t.done = 0
+           AND (t.remind_at IS NOT NULL OR t.remind_offset_minutes IS NOT NULL)",
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("查询定时提醒列表失败: {}", e))?;
+
+    let mut items: Vec<UpcomingReminder> = Vec::new();
+    for row in &rows {
+        let remind_at: Option<String> = row.get("remind_at");
+        let offset: Option<i32> = row.get("remind_offset_minutes");
+        let due_end_at: Option<String> = row.get("due_end_at");
+        // 计算触发时刻（与 task_check_reminders_inner 同规则）
+        let trigger_at: Option<String> = if let Some(ra) = &remind_at {
+            Some(ra.clone())
+        } else if let (Some(de), Some(off)) = (&due_end_at, offset) {
+            parse_local_naive(de)
+                .map(|dt| format_local_naive(dt - chrono::Duration::minutes(off as i64)))
+        } else {
+            None
+        };
+        // 算不出触发时刻 → 永远不会触发提醒，排除
+        let trigger_at = match trigger_at {
+            Some(v) => v,
+            None => continue,
+        };
+        items.push(UpcomingReminder {
+            task_id: row.get("id"),
+            title: row.get("title"),
+            list_id: row.get("list_id"),
+            list_name: row.get("list_name"),
+            list_color: row.get("list_color"),
+            remind_at,
+            offset_minutes: offset,
+            due_end_at,
+            trigger_at: Some(trigger_at),
+            notified_at: row.get("notified_at"),
+        });
+    }
+    // 按触发时刻升序（本地字面量字典序 = 时间序）
+    items.sort_by(|a, b| a.trigger_at.cmp(&b.trigger_at));
+    Ok(items)
+}
+
 /// 根据截止时间 + 偏移量生成中文通知正文
 fn build_reminder_body(due_end_at: &str, offset_minutes: i32) -> String {
     let due_dt = parse_local_naive(due_end_at);

@@ -253,8 +253,9 @@ export function formatDueDate(
   };
 }
 
-/** 格式化单个日期（含逾期/今天判断 + 时间部分） */
-function formatSingleDate(iso: string): DueDateInfo | null {
+/** 格式化单个日期（含逾期/今天判断 + 时间部分）。
+ *  导出于后台任务面板的「定时提醒」触发时刻展示复用（今天/明天/周X/M月D日 + HH:mm）。 */
+export function formatSingleDate(iso: string): DueDateInfo | null {
   const date = localIsoToDate(iso);
   if (!date || isNaN(date.getTime())) return null;
 

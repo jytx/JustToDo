@@ -433,6 +433,7 @@ pub fn run() {
             commands::recurrence_run_one,
             commands::task_check_reminders,
             commands::task_daily_reminder_scan,
+            commands::reminder_upcoming_list,
             commands::get_setting,
             commands::set_setting,
             commands::tag_get_all,

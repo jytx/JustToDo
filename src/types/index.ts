@@ -474,3 +474,28 @@ export interface RecurrenceHistoryEntry {
   /** 生成时间戳 */
   generatedAt: string;
 }
+
+/** 后台任务面板展示的「定时提醒」条目（reminder_upcoming_list 返回值）。
+ *  triggerAt 为计算后的触发时刻：
+ *   - 指定时刻（remindAt 非空）→ 直接取 remindAt
+ *   - 相对偏移（offsetMinutes + dueEndAt）→ dueEndAt - offset
+ *   - 都算不出（如 offset 设了但无截止时间）→ 任务永不触发，后端已排除 */
+export interface UpcomingReminder {
+  taskId: string;
+  title: string;
+  listId: string | null;
+  /** 所属清单名称（无清单时为空） */
+  listName: string | null;
+  /** 所属清单颜色（前端画颜色点） */
+  listColor: string | null;
+  /** 指定时刻提醒原始值（null = 未启用；此时看 offsetMinutes） */
+  remindAt: string | null;
+  /** 相对偏移分钟数原始值（null = 未启用） */
+  offsetMinutes: number | null;
+  /** 任务截止时间（计算 triggerAt 的原料） */
+  dueEndAt: string | null;
+  /** 计算后的触发时刻（本地字面量 "YYYY-MM-DDTHH:mm:ss"） */
+  triggerAt: string | null;
+  /** 通知触发时间戳（null = 还没通知过，到点后后台扫描补发） */
+  notifiedAt: string | null;
+}
