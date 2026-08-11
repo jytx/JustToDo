@@ -7,7 +7,7 @@
 // 这里只负责收集 ID —— 包括"输入新标签名 → getByName/createTag 拿到 id 后加入数组"。
 import { ref, computed, nextTick, watch } from "vue";
 import { useTagStore } from "@/stores/tag";
-import { tagBg, LIST_COLORS } from "@/utils/colors";
+import { LIST_COLORS } from "@/utils/colors";
 import Popover from "./Popover.vue";
 
 const props = defineProps<{
@@ -48,11 +48,15 @@ const selectedTags = computed(() => {
   return tagStore.tags.filter((t) => ids.has(t.id));
 });
 
-/** 可选标签（排除已选） */
-const availableTags = computed(() => {
-  const selected = new Set(props.selectedTagIds);
-  return tagStore.tags.filter((t) => !selected.has(t.id));
-});
+/** 全部标签选项（含已选 —— 多选模式靠 active 态区分已选/未选，与详情面板一致） */
+const tagOptions = computed(() =>
+  tagStore.tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
+);
+
+/** 判断某标签是否已选（列表项 active 态 + ✓ 显示用） */
+function isTagSelected(tagId: string): boolean {
+  return props.selectedTagIds.includes(tagId);
+}
 
 /** 触发器显示文案 */
 const triggerLabel = computed(() => {
@@ -66,14 +70,19 @@ function emitIds(next: string[]): void {
   emit("update:selectedTagIds", next);
 }
 
-/** 切换某标签的选中态（点可选项 = 加入；点已选 chip 的 × = 移除） */
+/** 新建标签后加入已选（新建的标签必然未选，直接加入） */
 function addTag(tagId: string): void {
   if (props.selectedTagIds.includes(tagId)) return;
   emitIds([...props.selectedTagIds, tagId]);
 }
 
-function removeTag(tagId: string): void {
-  emitIds(props.selectedTagIds.filter((id) => id !== tagId));
+/** 标签 toggle（多选模式核心）：已选 → 移除；未选 → 添加。不关弹层，可连续操作。 */
+function toggleTag(tagId: string): void {
+  if (isTagSelected(tagId)) {
+    emitIds(props.selectedTagIds.filter((id) => id !== tagId));
+  } else {
+    emitIds([...props.selectedTagIds, tagId]);
+  }
 }
 
 /** 提交新建标签：trim → getByName 命中则复用，否则 createTag；拿到 id 后加入已选。
@@ -131,39 +140,22 @@ function onAfterOpen(): void {
     </template>
 
     <div class="tag-select__popup">
-      <!-- 已选标签区（有已选时置顶显示，可点 × 移除；多选自动换行） -->
-      <div v-if="selectedTags.length > 0" class="tag-select__selected">
-        <span
-          v-for="tag in selectedTags"
-          :key="tag.id"
-          class="tag-select__chip"
-          :style="{ backgroundColor: tagBg(tag.color) }"
-        >
-          <span class="tag-select__chip-name">{{ tag.name }}</span>
-          <button
-            type="button"
-            class="tag-select__chip-close"
-            title="移除标签"
-            @click="removeTag(tag.id)"
-          >
-            <icon-close :size="10" />
-          </button>
-        </span>
-      </div>
-      <!-- 可选标签列表（空标签时显示占位） -->
-      <div v-if="availableTags.length > 0" class="tag-select__list">
+      <!-- 全部标签列表（多选模式：已选项高亮 + ✓，点击 toggle，与详情面板一致） -->
+      <div v-if="tagOptions.length > 0" class="tag-select__list">
         <button
-          v-for="tag in availableTags"
-          :key="tag.id"
+          v-for="opt in tagOptions"
+          :key="opt.id"
           type="button"
           class="tag-select__option"
-          @click="addTag(tag.id)"
+          :class="{ 'tag-select__option--active': isTagSelected(opt.id) }"
+          @click="toggleTag(opt.id)"
         >
-          <span class="tag-select__dot" :style="{ backgroundColor: tag.color }" />
-          <span>{{ tag.name }}</span>
+          <span class="tag-select__dot" :style="{ backgroundColor: opt.color }" />
+          <span>{{ opt.name }}</span>
+          <icon-check v-if="isTagSelected(opt.id)" :size="12" class="tag-select__check" />
         </button>
       </div>
-      <div v-else class="tag-select__empty">所有标签已选中</div>
+      <div v-else class="tag-select__empty">还没有标签，新建一个吧</div>
 
       <!-- 新建标签输入框 -->
       <input
@@ -283,6 +275,19 @@ function onAfterOpen(): void {
   background-color: var(--jt-surface-sunken);
 }
 
+/* 已选标签项高亮（多选模式 active 态，与详情面板一致） */
+.tag-select__option--active {
+  background-color: var(--jt-accent-soft);
+  color: var(--jt-primary);
+}
+
+/* 已选标签的 ✓ 勾（靠右对齐） */
+.tag-select__check {
+  margin-left: auto;
+  color: var(--jt-primary);
+  flex-shrink: 0;
+}
+
 .tag-select__empty {
   padding: 8px 10px;
   font-size: 12px;
@@ -311,57 +316,6 @@ function onAfterOpen(): void {
 
 .tag-select__new-input::placeholder {
   color: var(--jt-text-tertiary);
-}
-
-/* 已选标签区（popover 内置顶，多选时自动换行；与下方可选列表用分隔线区分） */
-.tag-select__selected {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  max-height: 120px;
-  overflow-y: auto;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--jt-border);
-}
-
-.tag-select__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  height: 22px;
-  padding: 0 4px 0 8px;
-  border-radius: 11px;
-  /* 底色由 inline style 按标签颜色控制；文字色统一灰色 */
-  color: var(--jt-text-secondary);
-  font-size: 11px;
-  font-family: var(--font-body);
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.tag-select__chip-name {
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tag-select__chip-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--jt-primary);
-  cursor: pointer;
-  transition: background-color 0.12s ease;
-  flex-shrink: 0;
-}
-
-.tag-select__chip-close:hover {
-  background-color: color-mix(in srgb, var(--jt-primary) 20%, transparent);
 }
 
 /* 深色模式弹层阴影加深 */
