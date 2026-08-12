@@ -224,14 +224,14 @@ const mainStyle = computed(() => {
   return { paddingRight: panelWidth.value + "px" };
 });
 
-/** 详情面板最大宽度：基础 720 + 侧边栏收起时释放的空间。
+/** 详情面板最大宽度：设置项（默认 720）+ 侧边栏收起时释放的空间。
  *  侧边栏展开占用 sidebarWidth，收起后只剩 48px，释放的部分加到面板上限。 */
 const detailPanelMaxWidth = computed(() => {
   const SIDEBAR_COLLAPSED_W = 48;
   const released = sidebarCollapsed.value
     ? Math.max(0, sidebarWidth.value - SIDEBAR_COLLAPSED_W)
     : 0;
-  return 720 + released;
+  return settingsStore.detailPanelMaxWidth + released;
 });
 
 /** 侧边栏展开/收起会导致 maxWidth 变化：当前宽度超过新上限时钳制回去，

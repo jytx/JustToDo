@@ -478,6 +478,26 @@ async function changeAttachmentPath() {
             </div>
           </div>
           <p v-if="isSavingAccent" class="settings-section__hint">正在保存强调色...</p>
+          <div class="settings-section__item">
+            <div>
+              <span>任务详情面板最大宽度</span>
+              <p class="settings-section__path-hint">
+                拖拽详情面板右侧边缘可调宽度，此为拖拽上限
+              </p>
+            </div>
+            <div class="settings-section__interval">
+              <a-input-number
+                :model-value="settingsStore.detailPanelMaxWidth"
+                size="small"
+                :min="480"
+                :max="1200"
+                :step="20"
+                style="width: 100px"
+                @change="(v: number | undefined) => settingsStore.setDetailPanelMaxWidth(v ?? 720)"
+              />
+              <span class="settings-section__interval-unit">px</span>
+            </div>
+          </div>
         </div>
 
         <!-- 快捷键 -->

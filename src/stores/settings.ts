@@ -23,6 +23,8 @@ export const SETTINGS_KEYS = {
   zoomLevel: "zoom_level",
   /** 任务详情面板宽度（拖拽调整后缓存，下次打开保持） */
   detailPanelWidth: "detail_panel_width",
+  /** 任务详情面板最大宽度（px，拖拽上限；外观设置可调） */
+  detailPanelMaxWidth: "detail_panel_max_width",
   /** 任务详情面板是否全屏（点击全屏图标后缓存，下次打开保持） */
   detailPanelFullscreen: "detail_panel_fullscreen",
   templateDefaultListId: "template_default_list_id",
@@ -196,6 +198,12 @@ const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
 const DEFAULT_ZOOM_LEVEL = 1.0;
 
+/** 任务详情面板最大宽度（px）：默认 720，外观设置可调（480~1200） */
+const DEFAULT_DETAIL_PANEL_MAX_WIDTH = 720;
+/** 详情面板最大宽度的可调范围 */
+const DETAIL_PANEL_MAX_WIDTH_MIN = 480;
+const DETAIL_PANEL_MAX_WIDTH_MAX = 1200;
+
 /** 16 进制颜色 #RRGGBB 校验 */
 function isValidHexColor(v: string): boolean {
   return /^#[0-9a-fA-F]{6}$/.test(v);
@@ -223,6 +231,17 @@ function parseIntervalMinutes(v: string | null): number {
   const n = Number(v);
   if (!Number.isFinite(n) || n < 1) return DEFAULT_RECURRENCE_CHECK_INTERVAL;
   return Math.min(1440, Math.floor(n));
+}
+
+/** 详情面板最大宽度解析：非法值回落默认（480~1200 范围校验） */
+function parsePanelMaxWidth(v: string | null): number {
+  if (!v) return DEFAULT_DETAIL_PANEL_MAX_WIDTH;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return DEFAULT_DETAIL_PANEL_MAX_WIDTH;
+  return Math.max(
+    DETAIL_PANEL_MAX_WIDTH_MIN,
+    Math.min(DETAIL_PANEL_MAX_WIDTH_MAX, Math.floor(n)),
+  );
 }
 
 function parseStartupView(v: string | null): StartupView {
@@ -295,6 +314,8 @@ export const useSettingsStore = defineStore("settings", () => {
   const recurrenceCheckInterval = ref<number>(DEFAULT_RECURRENCE_CHECK_INTERVAL);
   const startupView = ref<StartupView>(DEFAULT_STARTUP_VIEW);
   const zoomLevel = ref<number>(DEFAULT_ZOOM_LEVEL);
+  /** 任务详情面板最大宽度（px，拖拽上限；外观设置可调） */
+  const detailPanelMaxWidth = ref<number>(DEFAULT_DETAIL_PANEL_MAX_WIDTH);
   const templateDefaultListId = ref<string>(DEFAULT_TEMPLATE_LIST_ID);
   /** 笔记模板默认笔记本：笔记模板应用时（非笔记本视图）的兜底目标 */
   const templateDefaultNoteId = ref<string>(DEFAULT_TEMPLATE_NOTE_ID);
@@ -359,7 +380,7 @@ export const useSettingsStore = defineStore("settings", () => {
     if (initialized.value || loading.value) return;
     loading.value = true;
     try {
-      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw, aiEnabledRaw, aiProviderRaw, aiBaseUrlRaw, aiApiKeyRaw, aiModelRaw, aiTruncateRaw, aiPromptSmartRaw, aiPromptListRaw, aiPromptTasksRaw, aiPromptNoteRaw, aiPromptParseTaskRaw, aiPromptBreakdownTaskRaw, aiPromptExtractTasksRaw, aiPromptPolishRaw] = await Promise.all([
+      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw, panelMaxWidthRaw, aiEnabledRaw, aiProviderRaw, aiBaseUrlRaw, aiApiKeyRaw, aiModelRaw, aiTruncateRaw, aiPromptSmartRaw, aiPromptListRaw, aiPromptTasksRaw, aiPromptNoteRaw, aiPromptParseTaskRaw, aiPromptBreakdownTaskRaw, aiPromptExtractTasksRaw, aiPromptPolishRaw] = await Promise.all([
         db.getSetting(SETTINGS_KEYS.themeMode).catch(() => null),
         db.getSetting(SETTINGS_KEYS.accentColor).catch(() => null),
         db.getSetting(SETTINGS_KEYS.newTasksDueToday).catch(() => null),
@@ -369,6 +390,7 @@ export const useSettingsStore = defineStore("settings", () => {
         db.getSetting(SETTINGS_KEYS.templateDefaultListId).catch(() => null),
         db.getSetting(SETTINGS_KEYS.templateDefaultNoteId).catch(() => null),
         db.getSetting(SETTINGS_KEYS.dailyReminderTimes).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.detailPanelMaxWidth).catch(() => null),
         db.getSetting(SETTINGS_KEYS.aiEnabled).catch(() => null),
         db.getSetting(SETTINGS_KEYS.aiProvider).catch(() => null),
         db.getSetting(SETTINGS_KEYS.aiBaseUrl).catch(() => null),
@@ -395,6 +417,7 @@ export const useSettingsStore = defineStore("settings", () => {
       // 笔记模板默认笔记本：空值回落 default-notebook（与任务清单回落 inbox 对称）
       const tplNote = tplNoteRaw && tplNoteRaw.trim() ? tplNoteRaw : DEFAULT_TEMPLATE_NOTE_ID;
       const dailyTimes = parseDailyReminderTimes(dailyTimesRaw);
+      const panelMaxWidth = parsePanelMaxWidth(panelMaxWidthRaw);
 
       themeMode.value = mode;
       accentColor.value = accent;
@@ -403,6 +426,7 @@ export const useSettingsStore = defineStore("settings", () => {
       startupView.value = startup;
       zoomLevel.value = zoom;
       templateDefaultListId.value = tplList;
+      detailPanelMaxWidth.value = panelMaxWidth;
       templateDefaultNoteId.value = tplNote ?? DEFAULT_TEMPLATE_NOTE_ID;
       dailyReminderTimes.value = dailyTimes;
 
@@ -492,6 +516,24 @@ export const useSettingsStore = defineStore("settings", () => {
     );
     if (!ok) {
       recurrenceCheckInterval.value = prev;
+    }
+  }
+
+  /** 修改详情面板最大宽度并持久化（范围 480~1200） */
+  async function setDetailPanelMaxWidth(px: number): Promise<void> {
+    const n = Math.max(
+      DETAIL_PANEL_MAX_WIDTH_MIN,
+      Math.min(DETAIL_PANEL_MAX_WIDTH_MAX, Math.floor(Number(px) || DEFAULT_DETAIL_PANEL_MAX_WIDTH)),
+    );
+    const prev = detailPanelMaxWidth.value;
+    detailPanelMaxWidth.value = n;
+    const ok = await persist(
+      SETTINGS_KEYS.detailPanelMaxWidth,
+      String(n),
+      String(prev),
+    );
+    if (!ok) {
+      detailPanelMaxWidth.value = prev;
     }
   }
 
@@ -745,6 +787,7 @@ async function setAiPromptPolish(v: string): Promise<void> {
     recurrenceCheckInterval,
     startupView,
     zoomLevel,
+    detailPanelMaxWidth,
     templateDefaultListId,
     templateDefaultNoteId,
     dailyReminderTimes,
@@ -772,6 +815,7 @@ async function setAiPromptPolish(v: string): Promise<void> {
     setAccentColor,
     setNewTasksDueToday,
     setRecurrenceCheckInterval,
+    setDetailPanelMaxWidth,
     setStartupView,
     setTemplateDefaultListId,
     setTemplateDefaultNoteId,
