@@ -224,18 +224,18 @@ const mainStyle = computed(() => {
   return { paddingRight: panelWidth.value + "px" };
 });
 
-/** 详情面板最大宽度：基础 900 + 侧边栏收起时释放的空间。
+/** 详情面板最大宽度：基础 720 + 侧边栏收起时释放的空间。
  *  侧边栏展开占用 sidebarWidth，收起后只剩 48px，释放的部分加到面板上限。 */
 const detailPanelMaxWidth = computed(() => {
   const SIDEBAR_COLLAPSED_W = 48;
   const released = sidebarCollapsed.value
     ? Math.max(0, sidebarWidth.value - SIDEBAR_COLLAPSED_W)
     : 0;
-  return 900 + released;
+  return 720 + released;
 });
 
 /** 侧边栏展开/收起会导致 maxWidth 变化：当前宽度超过新上限时钳制回去，
- *  避免面板过宽把任务列表区压扁（如收起时拖到 1092，展开后上限 900 应回退） */
+ *  避免面板过宽把任务列表区压扁（如收起时拖到 872，展开后上限 720 应回退） */
 watch(detailPanelMaxWidth, (max) => {
   if (panelWidth.value > max) panelWidth.value = max;
 });
@@ -493,8 +493,8 @@ onMounted(() => {
     .then((raw) => {
       if (raw) {
         const w = Number(raw);
-        // 合法范围校验（与 TaskDetailPanel 的 480~900 一致）
-        if (Number.isFinite(w) && w >= 480 && w <= 900) panelWidth.value = w;
+        // 合法范围校验（与 TaskDetailPanel 的 480~720 一致）
+        if (Number.isFinite(w) && w >= 480 && w <= 720) panelWidth.value = w;
       }
     })
     .catch((e) => console.error("[AppLayout] 读取详情面板宽度失败:", e));

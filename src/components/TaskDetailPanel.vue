@@ -53,7 +53,7 @@ const { pickFiles: pickAttachmentFiles, uploading: attachmentUploading } =
 
 const props = defineProps<{
   panelWidth?: number;
-  /** 拖拽宽度上限（默认 900；侧边栏收起时由 AppLayout 增大传入） */
+  /** 拖拽宽度上限（默认 720；侧边栏收起时由 AppLayout 增大传入） */
   maxWidth?: number;
   /** 全屏态：面板横向铺满视口（盖住侧边栏+任务列表），隐藏拖拽手柄 */
   fullscreen?: boolean;
@@ -195,7 +195,7 @@ function startResize(e: MouseEvent) {
 
   function onMouseMove(ev: MouseEvent) {
     const delta = startX - ev.clientX;
-    const max = props.maxWidth ?? 900;
+    const max = props.maxWidth ?? 720;
     const newWidth = Math.max(480, Math.min(max, startWidth + delta));
     emit("update:panelWidth", newWidth);
   }
