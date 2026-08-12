@@ -21,6 +21,7 @@ import TurndownService from "turndown";
 import * as turndownPluginGfm from "turndown-plugin-gfm";
 import { Extension, createDocument } from "@tiptap/core";
 import type { Editor as TiptapEditor } from "@tiptap/core";
+import { closeHistory } from "@tiptap/pm/history";
 import { TextSelection, EditorState } from "@tiptap/pm/state";
 import { watch, onBeforeUnmount, onMounted, ref, computed, createApp, nextTick } from "vue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
@@ -382,15 +383,38 @@ function uninstallSlashPlugin(editorInstance: TiptapEditor) {
 }
 
 /**
- * 「回车切分 undo 组」修复 —— 已废弃。
+ * 安装「回车切分 undo 组」修复 —— dispatch wrapper 部分。
  *
- * 之前用 closeHistory 给每个 Enter 强制切分 undo 组。但 closeHistory 会创建
- * 带 selection bookmark 的空事件，15 个回车就产生 ~13 个空 undo 事件（Cmd+Z
- * 按了但内容不变），严重影响撤销体验。
+ * 配合 editorProps.handleKeyDown 使用：
+ * - handleKeyDown 在 forceFlush 之后执行，设 pendingEnterCloseHistory=true
+ * - dispatch wrapper 检测到标记，给紧随的第一个 docChanged transaction
+ *   （= splitBlock 回车）加 closeHistory，强制开启新的 undo 组
  *
- * 真正的根因（v-model 回流制造 undo 栈断层）已通过 internalUpdate 标志位
- * 彻底修复，不再需要 closeHistory。
+ * 这样 closeHistory 精确加在 splitBlock 上，而不是 forceFlush 的文字输入上，
+ * 避免产生空 undo 事件。
  */
+let pendingEnterCloseHistory = false;
+
+function installUndoGroupFix(ed: TiptapEditor): void {
+  const view = ed.view;
+  const origDispatch = view.dispatch.bind(view);
+  pendingEnterCloseHistory = false;
+  view.dispatch = function (tr) {
+    if (pendingEnterCloseHistory && tr.docChanged) {
+      closeHistory(tr);
+      pendingEnterCloseHistory = false;
+    }
+    return origDispatch(tr);
+  };
+  (view as any).__undoGroupOrigDispatch = origDispatch;
+}
+
+function uninstallUndoGroupFix(ed: TiptapEditor): void {
+  const view = ed.view;
+  const origDispatch = (view as any).__undoGroupOrigDispatch;
+  if (origDispatch) view.dispatch = origDispatch;
+  (view as any).__undoGroupOrigDispatch = null;
+}
 
 
 
@@ -686,6 +710,22 @@ const editor = useEditor({
       }
       return false;
     },
+    // handleKeyDown 在 ProseMirror 的 keydown 处理链中，于 forceFlush 之后执行。
+    // forceFlush 会先把待处理的文字输入 mutation 转成 transaction（dispatch），
+    // 然后才执行 handleKeyDown。因此这里设标记，能精确让紧接着的 splitBlock
+    // （由后续的 captureKeyDown/keymap 触发）消费标记，而不是文字输入消费。
+    handleKeyDown: (_view, event) => {
+      if (
+        event.key === "Enter" &&
+        !event.shiftKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey
+      ) {
+        pendingEnterCloseHistory = true;
+      }
+      return false;
+    },
     handleDOMEvents: {
       // ── WebKit IME composition 修复 ──────────────────────
       // Tauri 用 WKWebView（WebKit），ProseMirror 识别为 Safari。IME 回车确认
@@ -735,8 +775,10 @@ watch(
   (ed, _old, onCleanup) => {
     if (!ed) return;
     installSlashPlugin(ed);
+    installUndoGroupFix(ed);
     onCleanup(() => {
       uninstallSlashPlugin(ed);
+      uninstallUndoGroupFix(ed);
     });
   },
   { immediate: true },
