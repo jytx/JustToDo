@@ -296,14 +296,13 @@ function onDateClose() {
 
 <template>
   <div class="add-task-bar" :class="{ 'add-task-bar--focused': focused }">
-    <!-- 第一行：标题输入区（+ 图标 / 输入框） -->
+    <!-- 第一行：标题输入框（+ 提示放进 placeholder，腾出左侧空间） -->
     <div class="add-task-bar__main">
-      <icon-plus :size="18" class="add-task-bar__icon" />
       <input
         ref="inputRef"
         v-model="title"
         class="add-task-bar__input"
-        :placeholder="isNote ? '添加笔记' : '添加任务'"
+        :placeholder="isNote ? '+ 添加笔记' : '+ 添加任务'"
         @focus="focused = true"
         @blur="handleBlur"
         @keydown.enter="submit"
@@ -418,11 +417,6 @@ function onDateClose() {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--jt-primary) 30%, transparent);
 }
 
-.add-task-bar__icon {
-  color: var(--jt-text-tertiary);
-  flex-shrink: 0;
-}
-
 .add-task-bar__input {
   flex: 1;
   min-width: 120px;
@@ -473,8 +467,8 @@ function onDateClose() {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  /* 缩进对齐第一行标题文字（+ 图标 18px + gap 8px） */
-  padding-left: 26px;
+  /* 第一行已无前置图标，第二行与输入框文字左侧对齐 */
+  padding-left: 0;
   opacity: 1;
   transition: opacity 0.2s ease;
   pointer-events: auto;
