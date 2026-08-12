@@ -407,11 +407,11 @@ function onDateClose() {
   transition: all 0.2s ease;
 }
 
-/* 第一行：+ 图标 + 标题输入框 + AI 解析按钮，横向排列 */
+/* 第一行：+ 标记叠加在输入框左侧（绝对定位、不占布局），输入框占满整行可输入 */
 .add-task-bar__main {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
 }
 
 .add-task-bar--focused {
@@ -419,19 +419,26 @@ function onDateClose() {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--jt-primary) 30%, transparent);
 }
 
-/* 左侧 + 标记：独立元素以便放大字号（placeholder 内文字无法单独放大） */
+/* 左侧 + 标记：绝对定位叠加在输入框上方，pointer-events:none 让点击穿透到 input，
+   这样 + 区域也可点击输入；字号偏大醒目，输入文字靠 input 的 padding-left 让位 */
 .add-task-bar__plus {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
   font-size: 22px;
   line-height: 1;
   font-weight: 300;
   color: var(--jt-text-tertiary);
-  flex-shrink: 0;
+  pointer-events: none;
   user-select: none;
 }
 
 .add-task-bar__input {
   flex: 1;
   min-width: 120px;
+  /* 左侧给叠加的 + 让出视觉空间，避免输入文字与 + 重叠 */
+  padding-left: 20px;
   border: none;
   outline: none;
   background: transparent;
