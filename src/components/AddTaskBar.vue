@@ -299,11 +299,12 @@ function onDateClose() {
     <!-- 第一行：标题输入区（左侧 + 标记 + 输入框）。
          + 独立成元素以便放大字号（placeholder 内文字无法单独放大） -->
     <div class="add-task-bar__main">
-      <span class="add-task-bar__plus" aria-hidden="true">+</span>
+      <span v-if="!title" class="add-task-bar__plus" aria-hidden="true">+</span>
       <input
         ref="inputRef"
         v-model="title"
         class="add-task-bar__input"
+        :class="{ 'add-task-bar__input--filled': title }"
         :placeholder="isNote ? '添加笔记' : '添加任务'"
         @focus="focused = true"
         @blur="handleBlur"
@@ -437,7 +438,7 @@ function onDateClose() {
 .add-task-bar__input {
   flex: 1;
   min-width: 120px;
-  /* 左侧给叠加的 + 让出视觉空间，避免输入文字与 + 重叠 */
+  /* 空输入时给左侧叠加的 + 让出视觉位 */
   padding-left: 20px;
   border: none;
   outline: none;
@@ -445,6 +446,11 @@ function onDateClose() {
   font-size: 14px;
   color: inherit;
   font-family: var(--font-body);
+}
+
+/* 有输入内容时去掉左 padding：+ 已隐藏，文字占满整行（含原 + 区域） */
+.add-task-bar__input--filled {
+  padding-left: 0;
 }
 
 /* AI 自然语言解析按钮：紧贴输入框右侧，弱视觉，hover 强调 */
