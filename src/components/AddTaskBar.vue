@@ -296,13 +296,15 @@ function onDateClose() {
 
 <template>
   <div class="add-task-bar" :class="{ 'add-task-bar--focused': focused }">
-    <!-- 第一行：标题输入框（+ 提示放进 placeholder，腾出左侧空间） -->
+    <!-- 第一行：标题输入区（左侧 + 标记 + 输入框）。
+         + 独立成元素以便放大字号（placeholder 内文字无法单独放大） -->
     <div class="add-task-bar__main">
+      <span class="add-task-bar__plus" aria-hidden="true">+</span>
       <input
         ref="inputRef"
         v-model="title"
         class="add-task-bar__input"
-        :placeholder="isNote ? '+ 添加笔记' : '+ 添加任务'"
+        :placeholder="isNote ? '添加笔记' : '添加任务'"
         @focus="focused = true"
         @blur="handleBlur"
         @keydown.enter="submit"
@@ -415,6 +417,16 @@ function onDateClose() {
 .add-task-bar--focused {
   background-color: var(--jt-surface);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--jt-primary) 30%, transparent);
+}
+
+/* 左侧 + 标记：独立元素以便放大字号（placeholder 内文字无法单独放大） */
+.add-task-bar__plus {
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 300;
+  color: var(--jt-text-tertiary);
+  flex-shrink: 0;
+  user-select: none;
 }
 
 .add-task-bar__input {
