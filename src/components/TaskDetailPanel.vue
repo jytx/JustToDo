@@ -192,6 +192,8 @@ function startResize(e: MouseEvent) {
   e.preventDefault();
   const startX = e.clientX;
   const startWidth = props.panelWidth ?? 480;
+  // 拖拽期间禁用 width transition（否则每帧宽度变化都被 0.2s 缓动，不跟手）
+  panelEl.value?.classList.add("detail-panel--resizing");
 
   function onMouseMove(ev: MouseEvent) {
     const delta = startX - ev.clientX;
@@ -201,6 +203,7 @@ function startResize(e: MouseEvent) {
   }
 
   function onMouseUp() {
+    panelEl.value?.classList.remove("detail-panel--resizing");
     document.removeEventListener("mousemove", onMouseMove);
     document.removeEventListener("mouseup", onMouseUp);
     document.body.style.cursor = "";
@@ -1686,6 +1689,10 @@ function formatMeta(iso: string): string {
   left: 0;
   border-left: none;
   box-shadow: none;
+}
+/* 拖拽调宽期间禁用过渡，保证宽度跟手 */
+.detail-panel--resizing {
+  transition: none !important;
 }
 
 /* 未选中任务时的 empty 占位（滴答清单风格：插画散落右下角 + 大量留白，无文字） */
