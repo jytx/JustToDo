@@ -158,6 +158,11 @@ export const CodeBlockFold = CodeBlockLowlight.extend({
       },
     });
   },
-}).configure({ lowlight });
+}).configure({
+  lowlight,
+  // 关闭「连续 3 次回车自动退出代码块」——CodeBlock 的默认行为（exitOnTripleEnter:true）
+  // 在长代码块里容易误触（输入空行时意外跳出），关闭后只能用方向键/Cmd+Enter 退出。
+  exitOnTripleEnter: false,
+});
 
 export default CodeBlockFold;
