@@ -227,6 +227,7 @@ function buildSlashCommandPlugin(editorInstance: TiptapEditor) {
     char: "/",
     startOfLine: false,
     allowSpaces: false,
+    allowedPrefixes: null,
     items: ({ query }: { query: string }) =>
       slashItems.filter((it) => {
         const q = query.trim().toLowerCase();
@@ -358,8 +359,17 @@ function buildSlashCommandPlugin(editorInstance: TiptapEditor) {
         onStart: (props: any) => setupWith(props),
         onUpdate: (props: any) => setupWith(props),
         onExit: () => teardown(),
-        // 必须 return true 让 Tiptap 知道按键被拦截，避免继续插入字符
-        onKeyDown: () => true,
+        // 只对菜单导航键（↑↓Enter Esc Tab）返回 true 拦截，
+        // 对文字输入键返回 false 让 ProseMirror 正常处理（forceFlush + 输入）。
+        // 之前无条件 return true 会阻止 keydown 默认处理，导致 Suggestion 在
+        // 输入第一个字符后因 match 失败而退出（菜单消失）。
+        onKeyDown: (props: any) => {
+          const navKeys = ["ArrowUp", "ArrowDown", "Enter", "Escape", "Tab"];
+          if (navKeys.includes(props.event.key)) {
+            return true;
+          }
+          return false;
+        },
       };
     },
   });
