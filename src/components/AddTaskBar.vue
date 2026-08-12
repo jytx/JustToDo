@@ -296,16 +296,13 @@ function onDateClose() {
 
 <template>
   <div class="add-task-bar" :class="{ 'add-task-bar--focused': focused }">
-    <!-- 第一行：标题输入区（左侧 + 标记 + 输入框）。
-         + 独立成元素以便放大字号（placeholder 内文字无法单独放大） -->
+    <!-- 第一行：标题输入框（+ 提示放在 placeholder 里，输入框占满整行） -->
     <div class="add-task-bar__main">
-      <span v-if="!title" class="add-task-bar__plus" aria-hidden="true">+</span>
       <input
         ref="inputRef"
         v-model="title"
         class="add-task-bar__input"
-        :class="{ 'add-task-bar__input--filled': title }"
-        :placeholder="isNote ? '添加笔记' : '添加任务'"
+        :placeholder="isNote ? '+ 添加笔记' : '+ 添加任务'"
         @focus="focused = true"
         @blur="handleBlur"
         @keydown.enter="submit"
@@ -408,9 +405,8 @@ function onDateClose() {
   transition: all 0.2s ease;
 }
 
-/* 第一行：+ 标记叠加在输入框左侧（绝对定位、不占布局），输入框占满整行可输入 */
+/* 第一行：标题输入框，占满整行 */
 .add-task-bar__main {
-  position: relative;
   display: flex;
   align-items: center;
 }
@@ -420,37 +416,15 @@ function onDateClose() {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--jt-primary) 30%, transparent);
 }
 
-/* 左侧 + 标记：绝对定位叠加在输入框上方，pointer-events:none 让点击穿透到 input，
-   这样 + 区域也可点击输入；字号偏大醒目，输入文字靠 input 的 padding-left 让位 */
-.add-task-bar__plus {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 22px;
-  line-height: 1;
-  font-weight: 300;
-  color: var(--jt-text-tertiary);
-  pointer-events: none;
-  user-select: none;
-}
-
 .add-task-bar__input {
   flex: 1;
   min-width: 120px;
-  /* 空输入时给左侧叠加的 + 让出视觉位 */
-  padding-left: 20px;
   border: none;
   outline: none;
   background: transparent;
   font-size: 14px;
   color: inherit;
   font-family: var(--font-body);
-}
-
-/* 有输入内容时去掉左 padding：+ 已隐藏，文字占满整行（含原 + 区域） */
-.add-task-bar__input--filled {
-  padding-left: 0;
 }
 
 /* AI 自然语言解析按钮：紧贴输入框右侧，弱视觉，hover 强调 */
