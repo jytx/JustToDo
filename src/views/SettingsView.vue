@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 设置页 —— 通用/外观/快捷键/数据/关于
 // 主题/强调色/自动今天/检查间隔统一通过 settings store 持久化
-import { ref, onMounted, onBeforeUnmount, computed, nextTick } from "vue";
+import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useSettingsStore, SETTINGS_KEYS, type StartupView, type AiProvider, type ThemeMode, DEFAULT_PROMPT_SMART, DEFAULT_PROMPT_LIST, DEFAULT_PROMPT_TASKS, DEFAULT_PROMPT_NOTE, DEFAULT_PROMPT_PARSE_TASK, DEFAULT_PROMPT_BREAKDOWN_TASK, DEFAULT_PROMPT_EXTRACT_TASKS, DEFAULT_PROMPT_POLISH } from "@/stores/settings";
 import SelectPopover from "@/components/SelectPopover.vue";
@@ -369,12 +369,24 @@ function onDocFitInput(e: Event): void {
   if (wrapper) fitInputWidth(wrapper);
 }
 
+/** 聚焦时兜底适配：任何时序下点击输入框宽度都与内容一致 */
+function onDocFitFocusIn(): void {
+  fitAllInputs();
+}
+
+// 数据异步加载 / 变化后重新适配（输入框无内联宽度，宽度完全由 fit 接管）
+watch(
+  [aiBaseUrl, aiApiKey, aiModel, recurrenceCheckInterval, aiSummaryTruncateThreshold],
+  () => fitAllInputs(),
+);
+
 // 观察设置页子树：tab 切换等动态出现的输入框自动适配（幂等，开销极小）
 const settingsFitObserver = new MutationObserver(() => requestAnimationFrame(fitAllInputs));
 
 onMounted(async () => {
   document.addEventListener("input", onDocFitInput, true);
   document.addEventListener("change", onDocFitInput, true);
+  document.addEventListener("focusin", onDocFitFocusIn, true);
   settingsFitObserver.observe(document.querySelector(".settings-view") ?? document.body, {
     childList: true,
     subtree: true,
@@ -390,6 +402,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   document.removeEventListener("input", onDocFitInput, true);
   document.removeEventListener("change", onDocFitInput, true);
+  document.removeEventListener("focusin", onDocFitFocusIn, true);
   settingsFitObserver.disconnect();
 });
 
@@ -474,7 +487,6 @@ async function changeAttachmentPath() {
                 :min="1"
                 :max="1440"
                 :step="1"
-                style="width: 100px"
                 @change="(v: number | undefined) => settingsStore.setRecurrenceCheckInterval(v ?? 60)"
               />
               <span class="settings-section__interval-unit">分钟</span>
@@ -657,7 +669,6 @@ async function changeAttachmentPath() {
                 :min="480"
                 :max="1200"
                 :step="20"
-                style="width: 100px"
                 @change="(v: number | undefined) => settingsStore.setDetailPanelMaxWidth(v ?? 720)"
               />
               <span class="settings-section__interval-unit">px</span>
@@ -793,7 +804,6 @@ async function changeAttachmentPath() {
                 <a-input
                   v-model="aiBaseUrl"
                   :placeholder="baseUrlPlaceholder"
-                  style="width: 280px"
                   @change="() => settingsStore.setAiBaseUrl(aiBaseUrl)"
                 />
               </div>
@@ -803,7 +813,6 @@ async function changeAttachmentPath() {
                 <a-input-password
                   v-model="aiApiKey"
                   placeholder="sk-..."
-                  style="width: 280px"
                   @change="() => settingsStore.setAiApiKey(aiApiKey)"
                 />
               </div>
@@ -813,7 +822,6 @@ async function changeAttachmentPath() {
                 <a-input
                   v-model="aiModel"
                   :placeholder="modelPlaceholder"
-                  style="width: 280px"
                   @change="() => settingsStore.setAiModel(aiModel)"
                 />
               </div>
@@ -849,7 +857,6 @@ async function changeAttachmentPath() {
                     :min="1"
                     :max="500"
                     :step="1"
-                    style="width: 100px"
                     @change="(v: number | undefined) => settingsStore.setAiSummaryTruncateThreshold(v ?? 50)"
                   />
                   <span class="settings-section__interval-unit">项</span>
