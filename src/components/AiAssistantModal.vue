@@ -373,7 +373,7 @@ watch(
           />
         </div>
         <a-button
-          type="primary"
+          type="outline"
           size="small"
           :loading="loading"
           @click="execute"
@@ -448,6 +448,7 @@ watch(
           {{ copied ? "已复制" : "复制" }}
         </a-button>
         <a-button type="outline" size="small" :loading="saving" @click="onSaveAsNote">
+          <template #icon><icon-save :size="14" /></template>
           {{ saveLabel }}
         </a-button>
       </div>
