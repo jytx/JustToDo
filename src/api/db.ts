@@ -457,6 +457,11 @@ export async function reorderTasks(items: [string, number][]): Promise<void> {
   await invoke<void>("task_reorder", { items });
 }
 
+/** 移动任务（含整棵子任务树）到其他清单（后端事务内迁移并重置分组） */
+export async function moveTaskToList(taskId: string, targetListId: string): Promise<void> {
+  await invoke<void>("task_move_to_list", { taskId, targetListId });
+}
+
 // ─── 标签操作 ────────────────────────────────────────────
 
 export async function getTags(): Promise<Tag[]> {

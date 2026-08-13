@@ -18,6 +18,7 @@ import {
 } from "@arco-design/web-vue/es/icon";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
+import { parseTaskDrag } from "@/utils/dnd";
 
 const props = defineProps<{
   node: ListTreeNode;
@@ -83,6 +84,10 @@ const emit = defineEmits<{
   aiSummary: [node: ListTreeNode];
   /** 拖拽放置：被拖拽的节点 ID，目标父级 ID，目标位置（before/after/inside） */
   move: [draggedId: string, targetNode: ListTreeNode, position: "before" | "after" | "inside"];
+  /** 任务/笔记拖到清单节点（含 inbox）：移动到该清单 */
+  taskDrop: [taskId: string, targetNode: ListTreeNode];
+  /** 任务/笔记拖到目录节点：自动新建清单后移入（kind 决定「新清单」/「新笔记本」命名） */
+  taskDropToFolder: [taskId: string, folderNode: ListTreeNode, kind: "task" | "note"];
   /** 右键菜单：鼠标事件 + 当前节点（向上冒泡到 TheSidebar 统一处理） */
   contextmenu: [event: MouseEvent, node: ListTreeNode];
 }>();
@@ -113,8 +118,9 @@ function goToList() {
 
 // ─── 拖拽逻辑 ──────────────────────────────────────────
 
-/** 当前 drag-over 状态：null / 'before' / 'after' / 'inside' */
-const dragOver = ref<"before" | "after" | "inside" | null>(null);
+/** 当前 drag-over 状态：null / 'before' / 'after' / 'inside' / 'target'
+ *  （'target' = 任务/笔记拖入清单，整行高亮，语义「移动到该清单」） */
+const dragOver = ref<"before" | "after" | "inside" | "target" | null>(null);
 const isDragging = ref(false);
 
 /** 是否可拖动（inbox / default-notebook 位置固定，不可拖） */
@@ -145,9 +151,40 @@ function onDragOver(e: DragEvent) {
   // inbox 是否真正接受 drop 由 onDrop 里的业务判断决定。
   e.preventDefault();
   e.dataTransfer!.dropEffect = "move";
-  // 收件箱 / 默认笔记本位置固定，不参与落点高亮（仅作过路）
-  if (props.node.id === "inbox" || props.node.id === "default-notebook") return;
+  // 归档区只读：不参与任何拖放高亮（仅作过路，避免误导）
+  if (props.readonly) return;
+  // 收件箱 / 默认笔记本位置固定，不参与清单排序落点高亮（仅作过路）。
+  // 但任务/笔记可以拖入 inbox（kind 匹配时）。
+  if (props.node.id === "inbox" || props.node.id === "default-notebook") {
+    const payload = parseTaskDrag(e);
+    if (payload) {
+      if (payload.kind === props.kind) {
+        dragOver.value = "target";
+      } else {
+        // 跨 kind（任务拖到默认笔记本等）→ 禁止
+        e.dataTransfer!.dropEffect = "none";
+        dragOver.value = null;
+      }
+    }
+    return;
+  }
 
+  // 任务/笔记拖拽（自定义 MIME 与清单拖拽 text/plain 隔离）
+  const payload = parseTaskDrag(e);
+  if (payload) {
+    // 跨 kind（任务拖到笔记本树 / 笔记拖到清单树）→ 禁止光标
+    if (payload.kind !== props.kind) {
+      e.dataTransfer!.dropEffect = "none";
+      dragOver.value = null;
+      return;
+    }
+    // 目录：拖入 = 自动新建清单 → inset 高亮；清单：拖入 = 移动 → 整行高亮
+    dragOver.value = props.node.isFolder ? "inside" : "target";
+    return;
+  }
+
+  // 清单拖拽（原逻辑）：目录行上 1/3=before / 中 1/3=inside / 下 1/3=after；
+  // 清单行上半=before / 下半=after
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const y = e.clientY - rect.top;
   const h = rect.height;
@@ -180,14 +217,35 @@ function onDragLeave(e: DragEvent) {
 }
 
 function onDrop(e: DragEvent) {
-  // 收件箱 / 默认笔记本位置固定，不接受其他节点的 drop
-  if (props.node.id === "inbox" || props.node.id === "default-notebook") {
-    e.preventDefault();
-    e.stopPropagation();
-    return;
-  }
   e.preventDefault();
   e.stopPropagation();
+  // 归档区只读：不接受 drop
+  if (props.readonly) return;
+
+  // 任务/笔记拖拽分支（优先于清单拖拽，避免把任务 id 误当清单 id 移动）
+  const payload = parseTaskDrag(e);
+  if (payload) {
+    dragOver.value = null;
+    // 跨 kind（任务拖到笔记本树 / 笔记拖到清单树）→ 拒绝（dragover 已禁止高亮，此处兜底）
+    if (payload.kind !== props.kind) return;
+    // 同步标记「任务已通过拖拽移走」：dragend 据此跳过旧清单排序持久化
+    // （drop 处理链是异步的，必须在同步阶段标记，防止 IPC 竞态覆盖 sort_order）
+    taskStore.markTaskDragMoved(payload.id);
+    if (props.node.isFolder) {
+      // 拖到目录 → 自动新建清单（由 TheSidebar 处理命名与创建），并展开目录让用户看到
+      emit("taskDropToFolder", payload.id, props.node, props.kind);
+      expanded.value = true;
+    } else {
+      // 拖到清单（含 inbox）→ 移动到该清单
+      emit("taskDrop", payload.id, props.node);
+    }
+    return;
+  }
+
+  // 收件箱 / 默认笔记本位置固定，不接受清单节点的 drop
+  if (props.node.id === "inbox" || props.node.id === "default-notebook") {
+    return;
+  }
 
   const draggedId = e.dataTransfer!.getData("text/plain");
   if (!draggedId || draggedId === props.node.id) {
@@ -296,7 +354,7 @@ function onDrop(e: DragEvent) {
       class="list-node__row list-node__list-item"
       :class="{
         'list-node--active': isActive,
-        'list-node--drag-over': dragOver === 'before' || dragOver === 'after',
+        'list-node--drag-over': dragOver === 'before' || dragOver === 'after' || dragOver === 'target',
       }"
       :style="{ paddingLeft: getNodePaddingLeft(depth) }"
       :draggable="canDrag ? 'true' : 'false'"
@@ -366,6 +424,8 @@ function onDrop(e: DragEvent) {
         @archive="(n: ListTreeNode) => $emit('archive', n)"
         @aiSummary="(n: ListTreeNode) => $emit('aiSummary', n)"
         @move="(id: string, target: ListTreeNode, pos: 'before' | 'after' | 'inside') => $emit('move', id, target, pos)"
+        @taskDrop="(taskId: string, target: ListTreeNode) => $emit('taskDrop', taskId, target)"
+        @taskDropToFolder="(taskId: string, folder: ListTreeNode, k: 'task' | 'note') => $emit('taskDropToFolder', taskId, folder, k)"
         @contextmenu="(e: MouseEvent, n: ListTreeNode) => $emit('contextmenu', e, n)"
       />
     </div>

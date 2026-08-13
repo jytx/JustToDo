@@ -128,6 +128,13 @@ export function useTaskDragReorder(getOpenTasks: () => Task[]) {
     if (!orderChangedDuringDrag || !draggingIdSnapshot) {
       return;
     }
+    // 拖拽期间任务可能已被移到其他清单（拖到侧边栏 drop → markTaskDragMoved）。
+    // drop 是异步链路（IPC 未完成时 dragend 已同步触发），此时若仍按旧清单顺序
+    // persistTaskOrder，可能把已移走任务的 sort_order 覆盖为旧清单位置值。
+    // 标志命中 → 跳过持久化，由 moveTaskToList 的 reload 接管刷新。
+    if (taskStore.dragMovedTaskId === draggingIdSnapshot) {
+      return;
+    }
     const ok = await taskStore.persistTaskOrder(finalOrder);
     if (!ok) {
       // 持久化失败，回滚到 store 的顺序

@@ -1130,6 +1130,101 @@ pub async fn task_set_parent(
     Ok(())
 }
 
+/// 把任务（含整棵子任务树）移动到另一个清单（跨清单拖拽）。
+/// - 校验：任务存在、目标清单存在且非目录、kind 与任务一致、目标 ≠ 当前清单（no-op）
+/// - 子树用 WITH RECURSIVE 一次收集，全部迁移到目标清单并回退目标清单默认分组，
+///   避免子任务留在旧清单形成孤儿（task_update 单条移动做不到这一点）
+/// - 被拖任务 sort_order 置为目标清单根任务末尾（max + 1000），子任务保持相对顺序
+/// - 整体用事务包裹：任一步失败全部回滚
+#[tauri::command]
+pub async fn task_move_to_list(
+    pool: State<'_, sqlx::SqlitePool>,
+    task_id: String,
+    target_list_id: String,
+) -> CmdResult<()> {
+    // 查任务当前清单与 kind
+    let task_row: Option<(String, String)> =
+        sqlx::query_as("SELECT list_id, kind FROM tasks WHERE id = $1")
+            .bind(&task_id)
+            .fetch_optional(pool.inner())
+            .await
+            .map_err(|e| format!("查询任务失败: {}", e))?;
+    let (src_list_id, task_kind) = task_row.ok_or_else(|| format!("任务不存在: {}", task_id))?;
+
+    // 目标清单必须存在、是清单（非目录）、kind 与任务一致（防跨 kind 拖拽）
+    let list_row: Option<(String, i64)> =
+        sqlx::query_as("SELECT kind, is_folder FROM lists WHERE id = $1")
+            .bind(&target_list_id)
+            .fetch_optional(pool.inner())
+            .await
+            .map_err(|e| format!("查询目标清单失败: {}", e))?;
+    let (list_kind, is_folder) =
+        list_row.ok_or_else(|| format!("目标清单不存在: {}", target_list_id))?;
+    if is_folder == 1 {
+        return Err("目标不能是目录，请拖到清单上".to_string());
+    }
+    if task_kind != list_kind {
+        return Err(format!(
+            "任务类型({})与清单类型({})不匹配，不能移动",
+            task_kind, list_kind
+        ));
+    }
+    // 目标与当前相同 → no-op（拖回原清单）
+    if src_list_id == target_list_id {
+        return Ok(());
+    }
+
+    // 事务：子树迁移 + 根任务追加到目标清单末尾
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("开启事务失败: {}", e))?;
+
+    // 整棵子树（任务自身 + 所有后代）迁移到目标清单，
+    // group_id 全部回退目标清单默认分组，避免跨清单分组孤儿。
+    let default_group = format!("{}-default", target_list_id);
+    let ts = now();
+    sqlx::query(
+        "WITH RECURSIVE subtree(id) AS (
+             SELECT id FROM tasks WHERE id = $1
+             UNION ALL
+             SELECT t.id FROM tasks t JOIN subtree s ON t.parent_id = s.id
+         )
+         UPDATE tasks
+         SET list_id = $2, group_id = $3, updated_at = $4
+         WHERE id IN (SELECT id FROM subtree)",
+    )
+    .bind(&task_id)
+    .bind(&target_list_id)
+    .bind(&default_group)
+    .bind(&ts)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| format!("迁移任务失败: {}", e))?;
+
+    // 被拖任务排到目标清单根任务末尾（子任务保持相对顺序，无需调整）
+    let max_sort: Option<(i64,)> = sqlx::query_as(
+        "SELECT MAX(sort_order) FROM tasks WHERE list_id = $1 AND parent_id IS NULL",
+    )
+    .bind(&target_list_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| format!("查询目标清单排序失败: {}", e))?;
+    let new_sort = max_sort.map(|(m,)| m + 1000).unwrap_or(1000);
+    sqlx::query("UPDATE tasks SET sort_order = $1, updated_at = $2 WHERE id = $3")
+        .bind(new_sort)
+        .bind(&ts)
+        .bind(&task_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("调整任务排序失败: {}", e))?;
+
+    tx.commit()
+        .await
+        .map_err(|e| format!("提交事务失败: {}", e))?;
+    Ok(())
+}
+
 // ─── 标签操作 ────────────────────────────────────────────
 
 #[tauri::command]

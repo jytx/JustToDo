@@ -57,6 +57,16 @@ export const useTaskStore = defineStore("task", () => {
    *  自动展开自己的箭头，随后请求清除）。null = 无待展开父任务。 */
   const autoExpandParentId = ref<string | null>(null);
 
+  /** 被拖拽移动的任务 id（跨清单拖拽专用信号）。
+   *  侧边栏 drop 的同步阶段标记 → dragend 据此跳过旧清单排序持久化，
+   *  防止 task_reorder 覆盖已移走任务的 sort_order（详见 moveTaskToList）。 */
+  const dragMovedTaskId = ref<string | null>(null);
+
+  /** 标记任务已通过拖拽移走（SidebarListNode drop 同步阶段调用） */
+  function markTaskDragMoved(taskId: string): void {
+    dragMovedTaskId.value = taskId;
+  }
+
   /** 待打开的 AI 总结范围（跨组件传递：侧边栏/批量菜单设置 → AppLayout 弹窗读取）。
    *  SummaryScope 类型见 src/api/ai.ts；null 表示用默认的每日/周报模式。 */
   const pendingSummaryScope = ref<import("@/api/ai").SummaryScope | null>(null);
@@ -1105,6 +1115,27 @@ export const useTaskStore = defineStore("task", () => {
     notifyTaskChanged();
   }
 
+  /** 把任务（含整棵子任务树）移动到其他清单（跨清单拖拽 / 「移动到清单」菜单）。
+   *  后端在事务内迁移子树并重置分组；成功后重新加载当前视图（任务从原视图消失）
+   *  + 刷新侧边栏计数 + 通知日历等联动。
+   *  失败返回 false（调用方提示；拖拽 drop 是 fire-and-forget，避免未捕获 rejection）。 */
+  async function moveTaskToList(taskId: string, targetListId: string): Promise<boolean> {
+    try {
+      await db.moveTaskToList(taskId, targetListId);
+    } catch (e) {
+      console.error("[taskStore] 移动任务到清单失败:", e);
+      return false;
+    } finally {
+      // 无论成败都清除拖拽移动标志（dragend 已按标志跳过排序持久化，
+      // 失败时任务留在原清单，顺序由 useTaskDragReorder 的 watch 恢复）
+      dragMovedTaskId.value = null;
+    }
+    await reload();
+    await refreshCounts();
+    notifyTaskChanged();
+    return true;
+  }
+
   /** 从缓存获取子任务 */
   function getCachedSubtasks(parentId: string): Task[] {
     return subtaskCache.value[parentId] ?? [];
@@ -1289,6 +1320,9 @@ export const useTaskStore = defineStore("task", () => {
     getCachedSubtasks,
     getSubtasks,
     attachToParent,
+    moveTaskToList,
+    dragMovedTaskId,
+    markTaskDragMoved,
     preloadSubtaskCounts,
     refreshTaskTags,
     reorderTaskTags,

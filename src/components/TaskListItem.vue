@@ -19,6 +19,7 @@ import PriorityDot from "./PriorityDot.vue";
 import ListCascadeMenu from "./menu/ListCascadeMenu.vue";
 import AttachParentDialog from "./AttachParentDialog.vue";
 import { useTaskTagReorder } from "@/composables/useTaskTagReorder";
+import { TASK_DRAG_MIME, hasTaskDrag } from "@/utils/dnd";
 
 const props = withDefaults(
   defineProps<{
@@ -84,9 +85,9 @@ async function onMoveToGroup(groupId: string): Promise<void> {
   cascadeSubmenu.display = false;
 }
 
-/** 移动任务到指定清单（updateTask 传 listId，后端同步 group_id 回默认分组）。
- *  移动后任务不再属于当前视图，调 store.reload() 重新拉取当前视图任务，
- *  让原视图立即移除该任务（否则任务在原视图残留，需刷新页面才消失）。 */
+/** 移动任务到指定清单（含整棵子任务树，后端事务内迁移并重置分组）。
+ *  store 内部 reload() 重新拉取当前视图任务，让原视图立即移除该任务
+ * （否则任务在原视图残留，需刷新页面才消失）。 */
 async function onMoveToList(listId: string): Promise<void> {
   if (listId === props.task.listId) {
     // 已在目标清单：仅关闭菜单，避免无意义更新
@@ -95,12 +96,10 @@ async function onMoveToList(listId: string): Promise<void> {
     cascadeSubmenu.display = false;
     return;
   }
-  await taskStore.updateTask(props.task.id, { listId });
+  await taskStore.moveTaskToList(props.task.id, listId);
   ctxMenu.visible = false;
   menuOpen.value = false;
   cascadeSubmenu.display = false;
-  // 重新加载当前视图：从数据库拉最新任务列表，移动的任务从原视图消失
-  await taskStore.reload();
 }
 
 // ─── 级联子菜单（优先级 / 标签 / 移动至 / 移动到分组，参照 BatchContextMenu 的 Teleport + fixed 方案）───
@@ -242,6 +241,12 @@ function onDragStart(e: DragEvent) {
     return;
   }
   e.dataTransfer!.setData("text/plain", props.task.id);
+  // 自定义 MIME 携带 { id, kind }：与侧边栏清单拖拽（同为 text/plain）隔离，
+  // 让侧边栏能区分「任务拖入」与「清单拖入」两种场景
+  e.dataTransfer!.setData(
+    TASK_DRAG_MIME,
+    JSON.stringify({ id: props.task.id, kind: props.task.kind }),
+  );
   e.dataTransfer!.effectAllowed = "move";
   e.dataTransfer!.dropEffect = "move";
   // 通知父视图记录 draggingId（FLIP 实时让位用）
@@ -257,6 +262,12 @@ function onDragEnd() {
 }
 
 function onDragOver(e: DragEvent) {
+  // 非任务拖拽（如清单拖过任务列表）：显示禁止光标，不参与落点高亮
+  if (!hasTaskDrag(e)) {
+    e.dataTransfer!.dropEffect = "none";
+    dragOver.value = null;
+    return;
+  }
   // 始终 preventDefault + 设 dropEffect="move"，保证整个列表区域都显示
   // "可移动"光标，避免鼠标在可拖/不可拖行之间移动时光标闪烁成禁止/加号。
   // 是否真正执行 reorder 由 onDrop 里的业务判断决定。
@@ -271,6 +282,8 @@ function onDragOver(e: DragEvent) {
  *  消除"刚拖起来那一瞬间"光标闪成默认 +/copy 的现象（react-dnd issue #414）。
  *  dragenter 到首个 dragover 之间存在光标未定窗口，必须在此显式声明。 */
 function onDragEnter(e: DragEvent) {
+  // 仅任务拖拽参与（清单/分组拖过时保持禁止光标）
+  if (!hasTaskDrag(e)) return;
   e.preventDefault();
   e.dataTransfer!.dropEffect = "move";
 }
@@ -289,6 +302,8 @@ function onDragLeave(e: DragEvent) {
 }
 
 function onDrop(e: DragEvent) {
+  // 仅处理任务拖拽；清单拖拽的 drop 不被这里消费（避免误读 text/plain 的清单 id）
+  if (!hasTaskDrag(e)) return;
   e.preventDefault();
   e.stopPropagation();
   const draggedId = e.dataTransfer!.getData("text/plain");

@@ -35,6 +35,7 @@ import ContextMenu from "./ContextMenu.vue";
 import TeleportPopper from "./TeleportPopper.vue";
 import * as db from "@/api/db";
 import { LIST_COLORS } from "@/utils/colors";
+import { Message } from "@arco-design/web-vue";
 
 const props = defineProps<{
   collapsed?: boolean;
@@ -644,6 +645,52 @@ async function onListMove(draggedId: string, target: any, position: "before" | "
   }
 }
 
+/** 处理任务/笔记拖到清单（含 inbox）：移动到该清单（含整棵子任务树） */
+async function onTaskDrop(taskId: string, targetNode: ListTreeNode): Promise<void> {
+  const ok = await taskStore.moveTaskToList(taskId, targetNode.id);
+  if (!ok) {
+    Message.error("移动任务失败");
+  }
+}
+
+/** 处理任务/笔记拖到目录：自动新建清单（固定名 + 序号）后移入 */
+async function onTaskDropToFolder(
+  taskId: string,
+  folderNode: ListTreeNode,
+  kind: "task" | "note",
+): Promise<void> {
+  try {
+    const list = await listStore.createList({
+      name: nextAutoListName(kind),
+      color: selectedColor.value,
+      parentId: folderNode.id,
+      isFolder: false,
+      kind,
+    });
+    const ok = await taskStore.moveTaskToList(taskId, list.id);
+    if (!ok) {
+      Message.error("移动任务失败");
+    }
+  } catch (e) {
+    console.error("[Sidebar] 拖拽新建清单失败:", e);
+    Message.error(`新建清单失败：${String(e)}`);
+  }
+}
+
+/** 计算自动清单名：「新清单 N」/「新笔记本 N」（N = 现有同名最大序号 + 1，无则从 1 起）。
+ *  命名规则后续可改（见 discuss/task-cross-list-drag-design.md）。 */
+function nextAutoListName(kind: "task" | "note"): string {
+  const prefix = kind === "note" ? "新笔记本" : "新清单";
+  const regex = new RegExp(`^${prefix} (\\d+)$`);
+  let max = 0;
+  for (const l of listStore.lists) {
+    if ((l.kind ?? "task") !== kind) continue;
+    const m = l.name.match(regex);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `${prefix} ${max + 1}`;
+}
+
 async function confirmNewList() {
   const name = newListName.value.trim();
   if (!name) {
@@ -1187,6 +1234,8 @@ onMounted(async () => {
           @archive="(n: ListTreeNode) => onHoverArchive(n)"
           @aiSummary="(n: ListTreeNode) => onCtxAiSummary(n)"
           @move="onListMove"
+          @taskDrop="onTaskDrop"
+          @taskDropToFolder="onTaskDropToFolder"
           @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
         />
       </div>
@@ -1243,6 +1292,8 @@ onMounted(async () => {
           @archive="(n: ListTreeNode) => onHoverArchive(n)"
           @aiSummary="(n: ListTreeNode) => onCtxAiSummary(n)"
           @move="onListMove"
+          @taskDrop="onTaskDrop"
+          @taskDropToFolder="onTaskDropToFolder"
           @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
         />
       </div>
