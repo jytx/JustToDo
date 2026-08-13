@@ -98,7 +98,11 @@ const shortcuts = [
   { action: "快速添加任务", mac: "⌘⇧A", win: "Ctrl+Shift+A" },
   { action: "搜索", mac: "⌘K", win: "Ctrl+K" },
   { action: "新建任务", mac: "⌘N", win: "Ctrl+N" },
+  { action: "AI 每日小结", mac: "⌘⇧D", win: "Ctrl+Shift+D" },
   { action: "切换主题", mac: "⌘⇧L", win: "Ctrl+Shift+L" },
+  { action: "放大界面", mac: "⌘+", win: "Ctrl+Plus" },
+  { action: "缩小界面", mac: "⌘-", win: "Ctrl+Minus" },
+  { action: "恢复 100%", mac: "⌘0", win: "Ctrl+0" },
 ];
 
 /** 当前键是否正在保存（用于显示反馈） */
