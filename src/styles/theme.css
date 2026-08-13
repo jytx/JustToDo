@@ -175,46 +175,24 @@ body[arco-theme='dark'] {
 }
 
 /*
- * 全局统一：Arco a-input-number / a-input / a-input-tag
- * 默认风格（圆角 2px、透明边框、灰底填充）跟项目视觉不一致。
- * 改为：32px 高、1px 灰边、4px 圆角、白底 surface，
- * focus 时主色边框 + 主色软环；step 按钮 hover 浅灰底。
- *
- * 影响：SettingsView 重复检查间隔、ReminderPopover 自定义分钟数、
- *       RecurrencePopover 间隔输入。
+ * 全局统一：Arco a-input / a-input-number / a-textarea 与下拉同语言——
+ * 无边框透明、hover 加深底色、focus 主色软环、26px 紧凑高、6px 圆角。
+ * 影响：SettingsView、ReminderPopover、RecurrencePopover、AI 弹窗等所有输入控件。
  */
 
-/* === 基础外观 === */
-.arco-input-wrapper.arco-input-number,
-.arco-input-wrapper.arco-input {
-  background-color: var(--color-bg-2);
-  border: 1px solid var(--color-border-2);
-  border-radius: 4px;
-  transition: border-color 0.12s, box-shadow 0.12s;
-}
-
-/* === 各尺寸：统一 26px 高（参考 SelectPopover 下拉） === */
-.arco-input-wrapper.arco-input-number.arco-input-number-size-medium,
-.arco-input-wrapper.arco-input.arco-input-size-medium,
-.arco-input-wrapper.arco-input-number.arco-input-number-size-small,
-.arco-input-wrapper.arco-input.arco-input-size-small {
+/* === 输入框统一语言（无边框透明 + hover 显底 + focus 主色环）===
+ * 注意：Arco 的 wrapper class 只有 arco-input-wrapper（arco-input 是
+ * 内部 input 元素的 class，不在 wrapper 上），所有规则以 .arco-input-wrapper 为准。 */
+.arco-input-wrapper {
   height: 26px;
-}
-
-/* 设置页输入框：宽度随内容自适应（JS 动态设宽），max-width 兜底防超长 */
-.settings-view .arco-input-wrapper.arco-input,
-.settings-view .arco-input-wrapper.arco-input-number {
-  max-width: 320px;
-}
-
-/* === 默认态：无边框透明（同下拉），hover 才显底色 ===
- * 边框透明保留 1px 占位（防尺寸跳动）；默认透明融入页面，
- * hover 加深，focus 提亮 + 主色软环。 */
-.arco-input-wrapper.arco-input-number,
-.arco-input-wrapper.arco-input {
   border-color: transparent;
   background-color: transparent;
   border-radius: 6px;
+}
+
+/* 设置页输入框：宽度随内容自适应（JS 动态设宽），max-width 兜底防超长 */
+.settings-view .arco-input-wrapper {
+  max-width: 320px;
 }
 
 /* 设置页：输入文字靠右（同下拉的值靠右语言）；其余页面输入框保持左对齐 */
@@ -223,20 +201,35 @@ body[arco-theme='dark'] {
 }
 
 /* === hover: 加深底色（同下拉），不再加深边框 === */
-.arco-input-wrapper.arco-input-number:not(.arco-input-number-disabled):hover,
-.arco-input-wrapper.arco-input:not(.arco-input-disabled):hover {
+.arco-input-wrapper:not(.arco-input-disabled):not(.arco-input-number-disabled):hover {
   border-color: transparent;
   background-color: var(--jt-surface-hover);
 }
 
 /* === focus: 主色软环 + 提亮为白底 === */
-.arco-input-wrapper.arco-input-number:focus,
-.arco-input-wrapper.arco-input-number:focus-within,
-.arco-input-wrapper.arco-input:focus,
-.arco-input-wrapper.arco-input:focus-within {
+.arco-input-wrapper:focus-within,
+.arco-input-wrapper.arco-input-focus {
   border-color: transparent;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-primary) 20%, transparent);
   background-color: var(--color-bg-2);
+}
+
+/* === textarea：与输入框同语言（透明底 + hover 加深 + focus 主色环）===
+ * Arco 默认 textarea 是 fill-2 灰底 + 4px 圆角，统一为透明底 + 6px。 */
+.arco-textarea-wrapper {
+  border-color: transparent;
+  background-color: transparent;
+  border-radius: 6px;
+}
+.arco-textarea-wrapper:hover {
+  background-color: var(--jt-surface-hover);
+  border-color: transparent;
+}
+.arco-textarea-wrapper:focus-within,
+.arco-textarea-wrapper.arco-textarea-focus {
+  background-color: var(--color-bg-2);
+  border-color: transparent;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-primary) 20%, transparent);
 }
 
 /* === input 内部 === */
@@ -273,8 +266,7 @@ body[arco-theme='dark'] {
 }
 
 /* === 深色模式：整体提亮 === */
-body[arco-theme='dark'] .arco-input-wrapper.arco-input-number,
-body[arco-theme='dark'] .arco-input-wrapper.arco-input {
+body[arco-theme='dark'] .arco-input-wrapper {
   background-color: transparent;
   border-color: transparent;
   color: var(--jt-text-primary);
@@ -282,8 +274,7 @@ body[arco-theme='dark'] .arco-input-wrapper.arco-input {
 body[arco-theme='dark'] .arco-input-wrapper.arco-input-number-step {
   border-color: transparent;
 }
-body[arco-theme='dark'] .arco-input-wrapper.arco-input-number:not(.arco-input-number-disabled):hover,
-body[arco-theme='dark'] .arco-input-wrapper.arco-input:not(.arco-input-disabled):hover {
+body[arco-theme='dark'] .arco-input-wrapper:not(.arco-input-disabled):not(.arco-input-number-disabled):hover {
   border-color: transparent;
   background-color: var(--jt-surface-hover);
 }

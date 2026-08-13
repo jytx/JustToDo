@@ -374,14 +374,14 @@ watch(
         :placeholder="currentTool.desc"
         :auto-size="{ minRows: 3, maxRows: 8 }"
         allow-clear
-        style="margin-bottom: 16px; border-radius: 8px"
+        style="margin-bottom: 16px"
       />
       <a-input
         v-else-if="currentTool.needInput"
         v-model="userInput"
         :placeholder="currentTool.desc"
         allow-clear
-        style="margin-bottom: 16px; border-radius: 8px"
+        style="margin-bottom: 16px"
         @keydown.enter="execute"
       />
 
