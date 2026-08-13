@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// 统一风格的 Select 下拉 —— 无边框、hover 加深底色（同滴答清单），
+// 统一风格的 Select 下拉 —— 无边框、hover 加深底色、宽高随内容自适应
+// （同滴答清单：内容多宽控件多宽，高度 26 紧凑），
 // 右侧为细线条上下双三角图标（Lucide chevrons-up-down 风格），
 // 弹层复用 MenuPopover / MenuPopoverItem，
 // 与清单更多 / 标签删除 / 优先级 / 标题级别 / 排序 等所有下拉视觉语言一致。
@@ -25,7 +26,7 @@ const props = withDefaults(
     modelValue: string;
     /** 选项列表（value 用 string；外部可用 String() 转） */
     options: Option[];
-    /** 触发器宽度，默认 200px */
+    /** 触发器最大宽度（默认 220px）。实际宽度随内容自适应，仅超长选项才触达此上限 */
     width?: number | string;
     /** 占位文本（modelValue 为空时显示） */
     placeholder?: string;
@@ -129,9 +130,11 @@ function onTriggerClick() {
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
-  width: var(--select-width, 200px);
-  height: 32px;
-  padding: 0 10px;
+  /* 宽度随内容自适应（同滴答清单），width prop 作 max-width 兜底防超长选项撑爆 */
+  width: fit-content;
+  max-width: var(--select-width, 220px);
+  height: 26px;
+  padding: 0 8px;
   /* 无边框无底色（同滴答清单），hover 才加深底色 */
   border: none;
   background-color: transparent;
@@ -159,9 +162,7 @@ function onTriggerClick() {
 }
 
 .select-popover__value {
-  flex: 1;
-  /* 值靠右、紧贴箭头（同滴答清单），左侧留白不显长 */
-  text-align: right;
+  /* 内容流内排列（自适应宽度），超长截断兜底 */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
