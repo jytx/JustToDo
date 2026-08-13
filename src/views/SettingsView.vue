@@ -225,6 +225,8 @@ const minuteColRef = ref<HTMLElement | null>(null);
 
 /** 滚动吸附定时器（每列独立，松手后对齐最近整行） */
 const snapTimers: Record<string, number> = { hour: 0, minute: 0 };
+/** 吸附动画帧（每列独立，rAF 缓动替代 scrollTo smooth——WebKit 下更顺滑） */
+const snapRaf: Record<string, number> = { hour: 0, minute: 0 };
 
 /** 列滚动到指定选项（居中显示） */
 function scrollColTo(col: HTMLElement | null, value: number | null, options: number[]): void {
@@ -246,13 +248,30 @@ function openTimePicker(): void {
   });
 }
 
-/** 滚动事件：最近选项（居中行）即选中；松手后平滑吸附对齐（防停在两数之间） */
+/** rAF 缓动吸附：从当前 scrollTop 平滑滚到目标整行（easeOutCubic） */
+function snapColTo(col: HTMLElement, target: number, key: string): void {
+  const start = col.scrollTop;
+  const delta = target - start;
+  if (Math.abs(delta) < 0.5) return;
+  const duration = 220;
+  const t0 = performance.now();
+  cancelAnimationFrame(snapRaf[key]);
+  const step = (t: number): void => {
+    const p = Math.min(1, (t - t0) / duration);
+    const ease = 1 - Math.pow(1 - p, 3);
+    col.scrollTop = start + delta * ease;
+    if (p < 1) snapRaf[key] = requestAnimationFrame(step);
+  };
+  snapRaf[key] = requestAnimationFrame(step);
+}
+
+/** 滚动事件：最近选项（居中行）即选中；松手后缓动吸附（防停在两数之间） */
 function onColScroll(col: HTMLElement, options: number[], set: (v: number) => void, key: string): void {
   const idx = Math.min(options.length - 1, Math.max(0, Math.round(col.scrollTop / PICKER_ITEM_H)));
   set(options[idx]);
   window.clearTimeout(snapTimers[key]);
   snapTimers[key] = window.setTimeout(() => {
-    col.scrollTo({ top: idx * PICKER_ITEM_H, behavior: "smooth" });
+    snapColTo(col, idx * PICKER_ITEM_H, key);
   }, 150);
 }
 
@@ -1178,7 +1197,7 @@ async function changeAttachmentPath() {
 /* ─── iOS 风格滚动选择器（两列滚动 + 中间高亮条）─── */
 .daily-picker {
   position: relative;
-  width: 172px;
+  width: 144px;
   /* 面板容器：同 MenuPopover（白底 12px 圆角 阴影） */
   background: var(--jt-surface);
   border-radius: 12px;
