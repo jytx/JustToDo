@@ -193,16 +193,18 @@ body[arco-theme='dark'] {
   transition: border-color 0.12s, box-shadow 0.12s;
 }
 
-/* === 各尺寸 === */
-/* 默认（medium）32px 高 */
+/* === 各尺寸：统一 26px 高（参考 SelectPopover 下拉） === */
 .arco-input-wrapper.arco-input-number.arco-input-number-size-medium,
-.arco-input-wrapper.arco-input.arco-input-size-medium {
-  height: 32px;
-}
-/* small 也提到 28px（与项目其它 small 控件一致） */
+.arco-input-wrapper.arco-input.arco-input-size-medium,
 .arco-input-wrapper.arco-input-number.arco-input-number-size-small,
 .arco-input-wrapper.arco-input.arco-input-size-small {
-  height: 28px;
+  height: 26px;
+}
+
+/* 设置页输入框：宽度随内容自适应（JS 动态设宽），max-width 兜底防超长 */
+.settings-view .arco-input-wrapper.arco-input,
+.settings-view .arco-input-wrapper.arco-input-number {
+  max-width: 320px;
 }
 
 /* === 默认态：无边框透明（同下拉），hover 才显底色 ===

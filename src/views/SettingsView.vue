@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 设置页 —— 通用/外观/快捷键/数据/关于
 // 主题/强调色/自动今天/检查间隔统一通过 settings store 持久化
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, onBeforeUnmount, computed } from "vue";
 import { storeToRefs } from "pinia";
 import { useSettingsStore, SETTINGS_KEYS, type StartupView, type AiProvider, DEFAULT_PROMPT_SMART, DEFAULT_PROMPT_LIST, DEFAULT_PROMPT_TASKS, DEFAULT_PROMPT_NOTE, DEFAULT_PROMPT_PARSE_TASK, DEFAULT_PROMPT_BREAKDOWN_TASK, DEFAULT_PROMPT_EXTRACT_TASKS, DEFAULT_PROMPT_POLISH } from "@/stores/settings";
 import SelectPopover from "@/components/SelectPopover.vue";
@@ -279,12 +279,58 @@ function previewSound(value: string): void {
   }
 }
 
+// ─── 输入框宽度随内容自适应（同下拉的 fit-content 语言）───
+// WebKit 下 input 的 CSS fit-content 不跟随内容（实测固定 ~203px），
+// 需 JS 用 canvas 测字宽动态设宽；上限由 CSS max-width 与下方 clamp 双重兜底。
+const fitCanvas = document.createElement("canvas");
+
+/** 单个输入框：宽度 = 文本(值或占位符) + 左右内边距 + 附加控件(step/眼睛)，80~320 之间 */
+function fitInputWidth(wrapper: HTMLElement): void {
+  const input = wrapper.querySelector("input");
+  if (!input) return;
+  const ctx = fitCanvas.getContext("2d");
+  if (!ctx) return;
+  ctx.font = getComputedStyle(input).font;
+  const textW = ctx.measureText(input.value || input.placeholder || "").width;
+  const stepW = wrapper.querySelector(".arco-input-number-step")?.clientWidth ?? 0;
+  const suffixW = wrapper.querySelector(".arco-input-suffix")?.clientWidth ?? 0;
+  const w = Math.min(Math.max(Math.ceil(textW + 24 + stepW + suffixW + 6), 80), 320);
+  wrapper.style.width = `${w}px`;
+}
+
+/** 设置页内全部输入框适配一次（初始化 / tab 切换后重扫） */
+function fitAllInputs(): void {
+  document.querySelectorAll<HTMLElement>(".settings-view .arco-input-wrapper").forEach(fitInputWidth);
+}
+
+/** 全局捕获：输入 / 变更时动态适配宽度 */
+function onDocFitInput(e: Event): void {
+  const wrapper = (e.target as HTMLElement).closest<HTMLElement>(".settings-view .arco-input-wrapper");
+  if (wrapper) fitInputWidth(wrapper);
+}
+
+// 观察设置页子树：tab 切换等动态出现的输入框自动适配（幂等，开销极小）
+const settingsFitObserver = new MutationObserver(() => requestAnimationFrame(fitAllInputs));
+
 onMounted(async () => {
+  document.addEventListener("input", onDocFitInput, true);
+  document.addEventListener("change", onDocFitInput, true);
+  settingsFitObserver.observe(document.querySelector(".settings-view") ?? document.body, {
+    childList: true,
+    subtree: true,
+  });
+  fitAllInputs();
   try {
     attachmentPath.value = await invoke<string>("get_attachment_path");
   } catch {
     attachmentPath.value = "无法获取路径";
   }
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("input", onDocFitInput, true);
+  document.removeEventListener("change", onDocFitInput, true);
+  settingsFitObserver.disconnect();
 });
 
 async function changeAttachmentPath() {
