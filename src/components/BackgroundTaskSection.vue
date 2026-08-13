@@ -117,7 +117,7 @@ async function onRunSchedule(s: ListSchedule): Promise<void> {
         后台任务会按设置间隔自动扫描并生成。重复任务的实例被删除后不会重生；暂停后不再生成新实例。
       </p>
       <a-button
-        type="outline"
+        type="text"
         size="small"
         :loading="running"
         @click="onRunNow"

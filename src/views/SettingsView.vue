@@ -3,7 +3,7 @@
 // 主题/强调色/自动今天/检查间隔统一通过 settings store 持久化
 import { ref, onMounted, onBeforeUnmount, computed } from "vue";
 import { storeToRefs } from "pinia";
-import { useSettingsStore, SETTINGS_KEYS, type StartupView, type AiProvider, DEFAULT_PROMPT_SMART, DEFAULT_PROMPT_LIST, DEFAULT_PROMPT_TASKS, DEFAULT_PROMPT_NOTE, DEFAULT_PROMPT_PARSE_TASK, DEFAULT_PROMPT_BREAKDOWN_TASK, DEFAULT_PROMPT_EXTRACT_TASKS, DEFAULT_PROMPT_POLISH } from "@/stores/settings";
+import { useSettingsStore, SETTINGS_KEYS, type StartupView, type AiProvider, type ThemeMode, DEFAULT_PROMPT_SMART, DEFAULT_PROMPT_LIST, DEFAULT_PROMPT_TASKS, DEFAULT_PROMPT_NOTE, DEFAULT_PROMPT_PARSE_TASK, DEFAULT_PROMPT_BREAKDOWN_TASK, DEFAULT_PROMPT_EXTRACT_TASKS, DEFAULT_PROMPT_POLISH } from "@/stores/settings";
 import SelectPopover from "@/components/SelectPopover.vue";
 import PromptEditor from "@/components/PromptEditor.vue";
 import {
@@ -83,6 +83,16 @@ const themeModes = [
   { value: "system", label: "跟随系统" },
 ] as const;
 
+/** 主题下拉选项（SelectPopover 结构：value 用 string） */
+const themeModeOptions: Array<{ value: string; label: string }> = themeModes.map((m) => ({
+  value: m.value,
+  label: m.label,
+}));
+
+function onThemeModeChange(v: string): void {
+  void settingsStore.setThemeMode(v as ThemeMode);
+}
+
 /** 启动时打开的视图选项 —— label 用于 UI，value 写入 settings.startupView */
 const startupViewOptions: Array<{ value: StartupView; label: string }> = [
   { value: "today", label: "今天" },
@@ -116,7 +126,6 @@ const shortcuts = [
 ];
 
 /** 当前键是否正在保存（用于显示反馈） */
-const isSavingTheme = computed(() => settingsStore.isSaving(SETTINGS_KEYS.themeMode));
 const isSavingAccent = computed(() => settingsStore.isSaving(SETTINGS_KEYS.accentColor));
 const isSavingDueToday = computed(() =>
   settingsStore.isSaving(SETTINGS_KEYS.newTasksDueToday),
@@ -584,18 +593,12 @@ async function changeAttachmentPath() {
           <h2 class="settings-section__title">外观</h2>
           <div class="settings-section__item">
             <span>主题</span>
-            <div class="settings-section__segmented">
-              <a-button
-                v-for="m in themeModes"
-                :key="m.value"
-                :type="themeMode === m.value ? 'primary' : 'text'"
-                size="small"
-                :loading="isSavingTheme && themeMode !== m.value"
-                @click="settingsStore.setThemeMode(m.value)"
-              >
-                {{ m.label }}
-              </a-button>
-            </div>
+            <SelectPopover
+              :model-value="themeMode"
+              :options="themeModeOptions"
+              :width="120"
+              @update:model-value="onThemeModeChange"
+            />
           </div>
           <div class="settings-section__item">
             <span>强调色</span>
@@ -676,7 +679,7 @@ async function changeAttachmentPath() {
               <span>附件存储路径</span>
               <p class="settings-section__path-hint">{{ attachmentPath || '加载中...' }}</p>
             </div>
-            <a-button type="outline" size="small" @click="changeAttachmentPath">更改路径</a-button>
+            <a-button type="text" size="small" @click="changeAttachmentPath">更改路径</a-button>
           </div>
 
           <a-divider class="my-4" />
@@ -1050,14 +1053,6 @@ async function changeAttachmentPath() {
   justify-content: space-between;
   padding: 12px 0;
   font-size: 14px;
-}
-
-.settings-section__segmented {
-  display: flex;
-  gap: 2px;
-  background: var(--jt-surface-sunken);
-  border-radius: 8px;
-  padding: 2px;
 }
 
 .settings-section__colors {
