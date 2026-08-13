@@ -1147,17 +1147,17 @@ async function changeAttachmentPath() {
   gap: 2px;
 }
 
-/* 箭头列：▲ 在上、▼ 在下，垂直堆叠 */
+/* 箭头列：▲ 在上、▼ 在下，垂直紧贴（三角间距紧凑，同下拉双三角观感） */
 .settings-section__time-bumps {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
 }
 
 /* 线性 chevron 步进按钮：无边框透明，hover 加深底色（与全局输入控件同语言） */
 .settings-section__time-bump {
   width: 18px;
-  height: 13px;
+  height: 11px;
   border: none;
   background: transparent;
   color: var(--jt-text-tertiary);
