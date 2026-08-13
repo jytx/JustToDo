@@ -206,11 +206,11 @@ body[arco-theme='dark'] {
   background-color: var(--jt-surface-hover);
 }
 
-/* === focus: 主色软环 + 提亮为白底 === */
+/* === focus: 主色细环（1px）+ 提亮为白底 === */
 .arco-input-wrapper:focus-within,
 .arco-input-wrapper.arco-input-focus {
   border-color: transparent;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-primary) 20%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--jt-primary) 35%, transparent);
   background-color: var(--color-bg-2);
 }
 
@@ -229,7 +229,7 @@ body[arco-theme='dark'] {
 .arco-textarea-wrapper.arco-textarea-focus {
   background-color: var(--color-bg-2);
   border-color: transparent;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-primary) 20%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--jt-primary) 35%, transparent);
 }
 
 /* === input 内部 === */
