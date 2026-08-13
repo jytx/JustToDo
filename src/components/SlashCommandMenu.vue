@@ -349,25 +349,16 @@ onBeforeUnmount(() => {
 }
 
 .slash-menu__desc {
-  margin-left: auto;
   font-size: 11px;
   color: var(--jt-text-tertiary);
   font-family: var(--font-body);
 }
 
-/* 快捷字母标签：等宽字体小徽章，置于描述右侧 */
+/* 快捷字母标签：无边框的浅灰色等宽小字（Notion 风格），固定在行最右侧 */
 .slash-menu__shortcut {
-  margin-left: 10px;
+  margin-left: auto;
+  padding-left: 10px;
   flex-shrink: 0;
-  min-width: 20px;
-  height: 18px;
-  padding: 0 5px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--jt-border);
-  border-radius: 4px;
-  background: var(--jt-surface-sunken);
   color: var(--jt-text-tertiary);
   font-family: var(--font-mono);
   font-size: 11px;
