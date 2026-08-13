@@ -1125,7 +1125,7 @@ async function changeAttachmentPath() {
   cursor: not-allowed;
 }
 
-/* 输入框列（与箭头列对齐，整体略宽）—— 无边框淡底（与全局输入框同语言） */
+/* 输入框列（与箭头列对齐，整体略宽）—— 默认透明无边框，hover 显底色（同全局输入框） */
 .settings-section__time-input {
   width: 48px;
   height: 28px;
@@ -1135,7 +1135,7 @@ async function changeAttachmentPath() {
   font-size: 13px;
   font-family: var(--font-mono, var(--font-body));
   color: var(--jt-text-primary);
-  background: var(--jt-surface-sunken);
+  background: transparent;
   outline: none;
   text-align: center;
   transition: background-color 0.12s, box-shadow 0.12s, border-color 0.12s;

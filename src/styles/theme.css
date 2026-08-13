@@ -205,14 +205,19 @@ body[arco-theme='dark'] {
   height: 28px;
 }
 
-/* === 默认态：无边框 + 淡底（与 SelectPopover 下拉同语言）===
- * 边框透明保留 1px 占位（防尺寸跳动）；sunken 淡底保证可辨识；
+/* === 默认态：无边框透明（同下拉），hover 才显底色 ===
+ * 边框透明保留 1px 占位（防尺寸跳动）；默认透明融入页面，
  * hover 加深，focus 提亮 + 主色软环。 */
 .arco-input-wrapper.arco-input-number,
 .arco-input-wrapper.arco-input {
   border-color: transparent;
-  background-color: var(--jt-surface-sunken);
+  background-color: transparent;
   border-radius: 6px;
+}
+
+/* 设置页：输入文字靠右（同下拉的值靠右语言）；其余页面输入框保持左对齐 */
+.settings-view .arco-input-wrapper .arco-input {
+  text-align: right;
 }
 
 /* === hover: 加深底色（同下拉），不再加深边框 === */
@@ -268,7 +273,7 @@ body[arco-theme='dark'] {
 /* === 深色模式：整体提亮 === */
 body[arco-theme='dark'] .arco-input-wrapper.arco-input-number,
 body[arco-theme='dark'] .arco-input-wrapper.arco-input {
-  background-color: var(--jt-surface-sunken);
+  background-color: transparent;
   border-color: transparent;
   color: var(--jt-text-primary);
 }
