@@ -304,6 +304,32 @@ async function askDeleteTag(tag: { id: string; name: string }) {
   };
 }
 
+/** 选中清单/笔记本时按 Backspace/Delete → 弹删除确认框（键盘入口，等价于右键「删除」）。
+ *  守卫：删除框已开 / 非清单·笔记本路由 / 有任务焦点（让位任务删除）/ 详情面板打开
+ *  （操作态，避免误删清单）/ 输入框聚焦 / 非 Backspace·Delete 键，均不处理。 */
+function onSidebarListKeydown(e: KeyboardEvent): void {
+  if (confirmDelete.value) return;
+  if (route.name !== "list" && route.name !== "notebook") return;
+  if (taskStore.focusedTaskId) return;
+  if (taskStore.detailOpen) return;
+  if (e.key !== "Backspace" && e.key !== "Delete") return;
+  const active = document.activeElement;
+  if (
+    active &&
+    (active.tagName === "INPUT" ||
+      active.tagName === "TEXTAREA" ||
+      (active as HTMLElement).isContentEditable)
+  ) {
+    return;
+  }
+  const id = route.params.id as string;
+  const node = listStore.getById(id);
+  if (!node || node.isFolder) return; // 目录无独立路由，理论不会出现
+  // preventDefault 放在所有守卫之后：阻止 webview 中 Backspace 触发历史回退
+  e.preventDefault();
+  askDeleteList(node);
+}
+
 /** 每个标签对应一个菜单开关（key 为 tag.id） */
 const tagMenuOpen = reactive<Record<string, boolean>>({});
 
@@ -875,10 +901,13 @@ function onEscForCascade(e: KeyboardEvent) {
 onMounted(() => {
   document.addEventListener("mousedown", onDocMouseDownForCascade);
   document.addEventListener("keydown", onEscForCascade);
+  // 选中清单/笔记本时 Backspace/Delete 弹删除确认框（窗口级，与 AppLayout 任务删除互补）
+  window.addEventListener("keydown", onSidebarListKeydown);
 });
 onUnmounted(() => {
   document.removeEventListener("mousedown", onDocMouseDownForCascade);
   document.removeEventListener("keydown", onEscForCascade);
+  window.removeEventListener("keydown", onSidebarListKeydown);
 });
 
 const smartViews = [

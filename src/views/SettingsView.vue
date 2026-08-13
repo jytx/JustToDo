@@ -103,6 +103,10 @@ const shortcuts = [
   { action: "放大界面", mac: "⌘+", win: "Ctrl+Plus" },
   { action: "缩小界面", mac: "⌘-", win: "Ctrl+Minus" },
   { action: "恢复 100%", mac: "⌘0", win: "Ctrl+0" },
+  // 侧边栏键盘操作：选中清单/笔记本（当前视图为 /list 或 /notebook）时生效；
+  // 任务列表已有键盘焦点时让位给任务导航/删除
+  { action: "切换清单/笔记本", mac: "↑ / ↓", win: "↑ / ↓" },
+  { action: "删除当前清单/笔记本", mac: "⌫ / Delete", win: "Backspace / Delete" },
 ];
 
 /** 当前键是否正在保存（用于显示反馈） */

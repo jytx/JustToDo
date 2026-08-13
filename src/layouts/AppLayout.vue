@@ -22,7 +22,7 @@ import MenuPopover from "@/components/MenuPopover.vue";
 import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import { useSearchStore } from "@/stores/search";
-import { useListStore } from "@/stores/list";
+import { useListStore, type ListTreeNode } from "@/stores/list";
 import { useGroupStore } from "@/stores/group";
 import { useKanbanStore } from "@/stores/kanban";
 import { setViewPref } from "@/composables/useViewPrefs";
@@ -457,6 +457,21 @@ function onNavigationKeydown(e: KeyboardEvent) {
     return;
   }
 
+  // 2.75 清单/笔记本视图 + 无任务焦点 + 无详情面板：↑/↓ 在侧边栏清单间切换
+  //    有焦点任务时保持任务导航（下方 moveFocus 处理），不抢占；
+  //    详情面板打开（操作态）时也不切换——用户在查看/编辑任务，避免切走清单
+  //    丢失上下文；ESC 关面板后即可切换清单（点击侧边栏清单本身也会自动关面板）
+  if (
+    !taskStore.focusedTaskId &&
+    !taskStore.detailOpen &&
+    (route.name === "list" || route.name === "notebook") &&
+    (e.key === "ArrowDown" || e.key === "ArrowUp")
+  ) {
+    e.preventDefault();
+    navigateSiblingList(e.key === "ArrowDown" ? "down" : "up");
+    return;
+  }
+
   // 3. 方向键导航（不需要焦点任务也能触发，首次按 ↓/↓ 会聚焦第一个/最后一个）
   if (e.key === "ArrowDown") {
     e.preventDefault();
@@ -484,6 +499,41 @@ function onNavigationKeydown(e: KeyboardEvent) {
     e.preventDefault();
     taskStore.requestDelete(focusedId);
   }
+}
+
+/** 深度优先前序遍历的叶节点序列（与侧边栏树渲染顺序一致；纯函数） */
+function flattenLeafNodes(nodes: ListTreeNode[]): ListTreeNode[] {
+  const leaves: ListTreeNode[] = [];
+  for (const n of nodes) {
+    if (n.isFolder) leaves.push(...flattenLeafNodes(n.children));
+    else leaves.push(n);
+  }
+  return leaves;
+}
+
+/** 选中清单/笔记本时按 ↑/↓：在对应树的叶节点间切换并跳转。
+ *  - 按当前路由取树（/list → 清单树，/notebook → 笔记本树）
+ *  - 停在首尾边界，不循环；当前 id 不在序列（理论不会）时从 0/末尾开始
+ *  - 跳转前展开目标清单的父目录链，保证侧边栏激活项可见 */
+function navigateSiblingList(direction: "up" | "down"): void {
+  const isNote = route.name === "notebook";
+  const tree = isNote ? listStore.noteListTree : listStore.listTree;
+  const leaves = flattenLeafNodes(tree);
+  if (leaves.length === 0) return;
+  const curId = route.params.id as string;
+  const idx = leaves.findIndex((n) => n.id === curId);
+  const nextIdx =
+    idx < 0
+      ? direction === "down"
+        ? 0
+        : leaves.length - 1
+      : direction === "down"
+        ? Math.min(idx + 1, leaves.length - 1)
+        : Math.max(idx - 1, 0);
+  if (nextIdx === idx) return; // 已到边界
+  const next = leaves[nextIdx];
+  listStore.expandPath(next.id);
+  router.push(`${isNote ? "/notebook" : "/list"}/${next.id}`);
 }
 
 onMounted(() => {

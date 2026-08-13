@@ -4,6 +4,7 @@
 import { ref, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { ListTreeNode } from "@/stores/list";
+import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import { useSettingsStore } from "@/stores/settings";
 import {
@@ -37,6 +38,7 @@ const props = defineProps<{
   kind?: "task" | "note";
 }>();
 
+const listStore = useListStore();
 const taskStore = useTaskStore();
 const settingsStore = useSettingsStore();
 const router = useRouter();
@@ -67,7 +69,9 @@ const isActive = computed(
     route.params.id === props.node.id,
 );
 
-const expanded = ref(true);
+/** 目录展开状态：提升到 list store（键盘切换清单时需跨组件展开目录链），
+ *  缺省视为展开（undefined 按 true 处理，与旧版本地 ref(true) 行为一致） */
+const expanded = computed(() => listStore.expandedNodes[props.node.id] ?? true);
 
 const emit = defineEmits<{
   edit: [node: ListTreeNode];
@@ -234,7 +238,7 @@ function onDrop(e: DragEvent) {
     if (props.node.isFolder) {
       // 拖到目录 → 自动新建清单（由 TheSidebar 处理命名与创建），并展开目录让用户看到
       emit("taskDropToFolder", payload.id, props.node, props.kind);
-      expanded.value = true;
+      listStore.setNodeExpanded(props.node.id, true);
     } else {
       // 拖到清单（含 inbox）→ 移动到该清单
       emit("taskDrop", payload.id, props.node);
@@ -271,7 +275,7 @@ function onDrop(e: DragEvent) {
 
   // 如果是放入目录且目录收起，展开它
   if (position === "inside" && props.node.isFolder) {
-    expanded.value = true;
+    listStore.setNodeExpanded(props.node.id, true);
   }
 
   dragOver.value = null;
@@ -298,7 +302,7 @@ function onDrop(e: DragEvent) {
       @drop="onDrop"
       @contextmenu.prevent="emit('contextmenu', $event, node)"
     >
-      <span class="list-node__expand" @click="expanded = !expanded">
+      <span class="list-node__expand" @click="listStore.toggleNodeExpanded(node.id)">
         <icon-down v-if="expanded" :size="12" />
         <icon-right v-else :size="12" />
       </span>

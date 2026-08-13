@@ -3,7 +3,7 @@
 // 清单（kind='task'）与笔记本（kind='note'）共用 lists 表，靠 kind 隔离成两棵独立树。
 
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, reactive, computed } from "vue";
 import type { List, TaskKind } from "@/types";
 import * as db from "@/api/db";
 
@@ -57,6 +57,32 @@ export const useListStore = defineStore("list", () => {
   const lists = ref<List[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+
+  // === 侧边栏目录展开状态（UI 状态提升到 store：键盘切换清单时需跨组件展开目录链） ===
+  /** 目录展开状态：key = 节点 id，value = 是否展开。缺省视为展开（undefined 时按 true 处理）。
+   *  仅目录（isFolder）有意义；叶节点不读此状态。 */
+  const expandedNodes = reactive<Record<string, boolean>>({});
+
+  /** 切换目录展开/收起（点击侧边栏箭头） */
+  function toggleNodeExpanded(id: string): void {
+    expandedNodes[id] = !(expandedNodes[id] ?? true);
+  }
+
+  /** 显式设置目录展开状态（拖放落入目录后展开等场景） */
+  function setNodeExpanded(id: string, value: boolean): void {
+    expandedNodes[id] = value;
+  }
+
+  /** 展开目标节点的全部祖先目录链（键盘切换清单后让激活项在侧边栏可见）。
+   *  纯操作：只写 expandedNodes，不改动数据。 */
+  function expandPath(id: string): void {
+    let curId: string | null = id;
+    while (curId) {
+      const node: List | undefined = lists.value.find((l) => l.id === curId);
+      curId = node?.parentId ?? null;
+      if (curId) expandedNodes[curId] = true;
+    }
+  }
 
   /** 按 position 排序的扁平清单 */
   const sortedLists = computed(() =>
@@ -284,5 +310,9 @@ export const useListStore = defineStore("list", () => {
     moveNode,
     archiveTree,
     unarchiveTree,
+    expandedNodes,
+    toggleNodeExpanded,
+    setNodeExpanded,
+    expandPath,
   };
 });
