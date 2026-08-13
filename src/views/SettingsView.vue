@@ -684,14 +684,14 @@ async function changeAttachmentPath() {
 
           <a-divider class="my-4" />
           <div class="settings-section__actions">
-            <a-button type="outline" size="small" disabled>导出数据</a-button>
-            <a-button type="outline" size="small" disabled>导入数据</a-button>
+            <a-button type="text" size="small" disabled>导出数据</a-button>
+            <a-button type="text" size="small" disabled>导入数据</a-button>
           </div>
           <a-divider class="my-4" />
           <p class="settings-section__desc settings-section__desc--danger">危险操作</p>
           <div class="settings-section__actions">
-            <a-button type="outline" size="small" status="danger" disabled>清空已完成任务</a-button>
-            <a-button type="outline" size="small" status="danger" disabled>重置所有数据</a-button>
+            <a-button type="text" size="small" status="danger" disabled>清空已完成任务</a-button>
+            <a-button type="text" size="small" status="danger" disabled>重置所有数据</a-button>
           </div>
         </div>
 
