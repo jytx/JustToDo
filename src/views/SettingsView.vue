@@ -1125,25 +1125,31 @@ async function changeAttachmentPath() {
   cursor: not-allowed;
 }
 
-/* 输入框列（与箭头列对齐，整体略宽） */
+/* 输入框列（与箭头列对齐，整体略宽）—— 无边框淡底（与全局输入框同语言） */
 .settings-section__time-input {
   width: 48px;
   height: 28px;
   padding: 0 6px;
-  border: 1px solid var(--jt-border);
-  border-radius: 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   font-size: 13px;
   font-family: var(--font-mono, var(--font-body));
   color: var(--jt-text-primary);
-  background: var(--jt-surface);
+  background: var(--jt-surface-sunken);
   outline: none;
   text-align: center;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition: background-color 0.12s, box-shadow 0.12s, border-color 0.12s;
   box-sizing: border-box;
 }
 
+/* hover：加深底色（同全局输入框） */
+.settings-section__time-input:hover:not(:disabled) {
+  background: var(--jt-surface-hover);
+}
+
 .settings-section__time-input:focus {
-  border-color: var(--jt-primary);
+  border-color: transparent;
+  background: var(--jt-surface);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-primary) 20%, transparent);
 }
 

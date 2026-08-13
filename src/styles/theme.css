@@ -205,19 +205,29 @@ body[arco-theme='dark'] {
   height: 28px;
 }
 
-/* === hover: 边框加到一个明显的浅灰，背景保持白色 === */
-.arco-input-wrapper.arco-input-number:not(.arco-input-number-disabled):hover,
-.arco-input-wrapper.arco-input:not(.arco-input-disabled):hover {
-  border-color: var(--jt-text-tertiary);
-  background-color: var(--color-bg-2);
+/* === 默认态：无边框 + 淡底（与 SelectPopover 下拉同语言）===
+ * 边框透明保留 1px 占位（防尺寸跳动）；sunken 淡底保证可辨识；
+ * hover 加深，focus 提亮 + 主色软环。 */
+.arco-input-wrapper.arco-input-number,
+.arco-input-wrapper.arco-input {
+  border-color: transparent;
+  background-color: var(--jt-surface-sunken);
+  border-radius: 6px;
 }
 
-/* === focus: 主色边框 + 主色软环 === */
+/* === hover: 加深底色（同下拉），不再加深边框 === */
+.arco-input-wrapper.arco-input-number:not(.arco-input-number-disabled):hover,
+.arco-input-wrapper.arco-input:not(.arco-input-disabled):hover {
+  border-color: transparent;
+  background-color: var(--jt-surface-hover);
+}
+
+/* === focus: 主色软环 + 提亮为白底 === */
 .arco-input-wrapper.arco-input-number:focus,
 .arco-input-wrapper.arco-input-number:focus-within,
 .arco-input-wrapper.arco-input:focus,
 .arco-input-wrapper.arco-input:focus-within {
-  border-color: var(--jt-primary);
+  border-color: transparent;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-primary) 20%, transparent);
   background-color: var(--color-bg-2);
 }
@@ -236,10 +246,10 @@ body[arco-theme='dark'] {
   padding-bottom: 10px;
 }
 
-/* === step +/- 按钮 === */
+/* === step +/- 按钮：无边框语言下隐藏分隔线，hover 底色反馈 === */
 .arco-input-number-step {
   color: var(--jt-text-secondary);
-  border-color: var(--color-border-2);
+  border-color: transparent;
   transition: background-color 0.12s, color 0.12s;
 }
 .arco-input-number-step:hover {
@@ -258,17 +268,17 @@ body[arco-theme='dark'] {
 /* === 深色模式：整体提亮 === */
 body[arco-theme='dark'] .arco-input-wrapper.arco-input-number,
 body[arco-theme='dark'] .arco-input-wrapper.arco-input {
-  background-color: var(--color-bg-2);
-  border-color: var(--color-border-2);
+  background-color: var(--jt-surface-sunken);
+  border-color: transparent;
   color: var(--jt-text-primary);
 }
 body[arco-theme='dark'] .arco-input-wrapper.arco-input-number-step {
-  border-color: var(--color-border-2);
+  border-color: transparent;
 }
 body[arco-theme='dark'] .arco-input-wrapper.arco-input-number:not(.arco-input-number-disabled):hover,
 body[arco-theme='dark'] .arco-input-wrapper.arco-input:not(.arco-input-disabled):hover {
-  border-color: var(--jt-text-tertiary);
-  background-color: var(--color-bg-2);
+  border-color: transparent;
+  background-color: var(--jt-surface-hover);
 }
 
 /*
