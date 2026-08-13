@@ -287,6 +287,15 @@ body[arco-theme='dark'] .arco-input-wrapper:not(.arco-input-disabled):not(.arco-
   border-radius: 6px;
 }
 
+/* Arco 按钮图标：wrapper 内精确居中。
+ * 默认 wrapper 是 block + svg 基线对齐，图标会偏上 1~1.5px（实测），
+ * 改 inline-flex 后 svg 在 wrapper 内居中，wrapper 在按钮 flex 容器内也居中。 */
+.arco-btn .arco-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /*
  * 全局统一：Arco a-button type="outline" 视觉风格
  * - 小尺寸弧角与项目其它控件对齐 (6px / 28px small)
