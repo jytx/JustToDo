@@ -439,14 +439,19 @@ async function changeAttachmentPath() {
                       :disabled="dailyReminderTimes.length >= 8"
                       aria-label="小时加一"
                       @click="bumpHour(1)"
-                    >▲</button>
+                    >
+                      <!-- 细线条上三角（同下拉 chevron 语言） -->
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6" /></svg>
+                    </button>
                     <button
                       type="button"
                       class="settings-section__time-bump"
                       :disabled="dailyReminderTimes.length >= 8"
                       aria-label="小时减一"
                       @click="bumpHour(-1)"
-                    >▼</button>
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+                    </button>
                   </div>
                   <input
                     type="number"
@@ -472,14 +477,18 @@ async function changeAttachmentPath() {
                       :disabled="dailyReminderTimes.length >= 8"
                       aria-label="分钟加五"
                       @click="bumpMinute(5)"
-                    >▲</button>
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6" /></svg>
+                    </button>
                     <button
                       type="button"
                       class="settings-section__time-bump"
                       :disabled="dailyReminderTimes.length >= 8"
                       aria-label="分钟减五"
                       @click="bumpMinute(-5)"
-                    >▼</button>
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+                    </button>
                   </div>
                   <input
                     type="number"
@@ -1133,7 +1142,7 @@ async function changeAttachmentPath() {
 /* 单列：箭头列（左）｜输入框列（右），两列等高 */
 .settings-section__time-col {
   display: grid;
-  grid-template-columns: 14px auto;
+  grid-template-columns: 18px auto;
   align-items: center;
   gap: 2px;
 }
@@ -1145,30 +1154,32 @@ async function changeAttachmentPath() {
   gap: 2px;
 }
 
-/* ▲/▼ 步进按钮（窄条，与输入框同高） */
+/* 线性 chevron 步进按钮：无边框透明，hover 加深底色（与全局输入控件同语言） */
 .settings-section__time-bump {
-  width: 14px;
+  width: 18px;
   height: 13px;
-  border: 1px solid var(--jt-border);
-  background: var(--jt-surface);
-  color: var(--jt-text-secondary);
-  border-radius: 3px;
-  font-size: 8px;
-  line-height: 1;
+  border: none;
+  background: transparent;
+  color: var(--jt-text-tertiary);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   padding: 0;
-  transition: border-color 0.12s, color 0.12s, background-color 0.12s;
+  transition: background-color 0.12s, color 0.12s;
 }
-
 .settings-section__time-bump:hover:not(:disabled) {
-  border-color: var(--jt-primary);
-  color: var(--jt-primary);
-  background: var(--jt-accent-soft);
+  background-color: var(--jt-surface-hover);
+  color: var(--jt-text-primary);
 }
-
 .settings-section__time-bump:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+.settings-section__time-bump svg {
+  width: 10px;
+  height: 10px;
 }
 
 /* 输入框列（与箭头列对齐，整体略宽）—— 默认透明无边框，hover 显底色（同全局输入框） */
