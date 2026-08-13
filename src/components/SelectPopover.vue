@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 统一风格的 Select 下拉 —— 沿用 Arco a-select 的 trigger 外观（200px 高 32，
-// 灰边灰底、圆角、右侧下拉箭头），弹层复用 MenuPopover / MenuPopoverItem，
+// 灰边灰底、圆角、右侧上下双向箭头），弹层复用 MenuPopover / MenuPopoverItem，
 // 与清单更多 / 标签删除 / 优先级 / 标题级别 / 排序 等所有下拉视觉语言一致。
+// 空值（modelValue 为空）时显示占位符「请选择」，选中后显示选中项 —— 同滴答清单。
 //
 // 用法：
 //   <SelectPopover
@@ -10,7 +11,7 @@
 //     :width="200"
 //   />
 import { computed, ref } from "vue";
-import { IconDown, IconPlayArrow } from "@arco-design/web-vue/es/icon";
+import { IconCaretUp, IconCaretDown, IconPlayArrow } from "@arco-design/web-vue/es/icon";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
 
@@ -30,7 +31,7 @@ const props = withDefaults(
     /** 禁用态：灰显，不响应点击 */
     disabled?: boolean;
   }>(),
-  { width: 200, placeholder: "", disabled: false },
+  { width: 200, placeholder: "请选择", disabled: false },
 );
 
 const emit = defineEmits<{
@@ -73,7 +74,10 @@ function onTriggerClick() {
       <button
         type="button"
         class="select-popover__trigger"
-        :class="{ 'select-popover__trigger--disabled': disabled }"
+        :class="{
+          'select-popover__trigger--disabled': disabled,
+          'select-popover__trigger--open': open,
+        }"
         :style="{ '--select-width': typeof width === 'number' ? `${width}px` : width }"
         :disabled="disabled"
         @click="onTriggerClick"
@@ -84,7 +88,11 @@ function onTriggerClick() {
         >
           {{ currentLabel || modelValue || placeholder }}
         </span>
-        <icon-down :size="14" class="select-popover__arrow" />
+        <!-- 上下双向箭头（两个小三角叠放，同滴答清单）：始终指示"可上可下" -->
+        <span class="select-popover__arrow">
+          <icon-caret-up :size="7" />
+          <icon-caret-down :size="7" />
+        </span>
       </button>
     </template>
 
@@ -117,7 +125,7 @@ function onTriggerClick() {
   padding: 0 12px;
   border: 1px solid var(--color-border-2);
   background-color: var(--color-bg-2);
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 13px;
   font-family: var(--font-body);
   color: var(--jt-text-primary);
@@ -154,16 +162,20 @@ function onTriggerClick() {
   color: var(--jt-text-tertiary);
 }
 
+/* 上下双向箭头：两个小三角纵向叠放，细而克制 */
 .select-popover__arrow {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
   margin-left: 8px;
   flex-shrink: 0;
+  line-height: 1;
   color: var(--jt-text-tertiary);
-  transition: transform 0.18s;
 }
 
-/* 展开时箭头翻转 */
-.select-popover__trigger[aria-expanded="true"] .select-popover__arrow {
-  transform: rotate(180deg);
+/* 展开时上三角变主色，提示"收起"方向（原单箭头旋转动画的替代反馈） */
+.select-popover__trigger--open .select-popover__arrow :first-child {
+  color: var(--jt-primary);
 }
 
 /* 选项右侧试听图标：淡灰，hover 主题色 */

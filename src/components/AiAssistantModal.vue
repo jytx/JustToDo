@@ -21,6 +21,7 @@ import { useTagStore } from "@/stores/tag";
 import { LIST_COLORS } from "@/utils/colors";
 import type { Priority } from "@/types";
 import AiBreakdownPreview from "@/components/AiBreakdownPreview.vue";
+import SelectPopover from "@/components/SelectPopover.vue";
 
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ "update:visible": [v: boolean] }>();
@@ -51,6 +52,10 @@ const TOOLS: AiTool[] = [
 
 /** 当前选中的工具 */
 const selectedTool = ref<string>("daily");
+/** 工具下拉选项（SelectPopover 需要 { value, label } 结构） */
+const toolOptions = computed(() =>
+  TOOLS.map((t) => ({ value: t.value, label: t.label })),
+);
 /** 当前工具对象 */
 const currentTool = computed(() => TOOLS.find((t) => t.value === selectedTool.value) ?? TOOLS[0]);
 
@@ -340,16 +345,12 @@ watch(
       <!-- 第一行：工具选择（左）+ 生成按钮（右，始终在这一行） -->
       <div class="ai-assistant__controls">
         <div class="ai-assistant__tool-left">
-          <a-select
+          <SelectPopover
             v-model="selectedTool"
-            size="small"
-            style="width: 160px"
-            @change="(v: any) => onToolChange(String(v))"
-          >
-            <a-option v-for="t in TOOLS" :key="t.value" :value="t.value">
-              {{ t.label }}
-            </a-option>
-          </a-select>
+            :options="toolOptions"
+            :width="160"
+            @update:model-value="onToolChange"
+          />
         </div>
         <a-button
           type="primary"
