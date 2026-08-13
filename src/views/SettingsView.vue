@@ -21,6 +21,8 @@ import {
   IconDelete,
   IconRefresh,
   IconFolder,
+  IconPlus,
+  IconClose,
 } from "@arco-design/web-vue/es/icon";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -520,16 +522,23 @@ async function changeAttachmentPath() {
 
               <div class="settings-section__daily-actions">
                 <a-button
-                  type="primary"
+                  type="text"
                   size="small"
                   :disabled="!pendingTime || dailyReminderTimes.length >= 8"
                   @click="confirmAddTime"
-                >添加</a-button>
+                >
+                  <template #icon><icon-plus :size="14" /></template>
+                  添加
+                </a-button>
                 <a-button
+                  type="text"
                   size="small"
                   :disabled="pendingHour === null && pendingMinute === null"
                   @click="clearPendingTime"
-                >清空</a-button>
+                >
+                  <template #icon><icon-close :size="14" /></template>
+                  清空
+                </a-button>
               </div>
             </div>
           </div>
