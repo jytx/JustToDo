@@ -3,7 +3,7 @@
 // 顶部：标题 + 新建按钮 + 立即运行按钮
 // 下方：计划卡片列表（ListScheduleCard）
 // 弹窗在本组件统一管理（编辑/删除确认）
-import { onMounted, ref } from "vue";
+import { onMounted, ref, computed } from "vue";
 import { Message } from "@arco-design/web-vue";
 import type { ListSchedule } from "@/types/listSchedule";
 import { useListScheduleStore } from "@/stores/listSchedule";
@@ -12,6 +12,8 @@ import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import ListScheduleCard from "./ListScheduleCard.vue";
 import ListScheduleEditModal from "./ListScheduleEditModal.vue";
 import { IconPlayArrow, IconPlus, IconEye } from "@arco-design/web-vue/es/icon";
+import Popover from "./Popover.vue";
+import MiniCalendar from "@/components/MiniCalendar.vue";
 
 const store = useListScheduleStore();
 const listStore = useListStore();
@@ -101,6 +103,30 @@ function initPreviewDate() {
 }
 initPreviewDate();
 
+// 日期选择：MiniCalendar（mode="day"，纯年月日）＋ Popover
+const previewOpen = ref(false);
+/** 月历光标（默认当前月） */
+const previewCalMonth = ref(new Date());
+
+/** previewDate 字符串 → Date（供 MiniCalendar 高亮） */
+const previewDateObj = computed<Date | null>(() => {
+  if (!previewDate.value) return null;
+  const d = new Date(`${previewDate.value}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+});
+
+/** Date → YYYY-MM-DD */
+function toYmd(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** 选中某天：回填 + 关闭弹层 */
+function onPreviewDateSelect(d: Date): void {
+  previewDate.value = toYmd(d);
+  previewOpen.value = false;
+}
+
 async function onPreview() {
   if (!previewDate.value) {
     Message.warning("请填写日期");
@@ -150,11 +176,23 @@ async function onPreview() {
     <!-- 预览工具：模拟某天的生成结果（不写入数据） -->
     <div class="ls-section__preview-bar">
       <span class="ls-section__preview-label">模拟日期</span>
-      <input
-        v-model="previewDate"
-        type="date"
-        class="ls-section__preview-date"
-      />
+      <!-- 日期选择：MiniCalendar 月历（只到年月日，无时分） -->
+      <Popover v-model:visible="previewOpen" placement="bottom-left" :offset="4">
+        <template #trigger>
+          <button
+            type="button"
+            class="ls-section__preview-trigger"
+            :class="{ 'ls-section__preview-trigger--open': previewOpen }"
+            @click="previewOpen = !previewOpen"
+          >{{ previewDate }}</button>
+        </template>
+        <MiniCalendar
+          :selected="previewDateObj"
+          v-model:month="previewCalMonth"
+          mode="day"
+          @select="onPreviewDateSelect"
+        />
+      </Popover>
       <a-button
         type="text"
         size="mini"
@@ -294,14 +332,21 @@ async function onPreview() {
   font-size: 12px;
   color: var(--jt-text-tertiary);
 }
-.ls-section__preview-date {
-  border: 1px solid var(--jt-border);
-  border-radius: 4px;
-  padding: 2px 6px;
+/* 日期 trigger：无边框透明 + hover 加深底色（与全局输入控件/下拉同语言） */
+.ls-section__preview-trigger {
+  border: none;
+  border-radius: 6px;
+  padding: 3px 10px;
   font-size: 12px;
+  font-family: var(--font-mono, var(--font-body));
   color: var(--jt-text-primary);
-  background: var(--jt-surface);
-  outline: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+.ls-section__preview-trigger:hover,
+.ls-section__preview-trigger--open {
+  background: var(--jt-surface-hover);
 }
 
 /* 预览结果弹窗 */
