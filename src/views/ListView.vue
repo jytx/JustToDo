@@ -10,7 +10,7 @@ import { useKanbanStore } from "@/stores/kanban";
 import type { Group } from "@/types";
 import { formatPageDate } from "@/utils/date";
 import { shouldReserveNativeMenu } from "@/utils/contextMenu";
-import { getViewPref, type ListView } from "@/composables/useViewPrefs";
+import { getViewPref, setViewPref, type ListView } from "@/composables/useViewPrefs";
 import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import { useGroupDrag } from "@/composables/useGroupDrag";
 import { useGroupReorder } from "@/composables/useGroupReorder";
@@ -158,6 +158,33 @@ function onDragStart(taskId: string): void {
 /** 展开的分组 key 列表（a-collapse 的 v-model） */
 const activeGroupKeys = ref<string[]>([]);
 
+/** 恢复分组的折叠状态：无记录时默认全部展开；
+ *  有记录时仅展开未折叠的分组（空数组 = 全部折叠） */
+function restoreGroupCollapse(listId: string): void {
+  const collapsedIds = getViewPref("list:" + listId).collapsedGroupIds;
+  if (collapsedIds === undefined) {
+    activeGroupKeys.value = groupStore.currentGroups.map((g) => g.id);
+    return;
+  }
+  const collapsed = new Set(collapsedIds);
+  activeGroupKeys.value = groupStore.currentGroups
+    .map((g) => g.id)
+    .filter((id) => !collapsed.has(id));
+}
+
+// 折叠状态变化时持久化：存该清单「已折叠的分组 ID 列表」
+// （基于 currentGroups 全集计算，删除的分组残留 id 会被自然清除）
+watch(
+  activeGroupKeys,
+  () => {
+    const collapsed = groupStore.currentGroups
+      .map((g) => g.id)
+      .filter((id) => !activeGroupKeys.value.includes(id));
+    setViewPref("list:" + props.id, { collapsedGroupIds: collapsed });
+  },
+  { deep: true },
+);
+
 /** 按分组划分的未完成任务（基于 localGroups + store 数据）。
  *  兜底：group_id 为空或不在已知分组的任务，并入默认分组（{listId}-default）显示，
  *  避免脏数据（group_id 丢失）导致任务在列表凭空消失（sidebar 计数对得上却看不到）。 */
@@ -226,8 +253,8 @@ watch(
       taskStore.loadTasks(newId),
       groupStore.loadGroups(newId),
     ]);
-    // 默认展开所有分组
-    activeGroupKeys.value = groupStore.currentGroups.map((g) => g.id);
+    // 恢复该清单的分组折叠状态（无记录默认全部展开）
+    restoreGroupCollapse(newId);
   },
 );
 
@@ -238,8 +265,8 @@ onMounted(async () => {
     taskStore.loadTasks(props.id),
     groupStore.loadGroups(props.id),
   ]);
-  // 默认展开所有分组
-  activeGroupKeys.value = groupStore.currentGroups.map((g) => g.id);
+  // 恢复该清单的分组折叠状态（无记录默认全部展开）
+  restoreGroupCollapse(props.id);
 });
 
 /** Cmd/Ctrl+A 全选：多选模式下选中当前视图所有未完成任务。

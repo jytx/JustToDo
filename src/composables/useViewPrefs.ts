@@ -22,6 +22,8 @@ interface ViewPref {
   kanbanMode: KanbanMode;
   /** 时间线是否显示已完成任务（默认 false，不显示） */
   showCompleted: boolean;
+  /** 清单视图中已折叠的分组 ID 列表（undefined = 无记录，默认全部展开；空数组 = 全部折叠） */
+  collapsedGroupIds?: string[];
 }
 
 const DEFAULT_PREF: ViewPref = { view: "list", kanbanMode: "priority", showCompleted: false };
@@ -40,6 +42,10 @@ export function getViewPref(scope: string): ViewPref {
       kanbanMode: parsed.kanbanMode === "group" ? "group" : "priority",
       // 仅显式 true 才显示已完成（缺失/旧数据默认不显示）
       showCompleted: parsed.showCompleted === true,
+      // 折叠分组列表：仅当旧数据中为数组时恢复，否则视为无记录（默认全部展开）
+      collapsedGroupIds: Array.isArray(parsed.collapsedGroupIds)
+        ? parsed.collapsedGroupIds
+        : undefined,
     };
   } catch {
     return { ...DEFAULT_PREF };
