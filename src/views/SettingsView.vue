@@ -24,6 +24,7 @@ import {
   IconFolder,
   IconPlus,
   IconThunderbolt,
+  IconClose,
 } from "@arco-design/web-vue/es/icon";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -549,13 +550,22 @@ async function changeAttachmentPath() {
           <div v-if="dailyReminderTimes.length > 0" class="settings-section__item">
             <span>已添加时刻</span>
             <div class="settings-section__daily-times">
-              <a-tag
+              <!-- 已添加时刻：文字按钮风格（默认无底色，hover 显底色；× 单独触发删除） -->
+              <button
                 v-for="t in dailyReminderTimes"
                 :key="t"
-                closable
-                :loading="isSavingDailyTimes"
-                @close="removeTime(t)"
-              >{{ t }}</a-tag>
+                type="button"
+                class="daily-time-tag"
+                :disabled="isSavingDailyTimes"
+              >
+                {{ t }}
+                <span
+                  class="daily-time-tag__close"
+                  role="button"
+                  aria-label="移除"
+                  @click.stop="removeTime(t)"
+                ><icon-close :size="12" /></span>
+              </button>
             </div>
           </div>
           <!-- 提示音：三类场景各自可选音效，选中后可直接试听 -->
@@ -1291,6 +1301,44 @@ async function changeAttachmentPath() {
   gap: 6px;
   max-width: 320px;
   justify-content: flex-end;
+}
+
+/* 已添加时刻 tag：文字按钮风格 —— 默认无底色，hover 显底色；× 淡入淡出 */
+.daily-time-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--jt-text-secondary);
+  font-size: 13px;
+  font-family: var(--font-mono, var(--font-body));
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+}
+.daily-time-tag:hover:not(:disabled) {
+  background: var(--jt-surface-hover);
+  color: var(--jt-text-primary);
+}
+.daily-time-tag:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* × 删除钮：默认隐藏，hover tag 时显现；hover × 变红 */
+.daily-time-tag__close {
+  display: inline-flex;
+  opacity: 0;
+  color: var(--jt-text-tertiary);
+  transition: opacity 0.12s, color 0.12s;
+}
+.daily-time-tag:hover .daily-time-tag__close {
+  opacity: 1;
+}
+.daily-time-tag__close:hover {
+  color: var(--jt-error);
 }
 
 .settings-section__desc--danger {
