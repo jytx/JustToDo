@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// 统一风格的 Select 下拉 —— 沿用 Arco a-select 的 trigger 外观（200px 高 32，
-// 灰边灰底、圆角、右侧上下双向箭头），弹层复用 MenuPopover / MenuPopoverItem，
+// 统一风格的 Select 下拉 —— 无边框、hover 加深底色（同滴答清单），
+// 右侧为细线条上下双三角图标（Lucide chevrons-up-down 风格），
+// 弹层复用 MenuPopover / MenuPopoverItem，
 // 与清单更多 / 标签删除 / 优先级 / 标题级别 / 排序 等所有下拉视觉语言一致。
 // 空值（modelValue 为空）时显示占位符「请选择」，选中后显示选中项 —— 同滴答清单。
 //
@@ -11,7 +12,7 @@
 //     :width="200"
 //   />
 import { computed, ref } from "vue";
-import { IconCaretUp, IconCaretDown, IconPlayArrow } from "@arco-design/web-vue/es/icon";
+import { IconPlayArrow } from "@arco-design/web-vue/es/icon";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
 
@@ -88,11 +89,19 @@ function onTriggerClick() {
         >
           {{ currentLabel || modelValue || placeholder }}
         </span>
-        <!-- 上下双向箭头（两个小三角叠放，同滴答清单）：始终指示"可上可下" -->
-        <span class="select-popover__arrow">
-          <icon-caret-up :size="7" />
-          <icon-caret-down :size="7" />
-        </span>
+        <!-- 细线条上下双三角（Lucide chevrons-up-down 风格，同滴答清单 iconfont） -->
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="select-popover__arrow"
+        >
+          <path d="m7 9 5-4 5 4" />
+          <path d="m7 15 5 4 5-4" />
+        </svg>
       </button>
     </template>
 
@@ -122,32 +131,31 @@ function onTriggerClick() {
   justify-content: space-between;
   width: var(--select-width, 200px);
   height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--color-border-2);
-  background-color: var(--color-bg-2);
+  padding: 0 10px;
+  /* 无边框无底色（同滴答清单），hover 才加深底色 */
+  border: none;
+  background-color: transparent;
   border-radius: 6px;
   font-size: 13px;
   font-family: var(--font-body);
   color: var(--jt-text-primary);
   cursor: pointer;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition: background-color 0.12s, box-shadow 0.12s;
 }
 
-/* hover：边框加到一个明显的浅灰，背景保持白（与输入控件同语言） */
+/* hover：加深底色（比输入控件更轻的反馈） */
 .select-popover__trigger:hover:not(:disabled) {
-  border-color: var(--jt-text-tertiary);
-  background-color: var(--color-bg-2);
+  background-color: var(--jt-surface-hover);
 }
 .select-popover__trigger:focus-visible {
   outline: none;
-  border-color: var(--jt-primary);
+  /* 无边框控件 focus 用主色软环指示（与输入控件同语言） */
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-primary) 20%, transparent);
 }
 
 .select-popover__trigger--disabled {
   cursor: not-allowed;
   opacity: 0.5;
-  background-color: var(--color-bg-3);
 }
 
 .select-popover__value {
@@ -162,20 +170,18 @@ function onTriggerClick() {
   color: var(--jt-text-tertiary);
 }
 
-/* 上下双向箭头：两个小三角纵向叠放，细而克制 */
+/* 细线条上下双三角：紧凑贴文字（同滴答清单 6px 级间距） */
 .select-popover__arrow {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  margin-left: 8px;
+  width: 12px;
+  height: 12px;
+  margin-left: 5px;
   flex-shrink: 0;
-  line-height: 1;
   color: var(--jt-text-tertiary);
 }
 
 /* 展开时上三角变主色，提示"收起"方向（原单箭头旋转动画的替代反馈） */
-.select-popover__trigger--open .select-popover__arrow :first-child {
-  color: var(--jt-primary);
+.select-popover__trigger--open .select-popover__arrow path:first-child {
+  stroke: var(--jt-primary);
 }
 
 /* 选项右侧试听图标：淡灰，hover 主题色 */
