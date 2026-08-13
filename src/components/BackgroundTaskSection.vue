@@ -122,6 +122,7 @@ async function onRunSchedule(s: ListSchedule): Promise<void> {
         :loading="running"
         @click="onRunNow"
       >
+        <template #icon><icon-refresh :size="14" /></template>
         立即运行一次
       </a-button>
     </div>

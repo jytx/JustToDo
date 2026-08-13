@@ -11,6 +11,7 @@ import { useListStore } from "@/stores/list";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import ListScheduleCard from "./ListScheduleCard.vue";
 import ListScheduleEditModal from "./ListScheduleEditModal.vue";
+import { IconPlayArrow, IconPlus, IconEye } from "@arco-design/web-vue/es/icon";
 
 const store = useListScheduleStore();
 const listStore = useListStore();
@@ -131,10 +132,11 @@ async function onPreview() {
           :loading="running"
           @click="onRunNow"
         >
+          <template #icon><icon-play-arrow :size="14" /></template>
           立即运行
         </a-button>
         <a-button type="text" size="small" @click="openCreate">
-          <template #icon>+</template>
+          <template #icon><icon-plus :size="14" /></template>
           新建
         </a-button>
       </div>
@@ -154,11 +156,12 @@ async function onPreview() {
         class="ls-section__preview-date"
       />
       <a-button
-        type="outline"
+        type="text"
         size="mini"
         :loading="previewing"
         @click="onPreview"
       >
+        <template #icon><icon-eye :size="13" /></template>
         预览
       </a-button>
     </div>
