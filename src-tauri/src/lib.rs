@@ -1,12 +1,12 @@
 // JustToDo — Tauri 后端入口
 // 文档：https://v2.tauri.app/develop/calling-rust/
 
+mod ai;
 mod commands;
 mod db;
 mod list_schedule;
 mod menu;
 mod models;
-mod ai;
 mod url_title;
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -332,46 +332,40 @@ pub fn run() {
                         app.restart();
                     }
                     // 打开数据目录（SQLite 数据库 / 附件配置所在）
-                    menu::HELP_OPEN_DATA_DIR_ID => {
-                        match app.path().app_data_dir() {
-                            Ok(dir) => {
-                                println!("[JustToDo] 打开数据目录: {}", dir.display());
-                                if let Err(e) = menu::open_in_file_manager(&dir) {
-                                    eprintln!("[JustToDo] 打开数据目录失败: {}", e);
-                                }
+                    menu::HELP_OPEN_DATA_DIR_ID => match app.path().app_data_dir() {
+                        Ok(dir) => {
+                            println!("[JustToDo] 打开数据目录: {}", dir.display());
+                            if let Err(e) = menu::open_in_file_manager(&dir) {
+                                eprintln!("[JustToDo] 打开数据目录失败: {}", e);
                             }
-                            Err(e) => eprintln!("[JustToDo] 获取数据目录失败: {}", e),
                         }
-                    }
+                        Err(e) => eprintln!("[JustToDo] 获取数据目录失败: {}", e),
+                    },
                     // 打开日志目录（Tauri app_log_dir；不存在则创建）
-                    menu::HELP_OPEN_LOG_DIR_ID => {
-                        match app.path().app_log_dir() {
-                            Ok(dir) => {
-                                println!("[JustToDo] 打开日志目录: {}", dir.display());
-                                if let Err(e) = menu::open_in_file_manager(&dir) {
-                                    eprintln!("[JustToDo] 打开日志目录失败: {}", e);
-                                }
+                    menu::HELP_OPEN_LOG_DIR_ID => match app.path().app_log_dir() {
+                        Ok(dir) => {
+                            println!("[JustToDo] 打开日志目录: {}", dir.display());
+                            if let Err(e) = menu::open_in_file_manager(&dir) {
+                                eprintln!("[JustToDo] 打开日志目录失败: {}", e);
                             }
-                            Err(e) => eprintln!("[JustToDo] 获取日志目录失败: {}", e),
                         }
-                    }
+                        Err(e) => eprintln!("[JustToDo] 获取日志目录失败: {}", e),
+                    },
                     // 打开附件目录（复用 commands 的解析逻辑，含用户自定义路径）
-                    menu::HELP_OPEN_ATTACHMENT_DIR_ID => {
-                        match app.path().app_data_dir() {
-                            Ok(app_data_dir) => {
-                                match commands::get_attachment_path_sync(&app_data_dir) {
-                                    Ok(dir) => {
-                                        let path = std::path::PathBuf::from(&dir);
-                                        if let Err(e) = menu::open_in_file_manager(&path) {
-                                            eprintln!("[JustToDo] 打开附件目录失败: {}", e);
-                                        }
+                    menu::HELP_OPEN_ATTACHMENT_DIR_ID => match app.path().app_data_dir() {
+                        Ok(app_data_dir) => {
+                            match commands::get_attachment_path_sync(&app_data_dir) {
+                                Ok(dir) => {
+                                    let path = std::path::PathBuf::from(&dir);
+                                    if let Err(e) = menu::open_in_file_manager(&path) {
+                                        eprintln!("[JustToDo] 打开附件目录失败: {}", e);
                                     }
-                                    Err(e) => eprintln!("[JustToDo] 解析附件目录失败: {}", e),
                                 }
+                                Err(e) => eprintln!("[JustToDo] 解析附件目录失败: {}", e),
                             }
-                            Err(e) => eprintln!("[JustToDo] 获取 app data 目录失败: {}", e),
                         }
-                    }
+                        Err(e) => eprintln!("[JustToDo] 获取 app data 目录失败: {}", e),
+                    },
                     _ => {}
                 }
                 return;
@@ -404,6 +398,7 @@ pub fn run() {
             commands::list_create,
             commands::list_delete,
             commands::list_rename,
+            commands::list_set_color,
             commands::list_move,
             commands::list_archive_tree,
             commands::list_unarchive_tree,

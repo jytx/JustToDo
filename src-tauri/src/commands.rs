@@ -269,6 +269,24 @@ pub async fn list_rename(
     Ok(())
 }
 
+/// 仅修改清单/笔记本/目录的颜色（不涉及重命名；收件箱/默认笔记本也可换色）。
+/// 独立命令而非复用 list_rename：list_rename 拒绝收件箱且必须同时传名称，
+/// 侧边栏色点直接换色需要"只改颜色"的单一职责入口。
+#[tauri::command]
+pub async fn list_set_color(
+    pool: State<'_, sqlx::SqlitePool>,
+    id: String,
+    color: String,
+) -> CmdResult<()> {
+    sqlx::query("UPDATE lists SET color = $1 WHERE id = $2")
+        .bind(&color)
+        .bind(&id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| format!("更新颜色失败: {}", e))?;
+    Ok(())
+}
+
 /// 移动清单/目录到另一个父级（null = 根级），可同时更新 position
 #[tauri::command]
 pub async fn list_move(
@@ -708,7 +726,10 @@ pub async fn task_create(
     // kind 不传默认 'task'（待办）；'note' = 笔记（复用 tasks 表，但无日期/完成/重复/提醒）
     let kind = input.kind.clone().unwrap_or_else(|| "task".to_string());
     // group_id 不传则用清单的默认分组
-    let group_id = input.group_id.clone().unwrap_or_else(|| format!("{}-default", input.list_id));
+    let group_id = input
+        .group_id
+        .clone()
+        .unwrap_or_else(|| format!("{}-default", input.list_id));
 
     sqlx::query(
         "INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, recurrence_freq, recurrence_interval, recurrence_end_at, recurrence_count, remind_offset_minutes, remind_at, kind, group_id)
@@ -2396,10 +2417,7 @@ pub async fn task_generate_recurring(pool: State<'_, sqlx::SqlitePool>) -> CmdRe
 /// 手动运行单个重复模板的生成（「后台任务」面板单条触发）。
 /// 跳过 done/paused 过滤——用户明确要补这一期。返回是否生成了新实例。
 #[tauri::command]
-pub async fn recurrence_run_one(
-    pool: State<'_, sqlx::SqlitePool>,
-    id: String,
-) -> CmdResult<usize> {
+pub async fn recurrence_run_one(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdResult<usize> {
     task_generate_recurring_inner(pool.inner(), Some(&id)).await
 }
 
@@ -2408,9 +2426,7 @@ pub async fn recurrence_run_one(
 /// 列出所有重复任务模板（含已暂停、已完成），供「后台任务」面板展示。
 /// 模板识别：recurrence_freq IS NOT NULL（实例的 freq 字段为 NULL）。
 #[tauri::command]
-pub async fn recurrence_list_templates(
-    pool: State<'_, sqlx::SqlitePool>,
-) -> CmdResult<Vec<Task>> {
+pub async fn recurrence_list_templates(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<Task>> {
     let rows = sqlx::query(
         "SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL ORDER BY created_at DESC",
     )
@@ -3305,7 +3321,8 @@ pub async fn ai_summary(
         let tomorrow_start = today_start + chrono::Duration::days(1);
         (fmt_local(today_start), fmt_local(tomorrow_start), "今日")
     };
-    let end_of_today = fmt_local(now.date().and_hms_opt(0, 0, 0).unwrap() + chrono::Duration::days(1));
+    let end_of_today =
+        fmt_local(now.date().and_hms_opt(0, 0, 0).unwrap() + chrono::Duration::days(1));
 
     // 3. 查数据：已完成任务（按 completed_at）
     let completed_rows = match sqlx::query(
@@ -3376,7 +3393,9 @@ pub async fn ai_summary(
 
     let req = ChatRequest {
         messages: vec![
-            ChatMessage::system { content: system_prompt },
+            ChatMessage::system {
+                content: system_prompt,
+            },
             ChatMessage::user {
                 content: payload.to_string(),
             },
@@ -3477,19 +3496,26 @@ async fn query_scope_data(
         "list" => {
             let id = scope.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let kind: String = sqlx::query_scalar("SELECT kind FROM lists WHERE id = $1")
-                .bind(id).fetch_optional(pool).await
+                .bind(id)
+                .fetch_optional(pool)
+                .await
                 .map_err(|e| format!("查询清单类型失败: {}", e))?
                 .unwrap_or_else(|| "task".into());
             let rows = sqlx::query(
                 "SELECT * FROM tasks WHERE list_id = $1 AND parent_id IS NULL ORDER BY done ASC, sort_order ASC",
             ).bind(id).fetch_all(pool).await
                 .map_err(|e| format!("查询清单任务失败: {}", e))?;
-            Ok(ScopeData { tasks: rows.iter().map(row_to_task).collect(), kind })
+            Ok(ScopeData {
+                tasks: rows.iter().map(row_to_task).collect(),
+                kind,
+            })
         }
         "folder" => {
             let id = scope.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let kind: String = sqlx::query_scalar("SELECT kind FROM lists WHERE id = $1")
-                .bind(id).fetch_optional(pool).await
+                .bind(id)
+                .fetch_optional(pool)
+                .await
                 .map_err(|e| format!("查询目录类型失败: {}", e))?
                 .unwrap_or_else(|| "task".into());
             let rows = sqlx::query(
@@ -3502,16 +3528,31 @@ async fn query_scope_data(
                  WHERE t.parent_id IS NULL
                    AND t.list_id IN (SELECT id FROM subtree WHERE is_folder = 0)
                  ORDER BY t.done ASC, t.sort_order ASC",
-            ).bind(id).fetch_all(pool).await
-                .map_err(|e| format!("查询目录任务失败: {}", e))?;
-            Ok(ScopeData { tasks: rows.iter().map(row_to_task).collect(), kind })
+            )
+            .bind(id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("查询目录任务失败: {}", e))?;
+            Ok(ScopeData {
+                tasks: rows.iter().map(row_to_task).collect(),
+                kind,
+            })
         }
         "tasks" => {
-            let ids: Vec<String> = scope.get("ids").and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+            let ids: Vec<String> = scope
+                .get("ids")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             if ids.is_empty() {
-                return Ok(ScopeData { tasks: vec![], kind: "task".into() });
+                return Ok(ScopeData {
+                    tasks: vec![],
+                    kind: "task".into(),
+                });
             }
             let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("${}", i)).collect();
             let sql = format!(
@@ -3519,10 +3560,18 @@ async fn query_scope_data(
                 placeholders.join(", ")
             );
             let mut q = sqlx::query(&sql);
-            for id in &ids { q = q.bind(id); }
-            let rows = q.fetch_all(pool).await.map_err(|e| format!("查询选中任务失败: {}", e))?;
+            for id in &ids {
+                q = q.bind(id);
+            }
+            let rows = q
+                .fetch_all(pool)
+                .await
+                .map_err(|e| format!("查询选中任务失败: {}", e))?;
             let tasks: Vec<Task> = rows.iter().map(row_to_task).collect();
-            let kind = tasks.first().map(|t| t.kind.clone()).unwrap_or_else(|| "task".into());
+            let kind = tasks
+                .first()
+                .map(|t| t.kind.clone())
+                .unwrap_or_else(|| "task".into());
             Ok(ScopeData { tasks, kind })
         }
         _ => Err(format!("未知的 scope 类型: {}", scope_type)),
@@ -3573,9 +3622,11 @@ pub async fn ai_summary_scope(
 
     let (tasks, truncated) = if truncate == Some(true) {
         let threshold = get_setting_inner(pool.inner(), "ai_summary_truncate_threshold".into())
-            .await.ok()
+            .await
+            .ok()
             .and_then(|v| v.and_then(|s| s.parse::<usize>().ok()))
-            .filter(|n| *n > 0).unwrap_or(50);
+            .filter(|n| *n > 0)
+            .unwrap_or(50);
         truncate_tasks(data.tasks, threshold)
     } else {
         (data.tasks, false)
@@ -3596,8 +3647,12 @@ pub async fn ai_summary_scope(
 
     let req = ChatRequest {
         messages: vec![
-            ChatMessage::system { content: system_prompt },
-            ChatMessage::user { content: payload.to_string() },
+            ChatMessage::system {
+                content: system_prompt,
+            },
+            ChatMessage::user {
+                content: payload.to_string(),
+            },
         ],
         ..Default::default()
     };
@@ -3702,13 +3757,19 @@ pub async fn ai_parse_task(
     let now = now();
 
     // 读自定义提示词（空用默认）
-    let prompt_tpl = load_prompt(pool.inner(), "ai_prompt_parse_task", DEFAULT_PROMPT_PARSE_TASK).await;
+    let prompt_tpl = load_prompt(
+        pool.inner(),
+        "ai_prompt_parse_task",
+        DEFAULT_PROMPT_PARSE_TASK,
+    )
+    .await;
     let system_prompt = format!("{}\n\n当前时间：{}", prompt_tpl, now);
 
     // 定义 parse_task 工具（建任务意图）
     let parse_tool = ToolDef {
         name: "parse_task".into(),
-        description: "用户想创建一个新任务时调用此工具。解析自然语言输入，提取任务的结构化信息".into(),
+        description: "用户想创建一个新任务时调用此工具。解析自然语言输入，提取任务的结构化信息"
+            .into(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -3773,7 +3834,8 @@ pub async fn ai_parse_task(
     // 定义 create_note 工具（创建笔记意图）
     let create_note_tool = ToolDef {
         name: "create_note".into(),
-        description: "用户想记录想法、灵感、笔记（而非待办任务）时调用。如「记录个想法」「写个笔记」".into(),
+        description:
+            "用户想记录想法、灵感、笔记（而非待办任务）时调用。如「记录个想法」「写个笔记」".into(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -3797,10 +3859,19 @@ pub async fn ai_parse_task(
 
     let req = ChatRequest {
         messages: vec![
-            ChatMessage::system { content: system_prompt },
-            ChatMessage::user { content: input.clone() },
+            ChatMessage::system {
+                content: system_prompt,
+            },
+            ChatMessage::user {
+                content: input.clone(),
+            },
         ],
-        tools: vec![parse_tool, summarize_tool, smart_summary_tool, create_note_tool],
+        tools: vec![
+            parse_tool,
+            summarize_tool,
+            smart_summary_tool,
+            create_note_tool,
+        ],
         tool_choice: ToolChoice::Auto,
         ..Default::default()
     };
@@ -3910,7 +3981,9 @@ pub async fn ai_breakdown_task(
     {
         Ok(r) => r,
         Err(e) => {
-            return Ok(serde_json::json!({ "ok": false, "message": format!("查询任务失败: {}", e) }))
+            return Ok(
+                serde_json::json!({ "ok": false, "message": format!("查询任务失败: {}", e) }),
+            )
         }
     };
     let task = match row.as_ref().map(row_to_task) {
@@ -3924,14 +3997,19 @@ pub async fn ai_breakdown_task(
     };
 
     let now = now();
-    let prompt_tpl =
-        load_prompt(pool.inner(), "ai_prompt_breakdown_task", DEFAULT_PROMPT_BREAKDOWN_TASK).await;
+    let prompt_tpl = load_prompt(
+        pool.inner(),
+        "ai_prompt_breakdown_task",
+        DEFAULT_PROMPT_BREAKDOWN_TASK,
+    )
+    .await;
     let system_prompt = format!("{}\n\n当前时间：{}", prompt_tpl, now);
 
     // 定义 breakdown_task 工具（返回子任务数组）
     let breakdown_tool = ToolDef {
         name: "breakdown_task".into(),
-        description: "把用户的大任务拆解成多个可执行的子任务时调用此工具。返回一个子任务数组".into(),
+        description: "把用户的大任务拆解成多个可执行的子任务时调用此工具。返回一个子任务数组"
+            .into(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -3980,8 +4058,12 @@ pub async fn ai_breakdown_task(
 
     let req = ChatRequest {
         messages: vec![
-            ChatMessage::system { content: system_prompt },
-            ChatMessage::user { content: user_content },
+            ChatMessage::system {
+                content: system_prompt,
+            },
+            ChatMessage::user {
+                content: user_content,
+            },
         ],
         tools: vec![breakdown_tool],
         // 用 Auto 而非 Required：部分兼容协议的模型（如 MiniMax 经 Anthropic 协议）
@@ -4098,14 +4180,19 @@ pub async fn ai_extract_tasks(
     };
 
     let now = now();
-    let prompt_tpl =
-        load_prompt(pool.inner(), "ai_prompt_extract_tasks", DEFAULT_PROMPT_EXTRACT_TASKS).await;
+    let prompt_tpl = load_prompt(
+        pool.inner(),
+        "ai_prompt_extract_tasks",
+        DEFAULT_PROMPT_EXTRACT_TASKS,
+    )
+    .await;
     let system_prompt = format!("{}\n\n当前时间：{}", prompt_tpl, now);
 
     // 定义 extract_tasks 工具（与 breakdown_task 结构一致，仅名称不同）
     let extract_tool = ToolDef {
         name: "extract_tasks".into(),
-        description: "从用户提供的文本中提取出需要执行的待办任务时调用此工具。返回一个任务数组".into(),
+        description: "从用户提供的文本中提取出需要执行的待办任务时调用此工具。返回一个任务数组"
+            .into(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -4147,8 +4234,12 @@ pub async fn ai_extract_tasks(
 
     let req = ChatRequest {
         messages: vec![
-            ChatMessage::system { content: system_prompt },
-            ChatMessage::user { content: text.clone() },
+            ChatMessage::system {
+                content: system_prompt,
+            },
+            ChatMessage::user {
+                content: text.clone(),
+            },
         ],
         tools: vec![extract_tool],
         tool_choice: ToolChoice::Auto,
@@ -4224,7 +4315,9 @@ pub async fn ai_polish_text(
 
     let req = ChatRequest {
         messages: vec![
-            ChatMessage::system { content: prompt_tpl },
+            ChatMessage::system {
+                content: prompt_tpl,
+            },
             ChatMessage::user { content: text },
         ],
         // 纯文本润色不需要工具调用
@@ -4291,7 +4384,9 @@ pub async fn group_create(
     let id = uuid();
     let ts = now();
     // sort_order：传入则用传入值（支持插入到指定位置），否则追加到末尾（时间戳足够大）
-    let sort_order = input.sort_order.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+    let sort_order = input
+        .sort_order
+        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
     sqlx::query(
         "INSERT INTO groups (id, list_id, name, sort_order, created_at) VALUES ($1, $2, $3, $4, $5)",
     )
@@ -4342,10 +4437,7 @@ pub async fn group_update(
 
 /// 删除分组（组内任务的 group_id 回填为清单的默认分组）
 #[tauri::command]
-pub async fn group_delete(
-    pool: State<'_, sqlx::SqlitePool>,
-    id: String,
-) -> CmdResult<()> {
+pub async fn group_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdResult<()> {
     let row = sqlx::query("SELECT list_id FROM groups WHERE id = $1")
         .bind(&id)
         .fetch_optional(pool.inner())

@@ -170,6 +170,15 @@ export const useListStore = defineStore("list", () => {
     return list;
   }
 
+  /** 修改清单/笔记本/目录颜色：db 成功后原地更新 lists.value 中的对象，
+   *  listTree 等 computed 及各消费方自动同步，不整树重载（沿用 tag store 的原地改对象模式） */
+  async function setColor(id: string, color: string): Promise<void> {
+    const node = lists.value.find((l) => l.id === id);
+    if (!node || node.color === color) return;
+    await db.setListColor(id, color);
+    node.color = color;
+  }
+
   function getById(id: string): List | undefined {
     return lists.value.find((l) => l.id === id);
   }
@@ -304,6 +313,7 @@ export const useListStore = defineStore("list", () => {
     error,
     loadLists,
     createList,
+    setColor,
     getById,
     getChildren,
     ensureFolderPath,

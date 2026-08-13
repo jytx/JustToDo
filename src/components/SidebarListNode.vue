@@ -94,6 +94,8 @@ const emit = defineEmits<{
   taskDropToFolder: [taskId: string, folderNode: ListTreeNode, kind: "task" | "note"];
   /** 右键菜单：鼠标事件 + 当前节点（向上冒泡到 TheSidebar 统一处理） */
   contextmenu: [event: MouseEvent, node: ListTreeNode];
+  /** 点击色点换色：鼠标事件 + 当前节点（冒泡到 TheSidebar 弹行内色板） */
+  colorClick: [event: MouseEvent, node: ListTreeNode];
 }>();
 
 /** 菜单点击的 key（addFolder 仅目录菜单有，addTask 仅清单菜单有） */
@@ -373,8 +375,10 @@ function onDrop(e: DragEvent) {
     >
       <span class="list-node__dot-placeholder" />
       <span
-        class="list-node__dot"
+        class="list-node__dot list-node__dot--clickable"
         :style="{ backgroundColor: node.color }"
+        :title="`更改 ${node.name} 颜色`"
+        @click.stop="(e: MouseEvent) => emit('colorClick', e, node)"
       />
       <span class="list-node__title">{{ node.name }}</span>
       <span v-if="(isNote ? taskStore.noteCounts : taskStore.listCounts)[node.id]" class="list-node__count">{{ (isNote ? taskStore.noteCounts : taskStore.listCounts)[node.id] }}</span>
@@ -431,6 +435,7 @@ function onDrop(e: DragEvent) {
         @taskDrop="(taskId: string, target: ListTreeNode) => $emit('taskDrop', taskId, target)"
         @taskDropToFolder="(taskId: string, folder: ListTreeNode, k: 'task' | 'note') => $emit('taskDropToFolder', taskId, folder, k)"
         @contextmenu="(e: MouseEvent, n: ListTreeNode) => $emit('contextmenu', e, n)"
+        @colorClick="(e: MouseEvent, n: ListTreeNode) => $emit('colorClick', e, n)"
       />
     </div>
   </div>
@@ -546,6 +551,16 @@ function onDrop(e: DragEvent) {
   border-radius: 50%;
   flex-shrink: 0;
   display: inline-block;
+}
+
+/* 色点可点击换色（清单/笔记本；目录与归档区无此态） */
+.list-node__dot--clickable {
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+
+.list-node__dot--clickable:hover {
+  transform: scale(1.3);
 }
 
 /* 任务计数 */

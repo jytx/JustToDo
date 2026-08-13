@@ -142,6 +142,11 @@ export async function renameList(id: string, name: string, color: string): Promi
   await invoke<void>("list_rename", { id, name, color });
 }
 
+/** 仅修改清单/笔记本/目录颜色（不动名称；收件箱/默认笔记本也可用） */
+export async function setListColor(id: string, color: string): Promise<void> {
+  await invoke<void>("list_set_color", { id, color });
+}
+
 export async function moveList(id: string, parentId: string | null, position?: number): Promise<void> {
   await invoke<void>("list_move", { id, parentId, position: position ?? null });
 }

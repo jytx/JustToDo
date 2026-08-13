@@ -514,6 +514,7 @@ function onClickTagColorDot(e: MouseEvent, tag: { id: string }): void {
   e.preventDefault();
   e.stopPropagation();
   closeAllColorPickers();
+  inlineListColorOpen.value = false;
   inlineColorTagId.value = tag.id;
   inlineColorTriggerEl.value = e.currentTarget as HTMLElement;
   inlineColorOpen.value = true;
@@ -534,6 +535,40 @@ const inlineColorActiveColor = computed(() => {
   const tagId = inlineColorTagId.value;
   const tag = tagStore.tags.find((t) => t.id === tagId);
   return tag?.color ?? "";
+});
+
+// ─── 行内色板：点侧边栏清单/笔记本色点直接换色（与标签色板同构） ──────────
+/** 行内色板状态：当前操作的清单/笔记本节点 id + trigger 元素 */
+const inlineListColorId = ref<string | null>(null);
+const inlineListColorTriggerEl = ref<HTMLElement | null>(null);
+const inlineListColorOpen = ref(false);
+
+/** 点击清单/笔记本色点：阻止冒泡（避免触发行点击进入清单）+ 打开行内色板 */
+function onClickListColorDot(e: MouseEvent, node: { id: string }): void {
+  e.preventDefault();
+  e.stopPropagation();
+  closeAllColorPickers();
+  inlineColorOpen.value = false;
+  inlineListColorId.value = node.id;
+  inlineListColorTriggerEl.value = e.currentTarget as HTMLElement;
+  inlineListColorOpen.value = true;
+}
+
+/** 行内选色：即时调 listStore.setColor 只改颜色，立即生效 */
+async function onPickInlineListColor(color: string): Promise<void> {
+  const listId = inlineListColorId.value;
+  inlineListColorOpen.value = false;
+  if (!listId) return;
+  const node = listStore.getById(listId);
+  if (!node || node.color === color) return;
+  await listStore.setColor(listId, color);
+}
+
+/** 行内色板当前高亮的颜色（当前操作清单/笔记本的 color） */
+const inlineListColorActiveColor = computed(() => {
+  const listId = inlineListColorId.value;
+  const node = listId ? listStore.getById(listId) : undefined;
+  return node?.color ?? "";
 });
 
 /** 编辑弹窗选色：即时保存颜色（用输入框当前名称），不等到回车。
@@ -1268,6 +1303,7 @@ onMounted(async () => {
           @taskDrop="onTaskDrop"
           @taskDropToFolder="onTaskDropToFolder"
           @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
+          @colorClick="onClickListColorDot"
         />
       </div>
 
@@ -1326,6 +1362,7 @@ onMounted(async () => {
           @taskDrop="onTaskDrop"
           @taskDropToFolder="onTaskDropToFolder"
           @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
+          @colorClick="onClickListColorDot"
         />
       </div>
 
@@ -1870,6 +1907,24 @@ onMounted(async () => {
         :class="{ 'sidebar-create__color-swatch--active': inlineColorActiveColor === c }"
         :style="{ backgroundColor: c }"
         @click="onPickInlineTagColor(c)"
+      />
+    </div>
+  </TeleportPopper>
+
+  <!-- 行内色板：点侧边栏清单/笔记本色点直接弹板换色（与标签色板同构） -->
+  <TeleportPopper
+    v-model:visible="inlineListColorOpen"
+    :anchor="inlineListColorTriggerEl"
+    placement="bottom-left"
+  >
+    <div class="sidebar-create__color-picker">
+      <button
+        v-for="c in LIST_COLORS"
+        :key="c"
+        class="sidebar-create__color-swatch"
+        :class="{ 'sidebar-create__color-swatch--active': inlineListColorActiveColor === c }"
+        :style="{ backgroundColor: c }"
+        @click="onPickInlineListColor(c)"
       />
     </div>
   </TeleportPopper>
