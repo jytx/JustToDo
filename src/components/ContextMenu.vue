@@ -104,7 +104,10 @@ function onKeydown(e: KeyboardEvent) {
  *  判定滚动目标若在菜单自身内部，则保持打开，仅外部滚动才关闭。
  *  注意：批量菜单的级联子菜单通过 Teleport 到 body，不在 popupRef 内，
  *  需额外检查 .batch-submenu 容器。任务项右键菜单的级联子菜单
- *  （.task-item-submenu）同理豁免。 */
+ *  （.task-item-submenu）同理豁免。
+ *  另：级联子菜单打开期间，页面滚动也不关闭——用户在子菜单上滚轮时，
+ *  列表滚到头（或子菜单本身不可滚动）会 scroll chaining 到页面滚动容器
+ *  （.app-layout / 侧边栏），若按"页面滚动即关闭"会误关一级菜单。 */
 function onScroll(e: Event) {
   if (!props.visible) return;
   const target = e.target as Node | null;
@@ -116,6 +119,8 @@ function onScroll(e: Event) {
     ".batch-submenu, .task-item-submenu",
   );
   if (submenu && submenu.contains(target)) return;
+  // 级联子菜单打开期间：页面滚动也不关闭（原因见函数注释）
+  if (submenu) return;
   // 全局/页面滚动 → 关闭
   emit("update:visible", false);
 }
