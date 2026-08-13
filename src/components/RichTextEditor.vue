@@ -180,35 +180,38 @@ const editorContainerRef = ref<HTMLElement | null>(null);
 // ─── Slash Command 菜单（Notion-like 输入 / 唤起 block 菜单）────────
 // items 定义每个 block 类型；command 在被选中时执行（call editor commands）
 const slashItems: SlashCommandItem[] = [
-  { key: "text", title: "正文", description: "Paragraph", keywords: ["text", "p"] },
-  { key: "h1", title: "H1 标题", description: "Heading 1", keywords: ["heading", "标题"] },
-  { key: "h2", title: "H2 标题", description: "Heading 2", keywords: ["heading", "标题"] },
-  { key: "h3", title: "H3 标题", description: "Heading 3", keywords: ["heading", "标题"] },
-  { key: "h4", title: "H4 标题", description: "Heading 4", keywords: ["heading", "标题"] },
-  { key: "h5", title: "H5 标题", description: "Heading 5", keywords: ["heading", "标题"] },
-  { key: "h6", title: "H6 标题", description: "Heading 6", keywords: ["heading", "标题"] },
+  { key: "text", title: "正文", description: "Paragraph", keywords: ["text", "p"], shortcut: "T" },
+  { key: "h1", title: "H1 标题", description: "Heading 1", keywords: ["heading", "标题"], shortcut: "1" },
+  { key: "h2", title: "H2 标题", description: "Heading 2", keywords: ["heading", "标题"], shortcut: "2" },
+  { key: "h3", title: "H3 标题", description: "Heading 3", keywords: ["heading", "标题"], shortcut: "3" },
+  { key: "h4", title: "H4 标题", description: "Heading 4", keywords: ["heading", "标题"], shortcut: "4" },
+  { key: "h5", title: "H5 标题", description: "Heading 5", keywords: ["heading", "标题"], shortcut: "5" },
+  { key: "h6", title: "H6 标题", description: "Heading 6", keywords: ["heading", "标题"], shortcut: "6" },
   {
     key: "bullet",
     title: "无序列表",
     description: "Bullet list",
     keywords: ["ul", "list", "列表"],
+    shortcut: "B",
   },
   {
     key: "ordered",
     title: "有序列表",
     description: "Numbered list",
     keywords: ["ol", "list", "列表"],
+    shortcut: "N",
   },
   {
     key: "todo",
     title: "待办列表",
     description: "To-do list",
     keywords: ["task", "todo", "checklist"],
+    shortcut: "D",
   },
-  { key: "quote", title: "引用", description: "Quote", keywords: ["blockquote"] },
-  { key: "code", title: "代码", description: "Code block", keywords: ["pre"] },
-  { key: "table", title: "表格", description: "Table", keywords: ["table", "表格"] },
-  { key: "hr", title: "分隔线", description: "Divider", keywords: ["hr", "line"] },
+  { key: "quote", title: "引用", description: "Quote", keywords: ["blockquote"], shortcut: "Q" },
+  { key: "code", title: "代码", description: "Code block", keywords: ["pre"], shortcut: "C" },
+  { key: "table", title: "表格", description: "Table", keywords: ["table", "表格"], shortcut: "E" },
+  { key: "hr", title: "分隔线", description: "Divider", keywords: ["hr", "line"], shortcut: "-" },
 ];
 
 /**

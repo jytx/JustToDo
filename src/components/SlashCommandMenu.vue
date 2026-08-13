@@ -22,6 +22,9 @@ export type SlashCommandItem = {
   icon?: string;
   /** 用于过滤的关键词（默认包含 title） */
   keywords?: string[];
+  /** 快捷字母标签（Notion 风格）：菜单打开时按该字母直接选中此项。
+   *  单字母；多个项同字母时按出现顺序取第一个匹配。 */
+  shortcut?: string;
 };
 
 const props = defineProps<{
@@ -130,6 +133,23 @@ function selectItem(item: SlashCommandItem) {
 /** 全局键盘：↑↓ Enter Esc（捕获 suggestion 期间的按键） */
 function onKeyDown(e: KeyboardEvent) {
   if (!props.open) return;
+  // 快捷字母：非修饰键的单个字符，且在当前可见项中匹配某项的 shortcut，
+  // 直接选中该项（Notion 风格）。注意优先于下面的"字符键关弹窗"分支。
+  if (
+    e.key.length === 1 &&
+    !e.metaKey &&
+    !e.ctrlKey &&
+    !e.altKey &&
+    !e.shiftKey
+  ) {
+    const key = e.key.toUpperCase();
+    const matched = filteredItems.value.find((it) => it.shortcut === key);
+    if (matched) {
+      e.preventDefault();
+      selectItem(matched);
+      return;
+    }
+  }
   // Backspace / Delete / 任何字符键：关弹窗 + exitSuggestion 让 Suggestion utility 退出，
   // 让 Tiptap 自己处理字符输入/删除（用户可正常退格删除已输入的 "/xxx"）。
   if (
@@ -248,6 +268,7 @@ onBeforeUnmount(() => {
             <MenuPopoverItem :active="i === selectedIndex" @click="selectItem(item)">
               <span class="slash-menu__title">{{ item.title }}</span>
               <span v-if="item.description" class="slash-menu__desc">{{ item.description }}</span>
+              <kbd v-if="item.shortcut" class="slash-menu__shortcut">{{ item.shortcut }}</kbd>
             </MenuPopoverItem>
             <!-- 二级：行列选择器 -->
             <div v-if="tableSubmenuOpen" class="slash-menu__table-submenu">
@@ -262,6 +283,7 @@ onBeforeUnmount(() => {
           >
             <span class="slash-menu__title">{{ item.title }}</span>
             <span v-if="item.description" class="slash-menu__desc">{{ item.description }}</span>
+            <kbd v-if="item.shortcut" class="slash-menu__shortcut">{{ item.shortcut }}</kbd>
           </MenuPopoverItem>
         </template>
       </div>
@@ -331,5 +353,24 @@ onBeforeUnmount(() => {
   font-size: 11px;
   color: var(--jt-text-tertiary);
   font-family: var(--font-body);
+}
+
+/* 快捷字母标签：等宽字体小徽章，置于描述右侧 */
+.slash-menu__shortcut {
+  margin-left: 10px;
+  flex-shrink: 0;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--jt-border);
+  border-radius: 4px;
+  background: var(--jt-surface-sunken);
+  color: var(--jt-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
 }
 </style>
