@@ -763,18 +763,18 @@ async function changeAttachmentPath() {
                 />
               </div>
 
-              <div class="settings-section__actions">
-                <a-button
-                  type="outline"
-                  size="small"
-                  :loading="testing"
-                  @click="onTestConnection"
-                >测试连接</a-button>
+              <div class="settings-section__actions settings-section__actions--right">
                 <span
                   v-if="testResult"
                   class="settings-section__test-result"
                   :class="{ 'settings-section__test-result--ok': testResult.ok, 'settings-section__test-result--fail': !testResult.ok }"
                 >{{ testResult.ok ? "✓ " : "✗ " }}{{ testResult.message }}</span>
+                <a-button
+                  type="text"
+                  size="small"
+                  :loading="testing"
+                  @click="onTestConnection"
+                >测试连接</a-button>
               </div>
 
               <a-divider class="my-4" />
@@ -1256,6 +1256,11 @@ async function changeAttachmentPath() {
   align-items: center;
   gap: 12px;
   margin-bottom: 8px;
+}
+
+/* 右对齐变体（AI 区测试连接等） */
+.settings-section__actions--right {
+  justify-content: flex-end;
 }
 
 /* 测试连接结果反馈：成功绿、失败红 */
