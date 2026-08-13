@@ -305,12 +305,14 @@ async function askDeleteTag(tag: { id: string; name: string }) {
 }
 
 /** 选中清单/笔记本时按 Backspace/Delete → 弹删除确认框（键盘入口，等价于右键「删除」）。
- *  守卫：删除框已开 / 非清单·笔记本路由 / 有任务焦点（让位任务删除）/ 详情面板打开
- *  （操作态，避免误删清单）/ 输入框聚焦 / 非 Backspace·Delete 键，均不处理。 */
+ *  守卫：删除框已开 / 非清单·笔记本路由 / 任务列表非空（让位任务删除——用户在
+ *  任务列表里按 Backspace 期望删任务，弹清单删除框有误删风险）/ 详情面板打开
+ *  （操作态）/ 输入框聚焦 / 非 Backspace·Delete 键，均不处理。
+ *  与 AppLayout 的 ↑/↓ 切清单保持同一触发条件（任务列表为空时才生效）。 */
 function onSidebarListKeydown(e: KeyboardEvent): void {
   if (confirmDelete.value) return;
   if (route.name !== "list" && route.name !== "notebook") return;
-  if (taskStore.focusedTaskId) return;
+  if (taskStore.openTasks.length > 0) return;
   if (taskStore.detailOpen) return;
   if (e.key !== "Backspace" && e.key !== "Delete") return;
   const active = document.activeElement;

@@ -457,13 +457,13 @@ function onNavigationKeydown(e: KeyboardEvent) {
     return;
   }
 
-  // 2.75 清单/笔记本视图 + 无任务焦点 + 无详情面板：↑/↓ 在侧边栏清单间切换
-  //    有焦点任务时保持任务导航（下方 moveFocus 处理），不抢占；
-  //    详情面板打开（操作态）时也不切换——用户在查看/编辑任务，避免切走清单
-  //    丢失上下文；ESC 关面板后即可切换清单（点击侧边栏清单本身也会自动关面板）
+  // 2.75 清单/笔记本视图：Ctrl/Cmd+↑/↓ 在侧边栏清单/笔记本间切换
+  //    与 ↑/↓（任务导航）彻底分离：组合键是显式意图，任何清单状态都可切换
+  //    （不受任务列表有无任务限制）；切换会由 loadTasks 自动关闭详情面板
   if (
-    !taskStore.focusedTaskId &&
-    !taskStore.detailOpen &&
+    (e.metaKey || e.ctrlKey) &&
+    !e.shiftKey &&
+    !e.altKey &&
     (route.name === "list" || route.name === "notebook") &&
     (e.key === "ArrowDown" || e.key === "ArrowUp")
   ) {
