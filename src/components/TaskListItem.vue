@@ -142,6 +142,11 @@ async function showCascadeSubmenu(kind: CascadeKind, triggerEl: HTMLElement): Pr
   }
   cascadeSubmenu.left = left + "px";
   cascadeSubmenu.top = tr.top + "px";
+  // 打开标签子菜单：重置搜索词（避免上个任务残留）并在渲染后聚焦搜索框
+  if (kind === "tag") {
+    tagSearchQuery.value = "";
+    tagSearchInputRef.value?.focus();
+  }
 }
 
 function scheduleCloseCascadeSubmenu(): void {
@@ -193,6 +198,29 @@ async function onMenuCreateTag(name: string): Promise<void> {
     await db.addTaskTag(props.task.id, tag.id);
     await taskStore.refreshTaskTags(props.task.id);
   }
+}
+
+// ─── 级联标签子菜单的搜索/新建（与 TagSelectPopover 同交互：置顶输入 + 模糊匹配 + 回车新建）───
+/** 搜索/新建输入框引用 —— 打开标签子菜单后自动聚焦 */
+const tagSearchInputRef = ref<HTMLInputElement | null>(null);
+/** 搜索关键词 —— 实时过滤标签列表；回车时作为新标签名或精确匹配已有标签 */
+const tagSearchQuery = ref("");
+
+/** 标签选项：按搜索关键词模糊匹配名称（与 TagSelectPopover.tagOptions 同逻辑） */
+const filteredTagOptions = computed(() => {
+  const q = tagSearchQuery.value.trim().toLowerCase();
+  const all = tagStore.tags;
+  if (!q) return all;
+  return all.filter((t) => t.name.toLowerCase().includes(q));
+});
+
+/** 回车提交：复用 onMenuCreateTag（getByName 命中复用 / createTag 新建并关联），
+ *  清空搜索词保持子菜单打开便于连续添加（与 TagSelectPopover.submitNewTag 同范式） */
+async function submitTagSearch(): Promise<void> {
+  const name = tagSearchQuery.value.trim();
+  if (!name) return;
+  await onMenuCreateTag(name);
+  tagSearchQuery.value = "";
 }
 
 /** 笔记（kind='note'）：无完成/日期/重复概念，UI 隐藏这些区块。
@@ -999,24 +1027,30 @@ function onCtxEnterBatchMode(): void {
             <span>{{ label }}</span>
           </MenuPopoverItem>
         </template>
-        <!-- 标签：点击切换关联（已关联高亮 + 勾选），底部可新建标签 -->
+        <!-- 标签：置顶搜索框（模糊匹配 + 回车新建）+ 标签列表（点击切换关联，子菜单保持打开） -->
         <template v-else-if="cascadeSubmenu.kind === 'tag'">
-          <MenuPopoverItem
-            v-for="opt in tagStore.tags"
-            :key="opt.id"
-            :active="taskTags.some((t) => t.id === opt.id)"
-            @click="onMenuToggleTag(opt.id)"
-          >
-            <span class="task-item__cascade-dot" :style="{ backgroundColor: opt.color }" />
-            <span>{{ opt.name }}</span>
-          </MenuPopoverItem>
-          <a-input
-            placeholder="+ 新建标签"
-            size="mini"
-            allow-clear
-            style="margin-top: 4px"
-            @keydown.enter="(e: any) => { onMenuCreateTag((e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = ''; }"
+          <input
+            ref="tagSearchInputRef"
+            v-model="tagSearchQuery"
+            class="task-item__cascade-tag-input"
+            placeholder="搜索或新建标签"
+            @keydown.enter.prevent="submitTagSearch"
           />
+          <div v-if="filteredTagOptions.length > 0" class="task-item__cascade-tag-list">
+            <MenuPopoverItem
+              v-for="opt in filteredTagOptions"
+              :key="opt.id"
+              :active="taskTags.some((t) => t.id === opt.id)"
+              @click="onMenuToggleTag(opt.id)"
+            >
+              <span class="task-item__cascade-dot" :style="{ backgroundColor: opt.color }" />
+              <span class="task-item__cascade-tag-name">{{ opt.name }}</span>
+            </MenuPopoverItem>
+          </div>
+          <!-- 无结果：有搜索词提示回车新建，无搜索词提示输入名称创建 -->
+          <div v-else class="task-item__cascade-tag-empty">
+            {{ tagSearchQuery.trim() ? `没有匹配的标签，回车新建「${tagSearchQuery.trim()}」` : "还没有标签，输入名称新建" }}
+          </div>
         </template>
         <!-- 移动至清单：递归渲染目录树，目录 hover 出右侧子级菜单 -->
         <template v-else-if="cascadeSubmenu.kind === 'list'">
@@ -1277,6 +1311,56 @@ function onCtxEnterBatchMode(): void {
   border-radius: 50%;
   flex-shrink: 0;
   display: inline-block;
+}
+
+/* 级联标签子菜单的搜索/新建输入框（与 TagSelectPopover 的输入框同款视觉） */
+.task-item__cascade-tag-input {
+  width: 100%;
+  height: 28px;
+  margin-bottom: 4px;
+  padding: 0 10px;
+  border: 1px solid var(--jt-border);
+  border-radius: 5px;
+  background: var(--jt-surface);
+  color: var(--jt-text-primary);
+  font-size: 13px;
+  font-family: var(--font-body);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.task-item__cascade-tag-input:focus {
+  border-color: color-mix(in srgb, var(--jt-primary) 50%, transparent);
+}
+
+.task-item__cascade-tag-input::placeholder {
+  color: var(--jt-text-tertiary);
+}
+
+/* 标签列表：标签多时可滚动 */
+.task-item__cascade-tag-list {
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 标签名：长名省略号截断，不撑爆菜单宽度 */
+.task-item__cascade-tag-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 无匹配结果提示（同 TagSelectPopover 空态文案风格） */
+.task-item__cascade-tag-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--jt-text-tertiary);
+  text-align: center;
 }
 
 /* 单个标签 chip —— 轻量视觉，不抢标题焦点；底色/边框/文字色由 inline style 按标签颜色控制 */
