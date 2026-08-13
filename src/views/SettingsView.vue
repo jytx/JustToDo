@@ -262,6 +262,15 @@ async function removeTime(t: string): Promise<void> {
 
 // ─── 提示音 ─────────────────────────────────────────
 
+/** 音效下拉选项：可试听项带播放图标（「无」不可试听） */
+const soundSelectOptions = computed(() =>
+  SOUND_OPTIONS.map((o) => ({
+    value: o.value,
+    label: o.label,
+    previewable: o.url !== null,
+  })),
+);
+
 /** 试听指定音效：按 value 查 url 并播放（「无」不响） */
 function previewSound(value: string): void {
   const option = findSoundOption(value);
@@ -475,15 +484,13 @@ async function changeAttachmentPath() {
                 勾选完成任务时播放（批量完成只响一次）
               </p>
             </div>
-            <div class="settings-section__sound">
-              <SelectPopover
-                :model-value="completionSound"
-                :options="SOUND_OPTIONS"
-                :width="140"
-                @update:model-value="(v: string) => settingsStore.setCompletionSound(v)"
-              />
-              <a-button size="small" @click="previewSound(completionSound)">试听</a-button>
-            </div>
+            <SelectPopover
+              :model-value="completionSound"
+              :options="soundSelectOptions"
+              :width="140"
+              @update:model-value="(v: string) => settingsStore.setCompletionSound(v)"
+              @preview="previewSound"
+            />
           </div>
           <div class="settings-section__item">
             <div>
@@ -492,15 +499,13 @@ async function changeAttachmentPath() {
                 任务设置的提醒时刻到点时播放（与系统通知同时）
               </p>
             </div>
-            <div class="settings-section__sound">
-              <SelectPopover
-                :model-value="dueReminderSound"
-                :options="SOUND_OPTIONS"
-                :width="140"
-                @update:model-value="(v: string) => settingsStore.setDueReminderSound(v)"
-              />
-              <a-button size="small" @click="previewSound(dueReminderSound)">试听</a-button>
-            </div>
+            <SelectPopover
+              :model-value="dueReminderSound"
+              :options="soundSelectOptions"
+              :width="140"
+              @update:model-value="(v: string) => settingsStore.setDueReminderSound(v)"
+              @preview="previewSound"
+            />
           </div>
           <div class="settings-section__item">
             <div>
@@ -509,15 +514,13 @@ async function changeAttachmentPath() {
                 每日固定时点汇总提醒到点时播放（与系统通知同时）
               </p>
             </div>
-            <div class="settings-section__sound">
-              <SelectPopover
-                :model-value="dailyReminderSound"
-                :options="SOUND_OPTIONS"
-                :width="140"
-                @update:model-value="(v: string) => settingsStore.setDailyReminderSound(v)"
-              />
-              <a-button size="small" @click="previewSound(dailyReminderSound)">试听</a-button>
-            </div>
+            <SelectPopover
+              :model-value="dailyReminderSound"
+              :options="soundSelectOptions"
+              :width="140"
+              @update:model-value="(v: string) => settingsStore.setDailyReminderSound(v)"
+              @preview="previewSound"
+            />
           </div>
         </div>
 
@@ -1184,13 +1187,6 @@ async function changeAttachmentPath() {
   gap: 6px;
   max-width: 320px;
   justify-content: flex-end;
-}
-
-/* 提示音：下拉选择 + 试听按钮（右对齐横排） */
-.settings-section__sound {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .settings-section__desc--danger {

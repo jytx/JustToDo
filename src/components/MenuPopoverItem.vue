@@ -32,6 +32,11 @@ const emit = defineEmits<{
     @click="emit('click')"
   >
     <slot />
+    <!-- 尾部插槽：右侧辅助区（如 SelectPopover 的试听图标）。
+         点击已 stopPropagation，不会触发本按钮的选中逻辑。 -->
+    <span v-if="$slots.tail" class="menu-popover-item__tail" @click.stop>
+      <slot name="tail" />
+    </span>
     <icon-check v-if="active" :size="12" class="menu-popover-item__check" />
   </button>
 </template>
@@ -88,6 +93,19 @@ const emit = defineEmits<{
 .menu-popover-item__check {
   margin-left: auto;
   flex-shrink: 0;
+}
+
+/* 尾部插槽：占据最右侧（margin-left:auto 推右），与 ✓ 标记互斥排布 */
+.menu-popover-item__tail {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* 有尾部时 ✓ 标记不再推右（右位已由 tail 占据），只留小间距 */
+.menu-popover-item:has(.menu-popover-item__tail) .menu-popover-item__check {
+  margin-left: 8px;
 }
 
 /* keyboard focus-visible：细节但有用 */

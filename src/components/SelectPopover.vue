@@ -10,11 +10,12 @@
 //     :width="200"
 //   />
 import { computed, ref } from "vue";
-import { IconDown } from "@arco-design/web-vue/es/icon";
+import { IconDown, IconPlayArrow } from "@arco-design/web-vue/es/icon";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
 
-type Option = { value: string; label: string };
+/** 选项：previewable 为 true 时右侧显示播放图标，点击触发 preview 事件（试听） */
+type Option = { value: string; label: string; previewable?: boolean };
 
 const props = withDefaults(
   defineProps<{
@@ -34,6 +35,8 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   "update:modelValue": [value: string];
+  /** 点击选项右侧播放图标（试听），值是该选项的 value */
+  preview: [value: string];
 }>();
 
 const open = ref(false);
@@ -92,6 +95,14 @@ function onTriggerClick() {
       @click="selectOption(opt.value)"
     >
       {{ opt.label }}
+      <!-- 可试听选项：右侧播放图标，点击只播放不选中（stopPropagation 由 tail 处理） -->
+      <template v-if="opt.previewable" #tail>
+        <icon-play-arrow
+          :size="14"
+          class="select-popover__preview"
+          @click.stop="emit('preview', opt.value)"
+        />
+      </template>
     </MenuPopoverItem>
   </MenuPopover>
 </template>
@@ -153,5 +164,15 @@ function onTriggerClick() {
 /* 展开时箭头翻转 */
 .select-popover__trigger[aria-expanded="true"] .select-popover__arrow {
   transform: rotate(180deg);
+}
+
+/* 选项右侧试听图标：淡灰，hover 主题色 */
+.select-popover__preview {
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.select-popover__preview:hover {
+  color: var(--jt-primary);
 }
 </style>
