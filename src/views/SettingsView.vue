@@ -23,6 +23,7 @@ import {
   IconRefresh,
   IconFolder,
   IconPlus,
+  IconThunderbolt,
 } from "@arco-design/web-vue/es/icon";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -792,7 +793,10 @@ async function changeAttachmentPath() {
                   size="small"
                   :loading="testing"
                   @click="onTestConnection"
-                >测试连接</a-button>
+                >
+                  <template #icon><icon-thunderbolt :size="14" /></template>
+                  测试连接
+                </a-button>
               </div>
 
               <a-divider class="my-4" />
