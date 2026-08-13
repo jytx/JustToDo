@@ -20,6 +20,7 @@ import {
   IconImport,
   IconDelete,
   IconRefresh,
+  IconFolder,
 } from "@arco-design/web-vue/es/icon";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -683,7 +684,10 @@ async function changeAttachmentPath() {
               <span>附件存储路径</span>
               <p class="settings-section__path-hint">{{ attachmentPath || '加载中...' }}</p>
             </div>
-            <a-button type="text" size="small" @click="changeAttachmentPath">更改路径</a-button>
+            <a-button type="text" size="small" @click="changeAttachmentPath">
+              <template #icon><icon-folder :size="14" /></template>
+              更改路径
+            </a-button>
           </div>
 
           <a-divider class="my-4" />
