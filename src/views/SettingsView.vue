@@ -690,11 +690,10 @@ async function changeAttachmentPath() {
             </a-button>
           </div>
 
-          <a-divider class="my-4" />
           <!-- 导出 / 导入 -->
           <div class="settings-section__item">
             <div>
-              <span>导出 / 导入</span>
+              <span class="settings-section__item-title">导出 / 导入</span>
               <p class="settings-section__path-hint">备份或恢复任务数据（JSON 文件）</p>
             </div>
             <div class="settings-section__item-actions">
@@ -708,11 +707,11 @@ async function changeAttachmentPath() {
               </a-button>
             </div>
           </div>
-          <a-divider class="my-4" />
+
           <!-- 危险操作 -->
           <div class="settings-section__item">
             <div>
-              <span class="settings-section__item-title--danger">危险操作</span>
+              <span class="settings-section__item-title settings-section__item-title--danger">危险操作</span>
               <p class="settings-section__path-hint">清空已完成任务，或重置所有数据（不可恢复）</p>
             </div>
             <div class="settings-section__item-actions">
@@ -1095,7 +1094,14 @@ async function changeAttachmentPath() {
   gap: 4px;
 }
 
-/* 危险操作标题：主红警示色 */
+/* 数据区标题：与后台任务区块标题一致（13px 600） */
+.settings-section__item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jt-text-primary);
+}
+
+/* 危险操作标题：主红警示色（继承加粗） */
 .settings-section__item-title--danger {
   color: var(--jt-error);
 }
