@@ -1172,6 +1172,13 @@ async function changeAttachmentPath() {
 .daily-picker {
   position: relative;
   width: 172px;
+  /* 面板容器：同 MenuPopover（白底 12px 圆角 阴影） */
+  background: var(--jt-surface);
+  border-radius: 12px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.04);
+  padding: 8px;
 }
 
 /* 两列：时（0–23）｜分（0–55），各 72px 宽 */
@@ -1203,7 +1210,7 @@ async function changeAttachmentPath() {
   height: 36px;
   border: none;
   background: transparent;
-  font-size: 16px;
+  font-size: 13px;
   font-family: var(--font-mono, var(--font-body));
   font-variant-numeric: tabular-nums;
   color: var(--jt-text-tertiary);
@@ -1221,7 +1228,7 @@ async function changeAttachmentPath() {
 /* 时/分之间的冒号分隔 */
 .daily-picker__sep {
   color: var(--jt-text-tertiary);
-  font-size: 16px;
+  font-size: 13px;
   font-family: var(--font-mono, var(--font-body));
   padding: 0 4px;
   flex-shrink: 0;
