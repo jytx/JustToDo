@@ -18,6 +18,7 @@ import {
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
+import { copyText } from "@/api/db";
 import { LIST_COLORS } from "@/utils/colors";
 import type { Priority } from "@/types";
 import AiBreakdownPreview from "@/components/AiBreakdownPreview.vue";
@@ -81,6 +82,25 @@ const saveLabel = computed(() => {
   const list = listStore.getById(taskStore.currentListId);
   return list?.kind === "note" ? "保存到当前笔记本" : "保存到当前清单";
 });
+
+/** 复制按钮状态：复制后短暂显示「已复制」 */
+const copied = ref(false);
+let copyTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 复制生成的 Markdown 源文本到系统剪贴板（带图标文字按钮，参考设置页样式） */
+async function onCopyResult(): Promise<void> {
+  try {
+    await copyText(content.value);
+    copied.value = true;
+    if (copyTimer) clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => {
+      copied.value = false;
+    }, 1500);
+    Message.success("已复制到剪贴板");
+  } catch {
+    Message.error("复制失败");
+  }
+}
 
 /** marked 渲染节流：流式期间高频增量全量 parse 会卡，用 150ms 防抖。
  *  流结束后立即渲染一次（拿到完整 content）。 */
@@ -423,6 +443,10 @@ watch(
 
       <!-- 底部操作 -->
       <div v-if="!loading && content" class="ai-assistant__footer">
+        <a-button type="text" size="small" @click="onCopyResult">
+          <template #icon><icon-copy :size="14" /></template>
+          {{ copied ? "已复制" : "复制" }}
+        </a-button>
         <a-button type="outline" size="small" :loading="saving" @click="onSaveAsNote">
           {{ saveLabel }}
         </a-button>
