@@ -16,6 +16,10 @@ import {
   IconCalendar,
   IconRobot,
   IconSync,
+  IconExport,
+  IconImport,
+  IconDelete,
+  IconRefresh,
 } from "@arco-design/web-vue/es/icon";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -684,14 +688,26 @@ async function changeAttachmentPath() {
 
           <a-divider class="my-4" />
           <div class="settings-section__actions">
-            <a-button type="text" size="small" disabled>导出数据</a-button>
-            <a-button type="text" size="small" disabled>导入数据</a-button>
+            <a-button type="text" size="small" disabled>
+              <template #icon><icon-export :size="14" /></template>
+              导出数据
+            </a-button>
+            <a-button type="text" size="small" disabled>
+              <template #icon><icon-import :size="14" /></template>
+              导入数据
+            </a-button>
           </div>
           <a-divider class="my-4" />
           <p class="settings-section__desc settings-section__desc--danger">危险操作</p>
           <div class="settings-section__actions">
-            <a-button type="text" size="small" status="danger" disabled>清空已完成任务</a-button>
-            <a-button type="text" size="small" status="danger" disabled>重置所有数据</a-button>
+            <a-button type="text" size="small" status="danger" disabled>
+              <template #icon><icon-delete :size="14" /></template>
+              清空已完成任务
+            </a-button>
+            <a-button type="text" size="small" status="danger" disabled>
+              <template #icon><icon-refresh :size="14" /></template>
+              重置所有数据
+            </a-button>
           </div>
         </div>
 
