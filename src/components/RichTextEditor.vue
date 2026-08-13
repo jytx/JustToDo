@@ -228,15 +228,21 @@ function buildSlashCommandPlugin(editorInstance: TiptapEditor) {
     startOfLine: false,
     allowSpaces: false,
     allowedPrefixes: null,
-    items: ({ query }: { query: string }) =>
-      slashItems.filter((it) => {
+    // 关键修复：Suggestion 被 dismiss（点击外部/Escape/定位失败）后，
+    // dismissedRange 会永久记住关闭位置。之后只要 match.range.from 等于
+    // dismissedRange.from（输入 /code 时永远是文档里 / 的位置），菜单就
+    // 永远不会重新激活。这里强制每次匹配都重置 dismissed 状态。
+    shouldResetDismissed: () => true,
+    items: ({ query }: { query: string }) => {
+      return slashItems.filter((it) => {
         const q = query.trim().toLowerCase();
         if (!q) return true;
         const hay = [it.title, it.description ?? "", ...(it.keywords ?? [])]
           .join(" ")
           .toLowerCase();
         return hay.includes(q);
-      }),
+      });
+    },
     command: ({
       editor,
       range,
