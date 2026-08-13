@@ -217,11 +217,14 @@ const HOUR_OPTIONS: number[] = Array.from({ length: 24 }, (_, i) => i);
 /** 分钟列选项 0–55（5 分钟步进） */
 const MINUTE_OPTIONS: number[] = Array.from({ length: 12 }, (_, i) => i * 5);
 /** 单项高度（px）；容器高 = 5 项，边缘占位 2 项保证首尾可滚到中心 */
-const PICKER_ITEM_H = 36;
+const PICKER_ITEM_H = 32;
 
 const timePickerOpen = ref(false);
 const hourColRef = ref<HTMLElement | null>(null);
 const minuteColRef = ref<HTMLElement | null>(null);
+
+/** 滚动吸附定时器（每列独立，松手后对齐最近整行） */
+const snapTimers: Record<string, number> = { hour: 0, minute: 0 };
 
 /** 列滚动到指定选项（居中显示） */
 function scrollColTo(col: HTMLElement | null, value: number | null, options: number[]): void {
@@ -243,18 +246,22 @@ function openTimePicker(): void {
   });
 }
 
-/** 滚动事件：最近选项（居中行）即选中 */
-function onColScroll(col: HTMLElement, options: number[], set: (v: number) => void): void {
+/** 滚动事件：最近选项（居中行）即选中；松手后平滑吸附对齐（防停在两数之间） */
+function onColScroll(col: HTMLElement, options: number[], set: (v: number) => void, key: string): void {
   const idx = Math.min(options.length - 1, Math.max(0, Math.round(col.scrollTop / PICKER_ITEM_H)));
   set(options[idx]);
+  window.clearTimeout(snapTimers[key]);
+  snapTimers[key] = window.setTimeout(() => {
+    col.scrollTo({ top: idx * PICKER_ITEM_H, behavior: "smooth" });
+  }, 150);
 }
 
 function onHourScroll(): void {
-  if (hourColRef.value) onColScroll(hourColRef.value, HOUR_OPTIONS, (v) => { pendingHour.value = v; });
+  if (hourColRef.value) onColScroll(hourColRef.value, HOUR_OPTIONS, (v) => { pendingHour.value = v; }, "hour");
 }
 
 function onMinuteScroll(): void {
-  if (minuteColRef.value) onColScroll(minuteColRef.value, MINUTE_OPTIONS, (v) => { pendingMinute.value = v; });
+  if (minuteColRef.value) onColScroll(minuteColRef.value, MINUTE_OPTIONS, (v) => { pendingMinute.value = v; }, "minute");
 }
 
 /** 点击选项：直接选中并滚动定位 */
@@ -1190,7 +1197,7 @@ async function changeAttachmentPath() {
 }
 .daily-picker__col {
   flex: 1;
-  height: 180px; /* 5 项可见 */
+  height: 160px; /* 5 项可见 */
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -1200,14 +1207,14 @@ async function changeAttachmentPath() {
 
 /* 边缘占位：上下各 2 项，首尾选项也能滚到中间高亮行 */
 .daily-picker__edge {
-  height: 72px;
+  height: 64px;
 }
 
 /* 选项行：点击选中 + 滚动定位；active 加粗提亮 */
 .daily-picker__item {
   display: block;
   width: 100%;
-  height: 36px;
+  height: 32px;
   border: none;
   background: transparent;
   font-size: 13px;
@@ -1225,22 +1232,23 @@ async function changeAttachmentPath() {
   font-weight: 600;
 }
 
-/* 时/分之间的冒号分隔 */
+/* 时/分之间的冒号分隔（紧凑贴列） */
 .daily-picker__sep {
   color: var(--jt-text-tertiary);
   font-size: 13px;
   font-family: var(--font-mono, var(--font-body));
-  padding: 0 4px;
+  padding: 0 2px;
   flex-shrink: 0;
 }
 
-/* 中间高亮条：指示当前选中行（位于 5 项可见区的正中间） */
+/* 中间高亮条：指示当前选中行（位于 5 项可见区的正中间）
+ * top = 边缘占位 64px + 面板 padding 8px（indicator 相对 .daily-picker 定位） */
 .daily-picker__indicator {
   position: absolute;
   left: 0;
   right: 0;
   top: 72px;
-  height: 36px;
+  height: 32px;
   background: var(--jt-surface-hover);
   border-radius: 8px;
   pointer-events: none;
