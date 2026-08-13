@@ -1346,6 +1346,12 @@ function onCtxEnterBatchMode(): void {
   gap: 2px;
 }
 
+/* 滚动容器内的标签项禁止收缩（flex-shrink 默认 1 会把 32px 高的菜单项压扁，
+ * 导致标签多时每项被压缩到 20px 而非进入滚动区域） */
+.task-item__cascade-tag-list .menu-popover-item {
+  flex-shrink: 0;
+}
+
 /* 标签名：长名省略号截断，不撑爆菜单宽度 */
 .task-item__cascade-tag-name {
   flex: 1;
