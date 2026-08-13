@@ -162,7 +162,8 @@ function onTriggerClick() {
 }
 
 .select-popover__value {
-  /* 内容流内排列（自适应宽度），超长截断兜底 */
+  /* CJK 字形在行盒内天然偏上 ~0.6px（PingFang ascent 89%），下移 1px 视觉居中 */
+  transform: translateY(1px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
