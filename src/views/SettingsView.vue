@@ -342,31 +342,44 @@ function previewSound(value: string): void {
 // ─── 输入框宽度随内容自适应（同下拉的 fit-content 语言）───
 // WebKit 下 input 的 CSS fit-content 不跟随内容（实测固定 ~203px），
 // 需 JS 用 canvas 测字宽动态设宽；上限由 CSS max-width 与下方 clamp 双重兜底。
+// 普通 a-input 按组统一宽度（取组内最宽，避免同区输入框参差），数字框各自独立。
 const fitCanvas = document.createElement("canvas");
 
-/** 单个输入框：宽度 = 文本(值或占位符) + 左右内边距 + 附加控件(step/眼睛)，80~320 之间 */
-function fitInputWidth(wrapper: HTMLElement): void {
+/** 单个输入框自然宽度（不写入）：文本(值或占位符) + 内边距 + 附加控件(step/眼睛)，80~320 */
+function naturalInputWidth(wrapper: HTMLElement): number {
   const input = wrapper.querySelector("input");
-  if (!input) return;
+  if (!input) return 80;
   const ctx = fitCanvas.getContext("2d");
-  if (!ctx) return;
+  if (!ctx) return 80;
   ctx.font = getComputedStyle(input).font;
   const textW = ctx.measureText(input.value || input.placeholder || "").width;
   const stepW = wrapper.querySelector(".arco-input-number-step")?.clientWidth ?? 0;
   const suffixW = wrapper.querySelector(".arco-input-suffix")?.clientWidth ?? 0;
-  const w = Math.min(Math.max(Math.ceil(textW + 24 + stepW + suffixW + 6), 80), 320);
-  wrapper.style.width = `${w}px`;
+  return Math.min(Math.max(Math.ceil(textW + 24 + stepW + suffixW + 6), 80), 320);
 }
 
-/** 设置页内全部输入框适配一次（初始化 / tab 切换后重扫） */
+/** 设置页内全部输入框适配：普通 a-input 组统一取最宽，input-number 各自独立 */
 function fitAllInputs(): void {
-  document.querySelectorAll<HTMLElement>(".settings-view .arco-input-wrapper").forEach(fitInputWidth);
+  const wrappers = Array.from(
+    document.querySelectorAll<HTMLElement>(".settings-view .arco-input-wrapper"),
+  );
+  const textInputs = wrappers.filter((w) => !w.classList.contains("arco-input-number"));
+  if (textInputs.length > 0) {
+    const maxW = Math.max(...textInputs.map(naturalInputWidth));
+    textInputs.forEach((w) => {
+      w.style.width = `${maxW}px`;
+    });
+  }
+  wrappers
+    .filter((w) => w.classList.contains("arco-input-number"))
+    .forEach((w) => {
+      w.style.width = `${naturalInputWidth(w)}px`;
+    });
 }
 
-/** 全局捕获：输入 / 变更时动态适配宽度 */
-function onDocFitInput(e: Event): void {
-  const wrapper = (e.target as HTMLElement).closest<HTMLElement>(".settings-view .arco-input-wrapper");
-  if (wrapper) fitInputWidth(wrapper);
+/** 全局捕获：输入 / 变更时动态适配宽度（输入时整组重算，保持组内一致） */
+function onDocFitInput(): void {
+  fitAllInputs();
 }
 
 /** 聚焦时兜底适配：任何时序下点击输入框宽度都与内容一致 */
