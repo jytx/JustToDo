@@ -160,7 +160,8 @@ function onTriggerClick() {
 
 .select-popover__value {
   flex: 1;
-  text-align: left;
+  /* 值靠右、紧贴箭头（同滴答清单），左侧留白不显长 */
+  text-align: right;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

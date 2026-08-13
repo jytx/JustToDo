@@ -326,7 +326,7 @@ async function onGridDrop(e: DragEvent) {
           <SelectPopover
             :model-value="settings.templateDefaultListId"
             :options="listOptions"
-            :width="160"
+            :width="120"
             @update:model-value="onListChange"
           />
         </div>
@@ -341,7 +341,7 @@ async function onGridDrop(e: DragEvent) {
           <SelectPopover
             :model-value="settings.templateDefaultNoteId"
             :options="noteListOptions"
-            :width="160"
+            :width="120"
             @update:model-value="onNoteChange"
           />
         </div>

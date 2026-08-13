@@ -158,7 +158,7 @@ function onKeydownEnter(e: KeyboardEvent) {
           <SelectPopover
             v-model="freq"
             :options="freqOptions"
-            :width="180"
+            :width="120"
           />
         </div>
 
