@@ -6,6 +6,7 @@ import { ref } from "vue";
 import * as db from "@/api/db";
 import { useTheme } from "@/composables/useTheme";
 import { isValidHHmm } from "@/utils/date";
+import { findSoundOption } from "@/utils/sounds";
 
 /** 主题模式：light | dark | system */
 export type ThemeMode = "light" | "dark" | "system";
@@ -30,6 +31,12 @@ export const SETTINGS_KEYS = {
   templateDefaultListId: "template_default_list_id",
   templateDefaultNoteId: "template_default_note_id",
   dailyReminderTimes: "daily_reminder_times",
+  /** 任务完成提示音（音效 value，见 utils/sounds.ts；"none" 为静音） */
+  completionSound: "completion_sound",
+  /** 任务到期提醒提示音 */
+  dueReminderSound: "due_reminder_sound",
+  /** 每日固定提醒提示音 */
+  dailyReminderSound: "daily_reminder_sound",
   // ── AI 配置（详见 discuss/2026-07-31-ai-config-design.md）──
   /** AI 总开关（关掉后所有 AI 功能入口隐藏） */
   aiEnabled: "ai_enabled",
@@ -86,6 +93,14 @@ const DEFAULT_STARTUP_VIEW: StartupView = "today";
 const DEFAULT_TEMPLATE_LIST_ID = "inbox";
 /** 笔记模板默认笔记本：默认指向 migration 023 预置的"默认笔记本" */
 const DEFAULT_TEMPLATE_NOTE_ID = "default-notebook";
+
+// ── 提示音默认值（值来自 utils/sounds.ts 的 SOUND_OPTIONS；"none" 为静音）──
+/** 任务完成提示音：叮当 */
+const DEFAULT_COMPLETION_SOUND = "jingle";
+/** 任务到期提醒提示音：经典叮 */
+const DEFAULT_DUE_REMINDER_SOUND = "default";
+/** 每日固定提醒提示音：竖琴 */
+const DEFAULT_DAILY_REMINDER_SOUND = "harp";
 
 // ── AI 默认值 ──
 /** AI 默认关闭（隐私友好，用户显式开启） */
@@ -321,6 +336,10 @@ export const useSettingsStore = defineStore("settings", () => {
   const templateDefaultNoteId = ref<string>(DEFAULT_TEMPLATE_NOTE_ID);
   /** 每日固定时点提醒时刻列表（HH:mm，24h 制，字典序升序） */
   const dailyReminderTimes = ref<string[]>([]);
+  // ── 提示音（默认值见 DEFAULT_SOUND_* 常量；"none" 为静音）──
+  const completionSound = ref<string>(DEFAULT_COMPLETION_SOUND);
+  const dueReminderSound = ref<string>(DEFAULT_DUE_REMINDER_SOUND);
+  const dailyReminderSound = ref<string>(DEFAULT_DAILY_REMINDER_SOUND);
 
   // ── AI 配置 ──
   const aiEnabled = ref<boolean>(DEFAULT_AI_ENABLED);
@@ -380,7 +399,7 @@ export const useSettingsStore = defineStore("settings", () => {
     if (initialized.value || loading.value) return;
     loading.value = true;
     try {
-      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw, panelMaxWidthRaw, aiEnabledRaw, aiProviderRaw, aiBaseUrlRaw, aiApiKeyRaw, aiModelRaw, aiTruncateRaw, aiPromptSmartRaw, aiPromptListRaw, aiPromptTasksRaw, aiPromptNoteRaw, aiPromptParseTaskRaw, aiPromptBreakdownTaskRaw, aiPromptExtractTasksRaw, aiPromptPolishRaw] = await Promise.all([
+      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw, completionSoundRaw, dueReminderSoundRaw, dailyReminderSoundRaw, panelMaxWidthRaw, aiEnabledRaw, aiProviderRaw, aiBaseUrlRaw, aiApiKeyRaw, aiModelRaw, aiTruncateRaw, aiPromptSmartRaw, aiPromptListRaw, aiPromptTasksRaw, aiPromptNoteRaw, aiPromptParseTaskRaw, aiPromptBreakdownTaskRaw, aiPromptExtractTasksRaw, aiPromptPolishRaw] = await Promise.all([
         db.getSetting(SETTINGS_KEYS.themeMode).catch(() => null),
         db.getSetting(SETTINGS_KEYS.accentColor).catch(() => null),
         db.getSetting(SETTINGS_KEYS.newTasksDueToday).catch(() => null),
@@ -390,6 +409,9 @@ export const useSettingsStore = defineStore("settings", () => {
         db.getSetting(SETTINGS_KEYS.templateDefaultListId).catch(() => null),
         db.getSetting(SETTINGS_KEYS.templateDefaultNoteId).catch(() => null),
         db.getSetting(SETTINGS_KEYS.dailyReminderTimes).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.completionSound).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.dueReminderSound).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.dailyReminderSound).catch(() => null),
         db.getSetting(SETTINGS_KEYS.detailPanelMaxWidth).catch(() => null),
         db.getSetting(SETTINGS_KEYS.aiEnabled).catch(() => null),
         db.getSetting(SETTINGS_KEYS.aiProvider).catch(() => null),
@@ -429,6 +451,10 @@ export const useSettingsStore = defineStore("settings", () => {
       detailPanelMaxWidth.value = panelMaxWidth;
       templateDefaultNoteId.value = tplNote ?? DEFAULT_TEMPLATE_NOTE_ID;
       dailyReminderTimes.value = dailyTimes;
+      // 提示音：非法值回落默认（parseSoundValue 校验）
+      completionSound.value = parseSoundValue(completionSoundRaw, DEFAULT_COMPLETION_SOUND);
+      dueReminderSound.value = parseSoundValue(dueReminderSoundRaw, DEFAULT_DUE_REMINDER_SOUND);
+      dailyReminderSound.value = parseSoundValue(dailyReminderSoundRaw, DEFAULT_DAILY_REMINDER_SOUND);
 
       // AI 配置
       aiEnabled.value = parseBoolean(aiEnabledRaw, DEFAULT_AI_ENABLED);
@@ -571,6 +597,15 @@ async function setTemplateDefaultNoteId(v: string): Promise<void> {
 }
 
 /**
+ * 解析提示音设置值：空/非法（不在 SOUND_OPTIONS 中）回落默认值。
+ * 纯函数，供 initialize 使用。
+ */
+function parseSoundValue(raw: string | null, fallback: string): string {
+  if (!raw) return fallback;
+  return findSoundOption(raw) ? raw : fallback;
+}
+
+/**
  * 规范化每日汇总提醒时点：去重 + 合法性校验 + 排序 + 上限裁剪
  * 纯函数（只读入参，返回新数组），供 setter 共用。
  */
@@ -604,6 +639,32 @@ async function setDailyReminderTimes(times: readonly string[]): Promise<void> {
   if (!ok) {
     dailyReminderTimes.value = prev;
   }
+}
+
+// ── 提示音 setter（照搬三步式：乐观更新 + persist 失败回滚）──
+
+/** 修改任务完成提示音并持久化 */
+async function setCompletionSound(v: string): Promise<void> {
+  const prev = completionSound.value;
+  completionSound.value = v;
+  const ok = await persist(SETTINGS_KEYS.completionSound, v, prev);
+  if (!ok) completionSound.value = prev;
+}
+
+/** 修改任务到期提醒提示音并持久化 */
+async function setDueReminderSound(v: string): Promise<void> {
+  const prev = dueReminderSound.value;
+  dueReminderSound.value = v;
+  const ok = await persist(SETTINGS_KEYS.dueReminderSound, v, prev);
+  if (!ok) dueReminderSound.value = prev;
+}
+
+/** 修改每日固定提醒提示音并持久化 */
+async function setDailyReminderSound(v: string): Promise<void> {
+  const prev = dailyReminderSound.value;
+  dailyReminderSound.value = v;
+  const ok = await persist(SETTINGS_KEYS.dailyReminderSound, v, prev);
+  if (!ok) dailyReminderSound.value = prev;
 }
 
 // ── AI 配置 setter ──────────────────────────────────────
@@ -791,6 +852,10 @@ async function setAiPromptPolish(v: string): Promise<void> {
     templateDefaultListId,
     templateDefaultNoteId,
     dailyReminderTimes,
+    // 提示音
+    completionSound,
+    dueReminderSound,
+    dailyReminderSound,
     // AI 配置
     aiEnabled,
     aiProvider,
@@ -820,6 +885,9 @@ async function setAiPromptPolish(v: string): Promise<void> {
     setTemplateDefaultListId,
     setTemplateDefaultNoteId,
     setDailyReminderTimes,
+    setCompletionSound,
+    setDueReminderSound,
+    setDailyReminderSound,
     setAiEnabled,
     setAiProvider,
     setAiBaseUrl,

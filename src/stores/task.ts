@@ -10,6 +10,7 @@ import type { SmartViewId, Tag } from "@/api/db";
 import { useSettingsStore } from "@/stores/settings";
 import { todayRange, clampDateRange } from "@/utils/date";
 import { notifyTaskChanged } from "@/composables/useCalendarView";
+import { playSceneSound } from "@/composables/useSound";
 
 export const useTaskStore = defineStore("task", () => {
   // 在 setup 顶层获取 settings store，确保一定拿到 active pinia。
@@ -497,6 +498,10 @@ export const useTaskStore = defineStore("task", () => {
 
   async function toggleTask(id: string, done: boolean) {
     await db.toggleTask(id, done);
+    // 完成任务时播放提示音（取消完成不响）；一处覆盖所有入口（列表/看板/日历/详情面板/快捷键）
+    if (done) {
+      playSceneSound("completion");
+    }
     const completedAt = done ? new Date().toISOString() : null;
     // 更新 currentTasks
     currentTasks.value = updateTaskInArray(currentTasks.value, id, (t) => {
@@ -962,6 +967,10 @@ export const useTaskStore = defineStore("task", () => {
   async function batchToggleDone(ids: string[], done: boolean): Promise<void> {
     for (const id of ids) {
       await db.toggleTask(id, done);
+    }
+    // 批量完成只响一次提示音（避免连环响）
+    if (done && ids.length > 0) {
+      playSceneSound("completion");
     }
     await reload(true);
     await refreshCounts();

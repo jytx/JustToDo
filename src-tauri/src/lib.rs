@@ -9,9 +9,9 @@ mod menu;
 mod models;
 mod url_title;
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 /// IPC 连通性测试命令
 #[tauri::command]
@@ -66,6 +66,10 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     // 启动时立刻跑一次提醒扫描（补发过去 24h 内的过期提醒）
                     use tauri_plugin_notification::NotificationExt;
+                    // 补发标记：true 表示当前为启动补发轮，前端据此不播放提示音
+                    // （避免错过提醒后打开 app 突然响一串）
+                    let catch_up = Arc::new(AtomicBool::new(true));
+                    let catch_up_cb = catch_up.clone();
                     match commands::task_check_reminders_inner(&pool_clone, |reminder| {
                         let res = app_handle
                             .notification()
@@ -76,6 +80,9 @@ pub fn run() {
                         if let Err(e) = res {
                             eprintln!("[JustToDo] 启动补发通知失败：{}", e);
                         }
+                        // 同步发事件给前端播放提示音（补发轮不响）
+                        let _ =
+                            app_handle.emit("reminder:due", catch_up_cb.load(Ordering::Relaxed));
                     })
                     .await
                     {
@@ -83,6 +90,8 @@ pub fn run() {
                         Ok(_) => {}
                         Err(e) => println!("[JustToDo] 启动扫描提醒失败: {}", e),
                     }
+                    // 补发轮结束：后续定时轮按正常提醒处理（会响提示音）
+                    catch_up.store(false, Ordering::Relaxed);
 
                     loop {
                         match commands::task_generate_recurring_inner(&pool_clone, None).await {
@@ -104,6 +113,9 @@ pub fn run() {
                             if let Err(e) = res {
                                 eprintln!("[JustToDo] 通知失败：{}", e);
                             }
+                            // 同步发事件给前端播放提示音
+                            let _ =
+                                app_handle.emit("reminder:due", catch_up.load(Ordering::Relaxed));
                         })
                         .await
                         {
@@ -135,6 +147,9 @@ pub fn run() {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     use tauri_plugin_notification::NotificationExt;
+                    // 补发标记：true 表示当前为启动补发轮，前端据此不播放提示音
+                    let catch_up = Arc::new(AtomicBool::new(true));
+                    let catch_up_cb = catch_up.clone();
 
                     // 启动立刻跑一次补发（不 await 完成检测，启动期间 UI 不阻塞）
                     match commands::get_setting_inner(
@@ -161,6 +176,11 @@ pub fn run() {
                                         if let Err(e) = res {
                                             eprintln!("[JustToDo] 每日提醒通知失败：{}", e);
                                         }
+                                        // 同步发事件给前端播放提示音（补发轮不响）
+                                        let _ = app_handle.emit(
+                                            "reminder:daily",
+                                            catch_up_cb.load(Ordering::Relaxed),
+                                        );
                                     },
                                 )
                                 .await;
@@ -168,6 +188,8 @@ pub fn run() {
                         }
                         Err(e) => println!("[JustToDo] 读取 daily_reminder_times 失败: {}", e),
                     }
+                    // 补发轮结束：后续定时轮按正常提醒处理（会响提示音）
+                    catch_up.store(false, Ordering::Relaxed);
 
                     loop {
                         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
@@ -197,6 +219,11 @@ pub fn run() {
                                         if let Err(e) = res {
                                             eprintln!("[JustToDo] 每日提醒通知失败：{}", e);
                                         }
+                                        // 同步发事件给前端播放提示音
+                                        let _ = app_handle.emit(
+                                            "reminder:daily",
+                                            catch_up.load(Ordering::Relaxed),
+                                        );
                                     },
                                 )
                                 .await

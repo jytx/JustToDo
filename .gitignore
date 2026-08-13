@@ -34,6 +34,3 @@ src-tauri/icons.bak*
 
 # Visual Companion brainstorming sessions
 .superpowers/
-
-# 运行时生成的系统音效缓存（非项目源码）
-src/assets/sounds/

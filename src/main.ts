@@ -37,9 +37,17 @@ app.config.errorHandler = (err, _instance, info) => {
 // 在挂载前同步等待设置初始化 —— 避免主题闪烁并让全局可立即读取设置
 import { useSettingsStore } from "@/stores/settings";
 const settingsStore = useSettingsStore(pinia);
-settingsStore.initialize().catch((e) => {
-  console.error("[SettingsStore] 启动初始化失败:", e);
-});
+settingsStore
+  .initialize()
+  .then(() => {
+    // 设置就绪后注册提醒声音监听（Rust 后台发到期/每日提醒时前端播对应音效）
+    import("@/composables/useSound").then(({ setupReminderSounds }) =>
+      setupReminderSounds(),
+    );
+  })
+  .catch((e) => {
+    console.error("[SettingsStore] 启动初始化失败:", e);
+  });
 
 app.mount("#app");
 
