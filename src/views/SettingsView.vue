@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // 设置页 —— 通用/外观/快捷键/数据/关于
 // 主题/强调色/自动今天/检查间隔统一通过 settings store 持久化
-import { ref, onMounted, onBeforeUnmount, computed } from "vue";
+import { ref, onMounted, onBeforeUnmount, computed, nextTick } from "vue";
 import { storeToRefs } from "pinia";
 import { useSettingsStore, SETTINGS_KEYS, type StartupView, type AiProvider, type ThemeMode, DEFAULT_PROMPT_SMART, DEFAULT_PROMPT_LIST, DEFAULT_PROMPT_TASKS, DEFAULT_PROMPT_NOTE, DEFAULT_PROMPT_PARSE_TASK, DEFAULT_PROMPT_BREAKDOWN_TASK, DEFAULT_PROMPT_EXTRACT_TASKS, DEFAULT_PROMPT_POLISH } from "@/stores/settings";
 import SelectPopover from "@/components/SelectPopover.vue";
+import Popover from "@/components/Popover.vue";
 import PromptEditor from "@/components/PromptEditor.vue";
 import {
   IconSettings,
@@ -22,7 +23,6 @@ import {
   IconRefresh,
   IconFolder,
   IconPlus,
-  IconClose,
 } from "@arco-design/web-vue/es/icon";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -210,45 +210,67 @@ const pendingTime = computed<string | null>(() => {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 });
 
-/** 5 分钟步进刻度（bumpMinute 用 step=5） */ // 暂时仅作为常量备查；模板内步进按钮 hard-coded 用 5
+// ─── 添加时刻：iOS 风格滚动选择器（两列滚动 + 中间高亮条 + 确认）───
+/** 小时列选项 0–23 */
+const HOUR_OPTIONS: number[] = Array.from({ length: 24 }, (_, i) => i);
+/** 分钟列选项 0–55（5 分钟步进） */
+const MINUTE_OPTIONS: number[] = Array.from({ length: 12 }, (_, i) => i * 5);
+/** 单项高度（px）；容器高 = 5 项，边缘占位 2 项保证首尾可滚到中心 */
+const PICKER_ITEM_H = 36;
 
-/** ▲/▼ 按钮：小时 ±1（自动 0–23 环绕） */
-function bumpHour(delta: number): void {
-  const cur = pendingHour.value ?? 0;
-  const next = (cur + delta + 24) % 24;
-  pendingHour.value = next;
+const timePickerOpen = ref(false);
+const hourColRef = ref<HTMLElement | null>(null);
+const minuteColRef = ref<HTMLElement | null>(null);
+
+/** 列滚动到指定选项（居中显示） */
+function scrollColTo(col: HTMLElement | null, value: number | null, options: number[]): void {
+  if (!col || value === null) return;
+  const idx = options.indexOf(value);
+  if (idx >= 0) col.scrollTop = idx * PICKER_ITEM_H;
 }
 
-/** ▲/▼ 按钮：分钟 ±5 */
-function bumpMinute(delta: number): void {
-  const cur = pendingMinute.value ?? 0;
-  let next = cur + delta;
-  if (next < 0) next += 60;
-  if (next >= 60) next -= 60;
-  pendingMinute.value = next;
+/** 打开选择器：默认当前时间（分钟对齐 5 分钟刻度） */
+function openTimePicker(): void {
+  if (dailyReminderTimes.value.length >= 8) return;
+  const now = new Date();
+  pendingHour.value = now.getHours();
+  pendingMinute.value = (Math.round(now.getMinutes() / 5) * 5) % 60;
+  timePickerOpen.value = true;
+  nextTick(() => {
+    scrollColTo(hourColRef.value, pendingHour.value, HOUR_OPTIONS);
+    scrollColTo(minuteColRef.value, pendingMinute.value, MINUTE_OPTIONS);
+  });
 }
 
-// 标记 MINUTE_STEP 常量保留以备扩展（顶部栅格 / 键盘 step 等）
-
-/** 输入框直接编辑 —— 解析合法才回填 */
-function onHourInput(e: Event): void {
-  const raw = (e.target as HTMLInputElement).value;
-  if (raw === "") {
-    pendingHour.value = null;
-    return;
-  }
-  const n = Number(raw);
-  if (Number.isInteger(n) && n >= 0 && n < 24) pendingHour.value = n;
+/** 滚动事件：最近选项（居中行）即选中 */
+function onColScroll(col: HTMLElement, options: number[], set: (v: number) => void): void {
+  const idx = Math.min(options.length - 1, Math.max(0, Math.round(col.scrollTop / PICKER_ITEM_H)));
+  set(options[idx]);
 }
 
-function onMinuteInput(e: Event): void {
-  const raw = (e.target as HTMLInputElement).value;
-  if (raw === "") {
-    pendingMinute.value = null;
-    return;
-  }
-  const n = Number(raw);
-  if (Number.isInteger(n) && n >= 0 && n < 60) pendingMinute.value = n;
+function onHourScroll(): void {
+  if (hourColRef.value) onColScroll(hourColRef.value, HOUR_OPTIONS, (v) => { pendingHour.value = v; });
+}
+
+function onMinuteScroll(): void {
+  if (minuteColRef.value) onColScroll(minuteColRef.value, MINUTE_OPTIONS, (v) => { pendingMinute.value = v; });
+}
+
+/** 点击选项：直接选中并滚动定位 */
+function pickHour(h: number): void {
+  pendingHour.value = h;
+  scrollColTo(hourColRef.value, h, HOUR_OPTIONS);
+}
+
+function pickMinute(m: number): void {
+  pendingMinute.value = m;
+  scrollColTo(minuteColRef.value, m, MINUTE_OPTIONS);
+}
+
+/** 「确认」：持久化 + 关闭选择器 */
+async function onTimePickerConfirm(): Promise<void> {
+  await confirmAddTime();
+  timePickerOpen.value = false;
 }
 
 /** 「添加」按钮 —— 校验 + 持久化 + 清空 */
@@ -259,12 +281,6 @@ async function confirmAddTime(): Promise<void> {
     const next = [...dailyReminderTimes.value, t];
     await settingsStore.setDailyReminderTimes(next);
   }
-  pendingHour.value = null;
-  pendingMinute.value = null;
-}
-
-/** 「清空」按钮 */
-function clearPendingTime(): void {
   pendingHour.value = null;
   pendingMinute.value = null;
 }
@@ -444,102 +460,63 @@ async function changeAttachmentPath() {
               </p>
             </div>
             <div class="settings-section__daily-add">
-              <!-- 整体两列布局：左侧 stepper（HH:MM 选时刻），右侧 添加/清空 按钮 -->
-              <div class="settings-section__time-group">
-                <!-- 时 -->
-                <div class="settings-section__time-col">
-                  <div class="settings-section__time-bumps">
-                    <button
-                      type="button"
-                      class="settings-section__time-bump"
-                      :disabled="dailyReminderTimes.length >= 8"
-                      aria-label="小时加一"
-                      @click="bumpHour(1)"
-                    >
-                      <!-- 细线条上三角（同下拉 chevron 语言） -->
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6" /></svg>
-                    </button>
-                    <button
-                      type="button"
-                      class="settings-section__time-bump"
-                      :disabled="dailyReminderTimes.length >= 8"
-                      aria-label="小时减一"
-                      @click="bumpHour(-1)"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
-                    </button>
-                  </div>
-                  <input
-                    type="number"
-                    class="settings-section__time-input"
-                    :value="pendingHour === null ? '' : pendingHour"
-                    min="0"
-                    max="23"
-                    step="1"
-                    placeholder="时"
+              <!-- 添加按钮 → 弹出 iOS 风格滚动选择器（左时右分，中间高亮条） -->
+              <Popover v-model:visible="timePickerOpen" placement="bottom-left" :offset="4">
+                <template #trigger>
+                  <a-button
+                    type="text"
+                    size="small"
                     :disabled="dailyReminderTimes.length >= 8"
-                    @input="onHourInput"
-                  />
-                </div>
+                    @click="openTimePicker"
+                  >
+                    <template #icon><icon-plus :size="14" /></template>
+                    添加
+                  </a-button>
+                </template>
 
-                <span class="settings-section__time-sep">:</span>
-
-                <!-- 分 -->
-                <div class="settings-section__time-col">
-                  <div class="settings-section__time-bumps">
-                    <button
-                      type="button"
-                      class="settings-section__time-bump"
-                      :disabled="dailyReminderTimes.length >= 8"
-                      aria-label="分钟加五"
-                      @click="bumpMinute(5)"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6" /></svg>
-                    </button>
-                    <button
-                      type="button"
-                      class="settings-section__time-bump"
-                      :disabled="dailyReminderTimes.length >= 8"
-                      aria-label="分钟减五"
-                      @click="bumpMinute(-5)"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6" /></svg>
-                    </button>
+                <div class="daily-picker">
+                  <div class="daily-picker__cols">
+                    <!-- 时列 0–23 -->
+                    <div ref="hourColRef" class="daily-picker__col" @scroll.passive="onHourScroll">
+                      <div class="daily-picker__edge" />
+                      <button
+                        v-for="h in HOUR_OPTIONS"
+                        :key="h"
+                        type="button"
+                        class="daily-picker__item"
+                        :class="{ 'daily-picker__item--active': pendingHour === h }"
+                        @click="pickHour(h)"
+                      >{{ String(h).padStart(2, "0") }}</button>
+                      <div class="daily-picker__edge" />
+                    </div>
+                    <span class="daily-picker__sep">:</span>
+                    <!-- 分列 0–55（5 分钟步进） -->
+                    <div ref="minuteColRef" class="daily-picker__col" @scroll.passive="onMinuteScroll">
+                      <div class="daily-picker__edge" />
+                      <button
+                        v-for="m in MINUTE_OPTIONS"
+                        :key="m"
+                        type="button"
+                        class="daily-picker__item"
+                        :class="{ 'daily-picker__item--active': pendingMinute === m }"
+                        @click="pickMinute(m)"
+                      >{{ String(m).padStart(2, "0") }}</button>
+                      <div class="daily-picker__edge" />
+                    </div>
                   </div>
-                  <input
-                    type="number"
-                    class="settings-section__time-input"
-                    :value="pendingMinute === null ? '' : pendingMinute"
-                    min="0"
-                    max="59"
-                    step="5"
-                    placeholder="分"
-                    :disabled="dailyReminderTimes.length >= 8"
-                    @input="onMinuteInput"
-                  />
+                  <!-- 中间高亮条（指示选中行） -->
+                  <div class="daily-picker__indicator" />
+                  <div class="daily-picker__footer">
+                    <a-button type="text" size="mini" @click="timePickerOpen = false">取消</a-button>
+                    <a-button
+                      type="text"
+                      size="mini"
+                      :disabled="!pendingTime"
+                      @click="onTimePickerConfirm"
+                    >确认</a-button>
+                  </div>
                 </div>
-              </div>
-
-              <div class="settings-section__daily-actions">
-                <a-button
-                  type="text"
-                  size="small"
-                  :disabled="!pendingTime || dailyReminderTimes.length >= 8"
-                  @click="confirmAddTime"
-                >
-                  <template #icon><icon-plus :size="14" /></template>
-                  添加
-                </a-button>
-                <a-button
-                  type="text"
-                  size="small"
-                  :disabled="pendingHour === null && pendingMinute === null"
-                  @click="clearPendingTime"
-                >
-                  <template #icon><icon-close :size="14" /></template>
-                  清空
-                </a-button>
-              </div>
+              </Popover>
             </div>
           </div>
           <div v-if="dailyReminderTimes.length > 0" class="settings-section__item">
@@ -1180,121 +1157,92 @@ async function changeAttachmentPath() {
   color: var(--jt-text-secondary);
 }
 
-/* 每日固定时点提醒：自建 HH:mm 选择器 */
+/* 每日固定时点提醒：添加按钮行 */
 .settings-section__daily-add {
   display: flex;
   align-items: flex-start;
   gap: 12px;
 }
 
-/* HH : mm 容器：两列（时 + 分）+ 中间冒号 */
-.settings-section__time-group {
+/* ─── iOS 风格滚动选择器（两列滚动 + 中间高亮条）─── */
+.daily-picker {
+  position: relative;
+  width: 172px;
+}
+
+/* 两列：时（0–23）｜分（0–55），各 72px 宽 */
+.daily-picker__cols {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
+  z-index: 1;
+}
+.daily-picker__col {
+  flex: 1;
+  height: 180px; /* 5 项可见 */
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.daily-picker__col::-webkit-scrollbar {
+  display: none;
 }
 
-/* 单列：箭头列（左）｜输入框列（右），两列等高 */
-.settings-section__time-col {
-  display: grid;
-  grid-template-columns: 18px auto;
-  align-items: center;
-  gap: 2px;
+/* 边缘占位：上下各 2 项，首尾选项也能滚到中间高亮行 */
+.daily-picker__edge {
+  height: 72px;
 }
 
-/* 箭头列：▲ 在上、▼ 在下，垂直紧贴（三角间距紧凑，同下拉双三角观感） */
-.settings-section__time-bumps {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-/* 线性 chevron 步进按钮：无边框透明，hover 加深底色（与全局输入控件同语言） */
-.settings-section__time-bump {
-  width: 18px;
-  height: 11px;
+/* 选项行：点击选中 + 滚动定位；active 加粗提亮 */
+.daily-picker__item {
+  display: block;
+  width: 100%;
+  height: 36px;
   border: none;
   background: transparent;
-  color: var(--jt-text-tertiary);
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-  transition: background-color 0.12s, color 0.12s;
-}
-.settings-section__time-bump:hover:not(:disabled) {
-  background-color: var(--jt-surface-hover);
-  color: var(--jt-text-primary);
-}
-.settings-section__time-bump:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.settings-section__time-bump svg {
-  width: 10px;
-  height: 10px;
-}
-
-/* 输入框列（与箭头列对齐，整体略宽）—— 默认透明无边框，hover 显底色（同全局输入框） */
-.settings-section__time-input {
-  width: 48px;
-  height: 28px;
-  padding: 0 6px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  font-size: 13px;
-  font-family: var(--font-mono, var(--font-body));
-  color: var(--jt-text-primary);
-  background: transparent;
-  outline: none;
-  text-align: center;
-  transition: background-color 0.12s, box-shadow 0.12s, border-color 0.12s;
-  box-sizing: border-box;
-}
-
-/* hover：加深底色（同全局输入框） */
-.settings-section__time-input:hover:not(:disabled) {
-  background: var(--jt-surface-hover);
-}
-
-.settings-section__time-input:focus {
-  border-color: transparent;
-  background: var(--jt-surface);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--jt-primary) 20%, transparent);
-}
-
-/* 隐藏原生上下箭头 */
-.settings-section__time-input::-webkit-inner-spin-button,
-.settings-section__time-input::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-.settings-section__time-input {
-  -moz-appearance: textfield;
-  appearance: textfield;
-}
-
-.settings-section__time-input:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.settings-section__time-sep {
   font-size: 16px;
-  font-weight: 600;
-  color: var(--jt-text-primary);
   font-family: var(--font-mono, var(--font-body));
-  align-self: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--jt-text-tertiary);
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.daily-picker__item:hover {
+  color: var(--jt-text-primary);
+}
+.daily-picker__item--active {
+  color: var(--jt-text-primary);
+  font-weight: 600;
 }
 
-/* 添加 / 清空按钮（垂直对齐到 input 行） */
-.settings-section__daily-actions {
+/* 时/分之间的冒号分隔 */
+.daily-picker__sep {
+  color: var(--jt-text-tertiary);
+  font-size: 16px;
+  font-family: var(--font-mono, var(--font-body));
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+/* 中间高亮条：指示当前选中行（位于 5 项可见区的正中间） */
+.daily-picker__indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 72px;
+  height: 36px;
+  background: var(--jt-surface-hover);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+/* 底部操作：取消 / 确认 */
+.daily-picker__footer {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  align-self: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--jt-border);
 }
 
 /* 每日固定时点提醒：tag 列表（行式，与 settings-section__item 同行） */
