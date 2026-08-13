@@ -687,27 +687,40 @@ async function changeAttachmentPath() {
           </div>
 
           <a-divider class="my-4" />
-          <div class="settings-section__actions">
-            <a-button type="text" size="small" disabled>
-              <template #icon><icon-export :size="14" /></template>
-              导出数据
-            </a-button>
-            <a-button type="text" size="small" disabled>
-              <template #icon><icon-import :size="14" /></template>
-              导入数据
-            </a-button>
+          <!-- 导出 / 导入 -->
+          <div class="settings-section__item">
+            <div>
+              <span>导出 / 导入</span>
+              <p class="settings-section__path-hint">备份或恢复任务数据（JSON 文件）</p>
+            </div>
+            <div class="settings-section__item-actions">
+              <a-button type="text" size="small" disabled>
+                <template #icon><icon-export :size="14" /></template>
+                导出数据
+              </a-button>
+              <a-button type="text" size="small" disabled>
+                <template #icon><icon-import :size="14" /></template>
+                导入数据
+              </a-button>
+            </div>
           </div>
           <a-divider class="my-4" />
-          <p class="settings-section__desc settings-section__desc--danger">危险操作</p>
-          <div class="settings-section__actions">
-            <a-button type="text" size="small" status="danger" disabled>
-              <template #icon><icon-delete :size="14" /></template>
-              清空已完成任务
-            </a-button>
-            <a-button type="text" size="small" status="danger" disabled>
-              <template #icon><icon-refresh :size="14" /></template>
-              重置所有数据
-            </a-button>
+          <!-- 危险操作 -->
+          <div class="settings-section__item">
+            <div>
+              <span class="settings-section__item-title--danger">危险操作</span>
+              <p class="settings-section__path-hint">清空已完成任务，或重置所有数据（不可恢复）</p>
+            </div>
+            <div class="settings-section__item-actions">
+              <a-button type="text" size="small" status="danger" disabled>
+                <template #icon><icon-delete :size="14" /></template>
+                清空已完成任务
+              </a-button>
+              <a-button type="text" size="small" status="danger" disabled>
+                <template #icon><icon-refresh :size="14" /></template>
+                重置所有数据
+              </a-button>
+            </div>
           </div>
         </div>
 
@@ -1069,6 +1082,18 @@ async function changeAttachmentPath() {
   justify-content: space-between;
   padding: 12px 0;
   font-size: 14px;
+}
+
+/* item 右侧按钮组（并排，间距紧凑） */
+.settings-section__item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 危险操作标题：主红警示色 */
+.settings-section__item-title--danger {
+  color: var(--jt-error);
 }
 
 .settings-section__colors {
