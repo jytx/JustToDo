@@ -58,7 +58,8 @@ function closeFolder(id: string): void {
 
     <!-- 目录：hover 在右侧展开下一级（递归）。
          mouseenter/mouseleave 绑在外层 folder：移入子菜单仍属 folder 内，不收起。
-         selectFolders=true 时目录项本身可点击选中（侧边栏「移动至」目标即目录）。 -->
+         selectFolders=true 时目录项本身可点击选中（侧边栏「移动至」目标即目录）。
+         无子级的目录不渲染子菜单与右侧箭头（hover 无内容弹出，参照用户反馈）。 -->
     <div
       v-for="folder in folders"
       :key="folder.id"
@@ -69,23 +70,22 @@ function closeFolder(id: string): void {
       <MenuPopoverItem @click="props.selectFolders ? onSelect(folder.id) : undefined">
         <icon-folder :size="15" />
         <span>{{ folder.name }}</span>
-        <icon-right :size="12" style="margin-left: auto" />
+        <icon-right v-if="folder.children.length > 0" :size="12" style="margin-left: auto" />
       </MenuPopoverItem>
-      <!-- 递归子菜单：absolute 定位在目录项右侧，expanded 控制显隐。
+      <!-- 递归子菜单：仅在有子级时渲染（absolute 定位在目录项右侧，expanded 控制显隐）。
            外观由本组件 .list-cascade__sub 自定义（不依赖外部 .task-item-submenu，
            因 ListCascadeMenu 是独立组件，外部 scoped 样式不穿透到递归子级）。 -->
       <div
+        v-if="folder.children.length > 0"
         class="list-cascade__sub"
         :class="{ 'list-cascade__sub--open': expanded[folder.id] }"
       >
         <ListCascadeMenu
-          v-if="folder.children.length > 0"
           :nodes="folder.children"
           :current-list-id="currentListId"
           :on-select="onSelect"
           :select-folders="selectFolders"
         />
-        <div v-else class="list-cascade__empty">（空目录）</div>
       </div>
     </div>
 

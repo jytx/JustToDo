@@ -2049,6 +2049,7 @@ onMounted(async () => {
         >
           <icon-swap :size="15" />
           <span>移动至</span>
+          <icon-right :size="12" style="margin-left: auto" />
         </MenuPopoverItem>
         <MenuPopoverItem danger @click="onCtxDeleteList(ctxMenu.target.node)">
           <icon-delete :size="15" />
@@ -2090,6 +2091,7 @@ onMounted(async () => {
         >
           <icon-swap :size="15" />
           <span>移动至</span>
+          <icon-right :size="12" style="margin-left: auto" />
         </MenuPopoverItem>
         <MenuPopoverItem danger @click="onCtxDeleteList(ctxMenu.target.node)">
           <icon-delete :size="15" />
@@ -2151,6 +2153,25 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* 「移动至」级联子菜单外观：Teleport 到 body 后，ContextMenu.vue 的
+ * .context-menu scoped 样式命中不了（data-v 属性不同），必须在本组件
+ * 显式补全，否则背景透明、无圆角阴影（与 TaskListItem / BatchContextMenu
+ * 的 .task-item-submenu / .batch-submenu 同理）。 */
+.task-item-submenu {
+  width: max-content;
+  min-width: 120px;
+  max-width: 220px;
+  background: var(--jt-surface);
+  border-radius: 12px;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.16),
+    0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .sidebar {
   width: 240px;
   height: 100%;
