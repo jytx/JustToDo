@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use super::types::{
-    ChatMessage, ChatRequest, ChatResponse, ToolCall, ToolChoice, ToolDef, TokenUsage,
+    ChatMessage, ChatRequest, ChatResponse, TokenUsage, ToolCall, ToolChoice, ToolDef,
 };
 
 /// 流式增量回调：每收到一段文本 delta 就回调一次（参数为增量文本）
@@ -129,7 +129,10 @@ impl AiProvider for OpenAiProvider {
             .await
             .map_err(|e| AiError::Network(e.to_string()))?;
         let status = resp.status();
-        let text = resp.text().await.map_err(|e| AiError::Parse(e.to_string()))?;
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| AiError::Parse(e.to_string()))?;
         if !status.is_success() {
             return Err(AiError::Http {
                 status: status.as_u16(),
@@ -209,8 +212,11 @@ impl AiProvider for OpenAiProvider {
                     }
                     // 解析 JSON，取 choices[0].delta.content
                     if let Ok(val) = serde_json::from_str::<Value>(json_str) {
-                        if let Some(delta) = val.get("choices").and_then(|c| c.get(0))
-                            .and_then(|c| c.get("delta")).and_then(|d| d.get("content"))
+                        if let Some(delta) = val
+                            .get("choices")
+                            .and_then(|c| c.get(0))
+                            .and_then(|c| c.get("delta"))
+                            .and_then(|d| d.get("content"))
                             .and_then(|v| v.as_str())
                         {
                             full_content.push_str(delta);
@@ -233,7 +239,10 @@ fn msg_to_openai(m: &ChatMessage) -> Value {
     match m {
         ChatMessage::system { content } => json!({ "role": "system", "content": content }),
         ChatMessage::user { content } => json!({ "role": "user", "content": content }),
-        ChatMessage::assistant { content, tool_calls } => {
+        ChatMessage::assistant {
+            content,
+            tool_calls,
+        } => {
             let mut v = json!({ "role": "assistant", "content": content });
             if !tool_calls.is_empty() {
                 v["tool_calls"] = json!(tool_calls.iter().map(call_to_openai).collect::<Vec<_>>());
@@ -300,7 +309,10 @@ fn parse_openai_response(val: &Value) -> Result<ChatResponse, AiError> {
                     let id = tc.get("id")?.as_str()?.to_string();
                     let func = tc.get("function")?;
                     let name = func.get("name")?.as_str()?.to_string();
-                    let args_str = func.get("arguments").and_then(|v| v.as_str()).unwrap_or("{}");
+                    let args_str = func
+                        .get("arguments")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("{}");
                     // arguments 解析失败时用空对象兜底，不整体失败
                     let arguments = serde_json::from_str(args_str).unwrap_or(json!({}));
                     Some(ToolCall {
@@ -421,7 +433,10 @@ impl AiProvider for AnthropicProvider {
             .await
             .map_err(|e| AiError::Network(e.to_string()))?;
         let status = resp.status();
-        let text = resp.text().await.map_err(|e| AiError::Parse(e.to_string()))?;
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| AiError::Parse(e.to_string()))?;
         if !status.is_success() {
             return Err(AiError::Http {
                 status: status.as_u16(),
@@ -505,7 +520,9 @@ impl AiProvider for AnthropicProvider {
                     // 只在 content_block_delta 事件里取文本增量
                     if cur_event == "content_block_delta" {
                         if let Ok(val) = serde_json::from_str::<Value>(json_str) {
-                            if let Some(text) = val.get("delta").and_then(|d| d.get("text"))
+                            if let Some(text) = val
+                                .get("delta")
+                                .and_then(|d| d.get("text"))
                                 .and_then(|v| v.as_str())
                             {
                                 full_content.push_str(text);
@@ -540,7 +557,10 @@ fn msg_to_anthropic(m: &ChatMessage) -> Value {
             json!({ "role": "user", "content": "" })
         }
         ChatMessage::user { content } => json!({ "role": "user", "content": content }),
-        ChatMessage::assistant { content, tool_calls } => {
+        ChatMessage::assistant {
+            content,
+            tool_calls,
+        } => {
             // content 数组：先放文本 block，再放每个 tool_use block
             let mut blocks: Vec<Value> = Vec::new();
             if !content.is_empty() {
@@ -626,14 +646,8 @@ fn parse_anthropic_response(val: &Value) -> Result<ChatResponse, AiError> {
     }
 
     let usage = val.get("usage").map(|u| TokenUsage {
-        prompt_tokens: u
-            .get("input_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32,
-        completion_tokens: u
-            .get("output_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32,
+        prompt_tokens: u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+        completion_tokens: u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
     });
 
     Ok(ChatResponse {

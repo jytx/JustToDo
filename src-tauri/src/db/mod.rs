@@ -227,7 +227,13 @@ async fn run_migration_029(pool: &SqlitePool) -> Result<(), String> {
 /// - 拖拽排序时按 i*1000 全量重写（task_reorder_tags，对齐 group_reorder 模式）
 /// - 旧数据缺省为 0，查询时按 sort_order ASC 兜底 created_at ASC
 async fn run_migration_030(pool: &SqlitePool) -> Result<(), String> {
-    add_column_if_missing(pool, "task_tags", "sort_order", "INTEGER NOT NULL DEFAULT 0").await?;
+    add_column_if_missing(
+        pool,
+        "task_tags",
+        "sort_order",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    .await?;
     Ok(())
 }
 
@@ -257,7 +263,13 @@ async fn run_migration_032(pool: &SqlitePool) -> Result<(), String> {
 /// - recurrence_paused: 0=运行中（默认），1=已暂停（后台 tick 跳过生成）
 /// 用于「后台任务管理」面板的暂停/恢复切换，不影响已生成的实例
 async fn run_migration_028(pool: &SqlitePool) -> Result<(), String> {
-    add_column_if_missing(pool, "tasks", "recurrence_paused", "INTEGER NOT NULL DEFAULT 0").await?;
+    add_column_if_missing(
+        pool,
+        "tasks",
+        "recurrence_paused",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    .await?;
     Ok(())
 }
 

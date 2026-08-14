@@ -33,13 +33,9 @@ pub struct ChatRequest {
 #[allow(non_camel_case_types)]
 pub enum ChatMessage {
     /// 系统指令（设定模型行为）
-    system {
-        content: String,
-    },
+    system { content: String },
     /// 用户输入
-    user {
-        content: String,
-    },
+    user { content: String },
     /// 模型回复（含可选的工具调用请求）
     assistant {
         content: String,
