@@ -228,6 +228,11 @@ function onDragStart(e: DragEvent) {
   }
   // 单节点不设置自定义 setDragImage，让浏览器默认用整个清单项的半透明截图作为拖拽视觉，
   // 体现"整行被移动"的效果（而不是只有文字的小卡片）。
+  // 多选整组：ids 已快照进 dataTransfer（drop 端不依赖 store 选中集合），
+  // 开始拖拽即退出多选态——避免拖拽途中/取消拖拽时选中态残留（用户 2026-08-14 反馈）
+  if (dragIds.length > 1) {
+    listStore.exitBatchMode();
+  }
   isDragging.value = true;
 }
 
