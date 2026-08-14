@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 侧边栏 —— 智能视图 / 清单 / 标签导航
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { ListTreeNode } from "@/stores/list";
 import type { List } from "@/types";
@@ -21,6 +21,7 @@ import {
   IconArchive,
   IconSwap,
   IconHome,
+  IconCheckSquare,
 } from "@arco-design/web-vue/es/icon";
 // IconEdit 移到 SidebarListNode 中使用
 import { useListStore } from "@/stores/list";
@@ -28,11 +29,13 @@ import { useTagStore } from "@/stores/tag";
 import { useTaskStore } from "@/stores/task";
 import { useSettingsStore } from "@/stores/settings";
 import { useQuickAdd } from "@/composables/useQuickAdd";
+import { useListBatchSelect, flattenActiveTree } from "@/composables/useListBatchSelect";
 import SidebarListNode from "./SidebarListNode.vue";
 import SidebarRailCascade from "./SidebarRailCascade.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
 import ListCascadeMenu from "./menu/ListCascadeMenu.vue";
+import ListBatchContextMenu from "./ListBatchContextMenu.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import ContextMenu from "./ContextMenu.vue";
 import TeleportPopper from "./TeleportPopper.vue";
@@ -60,14 +63,15 @@ const SIDEBAR_MAX_WIDTH: number = 480;
 const SIDEBAR_DEFAULT_WIDTH: number = 240;
 
 /** 过滤出「移动至」可选目标树：仅保留目录节点（清单是叶子，不可挂子项），
- *  并排除 excludeId 自身及其整个后代子树（防止把节点移进自己名下造成环）。
+ *  并排除 excludeIds 中的节点自身及其整个后代子树（防止把节点移进自己名下造成环）。
+ *  批量场景传入多个被移动节点 id；单条场景传 [node.id]。
  *  纯函数：不修改入参，返回新树。 */
-function filterFolderTree(nodes: ListTreeNode[], excludeId: string): ListTreeNode[] {
+function filterFolderTree(nodes: ListTreeNode[], excludeIds: string[]): ListTreeNode[] {
   const result: ListTreeNode[] = [];
   for (const n of nodes) {
     // 跳过被移动节点自身（其整棵子树随之排除）与非目录节点
-    if (n.id === excludeId || !n.isFolder) continue;
-    result.push({ ...n, children: filterFolderTree(n.children, excludeId) });
+    if (excludeIds.includes(n.id) || !n.isFolder) continue;
+    result.push({ ...n, children: filterFolderTree(n.children, excludeIds) });
   }
   return result;
 }
@@ -150,6 +154,21 @@ const tagStore = useTagStore();
 const taskStore = useTaskStore();
 const settingsStore = useSettingsStore();
 const quickAdd = useQuickAdd();
+
+/** 清单/笔记本批量多选：行点击转发 + 批量右键菜单状态。
+ *  范围选/全选的 flatIds = 当前 subheader（清单/笔记本）可见 active 节点 DFS 序列。 */
+const listBatch = useListBatchSelect(() =>
+  flattenActiveTree(
+    route.name === "notebook" ? listStore.noteListTree : listStore.listTree,
+  ),
+);
+
+/** 切换 subheader/视图时清空多选态（旧 subheader 的选中 id 残留会误操作，
+ *  与任务侧 loadTasks 的 exitBatchMode 同理） */
+watch(
+  () => route.name,
+  () => listStore.exitBatchMode(),
+);
 
 /** 各区块展开/收起状态 */
 const sectionCollapsed = ref<Record<string, boolean>>({
@@ -699,9 +718,25 @@ function onFolderSelect(value: string) {
   newListFolder.value = value;
 }
 
-/** 处理清单拖拽移动 */
-async function onListMove(draggedId: string, target: any, position: "before" | "after" | "inside") {
+/** 处理清单拖拽移动（draggedIds 长度 > 1 = 多选整组平移，保持相对顺序追加到目标）。
+ *  批量：inside 放入目录（追加末尾）/ before-after 移到目标同级末尾 ——
+ *  整组语义不做精确插入，统一由 store.batchMove 按 position 升序追加（见设计文档）。 */
+async function onListMove(
+  draggedIds: string[],
+  target: ListTreeNode,
+  position: "before" | "after" | "inside",
+) {
   try {
+    // 批量整组平移：目标父级 = inside 时是目录本身，否则是目标同级
+    if (draggedIds.length > 1) {
+      const targetParentId = position === "inside" ? target.id : target.parentId;
+      await listStore.batchMove(draggedIds, targetParentId);
+      if (position === "inside" && target.isFolder) {
+        listStore.setNodeExpanded(target.id, true);
+      }
+      return;
+    }
+    const draggedId = draggedIds[0];
     if (position === "inside") {
       // 放入目录：target 是目录节点
       await listStore.moveNode(draggedId, target.id, 999);
@@ -990,9 +1025,20 @@ const ctxMenu = reactive<{
 });
 
 /** 打开右键菜单：记录坐标与目标类型。由各行的 @contextmenu.prevent 调用。
+ *  多选态下清单/目录行右键 → 弹批量菜单（操作对象 = 整个选中集合；
+ *  含 inbox 等保护节点时由菜单内部置灰，这里不再拦截）。
  *  受保护节点（收件箱 inbox / 默认笔记本 default-notebook）不可新建 / 归档 / 编辑 / 删除 ——
  *  菜单项全部屏蔽会变成"空弹窗"，这里直接不弹出，避免把菜单容器渲染给用户看一个白窗。 */
 function openCtxMenu(e: MouseEvent, target: CtxTarget): void {
+  // 多选态且选中非空：清单/目录行的右键一律走批量菜单（标签不参与清单多选）
+  if (
+    target.kind !== "tag" &&
+    listStore.batchMode &&
+    listStore.batchSelectedIdsArr.length > 0
+  ) {
+    listBatch.onBatchContextMenu(e);
+    return;
+  }
   if (
     target.kind === "list" &&
     (target.node.id === "inbox" || target.node.id === "default-notebook")
@@ -1003,6 +1049,14 @@ function openCtxMenu(e: MouseEvent, target: CtxTarget): void {
   ctxMenu.y = e.clientY;
   ctxMenu.target = target;
   ctxMenu.visible = true;
+}
+
+/** 单条右键菜单的「多选」入口：将该行加入选中并进入多选态（后续右键弹批量菜单）。
+ *  受保护节点（inbox 等）也可进入多选（批量操作置灰由菜单内部处理）。 */
+function onCtxEnterBatch(node: ListTreeNode): void {
+  closeCtxMenu();
+  listStore.enterBatchMode();
+  listStore.toggleBatchSelect(node.id);
 }
 
 /** 关闭右键菜单（点击菜单项后调用） */
@@ -1070,7 +1124,31 @@ const moveTargetTree = computed<ListTreeNode[]>(() => {
   const target = ctxMenu.target;
   if (!target || target.kind === "tag") return [];
   const tree = target.node.kind === "note" ? listStore.noteListTree : listStore.listTree;
-  return filterFolderTree(tree, target.node.id);
+  return filterFolderTree(tree, [target.node.id]);
+});
+
+/** 批量「移动至」可选目标树：排除所有选中节点及各自后代（防环）。
+ *  单条右键菜单与批量右键菜单共用同一份树数据，按当前场景取数。 */
+const batchMoveTargetTree = computed<ListTreeNode[]>(() => {
+  const ids = listStore.batchSelectedIdsArr;
+  if (ids.length === 0) return [];
+  // 按选中节点的 kind 选树（选中集合理论上同 kind，取第一个）
+  const first = listStore.getById(ids[0]);
+  const tree = first?.kind === "note" ? listStore.noteListTree : listStore.listTree;
+  return filterFolderTree(tree, ids);
+});
+
+/** 批量菜单场景（home 主页多选 / archive 归档区多选）：由选中集合推导。
+ *  切换视图会清空多选，同一时刻只可能在一个区内多选，取第一个节点即可代表整组。 */
+const batchMenuScope = computed<"home" | "archive">(() => {
+  const first = listStore.getById(listStore.batchSelectedIdsArr[0]);
+  return first?.archived ? "archive" : "home";
+});
+
+/** 批量菜单实体类型（task 清单 / note 笔记本）：由选中集合推导（同 scope 理由）。 */
+const batchMenuKind = computed<"task" | "note">(() => {
+  const first = listStore.getById(listStore.batchSelectedIdsArr[0]);
+  return first?.kind === "note" ? "note" : "task";
 });
 
 /** 移动到目标父级（null = 根目录）：
@@ -1150,6 +1228,32 @@ async function onCtxUnarchive(node: ListTreeNode): Promise<void> {
   closeCtxMenu();
   await listStore.unarchiveTree(node.id);
   await taskStore.refreshCounts();
+}
+
+/** 批量删除/归档后：若当前路由正位于任一被操作节点上，跳到一个安全页
+ *  （清单跳「全部」智能视图；笔记本跳「默认笔记本」），避免停留在已删除/归档节点。
+ *  入参：被操作节点的 id 数组（操作前快照，操作后 store 已清空选中）。 */
+function redirectAwayIfAnyBatchActive(ids: string[]): void {
+  for (const id of ids) {
+    const node = listStore.getById(id);
+    if (!node) continue;
+    if (route.name === (node.kind === "note" ? "notebook" : "list") && route.params.id === id) {
+      router.push(node.kind === "note" ? "/notebook/default-notebook" : "/all");
+      return;
+    }
+  }
+}
+
+/** 批量删除确认（ConfirmDialog @confirm）：
+ *  store 逐个 deleteList（任务迁移收件箱/默认笔记本）→ 刷新角标 → 跳走。 */
+async function confirmBatchDeleteAction(): Promise<void> {
+  const pending = listStore.pendingBatchDelete;
+  if (!pending) return;
+  const ids = pending.ids;
+  await listStore.confirmBatchDelete();
+  // 删除后收件箱/默认笔记本计数变化，刷新各角标
+  await taskStore.refreshCounts();
+  redirectAwayIfAnyBatchActive(ids);
 }
 
 /** AI 总结：构造 scope（清单/目录）并 emit 给 AppLayout 打开弹窗 */
@@ -1388,6 +1492,9 @@ onMounted(async () => {
           :node="node"
           :depth="0"
           kind="task"
+          :batch-mode="listStore.batchMode"
+          :on-node-click="listBatch.onListNodeClick"
+          :is-batch-selected-fn="listStore.isBatchSelected"
           @edit="(n: any) => startEditList(n)"
           @delete="(n: any) => askDeleteList(n)"
           @addFolder="(n: ListTreeNode) => openCreateFolderDialog({ parentId: n.id, kind: n.kind === 'note' ? 'note' : 'task' })"
@@ -1447,6 +1554,9 @@ onMounted(async () => {
           :node="node"
           :depth="0"
           kind="note"
+          :batch-mode="listStore.batchMode"
+          :on-node-click="listBatch.onListNodeClick"
+          :is-batch-selected-fn="listStore.isBatchSelected"
           @edit="(n: any) => startEditList(n)"
           @delete="(n: any) => askDeleteList(n)"
           @addFolder="(n: ListTreeNode) => openCreateFolderDialog({ parentId: n.id, kind: n.kind === 'note' ? 'note' : 'task' })"
@@ -1492,6 +1602,9 @@ onMounted(async () => {
             :depth="0"
             :readonly="true"
             kind="task"
+            :batch-mode="listStore.batchMode"
+            :on-node-click="listBatch.onListNodeClick"
+            :is-batch-selected-fn="listStore.isBatchSelected"
             @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
           />
         </template>
@@ -1514,6 +1627,9 @@ onMounted(async () => {
             :depth="0"
             :readonly="true"
             kind="note"
+            :batch-mode="listStore.batchMode"
+            :on-node-click="listBatch.onListNodeClick"
+            :is-batch-selected-fn="listStore.isBatchSelected"
             @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
           />
         </template>
@@ -1642,6 +1758,23 @@ onMounted(async () => {
     </template>
     <template v-else-if="confirmDelete?.type === 'tag'">
       标签将被删除，任务不受影响。
+    </template>
+  </ConfirmDialog>
+
+  <!-- 批量删除确认（清单/笔记本多选后右键「删除」触发；文案随 kind：清单/任务 vs 笔记本/笔记） -->
+  <ConfirmDialog
+    :visible="!!listStore.pendingBatchDelete"
+    @update:visible="(v: boolean) => { if (!v) listStore.cancelBatchDelete(); }"
+    @confirm="confirmBatchDeleteAction"
+  >
+    <template #title>
+      删除选中的 {{ listStore.pendingBatchDelete?.ids.length ?? 0 }} 个{{ batchMenuKind === "note" ? "笔记本" : "清单" }}？
+    </template>
+    <template v-if="(listStore.pendingBatchDelete?.taskCount ?? 0) > 0">
+      {{ batchMenuKind === "note" ? "笔记本" : "清单" }}下的 {{ listStore.pendingBatchDelete?.taskCount }} 个{{ batchMenuKind === "note" ? "笔记" : "任务" }}将移动到「{{ batchMenuKind === "note" ? "默认笔记本" : "收件箱" }}」。
+    </template>
+    <template v-else>
+      {{ batchMenuKind === "note" ? "笔记本" : "清单" }}均为空，将直接删除。
     </template>
   </ConfirmDialog>
 
@@ -2031,8 +2164,13 @@ onMounted(async () => {
     :x="ctxMenu.x"
     :y="ctxMenu.y"
   >
-    <!-- 目录：未归档 显示 添加子目录 / 编辑 / 删除 / 归档 ；已归档 仅显示 取消归档 -->
+    <!-- 目录：未归档 显示 多选 / 添加子目录 / 编辑 / 删除 / 归档 ；已归档 仅显示 多选 / 取消归档 -->
     <template v-if="ctxMenu.target?.kind === 'folder'">
+      <!-- 多选入口：点击后进入多选态并将该行加入选中（后续右键弹批量菜单） -->
+      <MenuPopoverItem @click="onCtxEnterBatch(ctxMenu.target.node)">
+        <icon-check-square :size="15" />
+        <span>多选</span>
+      </MenuPopoverItem>
       <template v-if="!ctxMenu.target.node.archived">
         <MenuPopoverItem @click="onCtxAddFolder(ctxMenu.target.node)">
           <icon-plus :size="15" />
@@ -2071,10 +2209,15 @@ onMounted(async () => {
         </MenuPopoverItem>
       </template>
     </template>
-    <!-- 清单/笔记本：未归档 显示 新建条目 / 编辑 / 删除 / 归档 ；已归档 仅显示 取消归档。
+    <!-- 清单/笔记本：未归档 显示 多选 / 新建条目 / 编辑 / 删除 / 归档 ；已归档 仅显示 多选 / 取消归档。
          文案按 node.kind 区分（清单→任务/清单，笔记本→笔记/笔记本）。
          inbox / default-notebook 受保护，右键不弹菜单（在 openCtxMenu 拦截），故此处无需再判 id。 -->
     <template v-else-if="ctxMenu.target?.kind === 'list'">
+      <!-- 多选入口：点击后进入多选态并将该行加入选中（后续右键弹批量菜单） -->
+      <MenuPopoverItem @click="onCtxEnterBatch(ctxMenu.target.node)">
+        <icon-check-square :size="15" />
+        <span>多选</span>
+      </MenuPopoverItem>
       <template v-if="!ctxMenu.target.node.archived">
         <MenuPopoverItem @click="onCtxAddTask(ctxMenu.target.node)">
           <icon-plus :size="15" />
@@ -2125,6 +2268,16 @@ onMounted(async () => {
       </MenuPopoverItem>
     </template>
   </ContextMenu>
+
+  <!-- 清单/笔记本批量右键菜单（多选态下右键清单/目录行弹出；scope/kind 由选中集合推导） -->
+  <ListBatchContextMenu
+    v-bind="listBatch.batchCtxMenu"
+    :scope="batchMenuScope"
+    :kind="batchMenuKind"
+    :move-target-tree="batchMoveTargetTree"
+    @update:visible="(v: boolean) => (listBatch.batchCtxMenu.visible = v)"
+    @batch-done="(ids: string[]) => redirectAwayIfAnyBatchActive(ids)"
+  />
 
   <!-- 「移动至」级联子菜单：Teleport 到 body + fixed 定位，类名 .task-item-submenu
        （ContextMenu 的点外部 / 滚动关闭逻辑已对该类名豁免，点击子菜单不会误关一级菜单）。

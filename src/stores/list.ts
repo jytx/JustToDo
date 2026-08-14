@@ -73,6 +73,18 @@ export const useListStore = defineStore("list", () => {
     expandedNodes[id] = value;
   }
 
+  // ─── 批量多选状态（清单/笔记本；与 task.ts 的 batchSelectedIds 同构） ─────
+  // 多选模式：Shift/Cmd+点击 或 右键菜单「多选」入口进入。
+  // 选中集合独立于路由激活态（activeListId），互不影响。
+  // 注意：多选是当前 subheader（清单/笔记本）的临时状态，切换视图必须清空，
+  // 否则 batchSelectedIds 里的旧 id 残留，右键批量菜单会误操作到已不可见节点。
+  /** 批量选中的清单/笔记本 id 集合（用 Set 保证去重，ref 包裹触发响应式） */
+  const batchSelectedIds = ref<Set<string>>(new Set());
+  /** 是否处于多选模式（决定行是否显示勾选框、右键是否弹批量菜单） */
+  const batchMode = ref(false);
+  /** Shift 范围选的锚点 id（最近一次选中/取消的节点） */
+  const batchAnchorId = ref<string | null>(null);
+
   /** 展开目标节点的全部祖先目录链（键盘切换清单后让激活项在侧边栏可见）。
    *  纯操作：只写 expandedNodes，不改动数据。 */
   function expandPath(id: string): void {
@@ -155,6 +167,8 @@ export const useListStore = defineStore("list", () => {
     } finally {
       loading.value = false;
     }
+    // 整树重建后旧选中 id 已无意义：清空多选态，防止残留 id 误操作
+    exitBatchMode();
   }
 
   async function createList(params: {
@@ -295,6 +309,187 @@ export const useListStore = defineStore("list", () => {
     await loadLists();
   }
 
+  // ─── 批量多选 action（交互详见 discuss/2026-08-14-list-batch-operation-design.md） ──
+  // 进入方式：① Shift+点击范围选 ② Cmd/Ctrl+点击单点增减 ③ 右键菜单「多选」入口 ④ Cmd+A 全选。
+  // 退出方式：Esc / 批量操作执行完毕（改色例外，见 batchSetColor 注释）。
+
+  /** 进入多选模式（从右键菜单「多选」入口触发），清空旧选中 */
+  function enterBatchMode(): void {
+    batchMode.value = true;
+    batchSelectedIds.value = new Set();
+    batchAnchorId.value = null;
+  }
+
+  /** 退出多选模式，清空所有选中与锚点 */
+  function exitBatchMode(): void {
+    batchMode.value = false;
+    batchSelectedIds.value = new Set();
+    batchAnchorId.value = null;
+  }
+
+  /** Cmd/Ctrl+点击：单节点增减选（切一个）。
+   *  全部取消后自动退出多选模式。 */
+  function toggleBatchSelect(id: string): void {
+    batchMode.value = true;
+    const next = new Set(batchSelectedIds.value);
+    if (next.has(id)) {
+      next.delete(id);
+      if (next.size === 0) {
+        exitBatchMode();
+        return;
+      }
+    } else {
+      next.add(id);
+    }
+    batchSelectedIds.value = next;
+    batchAnchorId.value = id;
+  }
+
+  /** Shift+点击：范围选（从锚点到当前节点，基于 flatIds 顺序）。
+   *  flatIds = 当前 subheader（清单/笔记本）可见 active 节点 DFS 序列，
+   *  由 composable 传入（tree DFS 顺序即用户在界面上看到的顺序）。
+   *  无锚点或锚点不在当前序列时退化为单点选。 */
+  function rangeBatchSelect(flatIds: string[], id: string): void {
+    batchMode.value = true;
+    if (!batchAnchorId.value || flatIds.length === 0) {
+      toggleBatchSelect(id);
+      return;
+    }
+    const startIdx = flatIds.indexOf(batchAnchorId.value);
+    const endIdx = flatIds.indexOf(id);
+    if (startIdx === -1 || endIdx === -1) {
+      toggleBatchSelect(id);
+      return;
+    }
+    const lo = Math.min(startIdx, endIdx);
+    const hi = Math.max(startIdx, endIdx);
+    const next = new Set(batchSelectedIds.value);
+    for (let i = lo; i <= hi; i++) {
+      next.add(flatIds[i]);
+    }
+    batchSelectedIds.value = next;
+    batchAnchorId.value = id;
+  }
+
+  /** Cmd/Ctrl+A：全选当前 subheader 可见 active 节点（flatIds 序列） */
+  function selectAllBatch(flatIds: string[]): void {
+    if (flatIds.length === 0) return;
+    batchMode.value = true;
+    batchSelectedIds.value = new Set(flatIds);
+    batchAnchorId.value = flatIds[flatIds.length - 1] ?? null;
+  }
+
+  /** 选中的清单/笔记本 id 数组（传给批量操作 action 用） */
+  const batchSelectedIdsArr = computed(() => Array.from(batchSelectedIds.value));
+
+  /** 判断节点是否被批量选中 */
+  function isBatchSelected(id: string): boolean {
+    return batchSelectedIds.value.has(id);
+  }
+
+  /** 批量改色（循环调 setColor 原地更新对象，不重载树）。
+   *  注意：改色**不退出多选**——颜色变化不改变节点可见性，
+   *  用户常需连续改多份清单的颜色；多选由 Esc/其他操作退出。 */
+  async function batchSetColor(ids: string[], color: string): Promise<void> {
+    for (const id of ids) {
+      await setColor(id, color);
+    }
+  }
+
+  /** 批量归档：循环调 archiveTree 整树归档。
+   *  完成后退出多选（选中的节点已移至归档区，主页不再可见）。 */
+  async function batchArchive(ids: string[]): Promise<void> {
+    for (const id of ids) {
+      await archiveTree(id);
+    }
+    exitBatchMode();
+  }
+
+  /** 批量取消归档：循环调 unarchiveTree（内部 loadLists）。
+   *  完成后退出多选。 */
+  async function batchUnarchive(ids: string[]): Promise<void> {
+    for (const id of ids) {
+      await unarchiveTree(id);
+    }
+    exitBatchMode();
+  }
+
+  /** 批量移动到目标父级（null = 根目录）：按 position 升序依次追加到目标末尾，
+   *  保持整组的相对顺序（批量拖拽 / 批量「移动至」共用）。
+   *  跨 kind 防护：清单与笔记本是两棵独立树，禁止互相移动（与 moveNode 对齐）。
+   *  完成后退出多选。 */
+  async function batchMove(ids: string[], targetParentId: string | null): Promise<void> {
+    // 跨 kind 防护：被移动节点必须与目标父级同 kind（根级放行）
+    if (targetParentId !== null) {
+      const target = lists.value.find((l) => l.id === targetParentId);
+      const targetKind = target?.kind ?? "task";
+      const hasCrossKind = ids.some((id) => {
+        const node = lists.value.find((l) => l.id === id);
+        return node && (node.kind ?? "task") !== targetKind;
+      });
+      if (hasCrossKind) {
+        console.warn("[listStore] 拒绝批量跨 kind 移动：清单与笔记本不可互相移动");
+        return;
+      }
+    }
+    const sorted = [...ids].sort((a, b) => {
+      const pa = lists.value.find((l) => l.id === a)?.position ?? 0;
+      const pb = lists.value.find((l) => l.id === b)?.position ?? 0;
+      return pa - pb;
+    });
+    for (const id of sorted) {
+      const siblings = sortedLists.value.filter(
+        (l) => l.parentId === targetParentId && l.id !== id,
+      );
+      const newPosition =
+        siblings.length === 0
+          ? Date.now()
+          : siblings[siblings.length - 1].position + 1000;
+      await db.moveList(id, targetParentId, newPosition);
+      const node = lists.value.find((l) => l.id === id);
+      if (node) {
+        node.parentId = targetParentId;
+        node.position = newPosition;
+      }
+    }
+    exitBatchMode();
+  }
+
+  // ─── 批量删除确认（与 task.ts 的 pendingBatchDeleteIds 同构） ─────────────
+  /** 待批量删除的节点 id + 汇总的任务/笔记数（确认弹窗文案用）；null = 无待删除 */
+  const pendingBatchDelete = ref<{ ids: string[]; taskCount: number } | null>(null);
+
+  /** 请求批量删除：先汇总选中节点下的任务/笔记数（弹窗需展示「将移动到收件箱」的数量），
+   *  再打开确认弹窗。不立即执行——由用户确认后走 confirmBatchDelete。 */
+  async function requestBatchDelete(ids: string[]): Promise<void> {
+    // 并行查各清单/笔记本下的条目数，汇总到弹窗文案
+    const counts = await Promise.all(
+      ids.map((id) => db.getTasksByList(id).then((tasks) => tasks.length)),
+    );
+    pendingBatchDelete.value = {
+      ids,
+      taskCount: counts.reduce((sum, n) => sum + n, 0),
+    };
+  }
+
+  /** 取消批量删除（关闭确认弹窗） */
+  function cancelBatchDelete(): void {
+    pendingBatchDelete.value = null;
+  }
+
+  /** 确认批量删除：逐个 deleteList（任务迁移到收件箱/默认笔记本由后端处理），
+   *  完成后重载树 + 退出多选。 */
+  async function confirmBatchDelete(): Promise<void> {
+    const pending = pendingBatchDelete.value;
+    if (!pending) return;
+    for (const id of pending.ids) {
+      await db.deleteList(id);
+    }
+    pendingBatchDelete.value = null;
+    await loadLists();
+    exitBatchMode();
+  }
+
   return {
     lists,
     sortedLists,
@@ -324,5 +519,25 @@ export const useListStore = defineStore("list", () => {
     toggleNodeExpanded,
     setNodeExpanded,
     expandPath,
+    // 批量多选状态与 actions
+    batchSelectedIds,
+    batchSelectedIdsArr,
+    batchMode,
+    batchAnchorId,
+    enterBatchMode,
+    exitBatchMode,
+    toggleBatchSelect,
+    rangeBatchSelect,
+    selectAllBatch,
+    isBatchSelected,
+    batchSetColor,
+    batchArchive,
+    batchUnarchive,
+    batchMove,
+    // 批量删除确认
+    pendingBatchDelete,
+    requestBatchDelete,
+    cancelBatchDelete,
+    confirmBatchDelete,
   };
 });

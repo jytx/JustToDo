@@ -36,7 +36,21 @@ const props = defineProps<{
   /** 节点类型：'task'（默认，清单/目录）| 'note'（笔记本/笔记本目录）。
    *  决定路由前缀（/list vs /notebook）、计数来源、菜单文案。 */
   kind?: "task" | "note";
+  /** 多选态下的行点击处理器（TheSidebar 注入）：返回 true 表示已消费（走多选逻辑），
+   *  false 表示未消费（由组件走路由跳转）。未注入时行点击走默认跳转。 */
+  onNodeClick?: (id: string, e: MouseEvent) => boolean;
+  /** 是否处于多选态（控制行首 checkbox 显示）。TheSidebar 统一注入，递归子节点透传。 */
+  batchMode?: boolean;
+  /** 多选态下判断节点是否选中的谓词（TheSidebar 注入；递归子节点透传，按各自 node 求值） */
+  isBatchSelectedFn?: (id: string) => boolean;
 }>();
+
+/** 是否处于多选态（默认 false） */
+const isBatchMode = computed(() => props.batchMode ?? false);
+/** 当前节点是否被批量选中 */
+const isBatchSelected = computed(() =>
+  props.isBatchSelectedFn ? props.isBatchSelectedFn(props.node.id) : false,
+);
 
 const listStore = useListStore();
 const taskStore = useTaskStore();
@@ -86,8 +100,8 @@ const emit = defineEmits<{
   archive: [node: ListTreeNode];
   /** AI 总结当前节点（目录/清单/笔记本），与右键菜单对齐 */
   aiSummary: [node: ListTreeNode];
-  /** 拖拽放置：被拖拽的节点 ID，目标父级 ID，目标位置（before/after/inside） */
-  move: [draggedId: string, targetNode: ListTreeNode, position: "before" | "after" | "inside"];
+  /** 拖拽放置：被拖拽的节点 id 数组（单节点=[id]，多选整组=多个），目标父级 ID，目标位置 */
+  move: [draggedIds: string[], targetNode: ListTreeNode, position: "before" | "after" | "inside"];
   /** 任务/笔记拖到清单节点（含 inbox）：移动到该清单 */
   taskDrop: [taskId: string, targetNode: ListTreeNode];
   /** 任务/笔记拖到目录节点：自动新建清单后移入（kind 决定「新清单」/「新笔记本」命名） */
@@ -122,6 +136,13 @@ function goToList() {
   }
 }
 
+/** 行点击统一入口：多选处理器注入且消费（Shift/Cmd/多选态点击）→ 不跳转；
+ *  未消费且为清单（非目录）→ 路由跳转。目录行普通点击无行为（仅箭头展开）。 */
+function onRowClick(e: MouseEvent): void {
+  if (props.onNodeClick && props.onNodeClick(props.node.id, e)) return;
+  goToList();
+}
+
 // ─── 拖拽逻辑 ──────────────────────────────────────────
 
 /** 当前 drag-over 状态：null / 'before' / 'after' / 'inside' / 'target'
@@ -139,11 +160,43 @@ function onDragStart(e: DragEvent) {
     e.preventDefault();
     return;
   }
-  e.dataTransfer!.setData("text/plain", props.node.id);
+  // 多选态下拖动任一选中节点 → 整组平移（dataTransfer 放 JSON 数组；
+  // 单节点保持原样放单个 id 字符串，onDrop 端两种格式都兼容）
+  const dragIds =
+    isBatchMode.value && isBatchSelected.value
+      ? listStore.batchSelectedIdsArr
+      : [props.node.id];
+  e.dataTransfer!.setData("text/plain", JSON.stringify(dragIds));
   e.dataTransfer!.effectAllowed = "move";
   // 不设置自定义 setDragImage，让浏览器默认用整个清单项的半透明截图作为拖拽视觉，
   // 体现"整行被移动"的效果（而不是只有文字的小卡片）。
   isDragging.value = true;
+}
+
+/** 判断目标节点是否是被拖节点自身或其后代（防环）。
+ *  被拖集合为 dragIds（批量整组 或 单节点数组），沿 parentId 上溯比对。 */
+function isDropTargetForbidden(targetId: string, dragIds: string[]): boolean {
+  let curId: string | null = targetId;
+  while (curId) {
+    if (dragIds.includes(curId)) return true;
+    const node = listStore.getById(curId);
+    curId = node?.parentId ?? null;
+  }
+  return false;
+}
+
+/** 从 dataTransfer 解析被拖节点 id 数组（兼容 JSON 数组与旧版单 id 字符串） */
+function parseDraggedIds(e: DragEvent): string[] {
+  const raw = e.dataTransfer!.getData("text/plain") ?? "";
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.filter((x): x is string => typeof x === "string");
+    }
+    return [String(parsed)];
+  } catch {
+    return [raw];
+  }
 }
 
 function onDragEnd() {
@@ -191,6 +244,13 @@ function onDragOver(e: DragEvent) {
 
   // 清单拖拽（原逻辑）：目录行上 1/3=before / 中 1/3=inside / 下 1/3=after；
   // 清单行上半=before / 下半=after
+  // 批量整组平移：被拖节点含自身/后代 → 拒绝落点（防环，无高亮）
+  const dragIds = parseDraggedIds(e);
+  if (isDropTargetForbidden(props.node.id, dragIds)) {
+    e.dataTransfer!.dropEffect = "none";
+    dragOver.value = null;
+    return;
+  }
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const y = e.clientY - rect.top;
   const h = rect.height;
@@ -253,8 +313,9 @@ function onDrop(e: DragEvent) {
     return;
   }
 
-  const draggedId = e.dataTransfer!.getData("text/plain");
-  if (!draggedId || draggedId === props.node.id) {
+  const draggedIds = parseDraggedIds(e);
+  // 目标节点是被拖节点自身或其后代 → 拒绝（防环；dragover 已禁高亮，此处兜底）
+  if (draggedIds.length === 0 || isDropTargetForbidden(props.node.id, draggedIds)) {
     dragOver.value = null;
     return;
   }
@@ -273,7 +334,7 @@ function onDrop(e: DragEvent) {
     position = y < h * 0.5 ? "before" : "after";
   }
 
-  emit("move", draggedId, props.node, position);
+  emit("move", draggedIds, props.node, position);
 
   // 如果是放入目录且目录收起，展开它
   if (position === "inside" && props.node.isFolder) {
@@ -293,9 +354,11 @@ function onDrop(e: DragEvent) {
       :class="{
         'list-node--drag-over': dragOver === 'before' || dragOver === 'after',
         'list-node--drag-inside': dragOver === 'inside',
+        'list-node--batch-selected': isBatchMode && isBatchSelected,
       }"
       :style="{ paddingLeft: getNodePaddingLeft(depth) }"
       :draggable="canDrag ? 'true' : 'false'"
+      @click="onRowClick"
       @dragstart="onDragStart"
       @dragend="onDragEnd"
       @dragenter="onDragEnter"
@@ -308,7 +371,15 @@ function onDrop(e: DragEvent) {
         <icon-down v-if="expanded" :size="12" />
         <icon-right v-else :size="12" />
       </span>
+      <!-- 多选态：文件夹图标位置替换为 checkbox（多选时关注选中状态多于图标识别） -->
+      <a-checkbox
+        v-if="isBatchMode"
+        class="list-node__checkbox"
+        :model-value="isBatchSelected"
+        @click.stop
+      />
       <icon-folder
+        v-else
         :size="16"
         class="list-node__folder-icon"
         :style="{ color: node.color }"
@@ -361,20 +432,29 @@ function onDrop(e: DragEvent) {
       :class="{
         'list-node--active': isActive,
         'list-node--drag-over': dragOver === 'before' || dragOver === 'after' || dragOver === 'target',
+        'list-node--batch-selected': isBatchMode && isBatchSelected,
       }"
       :style="{ paddingLeft: getNodePaddingLeft(depth) }"
       :draggable="canDrag ? 'true' : 'false'"
+      @click="onRowClick"
       @dragstart="onDragStart"
       @dragend="onDragEnd"
       @dragenter="onDragEnter"
       @dragover="onDragOver"
       @dragleave="onDragLeave"
       @drop="onDrop"
-      @click="goToList"
       @contextmenu.prevent="emit('contextmenu', $event, node)"
     >
       <span class="list-node__dot-placeholder" />
+      <!-- 多选态：色点位置替换为 checkbox（多选时关注选中状态；批量改色由菜单承担） -->
+      <a-checkbox
+        v-if="isBatchMode"
+        class="list-node__checkbox"
+        :model-value="isBatchSelected"
+        @click.stop
+      />
       <span
+        v-else
         class="list-node__dot list-node__dot--clickable"
         :style="{ backgroundColor: node.color }"
         :title="`更改 ${node.name} 颜色`"
@@ -424,6 +504,9 @@ function onDrop(e: DragEvent) {
         :depth="depth + 1"
         :readonly="readonly"
         :kind="kind"
+        :batch-mode="isBatchMode"
+        :on-node-click="onNodeClick"
+        :is-batch-selected-fn="isBatchSelectedFn"
         @edit="(n: ListTreeNode) => $emit('edit', n)"
         @delete="(n: ListTreeNode) => $emit('delete', n)"
         @addFolder="(n: ListTreeNode) => $emit('addFolder', n)"
@@ -431,7 +514,7 @@ function onDrop(e: DragEvent) {
         @addTask="(n: ListTreeNode) => $emit('addTask', n)"
         @archive="(n: ListTreeNode) => $emit('archive', n)"
         @aiSummary="(n: ListTreeNode) => $emit('aiSummary', n)"
-        @move="(id: string, target: ListTreeNode, pos: 'before' | 'after' | 'inside') => $emit('move', id, target, pos)"
+        @move="(ids: string[], target: ListTreeNode, pos: 'before' | 'after' | 'inside') => $emit('move', ids, target, pos)"
         @taskDrop="(taskId: string, target: ListTreeNode) => $emit('taskDrop', taskId, target)"
         @taskDropToFolder="(taskId: string, folder: ListTreeNode, k: 'task' | 'note') => $emit('taskDropToFolder', taskId, folder, k)"
         @contextmenu="(e: MouseEvent, n: ListTreeNode) => $emit('contextmenu', e, n)"
@@ -477,6 +560,28 @@ function onDrop(e: DragEvent) {
 
 .list-node--active:hover {
   background-color: color-mix(in srgb, var(--jt-primary) 15%, var(--jt-accent-soft)) !important;
+}
+
+/* 批量选中态：背景比路由激活更浅（用透明混合避免 !important 竞争），
+ * 名称加粗 + 主题色，区别于「当前路由激活」的单行态。
+ * 注意：批量选中与路由激活可能同时存在（多选时当前路由行也在选中集合），
+ * 此时批量选中背景覆盖激活背景（视觉优先级更高，因为多选是临时操作态）。 */
+.list-node--batch-selected {
+  background-color: color-mix(in srgb, var(--jt-primary) 10%, var(--jt-surface)) !important;
+}
+
+.list-node--batch-selected .list-node__title,
+.list-node--batch-selected .list-node__name {
+  color: var(--jt-primary);
+  font-weight: 600;
+}
+
+/* 多选态行首 checkbox：替换色点/文件夹图标位置（行宽不变）。
+ * 用小尺寸 + 弱化边框，避免喧宾夺主。 */
+.list-node__checkbox {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 /* 拖拽中：原行不变透明度（与标签行为一致，仅高亮落点行；半透明视觉由拖动浏览器提供） */

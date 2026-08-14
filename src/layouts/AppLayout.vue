@@ -23,6 +23,7 @@ import MenuPopoverItem from "@/components/MenuPopoverItem.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import { useSearchStore } from "@/stores/search";
 import { useListStore, type ListTreeNode } from "@/stores/list";
+import { flattenActiveTree } from "@/composables/useListBatchSelect";
 import { useGroupStore } from "@/stores/group";
 import { useKanbanStore } from "@/stores/kanban";
 import { setViewPref } from "@/composables/useViewPrefs";
@@ -399,7 +400,7 @@ const batchDeleteCount = computed(() => taskStore.pendingBatchDeleteIds?.length 
 // ─── 键盘导航 ────────────────────────────────────────────
 function onNavigationKeydown(e: KeyboardEvent) {
   // 0. 上下文守卫：搜索/快速添加/删除确认对话框（含批量）打开时不处理
-  if (searchStore.open || quickAdd.visible.value || taskStore.pendingDeleteId || taskStore.pendingBatchDeleteIds) return;
+  if (searchStore.open || quickAdd.visible.value || taskStore.pendingDeleteId || taskStore.pendingBatchDeleteIds || listStore.pendingBatchDelete) return;
 
   // 1. 输入框/文本域/contentEditable 聚焦时不处理（让位给输入）
   const active = document.activeElement;
@@ -423,10 +424,11 @@ function onNavigationKeydown(e: KeyboardEvent) {
   //    先让浮层自己关（逐层关闭语义），本轮不关详情面板。
   //    （右键菜单、附件预览不在详情面板内，由各自捕获监听器 stopImmediatePropagation 拦截）
   if (e.key === "Escape") {
-    // 多选模式激活：Esc 优先退出多选
-    if (taskStore.batchMode) {
+    // 多选模式激活：Esc 优先退出多选（任务侧 + 侧边栏清单/笔记本侧都算）
+    if (taskStore.batchMode || listStore.batchMode) {
       e.preventDefault();
-      taskStore.exitBatchMode();
+      if (taskStore.batchMode) taskStore.exitBatchMode();
+      if (listStore.batchMode) listStore.exitBatchMode();
       return;
     }
     if (taskStore.hasDetailOverlay) {
@@ -449,7 +451,14 @@ function onNavigationKeydown(e: KeyboardEvent) {
   // 2.5 Cmd/Ctrl+A：全选当前视图未完成任务（仅任务族视图）
   //     !shiftKey 避开已占用的 Cmd+Shift+A（快速添加）
   //     放在输入框守卫之后，输入框内 Cmd+A 走浏览器原生全选文本
+  //     侧边栏多选态激活时：Cmd+A 作用域跟随多选区域 → 全选当前 subheader 清单/笔记本树
   if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === "a" || e.key === "A")) {
+    if (listStore.batchMode) {
+      e.preventDefault();
+      const tree = route.name === "notebook" ? listStore.noteListTree : listStore.listTree;
+      listStore.selectAllBatch(flattenActiveTree(tree));
+      return;
+    }
     if (showTaskSidebar.value) {
       e.preventDefault();
       taskStore.selectAllBatch();
