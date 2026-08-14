@@ -388,12 +388,13 @@ export const useListStore = defineStore("list", () => {
   }
 
   /** 批量改色（循环调 setColor 原地更新对象，不重载树）。
-   *  注意：改色**不退出多选**——颜色变化不改变节点可见性，
-   *  用户常需连续改多份清单的颜色；多选由 Esc/其他操作退出。 */
+   *  完成后退出多选——所有批量操作统一「执行后退出」，行为可预测
+   *  （与归档/删除/移动一致；用户反馈不再保留多选态）。 */
   async function batchSetColor(ids: string[], color: string): Promise<void> {
     for (const id of ids) {
       await setColor(id, color);
     }
+    exitBatchMode();
   }
 
   /** 批量归档：循环调 archiveTree 整树归档。

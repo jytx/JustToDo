@@ -4,10 +4,11 @@
 // 主页菜单（scope='home'）：
 //   · 批量归档（含 inbox/default-notebook 时置灰）
 //   · 移动至 ▸（hover 级联子菜单：根目录 + 仅目录树，排除选中节点及后代）
-//   · 改色 ▸（hover 级联色板：8 色调色板，选色即应用、不退出多选）
+//   · 改色 ▸（hover 级联色板：8 色调色板，选色即应用）
 //   · 删除（弹确认框）
 // 归档区菜单（scope='archive'）：
 //   · 批量取消归档 · 删除
+// 所有批量操作（含改色）执行后统一退出多选。
 //
 // 级联子菜单实现要点与 BatchContextMenu 完全一致（详见其注释）：
 // 1. 主菜单项 hover → 显示对应子菜单浮层，定位在主菜单项右边缘
@@ -185,7 +186,7 @@ async function applyMoveTo(parentId: string | null): Promise<void> {
 }
 
 /** 批量改色：选色即应用。
- *  不退出多选（batchSetColor 不调 exitBatchMode）——用户常需连续改多份清单颜色。 */
+ *  store 内部完成后退出多选（所有批量操作统一「执行后退出」）。 */
 async function applyColor(color: string): Promise<void> {
   const ids = [...listStore.batchSelectedIdsArr];
   onVisibleChange(false);

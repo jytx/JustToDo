@@ -577,11 +577,59 @@ function onDrop(e: DragEvent) {
 }
 
 /* 多选态行首 checkbox：替换色点/文件夹图标位置（行宽不变）。
- * 用小尺寸 + 弱化边框，避免喧宾夺主。 */
+ * 覆盖 Arco 默认样式（2px 粗边框 + 2px 小圆角 + Arco fill-3 浅灰，在 32px
+ * 紧凑行内显笨重）：细边框 1.5px + 4px 圆角 + 主题 token（深浅模式自适应）。 */
 .list-node__checkbox {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
+}
+
+/* 勾选框本体 */
+.list-node__checkbox :deep(.arco-checkbox-icon) {
+  width: 14px;
+  height: 14px;
+  border-width: 1.5px;
+  border-color: var(--jt-border);
+  border-radius: 4px;
+  background-color: transparent;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+/* hover：边框加深，提示可点选 */
+.list-node__checkbox:hover :deep(.arco-checkbox-icon) {
+  border-color: var(--jt-text-tertiary);
+}
+
+/* 选中态：主题色填充（checked 类在 root 元素自身，须并写而非后代选择） */
+.list-node__checkbox.arco-checkbox-checked :deep(.arco-checkbox-icon) {
+  background-color: var(--jt-primary);
+  border-color: var(--jt-primary);
+}
+
+/* 隐藏 Arco 自带细勾（8px svg，浅色主题下几乎不可见） */
+.list-node__checkbox.arco-checkbox-checked :deep(.arco-checkbox-icon-check) {
+  display: none;
+}
+
+/* 自绘粗勾：L 形 border 2px，颜色用 --jt-surface 自适应对比——
+ * 浅色模式（深靛蓝底 + 白勾）/ 深色模式（浅靛蓝底 + 深勾）都清晰。
+ * 覆盖 Arco 的 indeterminate 横条 ::after（checked 态下无需它）。 */
+.list-node__checkbox.arco-checkbox-checked :deep(.arco-checkbox-icon)::after {
+  width: 6px;
+  height: 3px;
+  border: none;
+  border-left: 2px solid var(--jt-surface);
+  border-bottom: 2px solid var(--jt-surface);
+  border-radius: 0.5px;
+  background: transparent;
+  transform: translate(-50%, -62%) rotate(-45deg);
+  transform-origin: center;
+}
+
+/* 隐藏 Arco icon-hover 大圆背景（hover 弹出 24px 圆形，紧凑行内突兀） */
+.list-node__checkbox :deep(.arco-icon-hover.arco-checkbox-icon-hover::before) {
+  display: none;
 }
 
 /* 拖拽中：原行不变透明度（与标签行为一致，仅高亮落点行；半透明视觉由拖动浏览器提供） */
