@@ -718,42 +718,45 @@ function onFolderSelect(value: string) {
   newListFolder.value = value;
 }
 
-/** 处理清单拖拽移动（draggedIds 长度 > 1 = 多选整组平移，保持相对顺序追加到目标）。
- *  批量：inside 放入目录（追加末尾）/ before-after 移到目标同级末尾 ——
- *  整组语义不做精确插入，统一由 store.batchMove 按 position 升序追加（见设计文档）。 */
+/** 处理清单拖拽移动（draggedIds 长度 > 1 = 多选整组平移，保持相对顺序）。
+ *  批量与单节点同样尊重落点：before/after 插到目标同级的目标位置（首项插入点），
+ *  inside 放入目录（追加末尾）。插入索引计算与单节点路径一致。 */
 async function onListMove(
   draggedIds: string[],
   target: ListTreeNode,
   position: "before" | "after" | "inside",
 ) {
   try {
-    // 批量整组平移：目标父级 = inside 时是目录本身，否则是目标同级
-    if (draggedIds.length > 1) {
-      const targetParentId = position === "inside" ? target.id : target.parentId;
-      await listStore.batchMove(draggedIds, targetParentId);
-      if (position === "inside" && target.isFolder) {
+    // inside：放入目录，追加到目录子列表末尾
+    if (position === "inside") {
+      const children = listStore.getChildren(target.id);
+      if (draggedIds.length > 1) {
+        await listStore.batchMove(draggedIds, target.id, children.length);
+      } else {
+        await listStore.moveNode(draggedIds[0], target.id, 999);
+      }
+      if (target.isFolder) {
         listStore.setNodeExpanded(target.id, true);
       }
       return;
     }
-    const draggedId = draggedIds[0];
-    if (position === "inside") {
-      // 放入目录：target 是目录节点
-      await listStore.moveNode(draggedId, target.id, 999);
-    } else {
-      // before/after：和 target 同级（仅未归档；归档项不计索引）
-      const targetParentId = target.parentId;
-      // 找到 target 在同级中的索引
-      const siblings = listStore.activeLists.filter((l) => l.parentId === targetParentId);
-      const targetIndex = siblings.findIndex((l) => l.id === target.id);
-      const insertIndex = position === "before" ? targetIndex : targetIndex + 1;
-      // 如果拖动的节点也在同一父级且在目标前面，索引需要 -1（因为移除后位置变化）
-      const draggedInSameParent = siblings.some((l) => l.id === draggedId);
-      const adjustedIndex = draggedInSameParent && siblings.findIndex((l) => l.id === draggedId) < targetIndex
-        ? insertIndex - 1
-        : insertIndex;
-      await listStore.moveNode(draggedId, targetParentId, adjustedIndex);
+    // before/after：和 target 同级，计算首项插入索引
+    const targetParentId = target.parentId;
+    const siblings = listStore.activeLists.filter((l) => l.parentId === targetParentId);
+    const targetIndex = siblings.findIndex((l) => l.id === target.id);
+    if (targetIndex < 0) return;
+    const insertIndex = position === "before" ? targetIndex : targetIndex + 1;
+    if (draggedIds.length > 1) {
+      await listStore.batchMove(draggedIds, targetParentId, insertIndex);
+      return;
     }
+    const draggedId = draggedIds[0];
+    // 如果拖动的节点也在同一父级且在目标前面，索引需要 -1（因为移除后位置变化）
+    const draggedInSameParent = siblings.some((l) => l.id === draggedId);
+    const adjustedIndex = draggedInSameParent && siblings.findIndex((l) => l.id === draggedId) < targetIndex
+      ? insertIndex - 1
+      : insertIndex;
+    await listStore.moveNode(draggedId, targetParentId, adjustedIndex);
   } catch (e) {
     console.error("[Sidebar] 移动清单失败:", e);
   }

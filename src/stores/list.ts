@@ -436,11 +436,19 @@ export const useListStore = defineStore("list", () => {
     exitBatchMode();
   }
 
-  /** 批量移动到目标父级（null = 根目录）：按 position 升序依次追加到目标末尾，
-   *  保持整组的相对顺序（批量拖拽 / 批量「移动至」共用）。
+  /** 批量移动到目标父级（null = 根目录）的指定插入位置。
+   *  算法：换算出组在「目标同级列表（排除被拖节点）」中的首项插入点，
+   *  用组前后边界邻居做插值，给组内每个节点分配严格递增的 position
+   *  （保证整组相对顺序，且与同父级场景兼容——顺序插入两次独立定位会颠倒组内顺序）。
+   *  insertIndex = 目标父级完整子列表（含被拖节点）中的插入位置（调用方按
+   *  before/after 目标索引计算）；追加末尾传完整子列表 length。
    *  跨 kind 防护：清单与笔记本是两棵独立树，禁止互相移动（与 moveNode 对齐）。
    *  完成后退出多选。 */
-  async function batchMove(ids: string[], targetParentId: string | null): Promise<void> {
+  async function batchMove(
+    ids: string[],
+    targetParentId: string | null,
+    insertIndex: number,
+  ): Promise<void> {
     // 跨 kind 防护：被移动节点必须与目标父级同 kind（根级放行）
     if (targetParentId !== null) {
       const target = lists.value.find((l) => l.id === targetParentId);
@@ -454,19 +462,47 @@ export const useListStore = defineStore("list", () => {
         return;
       }
     }
+    const idSet = new Set(ids);
+    // 被拖节点按 position 升序（保持整组相对顺序）
     const sorted = [...ids].sort((a, b) => {
       const pa = lists.value.find((l) => l.id === a)?.position ?? 0;
       const pb = lists.value.find((l) => l.id === b)?.position ?? 0;
       return pa - pb;
     });
-    for (const id of sorted) {
-      const siblings = sortedLists.value.filter(
-        (l) => l.parentId === targetParentId && l.id !== id,
-      );
-      const newPosition =
-        siblings.length === 0
-          ? Date.now()
-          : siblings[siblings.length - 1].position + 1000;
+    // 完整目标同级列表（含被拖节点；仅 active 同级）
+    const fullSiblings = sortedLists.value.filter(
+      (l) => l.parentId === targetParentId && !l.archived,
+    );
+    // 排除被拖节点的同级列表（最终序列的基底）
+    const noDrag = fullSiblings.filter((l) => !idSet.has(l.id));
+    // 插入点换算：完整列表的 insertIndex 若落在被拖节点占位之前，需扣除占位数
+    let draggedBefore = 0;
+    for (let k = 0; k < insertIndex && k < fullSiblings.length; k++) {
+      if (idSet.has(fullSiblings[k].id)) draggedBefore++;
+    }
+    const idx = Math.max(0, Math.min(insertIndex - draggedBefore, noDrag.length));
+    // 组的边界邻居（非拖拽节点）：用于给组内每个节点分配递增 position
+    const prevB = idx > 0 ? noDrag[idx - 1].position : undefined;
+    const nextB = idx < noDrag.length ? noDrag[idx].position : undefined;
+    const n = sorted.length;
+    /** 给组内第 i 个（0 起）节点算新 position，保证严格递增且落在边界之间：
+     *  - 有前后边界：区间内均匀插值（floor 取整）
+     *  - 只有后边界：从 nextB 往前留间隔
+     *  - 只有前边界：从 prevB 往后留间隔
+     *  - 无邻居（目标区只有本组）：基准时间戳 + 序号 */
+    const positionFor = (i: number): number => {
+      if (prevB !== undefined && nextB !== undefined) {
+        const step = (nextB - prevB) / (n + 1);
+        return Math.floor(prevB + step * (i + 1));
+      }
+      if (nextB !== undefined) return nextB - (n - i) * 1000;
+      if (prevB !== undefined) return prevB + (i + 1) * 1000;
+      return Date.now() + i;
+    };
+    // 持久化（只动被拖节点）+ 本地更新
+    for (let i = 0; i < n; i++) {
+      const id = sorted[i];
+      const newPosition = positionFor(i);
       await db.moveList(id, targetParentId, newPosition);
       const node = lists.value.find((l) => l.id === id);
       if (node) {

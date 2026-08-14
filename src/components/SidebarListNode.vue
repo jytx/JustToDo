@@ -277,8 +277,9 @@ function onDragOver(e: DragEvent) {
   e.dataTransfer!.dropEffect = "move";
   // 归档区只读：不参与任何拖放高亮（仅作过路，避免误导）
   if (props.readonly) return;
-  // 收件箱 / 默认笔记本位置固定，不参与清单排序落点高亮（仅作过路）。
-  // 但任务/笔记可以拖入 inbox（kind 匹配时）。
+  // 收件箱 / 默认笔记本：自身不可拖（canDrag=false），但可作为清单排序的参照落点——
+  // 清单/多选整组可以拖到它们的前/后（用户 2026-08-14 反馈：拖到第一项之前无响应）。
+  // 任务/笔记拖入 inbox 仍是"移到该清单"语义（kind 匹配时整行高亮）。
   if (props.node.id === "inbox" || props.node.id === "default-notebook") {
     const payload = parseTaskDrag(e);
     if (payload) {
@@ -289,7 +290,17 @@ function onDragOver(e: DragEvent) {
         e.dataTransfer!.dropEffect = "none";
         dragOver.value = null;
       }
+      return;
     }
+    // 清单拖拽：仅 before/after 排序落点（收件箱是清单行非目录，无 inside）
+    const dragIds = parseDraggedIds(e);
+    if (isDropTargetForbidden(props.node.id, dragIds)) {
+      e.dataTransfer!.dropEffect = "none";
+      dragOver.value = null;
+      return;
+    }
+    const iRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    dragOver.value = e.clientY - iRect.top < iRect.height * 0.5 ? "before" : "after";
     return;
   }
 
@@ -373,10 +384,8 @@ function onDrop(e: DragEvent) {
     return;
   }
 
-  // 收件箱 / 默认笔记本位置固定，不接受清单节点的 drop
-  if (props.node.id === "inbox" || props.node.id === "default-notebook") {
-    return;
-  }
+  // 收件箱 / 默认笔记本：自身不可拖，但接受清单的 before/after 排序 drop
+  // （作为排序参照落点；它是清单行非目录，下方几何计算只会得到 before/after）
 
   const draggedIds = parseDraggedIds(e);
   // 目标节点是被拖节点自身或其后代 → 拒绝（防环；dragover 已禁高亮，此处兜底）

@@ -177,11 +177,12 @@ async function applyUnarchive(): Promise<void> {
   Message.success(`已取消归档 ${ids.length} 个${isNote.value ? "笔记本" : "清单"}`);
 }
 
-/** 批量移动到目标父级（null = 根目录）：store 内部按 position 升序追加，保持相对顺序 */
+/** 批量移动到目标父级（null = 根目录）：追加到目标子列表末尾（保持相对顺序） */
 async function applyMoveTo(parentId: string | null): Promise<void> {
   const ids = [...listStore.batchSelectedIdsArr];
   onVisibleChange(false);
-  await listStore.batchMove(ids, parentId);
+  const insertIndex = listStore.getChildren(parentId).length;
+  await listStore.batchMove(ids, parentId, insertIndex);
   Message.success(`已移动 ${ids.length} 个${isNote.value ? "笔记本" : "清单"}`);
 }
 
