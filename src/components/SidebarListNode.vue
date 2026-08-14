@@ -160,6 +160,79 @@ const canDrag = computed(
   () => props.node.id !== "inbox" && props.node.id !== "default-notebook",
 );
 
+/** 颜色转 rgba() 字符串（用于 canvas 半透明层绘制）。
+ *  支持 hex（#4F46E5）与 rgb()/rgba() 两种格式；解析失败兜底主题靛蓝。 */
+function colorToRgba(color: string, alpha: number): string {
+  const hex = color.match(/^#([0-9a-f]{6})$/i);
+  if (hex) {
+    const n = parseInt(hex[1], 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+  }
+  const rgb = color.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (rgb) {
+    return `rgba(${rgb[1]}, ${rgb[2]}, ${rgb[3]}, ${alpha})`;
+  }
+  return `rgba(79, 70, 229, ${alpha})`;
+}
+
+/** 生成「多行收在一起」的拖拽视觉（canvas 纯函数，不修改任何状态）。
+ *  画 3 层堆叠卡片：后两层主题色半透明偏移轮廓（模拟多行叠放），
+ *  顶层实心主题色卡片 + 白色计数文字（「N 个清单/笔记本」）。
+ *  返回 canvas 元素——setDragImage 支持未挂载 DOM 的 canvas，无需 append。
+ *  按 devicePixelRatio 放大绘制保证高分屏清晰。 */
+function createMultiDragImage(count: number, kind: "task" | "note"): HTMLCanvasElement {
+  const W = 132;
+  const H = 44;
+  const dpr = window.devicePixelRatio || 1;
+  const canvas = document.createElement("canvas");
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.scale(dpr, dpr);
+
+  // 主色：读主题 token（--jt-primary，深浅模式 + 用户自定义主题色自适应）
+  const primary =
+    getComputedStyle(document.documentElement)
+      .getPropertyValue("--jt-primary")
+      .trim() || "#4F46E5";
+  const radius = 8;
+
+  /** 手写圆角矩形路径（兼容未实现 roundRect 的 WebKit 版本） */
+  const roundRect = (x: number, y: number, w: number, h: number): void => {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + w, y, x + w, y + h, radius);
+    ctx.arcTo(x + w, y + h, x, y + h, radius);
+    ctx.arcTo(x, y + h, x, y, radius);
+    ctx.arcTo(x, y, x + w, y, radius);
+    ctx.closePath();
+  };
+
+  // 后两层：主题色半透明偏移轮廓（多行叠放感）
+  roundRect(6, 6, W - 6, H - 6);
+  ctx.fillStyle = colorToRgba(primary, 0.3);
+  ctx.fill();
+  roundRect(3, 3, W - 3, H - 3);
+  ctx.fillStyle = colorToRgba(primary, 0.5);
+  ctx.fill();
+
+  // 顶层：实心主题色卡片 + 白色计数文字
+  roundRect(0, 0, W - 3, H - 3);
+  ctx.fillStyle = primary;
+  ctx.fill();
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "600 13px -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(
+    `${count} 个${kind === "note" ? "笔记本" : "清单"}`,
+    (W - 3) / 2,
+    (H - 3) / 2 + 0.5,
+  );
+  return canvas;
+}
+
 function onDragStart(e: DragEvent) {
   if (!canDrag.value) {
     e.preventDefault();
@@ -173,7 +246,16 @@ function onDragStart(e: DragEvent) {
       : [props.node.id];
   e.dataTransfer!.setData("text/plain", JSON.stringify(dragIds));
   e.dataTransfer!.effectAllowed = "move";
-  // 不设置自定义 setDragImage，让浏览器默认用整个清单项的半透明截图作为拖拽视觉，
+  // 多选整组：自定义「多行收在一起」drag image（3 层堆叠卡片 + 计数），
+  // 区别于单节点的整行半透明截图；hotspot 左上偏移让视觉跟手
+  if (dragIds.length > 1) {
+    e.dataTransfer!.setDragImage(
+      createMultiDragImage(dragIds.length, isNote.value ? "note" : "task"),
+      14,
+      14,
+    );
+  }
+  // 单节点不设置自定义 setDragImage，让浏览器默认用整个清单项的半透明截图作为拖拽视觉，
   // 体现"整行被移动"的效果（而不是只有文字的小卡片）。
   isDragging.value = true;
 }
