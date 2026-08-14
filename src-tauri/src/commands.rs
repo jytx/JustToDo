@@ -298,6 +298,31 @@ pub async fn list_move(
     if id == "inbox" {
         return Err("收件箱不能移动".to_string());
     }
+    // 循环防护（纵深防御，前端菜单已过滤）：不能挂到自己名下（直接自挂），
+    // 也不能挂到自己的后代目录下（会造成父子环，整棵子树无法再遍历）。
+    if let Some(pid) = &parent_id {
+        if pid == &id {
+            return Err("清单/目录不能移动到自身".to_string());
+        }
+        // WITH RECURSIVE 查出被移动节点的全部后代 id，目标父级在其中则拒绝
+        let row = sqlx::query(
+            "WITH RECURSIVE subtree(id) AS (
+                 SELECT id FROM lists WHERE id = $1
+                 UNION ALL
+                 SELECT l.id FROM lists l JOIN subtree s ON l.parent_id = s.id
+             )
+             SELECT EXISTS(SELECT 1 FROM subtree WHERE id = $2) AS in_subtree",
+        )
+        .bind(&id)
+        .bind(pid)
+        .fetch_one(pool.inner())
+        .await
+        .map_err(|e| format!("移动清单失败: {}", e))?;
+        let in_subtree: i64 = row.get("in_subtree");
+        if in_subtree != 0 {
+            return Err("清单/目录不能移动到自己的子目录下".to_string());
+        }
+    }
     match position {
         Some(pos) => {
             sqlx::query("UPDATE lists SET parent_id = $1, position = $2 WHERE id = $3")

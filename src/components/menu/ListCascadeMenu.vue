@@ -20,8 +20,11 @@ const props = defineProps<{
   nodes: ListTreeNode[];
   /** 当前任务所属清单 id（用于高亮当前清单） */
   currentListId: string;
-  /** 选中清单的回调（点击清单节点时触发，目录节点不触发） */
+  /** 选中节点的回调（点击清单节点时触发；selectFolders=true 时目录节点也触发） */
   onSelect: (listId: string) => void;
+  /** 目录节点是否可点击选中（侧边栏「移动至」场景：目标就是目录本身）。
+   *  默认 false：目录仅作导航容器（任务「移动至」行为不变）。 */
+  selectFolders?: boolean;
 }>();
 
 /** 目录节点：isFolder=true（仅作分组容器，不可放置任务） */
@@ -54,7 +57,8 @@ function closeFolder(id: string): void {
     </MenuPopoverItem>
 
     <!-- 目录：hover 在右侧展开下一级（递归）。
-         mouseenter/mouseleave 绑在外层 folder：移入子菜单仍属 folder 内，不收起。 -->
+         mouseenter/mouseleave 绑在外层 folder：移入子菜单仍属 folder 内，不收起。
+         selectFolders=true 时目录项本身可点击选中（侧边栏「移动至」目标即目录）。 -->
     <div
       v-for="folder in folders"
       :key="folder.id"
@@ -62,7 +66,7 @@ function closeFolder(id: string): void {
       @mouseenter="openFolder(folder.id)"
       @mouseleave="closeFolder(folder.id)"
     >
-      <MenuPopoverItem>
+      <MenuPopoverItem @click="props.selectFolders ? onSelect(folder.id) : undefined">
         <icon-folder :size="15" />
         <span>{{ folder.name }}</span>
         <icon-right :size="12" style="margin-left: auto" />
@@ -79,6 +83,7 @@ function closeFolder(id: string): void {
           :nodes="folder.children"
           :current-list-id="currentListId"
           :on-select="onSelect"
+          :select-folders="selectFolders"
         />
         <div v-else class="list-cascade__empty">（空目录）</div>
       </div>

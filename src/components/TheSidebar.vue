@@ -19,6 +19,8 @@ import {
   IconDown,
   IconFolder,
   IconArchive,
+  IconSwap,
+  IconHome,
 } from "@arco-design/web-vue/es/icon";
 // IconEdit 移到 SidebarListNode 中使用
 import { useListStore } from "@/stores/list";
@@ -30,6 +32,7 @@ import SidebarListNode from "./SidebarListNode.vue";
 import SidebarRailCascade from "./SidebarRailCascade.vue";
 import MenuPopover from "./MenuPopover.vue";
 import MenuPopoverItem from "./MenuPopoverItem.vue";
+import ListCascadeMenu from "./menu/ListCascadeMenu.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import ContextMenu from "./ContextMenu.vue";
 import TeleportPopper from "./TeleportPopper.vue";
@@ -55,6 +58,19 @@ const SIDEBAR_MIN_WIDTH: number = 48;
 const SIDEBAR_MAX_WIDTH: number = 480;
 /** 默认展开宽度（点击展开图标恢复到此值） */
 const SIDEBAR_DEFAULT_WIDTH: number = 240;
+
+/** 过滤出「移动至」可选目标树：仅保留目录节点（清单是叶子，不可挂子项），
+ *  并排除 excludeId 自身及其整个后代子树（防止把节点移进自己名下造成环）。
+ *  纯函数：不修改入参，返回新树。 */
+function filterFolderTree(nodes: ListTreeNode[], excludeId: string): ListTreeNode[] {
+  const result: ListTreeNode[] = [];
+  for (const n of nodes) {
+    // 跳过被移动节点自身（其整棵子树随之排除）与非目录节点
+    if (n.id === excludeId || !n.isFolder) continue;
+    result.push({ ...n, children: filterFolderTree(n.children, excludeId) });
+  }
+  return result;
+}
 
 /** 把宽度限制在 [最小, 最大] 区间（纯函数） */
 function clampWidth(w: number): number {
@@ -993,6 +1009,86 @@ function openCtxMenu(e: MouseEvent, target: CtxTarget): void {
 function closeCtxMenu(): void {
   ctxMenu.visible = false;
   ctxMenu.target = null;
+  // 连带关闭「移动至」级联子菜单（用户点了其他菜单项时避免残留）
+  moveCascade.visible = false;
+}
+
+/* === 「移动至」级联子菜单（参照 TaskListItem 的级联子菜单方案：
+ *   Teleport 到 body + fixed 定位 + .task-item-submenu 类名 ——
+ *   ContextMenu 的点外部关闭 / 滚动关闭逻辑已对该类名豁免） === */
+/** 子菜单状态：可见性 + 定位（left/top 为 px 字符串） */
+const moveCascade = reactive<{
+  visible: boolean;
+  top: string | undefined;
+  left: string | undefined;
+}>({ visible: false, top: undefined, left: undefined });
+
+let moveCascadeTimer: number | null = null;
+/** 鼠标离开菜单项到子菜单关闭的延迟（给用户留出移动到子菜单的时间） */
+const MOVE_CASCADE_CLOSE_DELAY: number = 200;
+
+/** 打开「移动至」子菜单：定位到触发菜单项右侧，超出视口则翻转到左侧 */
+async function showMoveCascade(triggerEl: HTMLElement): Promise<void> {
+  if (moveCascadeTimer !== null) {
+    clearTimeout(moveCascadeTimer);
+    moveCascadeTimer = null;
+  }
+  moveCascade.visible = true;
+  await nextTick();
+  await new Promise((r) => requestAnimationFrame(() => r(null)));
+  const tr = triggerEl.getBoundingClientRect();
+  const subEl = document.querySelector(".task-item-submenu") as HTMLElement | null;
+  const subW = subEl ? subEl.offsetWidth : 180;
+  const viewportW = document.documentElement.clientWidth;
+  const margin = 4;
+  let left = tr.right + margin;
+  if (left + subW > viewportW - margin) {
+    left = tr.left - subW - margin;
+  }
+  moveCascade.left = left + "px";
+  moveCascade.top = tr.top + "px";
+}
+
+function scheduleCloseMoveCascade(): void {
+  if (moveCascadeTimer !== null) clearTimeout(moveCascadeTimer);
+  moveCascadeTimer = window.setTimeout(() => {
+    moveCascade.visible = false;
+    moveCascadeTimer = null;
+  }, MOVE_CASCADE_CLOSE_DELAY);
+}
+
+function cancelCloseMoveCascade(): void {
+  if (moveCascadeTimer !== null) {
+    clearTimeout(moveCascadeTimer);
+    moveCascadeTimer = null;
+  }
+}
+
+/** 「移动至」可选目标树：按当前右键目标的 kind 选树（清单树 / 笔记本树，两棵树独立），
+ *  过滤为仅目录 + 排除被移动节点自身及后代。 */
+const moveTargetTree = computed<ListTreeNode[]>(() => {
+  const target = ctxMenu.target;
+  if (!target || target.kind === "tag") return [];
+  const tree = target.node.kind === "note" ? listStore.noteListTree : listStore.listTree;
+  return filterFolderTree(tree, target.node.id);
+});
+
+/** 移动到目标父级（null = 根目录）：
+ *  目标与当前位置相同（根级→根级 / 已在同目录）时仅关菜单，避免无意义更新；
+ *  否则调 store.moveNode 持久化 + 本地更新，并展开目标目录让用户看到结果。 */
+async function onMoveToParent(targetParentId: string | null): Promise<void> {
+  const target = ctxMenu.target;
+  if (!target || target.kind === "tag") return;
+  const node = target.node;
+  closeCtxMenu();
+  moveCascade.visible = false;
+  if (targetParentId === node.parentId) return;
+  // 追加到目标父级子列表末尾
+  const siblings = listStore.getChildren(targetParentId);
+  await listStore.moveNode(node.id, targetParentId, siblings.length);
+  if (targetParentId !== null) {
+    listStore.setNodeExpanded(targetParentId, true);
+  }
 }
 
 /** 目录右键菜单项 —— 复用现有 hover 菜单的处理函数 */
@@ -1946,6 +2042,14 @@ onMounted(async () => {
           <icon-edit :size="15" />
           <span>编辑目录</span>
         </MenuPopoverItem>
+        <!-- 移动至：hover 弹出级联子菜单（根目录 + 目录树，仅未归档目录可选） -->
+        <MenuPopoverItem
+          @mouseenter="(e: MouseEvent) => showMoveCascade(e.currentTarget as HTMLElement)"
+          @mouseleave="scheduleCloseMoveCascade"
+        >
+          <icon-swap :size="15" />
+          <span>移动至</span>
+        </MenuPopoverItem>
         <MenuPopoverItem danger @click="onCtxDeleteList(ctxMenu.target.node)">
           <icon-delete :size="15" />
           <span>删除目录</span>
@@ -1979,6 +2083,14 @@ onMounted(async () => {
           <icon-edit :size="15" />
           <span>{{ ctxMenu.target.node.kind === "note" ? "编辑笔记本" : "编辑清单" }}</span>
         </MenuPopoverItem>
+        <!-- 移动至：hover 弹出级联子菜单（根目录 + 目录树，仅未归档目录可选） -->
+        <MenuPopoverItem
+          @mouseenter="(e: MouseEvent) => showMoveCascade(e.currentTarget as HTMLElement)"
+          @mouseleave="scheduleCloseMoveCascade"
+        >
+          <icon-swap :size="15" />
+          <span>移动至</span>
+        </MenuPopoverItem>
         <MenuPopoverItem danger @click="onCtxDeleteList(ctxMenu.target.node)">
           <icon-delete :size="15" />
           <span>{{ ctxMenu.target.node.kind === "note" ? "删除笔记本" : "删除清单" }}</span>
@@ -2011,6 +2123,31 @@ onMounted(async () => {
       </MenuPopoverItem>
     </template>
   </ContextMenu>
+
+  <!-- 「移动至」级联子菜单：Teleport 到 body + fixed 定位，类名 .task-item-submenu
+       （ContextMenu 的点外部 / 滚动关闭逻辑已对该类名豁免，点击子菜单不会误关一级菜单）。
+       置顶「根目录」项 + ListCascadeMenu 递归目录树（selectFolders：目录项可点击选中）。
+       mouseenter/mouseleave 与触发菜单项成对：移入子菜单取消延迟关闭，离开后延迟收起。 -->
+  <Teleport to="body">
+    <div
+      v-if="moveCascade.visible"
+      class="task-item-submenu context-menu"
+      :style="{ position: 'fixed', top: moveCascade.top, left: moveCascade.left, zIndex: '10010' }"
+      @mouseenter="cancelCloseMoveCascade"
+      @mouseleave="scheduleCloseMoveCascade"
+    >
+      <MenuPopoverItem @click="onMoveToParent(null)">
+        <icon-home :size="15" />
+        <span>根目录</span>
+      </MenuPopoverItem>
+      <ListCascadeMenu
+        :nodes="moveTargetTree"
+        :current-list-id="''"
+        :on-select="(folderId: string) => onMoveToParent(folderId)"
+        :select-folders="true"
+      />
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
