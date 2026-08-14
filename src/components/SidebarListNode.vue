@@ -43,6 +43,9 @@ const props = defineProps<{
   batchMode?: boolean;
   /** 多选态下判断节点是否选中的谓词（TheSidebar 注入；递归子节点透传，按各自 node 求值） */
   isBatchSelectedFn?: (id: string) => boolean;
+  /** 受保护节点（inbox/默认笔记本）：不参与多选，多选态下不显示 checkbox（保持色点/文件夹图标）。
+   *  TheSidebar 注入；递归子节点透传。 */
+  isProtected?: boolean;
 }>();
 
 /** 是否处于多选态（默认 false） */
@@ -51,6 +54,8 @@ const isBatchMode = computed(() => props.batchMode ?? false);
 const isBatchSelected = computed(() =>
   props.isBatchSelectedFn ? props.isBatchSelectedFn(props.node.id) : false,
 );
+/** 是否受保护节点（不参与多选，多选态下不显示 checkbox） */
+const isProtected = computed(() => props.isProtected ?? false);
 
 const listStore = useListStore();
 const taskStore = useTaskStore();
@@ -371,12 +376,14 @@ function onDrop(e: DragEvent) {
         <icon-down v-if="expanded" :size="12" />
         <icon-right v-else :size="12" />
       </span>
-      <!-- 多选态：文件夹图标位置替换为 checkbox（多选时关注选中状态多于图标识别） -->
+      <!-- 多选态：文件夹图标位置替换为 checkbox（多选时关注选中状态多于图标识别）。
+           受保护节点（inbox/默认笔记本）不参与多选，不显示 checkbox。
+           点击 checkbox 也走行点击逻辑（@click.stop 防双重触发 + onRowClick 内 toggle）。 -->
       <a-checkbox
-        v-if="isBatchMode"
+        v-if="isBatchMode && !isProtected"
         class="list-node__checkbox"
         :model-value="isBatchSelected"
-        @click.stop
+        @click.stop="onRowClick"
       />
       <icon-folder
         v-else
@@ -446,12 +453,14 @@ function onDrop(e: DragEvent) {
       @contextmenu.prevent="emit('contextmenu', $event, node)"
     >
       <span class="list-node__dot-placeholder" />
-      <!-- 多选态：色点位置替换为 checkbox（多选时关注选中状态；批量改色由菜单承担） -->
+      <!-- 多选态：色点位置替换为 checkbox（多选时关注选中状态；批量改色由菜单承担）。
+           受保护节点（inbox/默认笔记本）不参与多选，不显示 checkbox。
+           点击 checkbox 也走行点击逻辑（@click.stop 防双重触发 + onRowClick 内 toggle）。 -->
       <a-checkbox
-        v-if="isBatchMode"
+        v-if="isBatchMode && !isProtected"
         class="list-node__checkbox"
         :model-value="isBatchSelected"
-        @click.stop
+        @click.stop="onRowClick"
       />
       <span
         v-else
@@ -507,6 +516,7 @@ function onDrop(e: DragEvent) {
         :batch-mode="isBatchMode"
         :on-node-click="onNodeClick"
         :is-batch-selected-fn="isBatchSelectedFn"
+        :is-protected="isProtected"
         @edit="(n: ListTreeNode) => $emit('edit', n)"
         @delete="(n: ListTreeNode) => $emit('delete', n)"
         @addFolder="(n: ListTreeNode) => $emit('addFolder', n)"

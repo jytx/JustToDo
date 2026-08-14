@@ -1495,6 +1495,7 @@ onMounted(async () => {
           :batch-mode="listStore.batchMode"
           :on-node-click="listBatch.onListNodeClick"
           :is-batch-selected-fn="listStore.isBatchSelected"
+            :is-protected="node.id === 'inbox' || node.id === 'default-notebook'"
           @edit="(n: any) => startEditList(n)"
           @delete="(n: any) => askDeleteList(n)"
           @addFolder="(n: ListTreeNode) => openCreateFolderDialog({ parentId: n.id, kind: n.kind === 'note' ? 'note' : 'task' })"
@@ -1557,6 +1558,7 @@ onMounted(async () => {
           :batch-mode="listStore.batchMode"
           :on-node-click="listBatch.onListNodeClick"
           :is-batch-selected-fn="listStore.isBatchSelected"
+            :is-protected="node.id === 'inbox' || node.id === 'default-notebook'"
           @edit="(n: any) => startEditList(n)"
           @delete="(n: any) => askDeleteList(n)"
           @addFolder="(n: ListTreeNode) => openCreateFolderDialog({ parentId: n.id, kind: n.kind === 'note' ? 'note' : 'task' })"
@@ -1605,6 +1607,7 @@ onMounted(async () => {
             :batch-mode="listStore.batchMode"
             :on-node-click="listBatch.onListNodeClick"
             :is-batch-selected-fn="listStore.isBatchSelected"
+            :is-protected="node.id === 'inbox' || node.id === 'default-notebook'"
             @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
           />
         </template>
@@ -1630,6 +1633,7 @@ onMounted(async () => {
             :batch-mode="listStore.batchMode"
             :on-node-click="listBatch.onListNodeClick"
             :is-batch-selected-fn="listStore.isBatchSelected"
+            :is-protected="node.id === 'inbox' || node.id === 'default-notebook'"
             @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
           />
         </template>

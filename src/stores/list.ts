@@ -85,6 +85,18 @@ export const useListStore = defineStore("list", () => {
   /** Shift 范围选的锚点 id（最近一次选中/取消的节点） */
   const batchAnchorId = ref<string | null>(null);
 
+  /** 受保护节点 id（收件箱 / 默认笔记本）：位置固定，**不参与多选**（用户 2026-08-14 反馈）。
+   *  三个多选入口（toggle/range/selectAll）统一拦截，UI 侧不显示 checkbox。 */
+  const PROTECTED_LIST_IDS: ReadonlySet<string> = new Set([
+    "inbox",
+    "default-notebook",
+  ]);
+
+  /** 判断节点是否受保护（不可多选） */
+  function isProtectedList(id: string): boolean {
+    return PROTECTED_LIST_IDS.has(id);
+  }
+
   /** 展开目标节点的全部祖先目录链（键盘切换清单后让激活项在侧边栏可见）。
    *  纯操作：只写 expandedNodes，不改动数据。 */
   function expandPath(id: string): void {
@@ -328,8 +340,10 @@ export const useListStore = defineStore("list", () => {
   }
 
   /** Cmd/Ctrl+点击：单节点增减选（切一个）。
+   *  受保护节点（inbox/默认笔记本）不可选，直接忽略。
    *  全部取消后自动退出多选模式。 */
   function toggleBatchSelect(id: string): void {
+    if (isProtectedList(id)) return;
     batchMode.value = true;
     const next = new Set(batchSelectedIds.value);
     if (next.has(id)) {
@@ -348,8 +362,10 @@ export const useListStore = defineStore("list", () => {
   /** Shift+点击：范围选（从锚点到当前节点，基于 flatIds 顺序）。
    *  flatIds = 当前 subheader（清单/笔记本）可见 active 节点 DFS 序列，
    *  由 composable 传入（tree DFS 顺序即用户在界面上看到的顺序）。
+   *  受保护节点（inbox/默认笔记本）不参与范围选（跳过，也不作锚点）。
    *  无锚点或锚点不在当前序列时退化为单点选。 */
   function rangeBatchSelect(flatIds: string[], id: string): void {
+    if (isProtectedList(id)) return;
     batchMode.value = true;
     if (!batchAnchorId.value || flatIds.length === 0) {
       toggleBatchSelect(id);
@@ -365,18 +381,23 @@ export const useListStore = defineStore("list", () => {
     const hi = Math.max(startIdx, endIdx);
     const next = new Set(batchSelectedIds.value);
     for (let i = lo; i <= hi; i++) {
-      next.add(flatIds[i]);
+      // 范围中间经过受保护节点时跳过（不选中）
+      const curId = flatIds[i];
+      if (isProtectedList(curId)) continue;
+      next.add(curId);
     }
     batchSelectedIds.value = next;
     batchAnchorId.value = id;
   }
 
-  /** Cmd/Ctrl+A：全选当前 subheader 可见 active 节点（flatIds 序列） */
+  /** Cmd/Ctrl+A：全选当前 subheader 可见 active 节点（flatIds 序列）。
+   *  受保护节点（inbox/默认笔记本）排除在外。 */
   function selectAllBatch(flatIds: string[]): void {
-    if (flatIds.length === 0) return;
+    const selectable = flatIds.filter((id) => !isProtectedList(id));
+    if (selectable.length === 0) return;
     batchMode.value = true;
-    batchSelectedIds.value = new Set(flatIds);
-    batchAnchorId.value = flatIds[flatIds.length - 1] ?? null;
+    batchSelectedIds.value = new Set(selectable);
+    batchAnchorId.value = selectable[selectable.length - 1] ?? null;
   }
 
   /** 选中的清单/笔记本 id 数组（传给批量操作 action 用） */
@@ -531,6 +552,7 @@ export const useListStore = defineStore("list", () => {
     rangeBatchSelect,
     selectAllBatch,
     isBatchSelected,
+    isProtectedList,
     batchSetColor,
     batchArchive,
     batchUnarchive,

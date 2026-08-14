@@ -168,9 +168,14 @@ async function confirmBatchDelete(): Promise<void> { /* 循环删 + refreshCount
 
 ### 6.1 inbox / default-notebook 保护
 
-- 「批量归档」菜单项在包含 inbox / default-notebook 时**置灰禁用**（不可批量归档系统节点）
-- 「批量删除」同样置灰（不可批量删除系统节点）
+**系统节点不参与多选**（用户 2026-08-14 反馈，原「参与多选但操作置灰」设计被否决）：
+
+- 三个多选入口（toggle / range / selectAll）在 store 层统一拦截：`isProtectedList(id)` 命中即忽略
+- Shift 范围选跨越保护节点时跳过（也不作锚点）
+- Cmd+A 全选排除保护节点
+- UI 侧：多选态下保护节点**不显示 checkbox**（保持色点/文件夹图标，视觉上即暗示不可选）
 - 这与单条右键「删除 / 归档」对该类节点的拦截一致
+- `containsProtected` 置灰逻辑保留为防御性兜底（正常流程下选中集合不会含保护节点）
 
 ### 6.2 范围选算法
 
@@ -232,7 +237,8 @@ DFS 当前 subheader 的 active 树（`listTree`/`noteListTree`）生成扁平�
 - [ ] 非多选态下右键菜单首项是「多选」 → 点击后该行选中、进入多选态
 - [ ] 多选态下右键 → 弹 ListBatchContextMenu，含 6 项菜单（含 divider）
 - [ ] 归档区多选 → 弹含「取消归档」的菜单
-- [ ] 选中 inbox / default-notebook 后，「批量归档」「批量删除」置灰
+- [ ] inbox / default-notebook **不可被多选**（点击/Cmd+A/范围选均跳过，多选态下不显示 checkbox）
+- [ ] 点击 checkbox 本身也能选中/取消（不必精确点到行）
 - [ ] Cmd/Ctrl + A → 全选当前 subheader 可见 active 节点（递归已展开后代）
 - [ ] Esc → 退出多选
 - [ ] 操作完成后自动退出多选（含改色）
