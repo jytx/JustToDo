@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 最左侧应用切换栏（仿滴答清单）
-// 四个顶层入口：任务 / 日历 / 习惯 / 设置
+// 顶层入口：任务 / 日历 / 习惯 / 设置 / AI 智能对话（底部，弹窗非路由）
 // 任务图标右上角显示未完成任务总数徽标
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -9,6 +9,7 @@ import {
   IconTrophy,
   IconSettings,
   IconCalendar,
+  IconRobot,
 } from "@arco-design/web-vue/es/icon";
 import { useTaskStore } from "@/stores/task";
 import { useTheme } from "@/composables/useTheme";
@@ -53,6 +54,12 @@ const isCalendarActive = computed(() => {
 /** 通用跳转：保持 hash 路由一致 */
 function go(path: string): void {
   router.push(path);
+}
+
+/** 打开 AI 智能体对话（底部入口，弹窗形态而非路由跳转） */
+function openAgentChat(): void {
+  taskStore.aiSelectedTool = "agent";
+  taskStore.aiAssistantVisible = true;
 }
 </script>
 
@@ -100,6 +107,16 @@ function go(path: string): void {
       @click="go('/settings')"
     >
       <icon-settings :size="24" />
+    </button>
+
+    <!-- AI 智能对话（列底部；弹窗打开时高亮） -->
+    <button
+      class="app-rail__btn"
+      :class="{ 'app-rail__btn--active': taskStore.aiAssistantVisible }"
+      title="AI 智能对话"
+      @click="openAgentChat"
+    >
+      <icon-robot :size="24" />
     </button>
   </nav>
 </template>
