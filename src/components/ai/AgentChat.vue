@@ -261,7 +261,21 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
           :loading="loading"
           @click="send()"
         >
-          <template #icon><icon-send :size="16" :stroke-width="3" /></template>
+          <template #icon>
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 19V5" />
+              <path d="M5 12l7-7 7 7" />
+            </svg>
+          </template>
         </a-button>
       </div>
     </div>
@@ -377,7 +391,7 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
   border: none;
   background: transparent;
   padding: 0;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.6;
   box-shadow: none;
 }
