@@ -50,13 +50,31 @@ impl AnthropicProvider {
             .collect::<Vec<_>>()
             .join("\n\n");
 
-        // 非系统消息转 Anthropic 格式
-        let messages: Vec<Value> = req
+        // 非系统消息转 Anthropic 格式。
+        // 连续的 tool 结果消息必须合并在同一条 user 消息的 content 数组里
+        // （Anthropic 协议要求：同一轮的多个 tool_result 不能拆成多条 user）
+        let mut messages: Vec<Value> = Vec::new();
+        for m in req
             .messages
             .iter()
             .filter(|m| !matches!(m, ChatMessage::system { .. }))
-            .map(msg_to_anthropic)
-            .collect();
+        {
+            let v = msg_to_anthropic(m);
+            let is_tool_result = matches!(m, ChatMessage::tool { .. });
+            if is_tool_result {
+                if let Some(last) = messages.last_mut() {
+                    if is_tool_result_msg(last) {
+                        if let (Some(blocks), Some(adds)) =
+                            (last["content"].as_array_mut(), v["content"].as_array())
+                        {
+                            blocks.extend(adds.iter().cloned());
+                            continue;
+                        }
+                    }
+                }
+            }
+            messages.push(v);
+        }
 
         let mut body = json!({
             "model": self.model,
@@ -284,6 +302,17 @@ fn finish_tool_use_accs(accs: Vec<ToolUseAcc>) -> Vec<ToolCall> {
         .collect()
 }
 
+/// 判断转换后的消息是否为「工具结果 user 消息」（content 数组首个 block 是 tool_result）
+fn is_tool_result_msg(v: &Value) -> bool {
+    v.get("role").and_then(|r| r.as_str()) == Some("user")
+        && v.get("content")
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|b| b.get("type"))
+            .and_then(|t| t.as_str())
+            == Some("tool_result")
+}
+
 fn msg_to_anthropic(m: &ChatMessage) -> Value {
     match m {
         ChatMessage::system { .. } => {
@@ -320,7 +349,9 @@ fn msg_to_anthropic(m: &ChatMessage) -> Value {
                 "content": [{
                     "type": "tool_result",
                     "tool_use_id": tool_call_id,
-                    "content": content,
+                    // tool_result 的 content 用 text block 数组（Anthropic 标准形态；
+                    // 纯字符串官方虽支持，但 MiniMax 等兼容端点只认数组，续聊轮会 400）
+                    "content": [{ "type": "text", "text": content }],
                 }]
             })
         }

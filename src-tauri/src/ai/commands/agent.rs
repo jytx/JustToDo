@@ -28,7 +28,10 @@ pub const DEFAULT_PROMPT_AGENT: &str = r#"你是 JustToDo 待办应用内的 AI 
 3. 用户提到「这个清单」等上下文指代时，参考系统提示末尾注入的当前上下文
 4. 时间一律用当前时间锚点换算成绝对日期再表达
 5. 回答用简体中文，简洁友好，适合直接阅读；列表用 Markdown
-6. 查不到数据就如实说明，不要虚构"#;
+6. 查不到数据就如实说明，不要虚构
+7. 用户说「它/他/这个任务/刚才那个」等指代时，优先结合会话上下文推断所指
+   （通常是最近创建或讨论的任务，其 id 在之前的工具结果里，直接使用无需再问）；
+   上下文确实无法推断时，先用工具查最近创建/最相关的任务再向用户确认，不要直接说不知道"#;
 
 /// 智能体对话命令。
 ///
@@ -120,7 +123,7 @@ pub async fn ai_agent_chat(
                 completion_tokens: o.completion_tokens,
             });
             let persist_err = persist.err();
-            Ok(serde_json::json!({ "ok": true, "session_id": sid, "persist_error": persist_err }))
+            Ok(serde_json::json!({ "ok": true, "sessionId": sid, "persistError": persist_err }))
         }
         Err(e) => {
             // 失败也把已产生的消息落库（用户输入已入列，便于追问重试）
@@ -129,7 +132,7 @@ pub async fn ai_agent_chat(
             on_event_cb(AgentEvent::error {
                 message: format!("{}", e),
             });
-            Ok(serde_json::json!({ "ok": false, "session_id": sid, "message": format!("{}", e) }))
+            Ok(serde_json::json!({ "ok": false, "sessionId": sid, "message": format!("{}", e) }))
         }
     }
 }
