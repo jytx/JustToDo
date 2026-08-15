@@ -242,8 +242,8 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
       </div>
     </div>
 
-    <!-- 输入区（多行文本；Enter 发送，Shift+Enter 换行） -->
-    <div class="agent-chat__input">
+    <!-- 输入区：细边框容器（多行输入 + 底部操作行）；Enter 发送，Shift+Enter 换行 -->
+    <div class="agent-chat__input-box">
       <a-textarea
         v-model="input"
         class="agent-chat__textarea"
@@ -252,16 +252,18 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
         :disabled="loading"
         @keydown.enter.exact.prevent="send()"
       />
-      <a-button
-        type="primary"
-        size="small"
-        class="agent-chat__send"
-        title="发送（Enter）"
-        :loading="loading"
-        @click="send()"
-      >
-        <template #icon><icon-send :size="16" /></template>
-      </a-button>
+      <div class="agent-chat__input-actions">
+        <a-button
+          type="primary"
+          size="small"
+          class="agent-chat__send"
+          title="发送（Enter）"
+          :loading="loading"
+          @click="send()"
+        >
+          <template #icon><icon-send :size="16" :stroke-width="3" /></template>
+        </a-button>
+      </div>
     </div>
     </div>
   </div>
@@ -362,22 +364,32 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
 .agent-chat__time--user {
   text-align: right;
 }
-.agent-chat__input {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-  padding-top: 6px;
-  border-top: 1px solid var(--jt-border);
+.agent-chat__input-box {
+  border: 1px solid var(--jt-border);
+  border-radius: 8px;
+  padding: 8px 4px 6px 10px;
+  background: var(--jt-surface);
+  margin-top: 8px;
 }
-.agent-chat__input :deep(.agent-chat__textarea),
-.agent-chat__textarea {
+/* textarea 自身边框去掉，统一用容器边框 */
+.agent-chat__input-box :deep(.arco-textarea-wrapper),
+.agent-chat__input-box :deep(.arco-textarea) {
+  border: none;
+  background: transparent;
+  padding: 0;
   font-size: 15px;
   line-height: 1.6;
+  box-shadow: none;
+}
+.agent-chat__input-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
 }
 .agent-chat__send {
   flex-shrink: 0;
-  height: 32px;
-  width: 36px;
+  height: 30px;
+  width: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
