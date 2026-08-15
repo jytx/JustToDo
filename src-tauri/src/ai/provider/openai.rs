@@ -109,6 +109,8 @@ impl AiProvider for OpenAiProvider {
         let url = format!("{}/chat/completions", trim_slash(&self.base_url));
         let mut body = self.build_body(req);
         body["stream"] = json!(true); // 开启 SSE 流式
+                                      // 要求流式末帧携带 usage（token 统计）；多数兼容端点支持，不支持的多数字段被忽略
+        body["stream_options"] = json!({ "include_usage": true });
 
         // 流式请求用无超时 client，避免长文本生成被 60s 掐断
         let stream_client = reqwest::Client::builder()
@@ -131,9 +133,11 @@ impl AiProvider for OpenAiProvider {
         }
 
         // 逐块读 SSE，按行解析 data: {...delta.content...}
-        // 文本增量与工具调用分片同时累积（agent 循环依赖流式 tool_calls）
+        // 文本增量与工具调用分片同时累积（agent 循环依赖流式 tool_calls）；
+        // usage 在最后一个 chunk（include_usage 开启时 choices 为空、顶层带 usage）
         let mut full_content = String::new();
         let mut tool_accs: Vec<ToolCallAcc> = Vec::new();
+        let mut usage: Option<TokenUsage> = None;
         let mut buf = String::new(); // 半行缓冲（SSE 块边界不一定在换行处）
         let mut stream = resp.bytes_stream();
         while let Some(chunk_res) = stream.next().await {
@@ -152,7 +156,7 @@ impl AiProvider for OpenAiProvider {
                         return Ok(ChatResponse {
                             content: full_content,
                             tool_calls: finish_tool_accs(tool_accs),
-                            usage: None,
+                            usage,
                         });
                     }
                     // 解析 JSON，取 choices[0].delta 的 content / tool_calls
@@ -203,7 +207,7 @@ impl AiProvider for OpenAiProvider {
         Ok(ChatResponse {
             content: full_content,
             tool_calls: finish_tool_accs(tool_accs),
-            usage: None,
+            usage,
         })
     }
 }

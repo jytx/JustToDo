@@ -182,6 +182,9 @@ impl AiProvider for AnthropicProvider {
         // text 增量在 content_block_delta 的 delta.text 里；message_stop 表示结束。
         let mut full_content = String::new();
         let mut tool_accs: Vec<ToolUseAcc> = Vec::new();
+        // 用量：message_start 带输入 token，message_delta 带累计输出 token
+        let mut input_tokens: u32 = 0;
+        let mut output_tokens: u32 = 0;
         let mut buf = String::new();
         let mut cur_event = String::new(); // 当前 event 类型
         let mut stream = resp.bytes_stream();
@@ -202,6 +205,21 @@ impl AiProvider for AnthropicProvider {
                 if let Some(ev) = line.strip_prefix("event: ") {
                     cur_event = ev.trim().to_string();
                 } else if let Some(json_str) = line.strip_prefix("data: ") {
+                    // 用量事件（无 body 依赖，任何 data 帧都先探测一次）
+                    if let Ok(uv) = serde_json::from_str::<Value>(json_str) {
+                        let ev_type = uv.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                        if ev_type == "message_start" {
+                            input_tokens = uv
+                                .pointer("/message/usage/input_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0) as u32;
+                        } else if ev_type == "message_delta" {
+                            output_tokens = uv
+                                .pointer("/usage/output_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0) as u32;
+                        }
+                    }
                     // 只在 content_block_delta 事件里取文本增量 / 工具参数分片
                     if cur_event == "content_block_delta" {
                         if let Ok(val) = serde_json::from_str::<Value>(json_str) {
@@ -261,7 +279,14 @@ impl AiProvider for AnthropicProvider {
                         return Ok(ChatResponse {
                             content: full_content,
                             tool_calls: finish_tool_use_accs(tool_accs),
-                            usage: None,
+                            usage: if input_tokens + output_tokens > 0 {
+                                Some(TokenUsage {
+                                    prompt_tokens: input_tokens,
+                                    completion_tokens: output_tokens,
+                                })
+                            } else {
+                                None
+                            },
                         });
                     }
                 }
@@ -272,7 +297,14 @@ impl AiProvider for AnthropicProvider {
         Ok(ChatResponse {
             content: full_content,
             tool_calls: finish_tool_use_accs(tool_accs),
-            usage: None,
+            usage: if input_tokens + output_tokens > 0 {
+                Some(TokenUsage {
+                    prompt_tokens: input_tokens,
+                    completion_tokens: output_tokens,
+                })
+            } else {
+                None
+            },
         })
     }
 }

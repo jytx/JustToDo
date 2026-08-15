@@ -89,9 +89,12 @@ function onEvent(ev: AgentEvent): void {
       }
       break;
     }
-    case "done":
-      last.stat = `${ev.rounds} 轮 · ${ev.promptTokens + ev.completionTokens} tokens`;
+    case "done": {
+      // 用量为 0（端点未回传 usage）时只显示轮数，不显示误导性的 0 tokens
+      const tokens = ev.promptTokens + ev.completionTokens;
+      last.stat = tokens > 0 ? `${ev.rounds} 轮 · ${tokens} tokens` : `${ev.rounds} 轮`;
       break;
+    }
     case "error":
       last.error = ev.message;
       break;
