@@ -46,10 +46,9 @@ async function load(): Promise<void> {
   }
 }
 
-/** 选中会话 → 通知父组件加载并续聊 */
+/** 选中会话 → 通知父组件加载并续聊（侧列保持打开，便于连续切换浏览） */
 function onSelect(s: AgentSessionSummary): void {
   emit("select", s);
-  emit("close");
 }
 
 /** 删除会话（列表内即时移除，不弹确认——会话价值低，误删可重开话题） */
