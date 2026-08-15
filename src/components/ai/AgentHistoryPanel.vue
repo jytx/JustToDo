@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Agent 历史会话面板 —— 会话列表（标题/时间/消息数），选择续聊、删除
 import { ref, onMounted } from "vue";
-import { Message } from "@arco-design/web-vue";
+import { Message, Modal } from "@arco-design/web-vue";
 import {
   listAgentSessions,
   deleteAgentSession,
@@ -51,17 +51,26 @@ function onSelect(s: AgentSessionSummary): void {
   emit("select", s);
 }
 
-/** 删除会话（列表内即时移除，不弹确认——会话价值低，误删可重开话题） */
-async function onDelete(s: AgentSessionSummary, ev: Event): Promise<void> {
+/** 删除会话（先弹确认防误操作；确认后列表内即时移除） */
+function onDelete(s: AgentSessionSummary, ev: Event): void {
   ev.stopPropagation();
-  try {
-    const res = await deleteAgentSession(s.id);
-    if (res.ok) {
-      sessions.value = sessions.value.filter((x) => x.id !== s.id);
-    }
-  } catch (e) {
-    Message.error(`删除会话失败：${String(e)}`);
-  }
+  Modal.confirm({
+    title: "删除会话",
+    content: `确定删除「${s.title || "未命名会话"}」吗？该会话的全部消息将一并删除，且不可恢复。`,
+    okText: "删除",
+    cancelText: "取消",
+    onOk: async () => {
+      try {
+        const res = await deleteAgentSession(s.id);
+        if (res.ok) {
+          sessions.value = sessions.value.filter((x) => x.id !== s.id);
+          Message.success("会话已删除");
+        }
+      } catch (e) {
+        Message.error(`删除会话失败：${String(e)}`);
+      }
+    },
+  });
 }
 
 onMounted(load);
