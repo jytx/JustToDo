@@ -21,10 +21,20 @@ interface ChatMsg {
   role: "user" | "assistant";
   content: string;
   tools: ToolStep[];
+  /** 消息时间（HH:mm；user 为发送时刻，assistant 为完成时刻） */
+  time?: string;
   /** 出错信息（assistant 消息专用） */
   error?: string;
   /** 结束统计（轮数/累计 token） */
   stat?: string;
+}
+
+/** 格式化为 HH:mm（入参兼容 Date 或本地字面量时间串） */
+function fmtTime(d: Date | string): string {
+  const dt = typeof d === "string" ? new Date(d) : d;
+  if (Number.isNaN(dt.getTime())) return "";
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
 }
 
 const taskStore = useTaskStore();
@@ -93,10 +103,12 @@ function onEvent(ev: AgentEvent): void {
       // 用量为 0（端点未回传 usage）时只显示轮数，不显示误导性的 0 tokens
       const tokens = ev.promptTokens + ev.completionTokens;
       last.stat = tokens > 0 ? `${ev.rounds} 轮 · ${tokens} tokens` : `${ev.rounds} 轮`;
+      last.time = fmtTime(new Date());
       break;
     }
     case "error":
       last.error = ev.message;
+      last.time = fmtTime(new Date());
       break;
   }
 }
@@ -117,7 +129,7 @@ async function send(preset?: string): Promise<void> {
   if (!text || loading.value) return;
   input.value = "";
   loading.value = true;
-  messages.value.push({ role: "user", content: text, tools: [] });
+  messages.value.push({ role: "user", content: text, tools: [], time: fmtTime(new Date()) });
   messages.value.push({ role: "assistant", content: "", tools: [] });
   renderedHtml.value[messages.value.length - 1] = "";
 
@@ -133,6 +145,9 @@ async function send(preset?: string): Promise<void> {
     last.error = String(e);
   } finally {
     loading.value = false;
+    // 兜底：异常路径（invoke 抛错）不走 done/error 事件，这里补上完成时间
+    const last = messages.value[messages.value.length - 1];
+    if (last?.role === "assistant" && !last.time) last.time = fmtTime(new Date());
     scheduleRender(messages.value.length - 1);
     scrollToBottom();
   }
@@ -155,6 +170,7 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
     role: m.role,
     content: m.content,
     tools: m.tools,
+    time: m.createdAt ? fmtTime(m.createdAt) : undefined,
   }));
   // 历史消息一次性渲染（无流式）
   renderedHtml.value = {};
@@ -204,8 +220,11 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
       </div>
 
       <div v-for="(msg, i) in messages" :key="i" class="agent-chat__msg" :class="`agent-chat__msg--${msg.role}`">
-        <!-- 用户消息：气泡 -->
-        <div v-if="msg.role === 'user'" class="agent-chat__bubble">{{ msg.content }}</div>
+        <!-- 用户消息：气泡 + 发送时间 -->
+        <div v-if="msg.role === 'user'">
+          <div class="agent-chat__bubble">{{ msg.content }}</div>
+          <div v-if="msg.time" class="agent-chat__time agent-chat__time--user">{{ msg.time }}</div>
+        </div>
 
         <!-- AI 消息：工具步骤卡 + markdown 正文 -->
         <template v-else>
@@ -215,7 +234,12 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
             <a-spin :size="12" />
           </div>
           <div v-if="msg.error" class="agent-chat__error">{{ msg.error }}</div>
-          <div v-if="msg.stat" class="agent-chat__stat">{{ msg.stat }}</div>
+          <!-- 底部信息行：时间 · 轮数/用量 -->
+          <div v-if="msg.time || msg.stat" class="agent-chat__stat">
+            <template v-if="msg.time">{{ msg.time }}</template>
+            <template v-if="msg.time && msg.stat"> · </template>
+            <template v-if="msg.stat">{{ msg.stat }}</template>
+          </div>
         </template>
       </div>
     </div>
@@ -319,6 +343,14 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
   font-size: 11px;
   color: var(--jt-text-tertiary);
   margin-top: 4px;
+}
+.agent-chat__time {
+  font-size: 11px;
+  color: var(--jt-text-tertiary);
+  margin-top: 2px;
+}
+.agent-chat__time--user {
+  text-align: right;
 }
 .agent-chat__input {
   display: flex;

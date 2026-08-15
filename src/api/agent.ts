@@ -75,6 +75,8 @@ export interface HistoryMessage {
   role: "user" | "assistant";
   content: string;
   tools: HistoryToolStep[];
+  /** 消息产生时间（本地字面量 YYYY-MM-DDTHH:mm:ss，Date 可直接解析） */
+  createdAt?: string;
 }
 
 /** 单个会话的完整历史 */

@@ -36,12 +36,15 @@ pub struct DisplayToolStep {
     pub summary: String,
 }
 
-/// 展示消息（历史渲染用；assistant 消息携带工具步骤序列）
+/// 展示消息（历史渲染用；assistant 消息携带工具步骤序列）。
+/// createdAt 为落库时间（消息产生时刻），前端按 HH:mm 展示
 #[derive(Serialize)]
 pub struct DisplayMessage {
     pub role: String,
     pub content: String,
     pub tools: Vec<DisplayToolStep>,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
 }
 
 // ─── 会话 CRUD ────────────────────────────────────────────
@@ -189,7 +192,7 @@ async fn load_rows(
     session_id: &str,
 ) -> Result<Vec<sqlx::sqlite::SqliteRow>, String> {
     sqlx::query(
-        "SELECT role, content, tool_calls, tool_call_id FROM agent_messages
+        "SELECT role, content, tool_calls, tool_call_id, created_at FROM agent_messages
          WHERE session_id = $1 ORDER BY seq ASC",
     )
     .bind(session_id)
@@ -274,6 +277,7 @@ pub async fn load_display_messages(
                 role: "user".into(),
                 content,
                 tools: vec![],
+                created_at: r.get("created_at"),
             }),
             "assistant" => {
                 let tc_json: Option<String> = r.get("tool_calls");
@@ -300,6 +304,7 @@ pub async fn load_display_messages(
                     role: "assistant".into(),
                     content,
                     tools,
+                    created_at: r.get("created_at"),
                 });
             }
             _ => {} // tool 行已并入上一条 assistant 的步骤
