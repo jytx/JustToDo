@@ -182,14 +182,15 @@ pub async fn append_messages(
     Ok(())
 }
 
-/// 读会话消息行（按 created_at 排序；id 作次序稳定键防同秒乱序）
+/// 读会话消息行（按会话内 seq 排序——同秒写入的消息 created_at 相同秒精度，
+/// 按 id（uuid 随机）排序会导致工具轮与最终答复随机互换，续聊上下文损坏）
 async fn load_rows(
     pool: &SqlitePool,
     session_id: &str,
 ) -> Result<Vec<sqlx::sqlite::SqliteRow>, String> {
     sqlx::query(
         "SELECT role, content, tool_calls, tool_call_id FROM agent_messages
-         WHERE session_id = $1 ORDER BY created_at ASC, id ASC",
+         WHERE session_id = $1 ORDER BY seq ASC",
     )
     .bind(session_id)
     .fetch_all(pool)
