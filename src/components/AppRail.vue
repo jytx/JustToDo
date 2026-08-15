@@ -109,9 +109,9 @@ function openAgentChat(): void {
       <icon-settings :size="24" />
     </button>
 
-    <!-- AI 智能对话（列底部；弹窗打开时高亮） -->
+    <!-- AI 智能对话（推到导航条最底部；弹窗打开时高亮） -->
     <button
-      class="app-rail__btn"
+      class="app-rail__btn app-rail__btn--bottom"
       :class="{ 'app-rail__btn--active': taskStore.aiAssistantVisible }"
       title="AI 智能对话"
       @click="openAgentChat"
@@ -173,6 +173,11 @@ function openAgentChat(): void {
 .app-rail__btn--active {
   background-color: var(--jt-accent-soft);
   color: var(--jt-primary);
+}
+
+/* 底部入口：推到 flex 列末端（贴导航条底边） */
+.app-rail__btn--bottom {
+  margin-top: auto;
 }
 
 .app-rail__badge {
