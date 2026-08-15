@@ -113,9 +113,19 @@ pub async fn ai_agent_chat(
             if o.mutated {
                 let _ = app.emit("ai:data-changed", ());
             }
-            // 本轮新增消息落库（失败不阻断返回，仅记录）
-            let persist =
-                agent_store::append_messages(pool.inner(), &sid, &history[baseline..]).await;
+            // 本轮新增消息落库（统计 meta 挂在最终回复上；失败不阻断返回，仅记录）
+            let final_meta = serde_json::json!({
+                "rounds": o.rounds,
+                "promptTokens": o.prompt_tokens,
+                "completionTokens": o.completion_tokens,
+            });
+            let persist = agent_store::append_messages(
+                pool.inner(),
+                &sid,
+                &history[baseline..],
+                Some(final_meta),
+            )
+            .await;
             let _ = agent_store::touch_session(pool.inner(), &sid).await;
             on_event_cb(AgentEvent::done {
                 rounds: o.rounds,
@@ -127,7 +137,8 @@ pub async fn ai_agent_chat(
         }
         Err(e) => {
             // 失败也把已产生的消息落库（用户输入已入列，便于追问重试）
-            let _ = agent_store::append_messages(pool.inner(), &sid, &history[baseline..]).await;
+            let _ =
+                agent_store::append_messages(pool.inner(), &sid, &history[baseline..], None).await;
             let _ = agent_store::touch_session(pool.inner(), &sid).await;
             on_event_cb(AgentEvent::error {
                 message: format!("{}", e),

@@ -213,6 +213,9 @@ pub async fn init_pool(
         .await
         .map_err(|e| format!("执行迁移 033_agent_sessions 失败: {}", e))?;
 
+    // 034: agent_messages 加 meta —— 本轮统计（轮数/token）挂在最终回复消息上
+    run_migration_034(&pool).await?;
+
     Ok(pool)
 }
 
@@ -263,6 +266,14 @@ async fn run_migration_031(pool: &SqlitePool) -> Result<(), String> {
 /// 存量任务天然为 null（未启用），无需回填。
 async fn run_migration_032(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "tasks", "remind_at", "TEXT").await?;
+    Ok(())
+}
+
+/// 迁移 034：agent_messages 加 meta 列。
+/// 存本轮对话统计 JSON（{rounds,promptTokens,completionTokens}），
+/// 挂在「本轮最终 assistant 回复」上；历史加载时还原「N 轮 · N tokens」展示。
+async fn run_migration_034(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "agent_messages", "meta", "TEXT").await?;
     Ok(())
 }
 

@@ -45,6 +45,8 @@ pub struct DisplayMessage {
     pub tools: Vec<DisplayToolStep>,
     #[serde(rename = "createdAt")]
     pub created_at: String,
+    /// 本轮统计（挂在最终回复消息上）：{rounds,promptTokens,completionTokens}
+    pub meta: Option<Value>,
 }
 
 // ─── 会话 CRUD ────────────────────────────────────────────
@@ -136,6 +138,8 @@ pub async fn append_messages(
     pool: &SqlitePool,
     session_id: &str,
     msgs: &[ChatMessage],
+    // 本轮统计（写到最后一条消息的 meta 列；调用方仅在成功轮传入）
+    final_meta: Option<Value>,
 ) -> Result<(), String> {
     // 会话内 seq 递增（同秒写入的多条消息靠它保序）
     let mut seq: i64 = sqlx::query_scalar(
@@ -145,7 +149,7 @@ pub async fn append_messages(
     .fetch_one(pool)
     .await
     .map_err(|e| format!("查询消息序号失败: {}", e))?;
-    for m in msgs {
+    for (i, m) in msgs.iter().enumerate() {
         seq += 1;
         let (role, content, tool_calls, tool_call_id) = match m {
             ChatMessage::system { .. } => continue, // system 每轮动态拼，不落库
@@ -166,9 +170,15 @@ pub async fn append_messages(
                 content,
             } => ("tool", content.clone(), None, Some(tool_call_id.clone())),
         };
+        // 本轮最后一条消息附带统计 meta（正常为最终 assistant 回复）
+        let meta_str = if i == msgs.len() - 1 {
+            final_meta.as_ref().map(|v| v.to_string())
+        } else {
+            None
+        };
         sqlx::query(
-            "INSERT INTO agent_messages (id, session_id, seq, role, content, tool_calls, tool_call_id, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            "INSERT INTO agent_messages (id, session_id, seq, role, content, tool_calls, tool_call_id, created_at, meta)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(uuid())
         .bind(session_id)
@@ -178,6 +188,7 @@ pub async fn append_messages(
         .bind(&tool_calls)
         .bind(&tool_call_id)
         .bind(now())
+        .bind(&meta_str)
         .execute(pool)
         .await
         .map_err(|e| format!("保存会话消息失败: {}", e))?;
@@ -192,7 +203,7 @@ async fn load_rows(
     session_id: &str,
 ) -> Result<Vec<sqlx::sqlite::SqliteRow>, String> {
     sqlx::query(
-        "SELECT role, content, tool_calls, tool_call_id, created_at FROM agent_messages
+        "SELECT role, content, tool_calls, tool_call_id, created_at, meta FROM agent_messages
          WHERE session_id = $1 ORDER BY seq ASC",
     )
     .bind(session_id)
@@ -233,6 +244,14 @@ pub async fn load_history(pool: &SqlitePool, session_id: &str) -> Result<Vec<Cha
         }
     }
     Ok(msgs)
+}
+
+/// 解析消息行的统计 meta（JSON 字符串 → 对象；user/中间消息无）
+fn row_meta(r: &sqlx::sqlite::SqliteRow) -> Option<Value> {
+    r.try_get::<Option<String>, _>("meta")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
 }
 
 /// 读会话消息为展示格式（前端历史渲染用）。
@@ -278,6 +297,7 @@ pub async fn load_display_messages(
                 content,
                 tools: vec![],
                 created_at: r.get("created_at"),
+                meta: None,
             }),
             "assistant" => {
                 let tc_json: Option<String> = r.get("tool_calls");
@@ -305,6 +325,7 @@ pub async fn load_display_messages(
                     content,
                     tools,
                     created_at: r.get("created_at"),
+                    meta: row_meta(r),
                 });
             }
             _ => {} // tool 行已并入上一条 assistant 的步骤

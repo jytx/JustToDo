@@ -174,12 +174,21 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
   const res = await getAgentHistory(session.id).catch(() => null);
   if (!res?.ok || !res.messages) return;
   sessionId.value = session.id;
-  messages.value = res.messages.map((m) => ({
-    role: m.role,
-    content: m.content,
-    tools: m.tools,
-    time: m.createdAt ? fmtTime(m.createdAt) : undefined,
-  }));
+  messages.value = res.messages.map((m) => {
+    // 统计（轮数/token）从落库的 meta 还原，格式与实时 done 事件一致
+    let stat: string | undefined;
+    if (m.meta) {
+      const tokens = m.meta.promptTokens + m.meta.completionTokens;
+      stat = tokens > 0 ? `${m.meta.rounds} 轮 · ${tokens} tokens` : `${m.meta.rounds} 轮`;
+    }
+    return {
+      role: m.role,
+      content: m.content,
+      tools: m.tools,
+      time: m.createdAt ? fmtTime(m.createdAt) : undefined,
+      stat,
+    };
+  });
   // 历史消息一次性渲染（无流式）
   renderedHtml.value = {};
   for (let i = 0; i < messages.value.length; i++) {

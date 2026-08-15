@@ -77,6 +77,8 @@ export interface HistoryMessage {
   tools: HistoryToolStep[];
   /** 消息产生时间（本地字面量 YYYY-MM-DDTHH:mm:ss，Date 可直接解析） */
   createdAt?: string;
+  /** 本轮统计（仅最终回复消息携带） */
+  meta?: { rounds: number; promptTokens: number; completionTokens: number };
 }
 
 /** 单个会话的完整历史 */
