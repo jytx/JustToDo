@@ -153,13 +153,21 @@ async function send(preset?: string): Promise<void> {
   }
 }
 
-/** 开始新对话（旧会话保留在历史里，本地切换为空会话） */
-function onNewChat(): void {
+/** 开始新对话（旧会话保留在历史里，本地切换为空会话）。
+ *  公开给外层（AiAssistantModal 顶栏「新对话」按钮）调用 */
+function newChat(): void {
   sessionId.value = null;
   messages.value = [];
   renderedHtml.value = [];
   historyOpen.value = false;
 }
+
+/** 切换侧边历史会话列（公开给外层「历史会话」按钮调用） */
+function toggleHistory(): void {
+  historyOpen.value = !historyOpen.value;
+}
+
+defineExpose({ newChat, toggleHistory });
 
 /** 从历史选中会话：加载完整消息（含工具步骤）并切换为续聊模式 */
 async function onSelectSession(session: AgentSessionSummary): Promise<void> {
@@ -186,21 +194,11 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
 
 <template>
   <div class="agent-chat">
-    <!-- 顶部：历史会话 + 新对话 -->
-    <div class="agent-chat__bar">
-      <a-button type="text" size="mini" @click="historyOpen = !historyOpen">
-        <template #icon><icon-history :size="13" /></template>
-        历史会话
-      </a-button>
-      <a-button v-if="messages.length" type="text" size="mini" @click="onNewChat">
-        <template #icon><icon-refresh :size="13" /></template>
-        新对话
-      </a-button>
-    </div>
-
-    <!-- 历史会话面板（列表 → 选择续聊 / 删除） -->
+    <!-- 侧边历史会话列（列表 → 选择续聊 / 删除；开合由外层「历史会话」按钮控制） -->
     <AgentHistoryPanel v-if="historyOpen" @select="onSelectSession" @close="historyOpen = false" />
 
+    <!-- 对话主体 -->
+    <div class="agent-chat__main">
     <!-- 消息流 -->
     <div ref="listEl" class="agent-chat__list">
       <!-- 空状态：快捷指令 -->
@@ -255,20 +253,22 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
       />
       <a-button type="primary" size="small" :loading="loading" @click="send()">发送</a-button>
     </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .agent-chat {
   display: flex;
-  flex-direction: column;
-  min-height: 320px;
-  max-height: 55vh;
+  flex-direction: row;
+  min-height: 380px;
+  max-height: 62vh;
 }
-.agent-chat__bar {
+.agent-chat__main {
+  flex: 1;
+  min-width: 0;
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 4px;
+  flex-direction: column;
 }
 .agent-chat__list {
   flex: 1;

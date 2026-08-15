@@ -104,13 +104,13 @@ onMounted(load);
 
 <style scoped>
 .agent-history {
+  width: 220px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--jt-border);
-  border-radius: 8px;
-  padding: 8px;
-  margin-bottom: 8px;
-  background: var(--jt-surface);
+  border-right: 1px solid var(--jt-border);
+  padding: 4px 6px 8px 2px;
+  background: var(--jt-surface-sunken, var(--jt-surface));
 }
 .agent-history__head {
   display: flex;
@@ -124,8 +124,9 @@ onMounted(load);
   color: var(--jt-text-primary);
 }
 .agent-history__list {
-  max-height: 220px;
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
 }
 .agent-history__empty {
   display: flex;

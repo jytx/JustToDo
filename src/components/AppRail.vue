@@ -56,9 +56,11 @@ function go(path: string): void {
   router.push(path);
 }
 
-/** 打开 AI 智能体对话（底部入口，弹窗形态而非路由跳转） */
+/** 打开 AI 智能体对话（底部入口，弹窗形态而非路由跳转）。
+ *  aiAgentOnly=true：弹窗锁定纯智能对话，不显示工具选择 */
 function openAgentChat(): void {
   taskStore.aiSelectedTool = "agent";
+  taskStore.aiAgentOnly = true;
   taskStore.aiAssistantVisible = true;
 }
 </script>

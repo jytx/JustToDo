@@ -111,12 +111,14 @@ router.afterEach(() => {
 /** 打开 AI 助手弹窗（顶栏/快捷键入口，默认每日小结）。 */
 function openSummary(): void {
   taskStore.aiSelectedTool = "daily";
+  taskStore.aiAgentOnly = false;
   taskStore.aiAssistantVisible = true;
 }
 
 /** 侧边栏清单/目录 AI 总结入口：设默认工具为「总结当前清单」+ 设置 scope */
 function onAiSummary(scope: import("@/api/ai").SummaryScope): void {
   taskStore.aiSelectedTool = scope.type === "tasks" ? "tasks" : "list";
+  taskStore.aiAgentOnly = false;
   taskStore.pendingSummaryScope = scope;
   taskStore.aiAssistantVisible = true;
 }

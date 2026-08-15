@@ -75,6 +75,8 @@ export const useTaskStore = defineStore("task", () => {
   const aiLoading = ref(false);
   /** AI 助手弹窗默认选中的工具（入口设置，弹窗读取） */
   const aiSelectedTool = ref<string>("daily");
+  /** AI 助手弹窗是否锁定为纯智能对话（AppRail 机器人入口 = true，隐藏工具选择） */
+  const aiAgentOnly = ref(false);
   /** AI 助手弹窗可见性（跨组件统一控制，避免 AppLayout ref 与 store 状态不同步） */
   const aiAssistantVisible = ref(false);
 
@@ -1354,6 +1356,7 @@ export const useTaskStore = defineStore("task", () => {
     pendingSummaryScope,
     aiLoading,
     aiSelectedTool,
+    aiAgentOnly,
     aiAssistantVisible,
     batchSelectedTasks,
     batchSelectedIdsArr,

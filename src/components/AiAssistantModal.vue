@@ -61,6 +61,12 @@ const toolOptions = computed(() =>
 );
 /** 当前工具对象 */
 const currentTool = computed(() => TOOLS.find((t) => t.value === selectedTool.value) ?? TOOLS[0]);
+/** 入口锁定纯智能对话（AppRail 机器人入口），隐藏工具选择与描述 */
+const agentOnly = computed(() => taskStore.aiAgentOnly);
+/** 当前是否智能对话工具（决定 controls 行按钮组形态） */
+const isAgentTool = computed(() => selectedTool.value === "agent");
+/** AgentChat 组件引用（顶栏按钮调用其 newChat / toggleHistory） */
+const agentRef = ref<InstanceType<typeof AgentChat> | null>(null);
 
 /** 用户输入 */
 const userInput = ref("");
@@ -343,7 +349,8 @@ watch(
   () => props.visible,
   (v) => {
     if (v) {
-      selectedTool.value = taskStore.aiSelectedTool || "agent";
+      // 入口锁定时强制智能对话；否则用入口指定的默认工具
+      selectedTool.value = taskStore.aiAgentOnly ? "agent" : taskStore.aiSelectedTool || "agent";
       content.value = "";
       errorMsg.value = "";
       userInput.value = "";
@@ -356,7 +363,7 @@ watch(
 <template>
   <a-modal
     :visible="visible"
-    :width="600"
+    :width="800"
     :footer="false"
     :mask-closable="true"
     :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
@@ -370,13 +377,27 @@ watch(
       <div class="ai-assistant__controls">
         <div class="ai-assistant__tool-left">
           <SelectPopover
+            v-if="!agentOnly"
             v-model="selectedTool"
             :options="toolOptions"
             :width="160"
             @update:model-value="onToolChange"
           />
+          <span v-else class="ai-assistant__agent-title">✨ 智能对话</span>
+        </div>
+        <!-- 智能对话：历史会话 + 新对话（无「生成」）；其他工具：生成 -->
+        <div v-if="isAgentTool" class="ai-assistant__actions">
+          <a-button type="outline" size="small" @click="agentRef?.toggleHistory()">
+            <template #icon><icon-history :size="14" /></template>
+            历史会话
+          </a-button>
+          <a-button type="outline" size="small" @click="agentRef?.newChat()">
+            <template #icon><icon-refresh :size="14" /></template>
+            新对话
+          </a-button>
         </div>
         <a-button
+          v-else
           type="outline"
           size="small"
           :loading="loading"
@@ -387,16 +408,16 @@ watch(
         </a-button>
       </div>
 
-      <!-- 工具描述 -->
-      <p class="ai-assistant__tool-desc">{{ currentTool.desc }}</p>
+      <!-- 工具描述（智能对话自解释，不显示） -->
+      <p v-if="!isAgentTool" class="ai-assistant__tool-desc">{{ currentTool.desc }}</p>
 
       <!-- 智能对话（多轮工具循环，独立组件渲染） -->
-      <AgentChat v-if="currentTool.value === 'agent'" />
+      <AgentChat v-if="isAgentTool" ref="agentRef" />
 
       <!-- 输入框（需要输入的工具才显示，单独一行） -->
       <!-- 多行（extract 粘贴长文本）用 textarea；单行（create 短指令）用 input -->
       <a-textarea
-        v-if="currentTool.value !== 'agent' && currentTool.needInput && currentTool.multiline"
+        v-if="!isAgentTool && currentTool.needInput && currentTool.multiline"
         v-model="userInput"
         :placeholder="currentTool.desc"
         :auto-size="{ minRows: 3, maxRows: 8 }"
@@ -404,7 +425,7 @@ watch(
         style="margin-bottom: 16px"
       />
       <a-input
-        v-else-if="currentTool.value !== 'agent' && currentTool.needInput"
+        v-else-if="!isAgentTool && currentTool.needInput"
         v-model="userInput"
         :placeholder="currentTool.desc"
         allow-clear
@@ -413,7 +434,7 @@ watch(
       />
 
       <!-- 结果区（智能对话模式由 AgentChat 全权渲染，隐藏单轮结果区） -->
-      <div v-if="currentTool.value !== 'agent'" class="ai-assistant__body">
+      <div v-if="!isAgentTool" class="ai-assistant__body">
         <!-- 提取任务预览（extract 工具，嵌入 AiBreakdownPreview 组件） -->
         <AiBreakdownPreview
           v-if="extractPreview"
@@ -477,6 +498,16 @@ watch(
 }
 
 .ai-assistant__tool-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ai-assistant__agent-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--jt-text-primary);
+}
+.ai-assistant__actions {
   display: flex;
   align-items: center;
   gap: 8px;
