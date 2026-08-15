@@ -17,8 +17,7 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Suggestion from "@tiptap/suggestion";
 import { marked } from "marked";
-import TurndownService from "turndown";
-import * as turndownPluginGfm from "turndown-plugin-gfm";
+import { htmlToMarkdown } from "@/utils/markdown";
 import { Extension, createDocument } from "@tiptap/core";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import { closeHistory } from "@tiptap/pm/history";
@@ -447,58 +446,6 @@ const sourceMode = ref<boolean>(false);
 const sourceText = ref<string>("");
 /** 进入源码模式时备份的原 HTML（切回时若源码未改，用此无损恢复，避免 turndown/marked 往返丢格式） */
 let sourceHtmlBackup = "";
-/** TurndownService 实例：富文本 HTML → Markdown（切到源码模式时用） */
-const turndownService = new TurndownService({
-  headingStyle: "atx",     // 标题用 # 风格
-  codeBlockStyle: "fenced", // 代码块用 ``` 围栏
-  bulletListMarker: "-",   // 无序列表用 -
-});
-// GFM 删除线插件（~~text~~）
-turndownService.use(turndownPluginGfm.strikethrough);
-// 标题 NodeView（heading-block）：编辑器内标题渲染为 .heading-block--h{N} 包裹的
-// div（NodeViewContent 固定 as=div，见 HeadingView），turndown 默认 heading 规则
-// 按 h1-h6 tagName 识别不到。这里自定义规则按 class 的级别数字转 ATX 标题（# 前缀）。
-turndownService.addRule("headingBlocks", {
-  filter: (node: HTMLElement) => /^heading-block--h[1-6]$/.test(node.className ?? ""),
-  replacement: (content: string, node: HTMLElement) => {
-    const m = /^heading-block--h([1-6])$/.exec(node.className ?? "");
-    if (!m) return content;
-    // 折叠按钮（空 button + 图标）转出的空内容直接丢弃，只保留标题文字
-    return `${"#".repeat(Number(m[1]))} ${content.trim()}\n\n`;
-  },
-});
-// 表格 → Markdown 表格语法（| col | col |）。
-// 不用 gfm.tables：Tiptap 表格单元格内含 <p>、colspan/rowspan 属性，gfm 规则
-// 处理不了会拆成零散文本。这里自定义规则：逐行取单元格纯文本，用 | 拼接。
-turndownService.addRule("tables", {
-  filter: (node: HTMLElement) => node.nodeName === "TABLE",
-  replacement: (_content: string, node: HTMLElement) => {
-    const rows: string[][] = [];
-    node.querySelectorAll("tr").forEach((tr) => {
-      const cells: string[] = [];
-      tr.querySelectorAll(":scope > td, :scope > th").forEach((cell) => {
-        // 单元格纯文本：去掉内部 <p> 的换行，压缩空格
-        const text = (cell.textContent ?? "").trim().replace(/\s*\n\s*/g, " ");
-        cells.push(text.replace(/\|/g, "\\|"));
-      });
-      if (cells.length > 0) rows.push(cells);
-    });
-    if (rows.length === 0) return "";
-    // 第一行作表头，第二行是分隔行 | --- | --- |
-    const header = `| ${rows[0].join(" | ")} |`;
-    const sep = `| ${rows[0].map(() => "---").join(" | ")} |`;
-    const body = rows.slice(1).map((r) => `| ${r.join(" | ")} |`);
-    return `\n\n${[header, sep, ...body].join("\n")}\n\n`;
-  },
-});
-// 任务列表（checkbox）转 Markdown 任务语法：- [ ] / - [x]
-turndownService.addRule("taskListItems", {
-  filter: (node: HTMLElement) => node.nodeName === "LI" && node.getAttribute("data-type") === "taskItem",
-  replacement: (content: string, node: HTMLElement) => {
-    const checked = node.getAttribute("data-checked") === "true";
-    return `- [${checked ? "x" : " "}] ${content.trim()}\n`;
-  },
-});
 
 /** 进入源码模式时备份的 Markdown（用于检测切回时是否改动过） */
 let sourceTextBackup = "";
@@ -509,7 +456,7 @@ const sourceTextareaRef = ref<HTMLTextAreaElement | null>(null);
 async function enterSourceMode(): Promise<void> {
   if (!editor.value) return;
   sourceHtmlBackup = editor.value.getHTML();
-  sourceText.value = turndownService.turndown(sourceHtmlBackup);
+  sourceText.value = htmlToMarkdown(sourceHtmlBackup);
   sourceTextBackup = sourceText.value;
   sourceMode.value = true;
   // 切换后同步 textarea 高度 = 编辑区高度（textarea 的 absolute height:100% 在

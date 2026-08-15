@@ -19,6 +19,7 @@ import PriorityDot from "./PriorityDot.vue";
 import ListCascadeMenu from "./menu/ListCascadeMenu.vue";
 import AttachParentDialog from "./AttachParentDialog.vue";
 import { useTaskTagReorder } from "@/composables/useTaskTagReorder";
+import { useTaskExport } from "@/composables/useTaskExport";
 import { TASK_DRAG_MIME, hasTaskDrag } from "@/utils/dnd";
 
 const props = withDefaults(
@@ -544,6 +545,15 @@ async function onMenuDuplicate(): Promise<void> {
   }
 }
 
+/** 导出 Markdown（右键菜单 / ⋯ 菜单共用）：弹保存对话框，导出当前任务/笔记（含子项递归） */
+const { exportTask } = useTaskExport();
+function onMenuExport(): void {
+  ctxMenu.visible = false;
+  menuOpen.value = false;
+  cascadeSubmenu.display = false;
+  void exportTask(props.task);
+}
+
 /** 转换实体类型：任务 ↔ 笔记。
  *  后端在 kind 转换时清理目标类型不用的字段（笔记无日期/完成/重复/提醒），
  *  转笔记还会落到默认笔记本的默认分组。转换后任务从当前视图消失，reload 刷新。 */
@@ -908,6 +918,10 @@ function onCtxEnterBatchMode(): void {
             <icon-copy :size="15" />
             <span>创建副本</span>
           </MenuPopoverItem>
+          <MenuPopoverItem @click="onMenuExport">
+            <icon-export :size="15" />
+            <span>导出 Markdown…</span>
+          </MenuPopoverItem>
           <MenuPopoverItem @click="onMenuConvertKind">
             <icon-swap :size="15" />
             <span>{{ isNote ? "转换成任务" : "转换成笔记" }}</span>
@@ -995,6 +1009,10 @@ function onCtxEnterBatchMode(): void {
       <MenuPopoverItem @click="onMenuDuplicate">
         <icon-copy :size="15" />
         <span>创建副本</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem @click="onMenuExport">
+        <icon-export :size="15" />
+        <span>导出 Markdown…</span>
       </MenuPopoverItem>
       <MenuPopoverItem @click="onMenuConvertKind">
         <icon-swap :size="15" />

@@ -726,6 +726,11 @@ export async function readImportText(path: string): Promise<ImportedTextFile> {
   return await invoke<ImportedTextFile>("read_import_text", { path });
 }
 
+/** 把任务/笔记导出的 Markdown 写入用户选择的路径（来自系统保存对话框） */
+export async function writeExportText(path: string, content: string): Promise<void> {
+  await invoke<void>("write_export_text", { path, content });
+}
+
 /** 在系统文件管理器中定位（高亮选中）附件文件 */
 export async function revealAttachment(storedName: string): Promise<void> {
   await invoke<void>("reveal_attachment", { storedName });

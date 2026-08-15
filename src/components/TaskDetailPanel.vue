@@ -8,6 +8,7 @@ import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
 import { useSettingsStore } from "@/stores/settings";
+import { useTaskExport } from "@/composables/useTaskExport";
 import type { ParsedSubtask } from "@/api/ai";
 import { polishText } from "@/api/ai";
 import {
@@ -787,6 +788,13 @@ async function duplicateTask() {
       remindOffsetMinutes: t.remindOffsetMinutes,
     });
   }
+}
+
+/** 导出当前任务/笔记为 Markdown（弹保存对话框，含子项递归） */
+const { exportTask } = useTaskExport();
+function exportCurrent(): void {
+  if (!task.value) return;
+  void exportTask(task.value);
 }
 
 /** 添加子任务：在当前任务下创建一条新任务（子任务会出现在主面板树形列表里） */
@@ -1609,6 +1617,14 @@ onBeforeUnmount(() => {
           >
             <icon-copy :size="14" />
             <span>创建副本</span>
+          </button>
+          <button
+            type="button"
+            class="detail-panel__popup-item"
+            @click="exportCurrent(); moreVisible = false"
+          >
+            <icon-export :size="14" />
+            <span>导出 Markdown…</span>
           </button>
           <a-divider style="margin: 4px 0" />
           <button

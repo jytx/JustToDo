@@ -7,7 +7,7 @@ mod db;
 mod list_schedule;
 mod menu;
 mod models;
-mod note_import;
+mod note_io;
 mod url_title;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -518,7 +518,8 @@ pub fn run() {
             commands::group_delete,
             commands::group_reorder,
             url_title::fetch_url_title,
-            note_import::read_import_text,
+            note_io::read_import_text,
+            note_io::write_export_text,
         ]);
 
     // 仅在开发模式下启用 MCP 插件（用于 AI 辅助 GUI 测试，不影响 release 构建）
