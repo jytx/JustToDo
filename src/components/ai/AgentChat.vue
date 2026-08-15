@@ -242,14 +242,15 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
       </div>
     </div>
 
-    <!-- 输入区 -->
+    <!-- 输入区（多行文本；Enter 发送，Shift+Enter 换行） -->
     <div class="agent-chat__input">
-      <a-input
+      <a-textarea
         v-model="input"
+        class="agent-chat__textarea"
         placeholder="问我任何关于任务的问题，或让我帮你安排…"
+        :auto-size="{ minRows: 2, maxRows: 6 }"
         :disabled="loading"
-        allow-clear
-        @keydown.enter="send()"
+        @keydown.enter.exact.prevent="send()"
       />
       <a-button type="primary" size="small" :loading="loading" @click="send()">发送</a-button>
     </div>
@@ -355,8 +356,13 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
 .agent-chat__input {
   display: flex;
   gap: 8px;
-  padding-top: 8px;
+  align-items: flex-end;
+  padding-top: 6px;
   border-top: 1px solid var(--jt-border);
-  margin-top: 4px;
+}
+.agent-chat__input :deep(.agent-chat__textarea),
+.agent-chat__textarea {
+  font-size: 15px;
+  line-height: 1.6;
 }
 </style>
