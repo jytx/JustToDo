@@ -497,11 +497,12 @@ export const useTaskStore = defineStore("task", () => {
   }
 
   async function toggleTask(id: string, done: boolean) {
-    await db.toggleTask(id, done);
-    // 完成任务时播放提示音（取消完成不响）；一处覆盖所有入口（列表/看板/日历/详情面板/快捷键）
+    // 先响后写：勾选即刻出声（本地 SQLite 写入失败概率极低，误响可忽略），
+    // 避免等待 IPC + DB 往返造成的感知延迟
     if (done) {
       playSceneSound("completion");
     }
+    await db.toggleTask(id, done);
     const completedAt = done ? new Date().toISOString() : null;
     // 更新 currentTasks
     currentTasks.value = updateTaskInArray(currentTasks.value, id, (t) => {
@@ -965,12 +966,12 @@ export const useTaskStore = defineStore("task", () => {
 
   /** 批量标记完成 / 取消完成 */
   async function batchToggleDone(ids: string[], done: boolean): Promise<void> {
-    for (const id of ids) {
-      await db.toggleTask(id, done);
-    }
-    // 批量完成只响一次提示音（避免连环响）
+    // 先响后写：批量完成只响一次（避免连环响），声音先于 DB 循环
     if (done && ids.length > 0) {
       playSceneSound("completion");
+    }
+    for (const id of ids) {
+      await db.toggleTask(id, done);
     }
     await reload(true);
     await refreshCounts();

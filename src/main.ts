@@ -40,10 +40,12 @@ const settingsStore = useSettingsStore(pinia);
 settingsStore
   .initialize()
   .then(() => {
-    // 设置就绪后注册提醒声音监听（Rust 后台发到期/每日提醒时前端播对应音效）
-    import("@/composables/useSound").then(({ setupReminderSounds }) =>
-      setupReminderSounds(),
-    );
+    // 设置就绪后注册提醒声音监听（Rust 后台发到期/每日提醒时前端播对应音效），
+    // 并后台预解码全部音效，让勾选任务时声音零延迟
+    import("@/composables/useSound").then(({ setupReminderSounds, preloadSounds }) => {
+      setupReminderSounds();
+      preloadSounds();
+    });
   })
   .catch((e) => {
     console.error("[SettingsStore] 启动初始化失败:", e);
