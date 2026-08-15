@@ -387,15 +387,17 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
   background: var(--jt-surface);
   margin-top: 8px;
 }
-/* textarea 自身边框去掉，统一用容器边框 */
+/* textarea 自身边框/底色去掉（含 hover 与 focus 态），统一用容器边框 */
 .agent-chat__input-box :deep(.arco-textarea-wrapper),
+.agent-chat__input-box :deep(.arco-textarea-wrapper:hover),
+.agent-chat__input-box :deep(.arco-textarea-wrapper-focus),
 .agent-chat__input-box :deep(.arco-textarea) {
-  border: none;
-  background: transparent;
+  border: none !important;
+  background: transparent !important;
   padding: 0;
   font-size: 14px;
   line-height: 1.6;
-  box-shadow: none;
+  box-shadow: none !important;
 }
 .agent-chat__input-actions {
   display: flex;
