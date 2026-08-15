@@ -108,8 +108,13 @@ onMounted(load);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  /* 上/下/右三面边界线，把历史列围成独立区域（左侧贴弹窗边缘不画） */
+  border-top: 1px solid var(--jt-border);
+  border-bottom: 1px solid var(--jt-border);
   border-right: 1px solid var(--jt-border);
-  padding: 4px 6px 8px 2px;
+  border-radius: 0 6px 6px 0;
+  padding: 6px 6px 8px 2px;
+  margin: 4px 8px 4px 0;
   background: var(--jt-surface-sunken, var(--jt-surface));
 }
 .agent-history__head {
