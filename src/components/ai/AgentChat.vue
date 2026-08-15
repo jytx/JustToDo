@@ -287,20 +287,22 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
 .agent-chat {
   display: flex;
   flex-direction: row;
-  min-height: 440px;
-  max-height: 72vh;
+  /* 固定高度：消息再多弹窗也不变高，仅在消息区滚动 */
+  height: 72vh;
 }
 .agent-chat__main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 .agent-chat__list {
   flex: 1;
   overflow-y: auto;
   padding: 4px 2px;
-  min-height: 220px;
+  /* min-height:0 允许在固定容器内收缩，滚动才能生效 */
+  min-height: 0;
 }
 .agent-chat__empty {
   display: flex;
