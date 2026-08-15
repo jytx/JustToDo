@@ -9,6 +9,7 @@
 //
 // 详见 discuss/2026-07-31-ai-config-design.md
 
+pub mod commands;
 pub mod provider;
 pub mod types;
 

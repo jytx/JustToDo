@@ -9,6 +9,16 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// AI 流式输出的单条增量消息（经 Tauri Channel 推给前端）。
+/// 供非 agent 的流式命令（总结/润色等）使用；agent 会话用 AgentEvent。
+#[derive(Serialize, Clone)]
+pub struct StreamChunk {
+    /// 本次增量文本（流过程中有，结束帧为 None）
+    pub delta: Option<String>,
+    /// 流是否结束（true = 最后一帧）
+    pub done: bool,
+}
+
 /// 统一 chat 请求（上层调用方只构造这个）
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct ChatRequest {

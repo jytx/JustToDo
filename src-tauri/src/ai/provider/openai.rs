@@ -1,0 +1,286 @@
+// OpenAI 兼容协议 adapter（也用于 DeepSeek/通义/Ollama 等）
+//
+// 请求：POST {base_url}/chat/completions
+// 流式：SSE，data: {choices:[{delta:{content}}]}，结束帧 data: [DONE]
+
+use async_trait::async_trait;
+use serde_json::{json, Value};
+
+use super::{trim_slash, truncate_body, AiError, AiProvider, DeltaFn};
+use crate::ai::types::{
+    ChatMessage, ChatRequest, ChatResponse, TokenUsage, ToolCall, ToolChoice, ToolDef,
+};
+
+/// OpenAI 兼容协议 adapter
+pub struct OpenAiProvider {
+    client: reqwest::Client,
+    base_url: String,
+    api_key: String,
+    model: String,
+}
+
+impl OpenAiProvider {
+    pub fn new(base_url: String, api_key: String, model: String) -> Self {
+        Self {
+            // 复用项目已引入的 reqwest（holiday.rs 同款）。
+            // 加 60s 超时：AI 生成耗时较长但仍需上限，避免接口无响应时弹窗永远 loading。
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(60))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
+            base_url,
+            api_key,
+            model,
+        }
+    }
+
+    /// 把统一 ChatRequest 翻译成 OpenAI /chat/completions 请求体
+    fn build_body(&self, req: &ChatRequest) -> Value {
+        let mut body = json!({
+            "model": self.model,
+            "messages": req.messages.iter().map(msg_to_openai).collect::<Vec<_>>(),
+        });
+        if !req.tools.is_empty() {
+            body["tools"] = json!(req.tools.iter().map(tool_to_openai).collect::<Vec<_>>());
+            body["tool_choice"] = json!(match req.tool_choice {
+                ToolChoice::Auto => "auto",
+                ToolChoice::None => "none",
+                ToolChoice::Required => "required",
+            });
+        }
+        if let Some(t) = req.temperature {
+            body["temperature"] = json!(t);
+        }
+        if let Some(m) = req.max_tokens {
+            body["max_tokens"] = json!(m);
+        }
+        body
+    }
+}
+
+#[async_trait]
+impl AiProvider for OpenAiProvider {
+    async fn chat(&self, req: &ChatRequest) -> Result<ChatResponse, AiError> {
+        let url = format!("{}/chat/completions", trim_slash(&self.base_url));
+        let body = self.build_body(req);
+        let resp = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AiError::Network(e.to_string()))?;
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| AiError::Parse(e.to_string()))?;
+        if !status.is_success() {
+            return Err(AiError::Http {
+                status: status.as_u16(),
+                body: truncate_body(&text),
+            });
+        }
+        let val: Value = serde_json::from_str(&text)
+            .map_err(|e| AiError::Parse(format!("非合法 JSON：{}", e)))?;
+        parse_openai_response(&val)
+    }
+
+    async fn test_connection(&self) -> Result<String, AiError> {
+        let req = ChatRequest {
+            messages: vec![ChatMessage::user {
+                content: "hi".into(),
+            }],
+            max_tokens: Some(1),
+            ..Default::default()
+        };
+        self.chat(&req).await?;
+        Ok(self.model.clone())
+    }
+
+    async fn chat_stream(
+        &self,
+        req: &ChatRequest,
+        on_delta: DeltaFn,
+    ) -> Result<ChatResponse, AiError> {
+        use futures_util::StreamExt;
+
+        let url = format!("{}/chat/completions", trim_slash(&self.base_url));
+        let mut body = self.build_body(req);
+        body["stream"] = json!(true); // 开启 SSE 流式
+
+        // 流式请求用无超时 client，避免长文本生成被 60s 掐断
+        let stream_client = reqwest::Client::builder()
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        let resp = stream_client
+            .post(&url)
+            .bearer_auth(&self.api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AiError::Network(e.to_string()))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(AiError::Http {
+                status: status.as_u16(),
+                body: truncate_body(&text),
+            });
+        }
+
+        // 逐块读 SSE，按行解析 data: {...delta.content...}
+        let mut full_content = String::new();
+        let mut buf = String::new(); // 半行缓冲（SSE 块边界不一定在换行处）
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk_res) = stream.next().await {
+            let chunk = chunk_res.map_err(|e| AiError::Network(e.to_string()))?;
+            buf.push_str(&String::from_utf8_lossy(&chunk));
+
+            // 按换行切分，最后一段可能不完整，留在 buf 里
+            while let Some(nl) = buf.find('\n') {
+                let line = buf[..nl].trim().to_string();
+                buf = buf[nl + 1..].to_string();
+
+                // SSE 格式：data: {json} 或 data: [DONE]
+                if let Some(json_str) = line.strip_prefix("data: ") {
+                    if json_str.trim() == "[DONE]" {
+                        // 流结束
+                        return Ok(ChatResponse {
+                            content: full_content,
+                            tool_calls: vec![],
+                            usage: None,
+                        });
+                    }
+                    // 解析 JSON，取 choices[0].delta.content
+                    if let Ok(val) = serde_json::from_str::<Value>(json_str) {
+                        if let Some(delta) = val
+                            .get("choices")
+                            .and_then(|c| c.get(0))
+                            .and_then(|c| c.get("delta"))
+                            .and_then(|d| d.get("content"))
+                            .and_then(|v| v.as_str())
+                        {
+                            full_content.push_str(delta);
+                            on_delta(delta);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 流自然结束（未收到 [DONE]，兼容部分兼容协议）
+        Ok(ChatResponse {
+            content: full_content,
+            tool_calls: vec![],
+            usage: None,
+        })
+    }
+}
+
+fn msg_to_openai(m: &ChatMessage) -> Value {
+    match m {
+        ChatMessage::system { content } => json!({ "role": "system", "content": content }),
+        ChatMessage::user { content } => json!({ "role": "user", "content": content }),
+        ChatMessage::assistant {
+            content,
+            tool_calls,
+        } => {
+            let mut v = json!({ "role": "assistant", "content": content });
+            if !tool_calls.is_empty() {
+                v["tool_calls"] = json!(tool_calls.iter().map(call_to_openai).collect::<Vec<_>>());
+            }
+            v
+        }
+        ChatMessage::tool {
+            tool_call_id,
+            content,
+        } => {
+            json!({ "role": "tool", "tool_call_id": tool_call_id, "content": content })
+        }
+    }
+}
+
+/// 统一 ToolDef → OpenAI tools 定义（{type:"function",function:{name,description,parameters}}）
+fn tool_to_openai(t: &ToolDef) -> Value {
+    json!({
+        "type": "function",
+        "function": {
+            "name": t.name,
+            "description": t.description,
+            "parameters": t.parameters,
+        }
+    })
+}
+
+/// 统一 ToolCall → OpenAI tool_calls 格式（arguments 序列化回 JSON 字符串）
+fn call_to_openai(c: &ToolCall) -> Value {
+    json!({
+        "id": c.id,
+        "type": "function",
+        "function": {
+            "name": c.name,
+            "arguments": c.arguments.to_string(),
+        }
+    })
+}
+
+/// 解析 OpenAI 响应体 → 统一 ChatResponse
+fn parse_openai_response(val: &Value) -> Result<ChatResponse, AiError> {
+    let choice = val
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .ok_or_else(|| AiError::Parse("响应缺少 choices".into()))?;
+    let msg = choice
+        .get("message")
+        .ok_or_else(|| AiError::Parse("响应缺少 message".into()))?;
+
+    // 文本内容
+    let content = msg
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    // 工具调用（OpenAI 的 arguments 是 JSON 字符串，需 parse 成对象）
+    let tool_calls: Vec<ToolCall> = msg
+        .get("tool_calls")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|tc| {
+                    let id = tc.get("id")?.as_str()?.to_string();
+                    let func = tc.get("function")?;
+                    let name = func.get("name")?.as_str()?.to_string();
+                    let args_str = func
+                        .get("arguments")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("{}");
+                    // arguments 解析失败时用空对象兜底，不整体失败
+                    let arguments = serde_json::from_str(args_str).unwrap_or(json!({}));
+                    Some(ToolCall {
+                        id,
+                        name,
+                        arguments,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // token 用量
+    let usage = val.get("usage").map(|u| TokenUsage {
+        prompt_tokens: u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+        completion_tokens: u
+            .get("completion_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32,
+    });
+
+    Ok(ChatResponse {
+        content,
+        tool_calls,
+        usage,
+    })
+}
