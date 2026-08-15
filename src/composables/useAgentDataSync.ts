@@ -14,8 +14,11 @@ export function setupAgentDataSync(): Promise<UnlistenFn> {
     const taskStore = useTaskStore();
     const listStore = useListStore();
     const tagStore = useTagStore();
-    // 当前视图任务重载（保持选中）+ 各类计数/树/标签
+    // 当前视图任务重载（保持选中）+ 清单树/标签。
+    // reload 只重载当前视图任务列表，不刷计数——侧边栏清单徽标、
+    // 智能视图计数、AppRail 全局徽标都来自 refreshCounts，必须显式调
     taskStore.reload(true).catch((e) => console.error("[AgentSync] 刷新任务失败:", e));
+    taskStore.refreshCounts().catch((e) => console.error("[AgentSync] 刷新计数失败:", e));
     listStore.loadLists().catch((e) => console.error("[AgentSync] 刷新清单失败:", e));
     tagStore.loadTags().catch((e) => console.error("[AgentSync] 刷新标签失败:", e));
   });
