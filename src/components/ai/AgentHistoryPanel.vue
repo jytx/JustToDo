@@ -114,7 +114,7 @@ onMounted(load);
   border-right: 1px solid var(--jt-border);
   border-radius: 0 6px 6px 0;
   padding: 6px 6px 8px 2px;
-  margin: 4px 8px 4px 0;
+  margin: 4px 8px 0 0;
   background: var(--jt-surface-sunken, var(--jt-surface));
 }
 .agent-history__head {
