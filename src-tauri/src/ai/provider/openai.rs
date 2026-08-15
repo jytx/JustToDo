@@ -161,6 +161,21 @@ impl AiProvider for OpenAiProvider {
                     }
                     // 解析 JSON，取 choices[0].delta 的 content / tool_calls
                     if let Ok(val) = serde_json::from_str::<Value>(json_str) {
+                        // usage 帧（多为流末尾的独立 chunk）
+                        if let Some(u) = val.get("usage").filter(|u| u.is_object()) {
+                            usage = Some(TokenUsage {
+                                prompt_tokens: u
+                                    .get("prompt_tokens")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0)
+                                    as u32,
+                                completion_tokens: u
+                                    .get("completion_tokens")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0)
+                                    as u32,
+                            });
+                        }
                         let delta = val
                             .get("choices")
                             .and_then(|c| c.get(0))
