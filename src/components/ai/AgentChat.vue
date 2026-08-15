@@ -162,6 +162,15 @@ function newChat(): void {
   historyOpen.value = false;
 }
 
+/** 某历史会话被删除：若右侧正处于该会话，重置为空（侧列保持打开便于继续浏览） */
+function onSessionDeleted(deletedId: string): void {
+  if (sessionId.value === deletedId) {
+    sessionId.value = null;
+    messages.value = [];
+    renderedHtml.value = [];
+  }
+}
+
 /** 切换侧边历史会话列（公开给外层「历史会话」按钮调用） */
 function toggleHistory(): void {
   historyOpen.value = !historyOpen.value;
@@ -204,7 +213,12 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
 <template>
   <div class="agent-chat">
     <!-- 侧边历史会话列（列表 → 选择续聊 / 删除；开合由外层「历史会话」按钮控制） -->
-    <AgentHistoryPanel v-if="historyOpen" @select="onSelectSession" @close="historyOpen = false" />
+    <AgentHistoryPanel
+      v-if="historyOpen"
+      @select="onSelectSession"
+      @deleted="onSessionDeleted"
+      @close="historyOpen = false"
+    />
 
     <!-- 对话主体 -->
     <div class="agent-chat__main">

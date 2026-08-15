@@ -11,6 +11,8 @@ import {
 const emit = defineEmits<{
   /** 选中某个会话（父组件加载消息并切换为续聊模式） */
   select: [session: AgentSessionSummary];
+  /** 某会话被删除（父组件据此重置右侧对话区，若正处于该会话中） */
+  deleted: [sessionId: string];
   /** 关闭面板 */
   close: [];
 }>();
@@ -64,6 +66,7 @@ function onDelete(s: AgentSessionSummary, ev: Event): void {
         const res = await deleteAgentSession(s.id);
         if (res.ok) {
           sessions.value = sessions.value.filter((x) => x.id !== s.id);
+          emit("deleted", s.id);
           Message.success("会话已删除");
         }
       } catch (e) {
