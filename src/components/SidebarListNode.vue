@@ -101,6 +101,8 @@ const emit = defineEmits<{
   addList: [node: ListTreeNode];
   /** 在该清单下新建任务（仅清单菜单） */
   addTask: [node: ListTreeNode];
+  /** 导入笔记到该笔记本（仅笔记本菜单）：打开系统文件选择器选 md/txt */
+  importNotes: [node: ListTreeNode];
   /** 归档当前节点（目录或清单）；TheSidebar 调 store.archiveTree */
   archive: [node: ListTreeNode];
   /** AI 总结当前节点（目录/清单/笔记本），与右键菜单对齐 */
@@ -117,14 +119,17 @@ const emit = defineEmits<{
   colorClick: [event: MouseEvent, node: ListTreeNode];
 }>();
 
-/** 菜单点击的 key（addFolder 仅目录菜单有，addTask 仅清单菜单有） */
-function onMenuClick(key: "edit" | "delete" | "addFolder" | "addTask" | "archive" | "aiSummary") {
+/** 菜单点击的 key（addFolder 仅目录菜单有，addTask/importNotes 仅清单菜单有） */
+function onMenuClick(
+  key: "edit" | "delete" | "addFolder" | "addTask" | "importNotes" | "archive" | "aiSummary",
+) {
   folderMenuOpen.value = false;
   listMenuOpen.value = false;
   if (key === "edit") emit("edit", props.node);
   else if (key === "delete") emit("delete", props.node);
   else if (key === "addFolder") emit("addFolder", props.node);
   else if (key === "addTask") emit("addTask", props.node);
+  else if (key === "importNotes") emit("importNotes", props.node);
   else if (key === "archive") emit("archive", props.node);
   else if (key === "aiSummary") emit("aiSummary", props.node);
 }
@@ -553,6 +558,11 @@ function onDrop(e: DragEvent) {
           <icon-plus :size="15" />
           <span>{{ isNote ? "新建笔记" : "新建任务" }}</span>
         </MenuPopoverItem>
+        <!-- 导入笔记：仅笔记本（清单不显示），与右键菜单项一致 -->
+        <MenuPopoverItem v-if="isNote" @click="onMenuClick('importNotes')">
+          <icon-import :size="15" />
+          <span>导入笔记…</span>
+        </MenuPopoverItem>
         <MenuPopoverItem @click="onMenuClick('edit')">
           <icon-edit :size="15" />
           <span>{{ isNote ? "编辑笔记本" : "编辑清单" }}</span>
@@ -591,6 +601,7 @@ function onDrop(e: DragEvent) {
         @addFolder="(n: ListTreeNode) => $emit('addFolder', n)"
         @addList="(n: ListTreeNode) => $emit('addList', n)"
         @addTask="(n: ListTreeNode) => $emit('addTask', n)"
+        @importNotes="(n: ListTreeNode) => $emit('importNotes', n)"
         @archive="(n: ListTreeNode) => $emit('archive', n)"
         @aiSummary="(n: ListTreeNode) => $emit('aiSummary', n)"
         @move="(ids: string[], target: ListTreeNode, pos: 'before' | 'after' | 'inside') => $emit('move', ids, target, pos)"

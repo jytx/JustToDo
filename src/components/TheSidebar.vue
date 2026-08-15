@@ -30,6 +30,7 @@ import { useTaskStore } from "@/stores/task";
 import { useSettingsStore } from "@/stores/settings";
 import { useQuickAdd } from "@/composables/useQuickAdd";
 import { useListBatchSelect, flattenActiveTree } from "@/composables/useListBatchSelect";
+import { useNoteImport } from "@/composables/useNoteImport";
 import SidebarListNode from "./SidebarListNode.vue";
 import SidebarRailCascade from "./SidebarRailCascade.vue";
 import MenuPopover from "./MenuPopover.vue";
@@ -1198,6 +1199,13 @@ function onCtxAddTask(node: ListTreeNode): void {
     quickAdd.open(node.id);
   }
 }
+
+/** 笔记本导入（右键菜单 / hover 三点菜单共用）：选 md/txt 文件导入为目标笔记本的笔记 */
+const { pickAndImport: pickAndImportNotes } = useNoteImport();
+function onCtxImportNotes(node: ListTreeNode): void {
+  closeCtxMenu();
+  void pickAndImportNotes(node.id);
+}
 /** 标签右键：编辑 / 删除 —— 复用现有 hover 菜单的处理函数 */
 function onCtxEditTag(tag: Tag): void {
   closeCtxMenu();
@@ -1567,6 +1575,7 @@ onMounted(async () => {
           @addFolder="(n: ListTreeNode) => openCreateFolderDialog({ parentId: n.id, kind: n.kind === 'note' ? 'note' : 'task' })"
           @addList="(n: ListTreeNode) => onAddListInFolder(n)"
           @addTask="(n: ListTreeNode) => onAddNote(n.id)"
+          @importNotes="(n: ListTreeNode) => onCtxImportNotes(n)"
           @archive="(n: ListTreeNode) => onHoverArchive(n)"
           @aiSummary="(n: ListTreeNode) => onCtxAiSummary(n)"
           @move="onListMove"
@@ -2229,6 +2238,14 @@ onMounted(async () => {
         <MenuPopoverItem @click="onCtxAddTask(ctxMenu.target.node)">
           <icon-plus :size="15" />
           <span>{{ ctxMenu.target.node.kind === "note" ? "新建笔记" : "新建任务" }}</span>
+        </MenuPopoverItem>
+        <!-- 导入笔记：仅笔记本（清单不显示）；点击后打开系统文件选择器（md/txt 多选） -->
+        <MenuPopoverItem
+          v-if="ctxMenu.target.node.kind === 'note'"
+          @click="onCtxImportNotes(ctxMenu.target.node)"
+        >
+          <icon-import :size="15" />
+          <span>导入笔记…</span>
         </MenuPopoverItem>
         <MenuPopoverItem @click="onCtxEdit(ctxMenu.target.node)">
           <icon-edit :size="15" />

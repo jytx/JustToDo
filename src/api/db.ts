@@ -711,6 +711,21 @@ export async function readAttachmentText(storedName: string): Promise<string> {
   return await invoke<string>("read_attachment_text", { storedName });
 }
 
+// ─── 笔记导入 ────────────────────────────────────────────
+
+/** 待导入的本地文本文件（Rust 端已校验扩展名白名单与 2MB 上限） */
+export interface ImportedTextFile {
+  /** 文件名（已去扩展名），作笔记标题 */
+  title: string;
+  /** 文件原文（UTF-8 文本） */
+  content: string;
+}
+
+/** 读取本地文本文件用于导入笔记（绝对路径，来自系统文件选择器） */
+export async function readImportText(path: string): Promise<ImportedTextFile> {
+  return await invoke<ImportedTextFile>("read_import_text", { path });
+}
+
 /** 在系统文件管理器中定位（高亮选中）附件文件 */
 export async function revealAttachment(storedName: string): Promise<void> {
   await invoke<void>("reveal_attachment", { storedName });

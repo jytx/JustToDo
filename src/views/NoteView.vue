@@ -9,6 +9,7 @@ import { formatPageDate } from "@/utils/date";
 import { useTaskPanelContextMenu } from "@/composables/useTaskPanelContextMenu";
 import { useTaskDragReorder } from "@/composables/useTaskDragReorder";
 import { useBatchSelect } from "@/composables/useBatchSelect";
+import { useNoteImport } from "@/composables/useNoteImport";
 import TaskListItem from "@/components/TaskListItem.vue";
 import AddTaskBar from "@/components/AddTaskBar.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
@@ -80,6 +81,13 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
     await taskStore.updateTask(task.id, { note: payload.note });
   }
 }
+
+// 导入笔记（面板右键菜单入口；默认笔记本无侧边栏菜单，此入口是其唯一导入途径）
+const { pickAndImport } = useNoteImport();
+function onImportNotes(): void {
+  ctxMenu.visible = false;
+  void pickAndImport(props.id);
+}
 </script>
 
 <template>
@@ -132,11 +140,15 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
       <p class="note-view__empty-hint">在上方记录你的第一条笔记</p>
     </div>
 
-    <!-- 面板右键菜单：新建笔记 -->
+    <!-- 面板右键菜单：新建笔记 / 导入笔记 -->
     <ContextMenu v-model:visible="ctxMenu.visible" :x="ctxMenu.x" :y="ctxMenu.y">
       <MenuPopoverItem @click="onCreateTask">
         <icon-plus :size="15" />
         <span>新建笔记</span>
+      </MenuPopoverItem>
+      <MenuPopoverItem @click="onImportNotes">
+        <icon-import :size="15" />
+        <span>导入笔记…</span>
       </MenuPopoverItem>
     </ContextMenu>
 
