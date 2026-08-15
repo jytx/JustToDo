@@ -252,7 +252,16 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
         :disabled="loading"
         @keydown.enter.exact.prevent="send()"
       />
-      <a-button type="primary" size="small" :loading="loading" @click="send()">发送</a-button>
+      <a-button
+        type="primary"
+        size="small"
+        class="agent-chat__send"
+        title="发送（Enter）"
+        :loading="loading"
+        @click="send()"
+      >
+        <template #icon><icon-send :size="16" /></template>
+      </a-button>
     </div>
     </div>
   </div>
@@ -364,5 +373,13 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
 .agent-chat__textarea {
   font-size: 15px;
   line-height: 1.6;
+}
+.agent-chat__send {
+  flex-shrink: 0;
+  height: 32px;
+  width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>
