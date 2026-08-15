@@ -14,6 +14,7 @@ pub const MIGRATIONS_017: &str = include_str!("migrations/017_daily_reminder_log
 pub const MIGRATIONS_021: &str = include_str!("migrations/021_list_schedules.sql");
 pub const MIGRATIONS_026: &str = include_str!("migrations/026_groups.sql");
 pub const MIGRATIONS_027: &str = include_str!("migrations/027_recurrence_history.sql");
+pub const MIGRATIONS_033: &str = include_str!("migrations/033_agent_sessions.sql");
 
 /// 检查表中是否存在某列
 async fn column_exists(pool: &SqlitePool, table: &str, column: &str) -> Result<bool, String> {
@@ -205,6 +206,12 @@ pub async fn init_pool(
 
     // 032: tasks 加 remind_at —— 指定时刻提醒（与 remind_offset_minutes 互斥）
     run_migration_032(&pool).await?;
+
+    // 033: AI 智能体会话持久化（agent_sessions/agent_messages 表，纯 SQL 幂等）
+    sqlx::query(MIGRATIONS_033)
+        .execute(&pool)
+        .await
+        .map_err(|e| format!("执行迁移 033_agent_sessions 失败: {}", e))?;
 
     Ok(pool)
 }

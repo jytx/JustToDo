@@ -1,12 +1,12 @@
 // AI 智能体对话命令 —— 多轮工具循环的 IPC 入口
 //
-// 会话管理（P1 为内存态）：全局 HashMap<sessionId, Vec<ChatMessage>>，
-// 弹窗关闭即弃（P3 迁移到 agent_sessions/agent_messages 表持久化）。
+// 会话持久化（P3）：agent_sessions/agent_messages 表，重启可续聊。
+// 历史查看/续聊/删除由 ai_agent_list_sessions / ai_agent_history /
+// ai_agent_delete_session 提供（存储逻辑在 ai/agent_store.rs）。
 //
 // 详见 discuss/2026-08-15-ai-agent-design.md
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use tauri::ipc::Channel;
 use tauri::Emitter;
@@ -14,17 +14,10 @@ use tauri::State;
 
 use super::load_prompt;
 use crate::ai::agent::{self, AgentOutcome};
+use crate::ai::agent_store::{self, DisplayMessage};
 use crate::ai::build_from_settings;
 use crate::ai::types::{AgentEvent, ChatMessage};
 use crate::commands::{now, uuid, CmdResult};
-
-/// 内存会话表（重启即清空）。Lazy 初始化，进程级单例。
-static SESSIONS: std::sync::OnceLock<Mutex<HashMap<String, Vec<ChatMessage>>>> =
-    std::sync::OnceLock::new();
-
-fn sessions() -> &'static Mutex<HashMap<String, Vec<ChatMessage>>> {
-    SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
-}
 
 /// Agent 默认系统提示词（可自定义，读 ai_prompt_agent 设置；P2 暴露到设置页）
 pub const DEFAULT_PROMPT_AGENT: &str = r#"你是 JustToDo 待办应用内的 AI 助手，可以通过调用工具查询和操作用户的任务与笔记。
@@ -39,10 +32,10 @@ pub const DEFAULT_PROMPT_AGENT: &str = r#"你是 JustToDo 待办应用内的 AI 
 
 /// 智能体对话命令。
 ///
-/// - `session_id`：None = 开新会话；有值 = 续聊（沿用历史消息）
+/// - `session_id`：None = 开新会话；有值 = 续聊（从表加载历史）
 /// - `context`：可选注入的当前上下文，如 { current_list_name: "工作" }
 /// - 过程事件经 Channel 推送（delta/tool_start/tool_end/done/error）
-/// - 返回 { ok, session_id, rounds, message? }
+/// - 返回 { ok, session_id, message? }
 #[tauri::command]
 pub async fn ai_agent_chat(
     app: tauri::AppHandle,
@@ -62,12 +55,34 @@ pub async fn ai_agent_chat(
         Err(e) => return Ok(serde_json::json!({ "ok": false, "message": format!("{}", e) })),
     };
 
-    // 取（或建）会话，先把历史快照出来，缩短锁持有时间
+    // 取（或建）会话：新会话落库（标题取首条消息）；续聊先校验存在
+    let is_new_session = session_id.is_none();
     let sid = session_id.unwrap_or_else(uuid);
-    let history_snapshot = {
-        let mut map = sessions().lock().unwrap();
-        map.entry(sid.clone()).or_default().clone()
+    let mut is_new = false;
+    match agent_store::session_exists(pool.inner(), &sid).await {
+        Ok(true) => {}
+        Ok(false) if is_new_session => {
+            if let Err(e) = agent_store::create_session(pool.inner(), &sid, &message).await {
+                return Ok(serde_json::json!({ "ok": false, "message": e }));
+            }
+            is_new = true;
+        }
+        Ok(false) => {
+            return Ok(serde_json::json!({ "ok": false, "message": "会话不存在或已删除" }));
+        }
+        Err(e) => return Ok(serde_json::json!({ "ok": false, "message": e })),
+    }
+
+    // 续聊：从库加载历史（新会话为空）
+    let mut history: Vec<ChatMessage> = if is_new {
+        Vec::new()
+    } else {
+        match agent_store::load_history(pool.inner(), &sid).await {
+            Ok(h) => h,
+            Err(e) => return Ok(serde_json::json!({ "ok": false, "message": e })),
+        }
     };
+    let baseline = history.len();
 
     // 组装 system：自定义提示词 + 当前时间锚点 + 上下文注入
     let prompt_tpl = load_prompt(pool.inner(), "ai_prompt_agent", DEFAULT_PROMPT_AGENT).await;
@@ -78,7 +93,6 @@ pub async fn ai_agent_chat(
         let _ = on_event.send(ev);
     });
 
-    let mut history = history_snapshot;
     let outcome: Result<AgentOutcome, crate::ai::AiError> = agent::run_agent_loop(
         pool.inner(),
         provider.as_ref(),
@@ -96,18 +110,22 @@ pub async fn ai_agent_chat(
             if o.mutated {
                 let _ = app.emit("ai:data-changed", ());
             }
-            // 写回会话历史（丢弃本轮用户输入为空的会话不变）
-            sessions().lock().unwrap().insert(sid.clone(), history);
+            // 本轮新增消息落库（失败不阻断返回，仅记录）
+            let persist =
+                agent_store::append_messages(pool.inner(), &sid, &history[baseline..]).await;
+            let _ = agent_store::touch_session(pool.inner(), &sid).await;
             on_event_cb(AgentEvent::done {
                 rounds: o.rounds,
                 prompt_tokens: o.prompt_tokens,
                 completion_tokens: o.completion_tokens,
             });
-            Ok(serde_json::json!({ "ok": true, "session_id": sid }))
+            let persist_err = persist.err();
+            Ok(serde_json::json!({ "ok": true, "session_id": sid, "persist_error": persist_err }))
         }
         Err(e) => {
-            // 失败也保留历史（用户输入已入列，便于追问重试），但推出 error 事件
-            sessions().lock().unwrap().insert(sid.clone(), history);
+            // 失败也把已产生的消息落库（用户输入已入列，便于追问重试）
+            let _ = agent_store::append_messages(pool.inner(), &sid, &history[baseline..]).await;
+            let _ = agent_store::touch_session(pool.inner(), &sid).await;
             on_event_cb(AgentEvent::error {
                 message: format!("{}", e),
             });
@@ -116,11 +134,47 @@ pub async fn ai_agent_chat(
     }
 }
 
-/// 重置（清空）指定会话的历史。
+/// 历史会话列表（按最后活动倒序，最多 50 条）。
+/// 返回 { ok, sessions: [{ id, title, updated_at, message_count }] }。
 #[tauri::command]
-pub async fn ai_agent_reset(session_id: String) -> CmdResult<serde_json::Value> {
-    sessions().lock().unwrap().remove(&session_id);
-    Ok(serde_json::json!({ "ok": true }))
+pub async fn ai_agent_list_sessions(
+    pool: State<'_, sqlx::SqlitePool>,
+) -> CmdResult<serde_json::Value> {
+    match agent_store::list_sessions(pool.inner()).await {
+        Ok(list) => Ok(serde_json::json!({ "ok": true, "sessions": list })),
+        Err(e) => Ok(serde_json::json!({ "ok": false, "message": e })),
+    }
+}
+
+/// 单个会话的完整消息（展示格式，含工具步骤）。返回 { ok, title, messages }。
+#[tauri::command]
+pub async fn ai_agent_history(
+    pool: State<'_, sqlx::SqlitePool>,
+    session_id: String,
+) -> CmdResult<serde_json::Value> {
+    let title = match agent_store::session_title(pool.inner(), &session_id).await {
+        Ok(Some(t)) => t,
+        Ok(None) => return Ok(serde_json::json!({ "ok": false, "message": "会话不存在" })),
+        Err(e) => return Ok(serde_json::json!({ "ok": false, "message": e })),
+    };
+    let msgs: Vec<DisplayMessage> =
+        match agent_store::load_display_messages(pool.inner(), &session_id).await {
+            Ok(m) => m,
+            Err(e) => return Ok(serde_json::json!({ "ok": false, "message": e })),
+        };
+    Ok(serde_json::json!({ "ok": true, "title": title, "messages": msgs }))
+}
+
+/// 删除会话（消息级联删除）。返回 { ok }。
+#[tauri::command]
+pub async fn ai_agent_delete_session(
+    pool: State<'_, sqlx::SqlitePool>,
+    session_id: String,
+) -> CmdResult<serde_json::Value> {
+    match agent_store::delete_session(pool.inner(), &session_id).await {
+        Ok(()) => Ok(serde_json::json!({ "ok": true })),
+        Err(e) => Ok(serde_json::json!({ "ok": false, "message": e })),
+    }
 }
 
 /// 组装 agent system 提示词：基础提示词 + 时间锚点 + 当前上下文

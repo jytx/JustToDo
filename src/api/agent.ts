@@ -46,7 +46,56 @@ export async function agentChat(
   });
 }
 
-/** 清空指定会话的历史（开始新话题） */
-export async function agentReset(sessionId: string): Promise<void> {
-  await invoke("ai_agent_reset", { sessionId });
+/** 历史会话摘要（列表项） */
+export interface AgentSessionSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+  messageCount: number;
+}
+
+/** 历史会话列表结果 */
+export interface SessionListResult {
+  ok: boolean;
+  sessions?: AgentSessionSummary[];
+  message?: string;
+}
+
+/** 历史消息中的工具步骤（与 types/agent.ts 的 ToolStep 同构） */
+export interface HistoryToolStep {
+  callId: string;
+  name: string;
+  args: unknown;
+  ok: boolean;
+  summary: string;
+}
+
+/** 历史消息（展示格式；assistant 消息携带工具步骤） */
+export interface HistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+  tools: HistoryToolStep[];
+}
+
+/** 单个会话的完整历史 */
+export interface HistoryResult {
+  ok: boolean;
+  title?: string;
+  messages?: HistoryMessage[];
+  message?: string;
+}
+
+/** 历史会话列表（按最后活动倒序，最多 50 条） */
+export async function listAgentSessions(): Promise<SessionListResult> {
+  return invoke<SessionListResult>("ai_agent_list_sessions");
+}
+
+/** 加载单个会话的完整消息（展示格式，含工具步骤） */
+export async function getAgentHistory(sessionId: string): Promise<HistoryResult> {
+  return invoke<HistoryResult>("ai_agent_history", { sessionId });
+}
+
+/** 删除会话（消息级联删除） */
+export async function deleteAgentSession(sessionId: string): Promise<{ ok: boolean }> {
+  return invoke<{ ok: boolean }>("ai_agent_delete_session", { sessionId });
 }

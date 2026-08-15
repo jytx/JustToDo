@@ -3,9 +3,16 @@
 // 嵌在 AiAssistantModal 的「智能对话」模式下；会话为后端内存态（P1）
 import { ref, watch, nextTick, computed } from "vue";
 import { marked } from "marked";
-import { agentChat, agentReset, type AgentEvent, type AgentContext } from "@/api/agent";
+import {
+  agentChat,
+  getAgentHistory,
+  type AgentEvent,
+  type AgentContext,
+  type AgentSessionSummary,
+} from "@/api/agent";
 import type { ToolStep } from "@/types/agent";
 import AgentToolCard from "@/components/ai/AgentToolCard.vue";
+import AgentHistoryPanel from "@/components/ai/AgentHistoryPanel.vue";
 import { useTaskStore } from "@/stores/task";
 import { useListStore } from "@/stores/list";
 
@@ -33,6 +40,8 @@ const loading = ref(false);
 const sessionId = ref<string | null>(null);
 /** 消息流容器（自动滚动用） */
 const listEl = ref<HTMLElement | null>(null);
+/** 历史会话面板开关 */
+const historyOpen = ref(false);
 
 /** 快捷指令（点击即发送预设消息） */
 const QUICK_PROMPTS: string[] = ["今天有什么任务？", "本周完成了多少任务？", "总结一下这个清单"];
@@ -126,26 +135,52 @@ async function send(preset?: string): Promise<void> {
   }
 }
 
-/** 开始新对话（清空消息；旧会话通知后端释放） */
-async function onNewChat(): Promise<void> {
-  if (sessionId.value) {
-    await agentReset(sessionId.value).catch(() => undefined);
-  }
+/** 开始新对话（旧会话保留在历史里，本地切换为空会话） */
+function onNewChat(): void {
   sessionId.value = null;
   messages.value = [];
   renderedHtml.value = [];
+  historyOpen.value = false;
+}
+
+/** 从历史选中会话：加载完整消息（含工具步骤）并切换为续聊模式 */
+async function onSelectSession(session: AgentSessionSummary): Promise<void> {
+  const res = await getAgentHistory(session.id).catch(() => null);
+  if (!res?.ok || !res.messages) return;
+  sessionId.value = session.id;
+  messages.value = res.messages.map((m) => ({
+    role: m.role,
+    content: m.content,
+    tools: m.tools,
+  }));
+  // 历史消息一次性渲染（无流式）
+  renderedHtml.value = {};
+  for (let i = 0; i < messages.value.length; i++) {
+    const m = messages.value[i];
+    if (m.role === "assistant" && m.content) {
+      renderedHtml.value[i] = await marked.parse(m.content);
+    }
+  }
+  await scrollToBottom();
 }
 </script>
 
 <template>
   <div class="agent-chat">
-    <!-- 顶部：新对话按钮（有会话时显示） -->
-    <div v-if="messages.length" class="agent-chat__bar">
-      <a-button type="text" size="mini" @click="onNewChat">
+    <!-- 顶部：历史会话 + 新对话 -->
+    <div class="agent-chat__bar">
+      <a-button type="text" size="mini" @click="historyOpen = !historyOpen">
+        <template #icon><icon-history :size="13" /></template>
+        历史会话
+      </a-button>
+      <a-button v-if="messages.length" type="text" size="mini" @click="onNewChat">
         <template #icon><icon-refresh :size="13" /></template>
         新对话
       </a-button>
     </div>
+
+    <!-- 历史会话面板（列表 → 选择续聊 / 删除） -->
+    <AgentHistoryPanel v-if="historyOpen" @select="onSelectSession" @close="historyOpen = false" />
 
     <!-- 消息流 -->
     <div ref="listEl" class="agent-chat__list">
