@@ -127,6 +127,7 @@ onMounted(load);
   font-size: 13px;
   font-weight: 600;
   color: var(--jt-text-primary);
+  margin-left: 6px;
 }
 .agent-history__list {
   flex: 1;
