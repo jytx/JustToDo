@@ -28,6 +28,8 @@ pub struct AgentOutcome {
     pub rounds: u32,
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
+    /// 本轮是否发生数据写操作（任一写工具成功即 true，命令层据此通知前端刷新）
+    pub mutated: bool,
 }
 
 /// 执行一次完整的 agent 循环。
@@ -49,6 +51,7 @@ pub async fn run_agent_loop(
 
     let mut prompt_tokens: u32 = 0;
     let mut completion_tokens: u32 = 0;
+    let mut mutated = false;
 
     for round in 1..=MAX_ROUNDS {
         // 最后一轮禁用工具，强制模型基于已有信息直接作答收尾
@@ -97,6 +100,7 @@ pub async fn run_agent_loop(
                 rounds: round,
                 prompt_tokens,
                 completion_tokens,
+                mutated,
             });
         }
 
@@ -122,6 +126,13 @@ pub async fn run_agent_loop(
                 args: call.arguments.clone(),
             });
             let result = tool_exec::execute(pool, &call.name, &call.arguments).await;
+            if result
+                .get("mutated")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                mutated = true;
+            }
             on_event(AgentEvent::tool_end {
                 call_id: call.id.clone(),
                 ok: result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false),
@@ -143,6 +154,7 @@ pub async fn run_agent_loop(
         rounds: MAX_ROUNDS,
         prompt_tokens,
         completion_tokens,
+        mutated,
     })
 }
 

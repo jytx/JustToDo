@@ -3,6 +3,7 @@
 // 集成全局搜索、快速添加、快捷键、键盘导航
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useTheme } from "@/composables/useTheme";
+import { setupAgentDataSync } from "@/composables/useAgentDataSync";
 import { useSettingsStore } from "@/stores/settings";
 import { useTaskStore } from "@/stores/task";
 import { useHabitStore } from "@/stores/habit";
@@ -545,8 +546,13 @@ function navigateSiblingList(direction: "up" | "down"): void {
   router.push(`${isNote ? "/notebook" : "/list"}/${next.id}`);
 }
 
+let unlistenAgentSync: (() => void) | null = null;
 onMounted(() => {
   window.addEventListener("keydown", onNavigationKeydown);
+  // AI Agent 写库后的跨端数据同步（写工具触发 ai:data-changed）
+  setupAgentDataSync().then((fn) => {
+    unlistenAgentSync = fn;
+  });
   // 加载缓存的详情面板宽度（拖拽调整后持久化，下次打开保持）
   db.getSetting(SETTINGS_KEYS.detailPanelWidth)
     .then((raw) => {
@@ -582,7 +588,10 @@ onMounted(() => {
     console.error("[AppLayout] 预加载 lists 失败:", e);
   });
 });
-onUnmounted(() => window.removeEventListener("keydown", onNavigationKeydown));
+onUnmounted(() => {
+  window.removeEventListener("keydown", onNavigationKeydown);
+  unlistenAgentSync?.();
+});
 
 // 全局快捷键
 useShortcuts({

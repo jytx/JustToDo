@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use tauri::ipc::Channel;
+use tauri::Emitter;
 use tauri::State;
 
 use super::load_prompt;
@@ -44,6 +45,7 @@ pub const DEFAULT_PROMPT_AGENT: &str = r#"你是 JustToDo 待办应用内的 AI 
 /// - 返回 { ok, session_id, rounds, message? }
 #[tauri::command]
 pub async fn ai_agent_chat(
+    app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
     session_id: Option<String>,
     message: String,
@@ -89,6 +91,11 @@ pub async fn ai_agent_chat(
 
     match outcome {
         Ok(o) => {
+            // 发生写操作时通知前端刷新 stores（Pinia 是前端唯一数据源，
+            // Rust 直写库后靠此事件同步；与提示音功能的 emit 模式一致）
+            if o.mutated {
+                let _ = app.emit("ai:data-changed", ());
+            }
             // 写回会话历史（丢弃本轮用户输入为空的会话不变）
             sessions().lock().unwrap().insert(sid.clone(), history);
             on_event_cb(AgentEvent::done {

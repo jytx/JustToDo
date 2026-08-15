@@ -8,6 +8,7 @@
 // 文件组织：mod.rs 分发 + 通用辅助；read.rs 只读工具；write.rs 写工具（P2）
 
 pub mod read;
+pub mod write;
 
 use serde_json::{json, Value};
 use sqlx::{Row, SqlitePool};
@@ -19,6 +20,9 @@ pub async fn execute(pool: &SqlitePool, name: &str, args: &Value) -> Value {
     match name {
         "query_tasks" | "search_items" | "get_task" | "list_folders" | "get_stats" => {
             read::dispatch(pool, name, args).await
+        }
+        "create_task" | "create_note" | "update_task" | "set_task_done" => {
+            write::dispatch(pool, name, args).await
         }
         _ => json!({ "ok": false, "error": format!("未知工具: {}", name) }),
     }
@@ -40,7 +44,10 @@ pub(crate) struct WhereBuilder {
 
 impl WhereBuilder {
     pub(crate) fn new() -> Self {
-        WhereBuilder { clauses: vec![], params: vec![] }
+        WhereBuilder {
+            clauses: vec![],
+            params: vec![],
+        }
     }
 
     /// 追加一个条件并绑定参数（clause 中用 {} 占位）
@@ -76,7 +83,9 @@ impl WhereBuilder {
                 Param::Int(i) => q.bind(i),
             };
         }
-        q.fetch_all(pool).await.map_err(|e| format!("查询失败: {}", e))
+        q.fetch_all(pool)
+            .await
+            .map_err(|e| format!("查询失败: {}", e))
     }
 }
 

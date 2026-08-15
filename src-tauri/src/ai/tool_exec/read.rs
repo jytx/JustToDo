@@ -64,23 +64,48 @@ async fn query_tasks(pool: &SqlitePool, args: &Value) -> Value {
     match args.get("due").and_then(|v| v.as_str()) {
         Some("today") => {
             let e = today0 + chrono::Duration::days(1);
-            w.add(&format!("{} >= datetime({{}}, 'localtime')", due_col), Param::Text(fmt(today0)));
-            w.add(&format!("{} < datetime({{}}, 'localtime')", due_col), Param::Text(fmt(e)));
+            w.add(
+                &format!("{} >= datetime({{}}, 'localtime')", due_col),
+                Param::Text(fmt(today0)),
+            );
+            w.add(
+                &format!("{} < datetime({{}}, 'localtime')", due_col),
+                Param::Text(fmt(e)),
+            );
         }
         Some("tomorrow") => {
-            let (s, e) = (today0 + chrono::Duration::days(1), today0 + chrono::Duration::days(2));
-            w.add(&format!("{} >= datetime({{}}, 'localtime')", due_col), Param::Text(fmt(s)));
-            w.add(&format!("{} < datetime({{}}, 'localtime')", due_col), Param::Text(fmt(e)));
+            let (s, e) = (
+                today0 + chrono::Duration::days(1),
+                today0 + chrono::Duration::days(2),
+            );
+            w.add(
+                &format!("{} >= datetime({{}}, 'localtime')", due_col),
+                Param::Text(fmt(s)),
+            );
+            w.add(
+                &format!("{} < datetime({{}}, 'localtime')", due_col),
+                Param::Text(fmt(e)),
+            );
         }
         Some("this_week") => {
-            let monday = today0 - chrono::Duration::days(now.date().weekday().num_days_from_monday() as i64);
+            let monday =
+                today0 - chrono::Duration::days(now.date().weekday().num_days_from_monday() as i64);
             let next_monday = monday + chrono::Duration::days(7);
-            w.add(&format!("{} >= datetime({{}}, 'localtime')", due_col), Param::Text(fmt(monday)));
-            w.add(&format!("{} < datetime({{}}, 'localtime')", due_col), Param::Text(fmt(next_monday)));
+            w.add(
+                &format!("{} >= datetime({{}}, 'localtime')", due_col),
+                Param::Text(fmt(monday)),
+            );
+            w.add(
+                &format!("{} < datetime({{}}, 'localtime')", due_col),
+                Param::Text(fmt(next_monday)),
+            );
         }
         Some("overdue") => {
             w.add_raw("t.due_end_at IS NOT NULL");
-            w.add(&format!("{} < datetime({{}}, 'localtime')", due_col), Param::Text(fmt(now)));
+            w.add(
+                &format!("{} < datetime({{}}, 'localtime')", due_col),
+                Param::Text(fmt(now)),
+            );
         }
         Some("no_date") => w.add_raw("t.due_end_at IS NULL"),
         Some("has_date") => w.add_raw("t.due_end_at IS NOT NULL"),
@@ -93,8 +118,13 @@ async fn query_tasks(pool: &SqlitePool, args: &Value) -> Value {
         w.add(&clause, Param::Text(tag.to_string()));
     }
 
-    let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(50).clamp(1, 100);
-    let base = "SELECT t.*, (SELECT l.name FROM lists l WHERE l.id = t.list_id) AS list_name FROM tasks t";
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(50)
+        .clamp(1, 100);
+    let base =
+        "SELECT t.*, (SELECT l.name FROM lists l WHERE l.id = t.list_id) AS list_name FROM tasks t";
     match w.fetch(pool, base).await {
         Ok(rows) => {
             let items: Vec<Value> = rows.iter().take(limit as usize).map(row_to_brief).collect();
@@ -114,7 +144,11 @@ async fn search_items(pool: &SqlitePool, args: &Value) -> Value {
     };
     let kind = args.get("kind").and_then(|v| v.as_str()).unwrap_or("task");
     let kind = if kind == "note" { "note" } else { "task" };
-    let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(20).clamp(1, 50);
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(20)
+        .clamp(1, 50);
 
     let rows = sqlx::query(
         "SELECT t.*, (SELECT l.name FROM lists l WHERE l.id = t.list_id) AS list_name
@@ -144,9 +178,15 @@ async fn search_items(pool: &SqlitePool, args: &Value) -> Value {
 async fn get_task(pool: &SqlitePool, args: &Value) -> Value {
     // task_id 或 title 二选一定位任务
     let row = if let Some(id) = args.get("task_id").and_then(|v| v.as_str()) {
-        sqlx::query("SELECT * FROM tasks WHERE id = $1").bind(id).fetch_optional(pool).await
+        sqlx::query("SELECT * FROM tasks WHERE id = $1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await
     } else if let Some(title) = args.get("title").and_then(|v| v.as_str()) {
-        sqlx::query("SELECT * FROM tasks WHERE title = $1 LIMIT 1").bind(title).fetch_optional(pool).await
+        sqlx::query("SELECT * FROM tasks WHERE title = $1 LIMIT 1")
+            .bind(title)
+            .fetch_optional(pool)
+            .await
     } else {
         return json!({ "ok": false, "error": "请提供 task_id 或 title" });
     };
@@ -198,7 +238,9 @@ async fn get_task(pool: &SqlitePool, args: &Value) -> Value {
                 }
             })
         }
-        (Err(e), _) | (_, Err(e)) => json!({ "ok": false, "error": format!("查询详情失败: {}", e) }),
+        (Err(e), _) | (_, Err(e)) => {
+            json!({ "ok": false, "error": format!("查询详情失败: {}", e) })
+        }
     }
 }
 
@@ -248,7 +290,8 @@ async fn get_stats(pool: &SqlitePool, args: &Value) -> Value {
     let fmt = |d: chrono::NaiveDateTime| d.format("%Y-%m-%dT%H:%M:%S").to_string();
     let (start, label) = match args.get("range").and_then(|v| v.as_str()) {
         Some("this_week") => {
-            let monday = today0 - chrono::Duration::days(now.date().weekday().num_days_from_monday() as i64);
+            let monday =
+                today0 - chrono::Duration::days(now.date().weekday().num_days_from_monday() as i64);
             (monday, "本周")
         }
         Some("last_7_days") => (today0 - chrono::Duration::days(7), "最近 7 天"),

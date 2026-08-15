@@ -9,7 +9,7 @@
 
 use crate::ai::types::ToolDef;
 
-/// 全部工具定义（P1 先注册只读 5 个；P2 追加写工具）
+/// 全部工具定义（5 读 + 4 写；不提供删除类工具）
 pub fn tool_defs() -> Vec<ToolDef> {
     vec![
         query_tasks_def(),
@@ -17,6 +17,10 @@ pub fn tool_defs() -> Vec<ToolDef> {
         get_task_def(),
         list_folders_def(),
         get_stats_def(),
+        create_task_def(),
+        create_note_def(),
+        update_task_def(),
+        set_task_done_def(),
     ]
 }
 
@@ -93,6 +97,82 @@ fn get_stats_def() -> ToolDef {
             "properties": {
                 "range": { "type": "string", "enum": ["today", "this_week", "last_7_days"], "description": "统计时间范围，默认 today" }
             }
+        }),
+    }
+}
+
+fn create_task_def() -> ToolDef {
+    ToolDef {
+        name: "create_task".into(),
+        description: "创建一个新任务。用户说「帮我建个任务」「安排一下XX」时调用。默认落到收件箱"
+            .into(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "title": { "type": "string", "description": "任务标题（简洁的动作短语）" },
+                "list_name": { "type": "string", "description": "目标清单名；省略则落收件箱" },
+                "due": { "type": "string", "description": "截止时间：today/tomorrow 或 YYYY-MM-DD（全天）或 YYYY-MM-DDTHH:mm（具体时刻）；省略则无截止" },
+                "priority": { "type": "integer", "enum": [0, 1, 2, 3], "description": "优先级：0=无 1=低 2=中 3=高" },
+                "tag_names": { "type": "array", "items": { "type": "string" }, "description": "标签名列表（不存在会自动创建）" },
+                "note_html": { "type": "string", "description": "任务详情正文（HTML 片段），通常省略" },
+                "parent_task_id": { "type": "string", "description": "父任务 id（创建子任务时用，从查询结果获得）" }
+            },
+            "required": ["title"]
+        }),
+    }
+}
+
+fn create_note_def() -> ToolDef {
+    ToolDef {
+        name: "create_note".into(),
+        description: "创建一条笔记（用户想记录想法/灵感/备忘而非待办时用）。默认落到默认笔记本"
+            .into(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "title": { "type": "string", "description": "笔记标题" },
+                "notebook_name": { "type": "string", "description": "目标笔记本名；省略则落默认笔记本" },
+                "content_html": { "type": "string", "description": "笔记正文（HTML 片段，如 <p>...</p>）" },
+                "tag_names": { "type": "array", "items": { "type": "string" }, "description": "标签名列表（不存在会自动创建）" }
+            },
+            "required": ["title"]
+        }),
+    }
+}
+
+fn update_task_def() -> ToolDef {
+    ToolDef {
+        name: "update_task".into(),
+        description:
+            "更新已有任务的字段（改标题/截止时间/优先级/移动清单/换标签）。task_id 从查询结果获得"
+                .into(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "task_id": { "type": "string", "description": "要更新的任务 id" },
+                "title": { "type": "string", "description": "新标题" },
+                "due": { "type": "string", "description": "新截止时间（格式同 create_task）；显式传 null 表示清空截止时间" },
+                "priority": { "type": "integer", "enum": [0, 1, 2, 3], "description": "新优先级" },
+                "list_name": { "type": "string", "description": "移动到该清单" },
+                "tag_names": { "type": "array", "items": { "type": "string" }, "description": "整体替换标签" },
+                "note_html": { "type": "string", "description": "新详情正文（HTML）" }
+            },
+            "required": ["task_id"]
+        }),
+    }
+}
+
+fn set_task_done_def() -> ToolDef {
+    ToolDef {
+        name: "set_task_done".into(),
+        description: "把任务标记为已完成，或把已完成任务重新打开".into(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "task_id": { "type": "string", "description": "任务 id" },
+                "done": { "type": "boolean", "description": "true=完成，false=重新打开，默认 true" }
+            },
+            "required": ["task_id"]
         }),
     }
 }

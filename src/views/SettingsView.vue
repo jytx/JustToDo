@@ -3,7 +3,7 @@
 // 主题/强调色/自动今天/检查间隔统一通过 settings store 持久化
 import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from "vue";
 import { storeToRefs } from "pinia";
-import { useSettingsStore, SETTINGS_KEYS, type StartupView, type AiProvider, type ThemeMode, DEFAULT_PROMPT_SMART, DEFAULT_PROMPT_LIST, DEFAULT_PROMPT_TASKS, DEFAULT_PROMPT_NOTE, DEFAULT_PROMPT_PARSE_TASK, DEFAULT_PROMPT_BREAKDOWN_TASK, DEFAULT_PROMPT_EXTRACT_TASKS, DEFAULT_PROMPT_POLISH } from "@/stores/settings";
+import { useSettingsStore, SETTINGS_KEYS, type StartupView, type AiProvider, type ThemeMode, DEFAULT_PROMPT_AGENT, DEFAULT_PROMPT_SMART, DEFAULT_PROMPT_LIST, DEFAULT_PROMPT_TASKS, DEFAULT_PROMPT_NOTE, DEFAULT_PROMPT_PARSE_TASK, DEFAULT_PROMPT_BREAKDOWN_TASK, DEFAULT_PROMPT_EXTRACT_TASKS, DEFAULT_PROMPT_POLISH } from "@/stores/settings";
 import SelectPopover from "@/components/SelectPopover.vue";
 import Popover from "@/components/Popover.vue";
 import PromptEditor from "@/components/PromptEditor.vue";
@@ -61,6 +61,7 @@ const {
   aiPromptBreakdownTask,
   aiPromptExtractTasks,
   aiPromptPolish,
+  aiPromptAgent,
 } = storeToRefs(settingsStore);
 
 const attachmentPath = ref("");
@@ -1014,6 +1015,23 @@ async function changeAttachmentPath() {
                   v-if="promptExpanded.polish"
                   v-model="aiPromptPolish"
                   @change="(v: string) => settingsStore.setAiPromptPolish(v)"
+                />
+              </div>
+
+              <div class="settings-section__prompt">
+                <div class="settings-section__prompt-head" @click="promptExpanded.agent = !promptExpanded.agent">
+                  <span class="settings-section__prompt-label">
+                    <icon-right v-if="!promptExpanded.agent" :size="12" />
+                    <icon-down v-else :size="12" />
+                    智能对话
+                  </span>
+                  <a-button type="text" size="mini" @click.stop="settingsStore.setAiPromptAgent(DEFAULT_PROMPT_AGENT)">恢复默认</a-button>
+                </div>
+                <p class="settings-section__prompt-hint">AI 助手弹窗「智能对话」—— 多轮工具循环的系统提示词</p>
+                <PromptEditor
+                  v-if="promptExpanded.agent"
+                  v-model="aiPromptAgent"
+                  @change="(v: string) => settingsStore.setAiPromptAgent(v)"
                 />
               </div>
             </a-collapse-item>

@@ -67,6 +67,8 @@ export const SETTINGS_KEYS = {
   aiPromptExtractTasks: "ai_prompt_extract_tasks",
   /** 文本润色提示词 */
   aiPromptPolish: "ai_prompt_polish",
+  /** 智能体（Agent）系统提示词 */
+  aiPromptAgent: "ai_prompt_agent",
 } as const;
 
 /** 每日汇总提醒时点配置 —— 上限 8 个（与 Rust 端 parse_daily_times 一致） */
@@ -197,6 +199,16 @@ export const DEFAULT_PROMPT_EXTRACT_TASKS = `你是一个任务提取助手。�
 示例：
 - 「明天开会讨论Q3规划，小王负责准备数据，周五前发给大家」→
   ①「准备Q3规划会议数据」(负责人小王) ②「发送Q3规划数据给团队」(周五前)`;
+
+export const DEFAULT_PROMPT_AGENT = `你是 JustToDo 待办应用内的 AI 助手，可以通过调用工具查询和操作用户的任务与笔记。
+
+工作准则：
+1. 回答问题前先用工具查询真实数据，不要凭空猜测或编造任务内容
+2. 涉及具体任务时，引用真实的标题、清单名、截止时间
+3. 用户提到「这个清单」等上下文指代时，参考系统提示末尾注入的当前上下文
+4. 时间一律用当前时间锚点换算成绝对日期再表达
+5. 回答用简体中文，简洁友好，适合直接阅读；列表用 Markdown
+6. 查不到数据就如实说明，不要虚构`;
 
 export const DEFAULT_PROMPT_POLISH = `你是一个专业的中文文本润色助手。用户会给你一段文本（可能含 HTML 标签），你需要润色后返回。
 
@@ -357,6 +369,7 @@ export const useSettingsStore = defineStore("settings", () => {
   const aiPromptBreakdownTask = ref<string>(DEFAULT_PROMPT_BREAKDOWN_TASK);
   const aiPromptExtractTasks = ref<string>(DEFAULT_PROMPT_EXTRACT_TASKS);
   const aiPromptPolish = ref<string>(DEFAULT_PROMPT_POLISH);
+  const aiPromptAgent = ref<string>(DEFAULT_PROMPT_AGENT);
 
   const initialized = ref(false);
   const loading = ref(false);
@@ -399,7 +412,7 @@ export const useSettingsStore = defineStore("settings", () => {
     if (initialized.value || loading.value) return;
     loading.value = true;
     try {
-      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw, completionSoundRaw, dueReminderSoundRaw, dailyReminderSoundRaw, panelMaxWidthRaw, aiEnabledRaw, aiProviderRaw, aiBaseUrlRaw, aiApiKeyRaw, aiModelRaw, aiTruncateRaw, aiPromptSmartRaw, aiPromptListRaw, aiPromptTasksRaw, aiPromptNoteRaw, aiPromptParseTaskRaw, aiPromptBreakdownTaskRaw, aiPromptExtractTasksRaw, aiPromptPolishRaw] = await Promise.all([
+      const [themeRaw, accentRaw, dueTodayRaw, intervalRaw, startupRaw, zoomRaw, tplListRaw, tplNoteRaw, dailyTimesRaw, completionSoundRaw, dueReminderSoundRaw, dailyReminderSoundRaw, panelMaxWidthRaw, aiEnabledRaw, aiProviderRaw, aiBaseUrlRaw, aiApiKeyRaw, aiModelRaw, aiTruncateRaw, aiPromptSmartRaw, aiPromptListRaw, aiPromptTasksRaw, aiPromptNoteRaw, aiPromptParseTaskRaw, aiPromptBreakdownTaskRaw, aiPromptExtractTasksRaw, aiPromptPolishRaw, aiPromptAgentRaw] = await Promise.all([
         db.getSetting(SETTINGS_KEYS.themeMode).catch(() => null),
         db.getSetting(SETTINGS_KEYS.accentColor).catch(() => null),
         db.getSetting(SETTINGS_KEYS.newTasksDueToday).catch(() => null),
@@ -427,6 +440,7 @@ export const useSettingsStore = defineStore("settings", () => {
         db.getSetting(SETTINGS_KEYS.aiPromptBreakdownTask).catch(() => null),
         db.getSetting(SETTINGS_KEYS.aiPromptExtractTasks).catch(() => null),
         db.getSetting(SETTINGS_KEYS.aiPromptPolish).catch(() => null),
+        db.getSetting(SETTINGS_KEYS.aiPromptAgent).catch(() => null),
       ]);
 
       const mode = parseThemeMode(themeRaw);
@@ -472,6 +486,7 @@ export const useSettingsStore = defineStore("settings", () => {
       aiPromptBreakdownTask.value = aiPromptBreakdownTaskRaw?.trim() ? aiPromptBreakdownTaskRaw : DEFAULT_PROMPT_BREAKDOWN_TASK;
       aiPromptExtractTasks.value = aiPromptExtractTasksRaw?.trim() ? aiPromptExtractTasksRaw : DEFAULT_PROMPT_EXTRACT_TASKS;
       aiPromptPolish.value = aiPromptPolishRaw?.trim() ? aiPromptPolishRaw : DEFAULT_PROMPT_POLISH;
+      aiPromptAgent.value = aiPromptAgentRaw?.trim() ? aiPromptAgentRaw : DEFAULT_PROMPT_AGENT;
 
       // 先应用强调色（不依赖模式），再应用主题
       theme.setAccentColor(accent);
@@ -770,6 +785,12 @@ async function setAiPromptPolish(v: string): Promise<void> {
   const ok = await persist(SETTINGS_KEYS.aiPromptPolish, v, prev);
   if (!ok) aiPromptPolish.value = prev;
 }
+async function setAiPromptAgent(v: string): Promise<void> {
+  const prev = aiPromptAgent.value;
+  aiPromptAgent.value = v;
+  const ok = await persist(SETTINGS_KEYS.aiPromptAgent, v, prev);
+  if (!ok) aiPromptAgent.value = prev;
+}
 
   /**
    * 监听 Rust 端 zoom-changed 事件
@@ -871,6 +892,7 @@ async function setAiPromptPolish(v: string): Promise<void> {
     aiPromptBreakdownTask,
     aiPromptExtractTasks,
     aiPromptPolish,
+    aiPromptAgent,
     initialized,
     loading,
     error,
@@ -902,6 +924,7 @@ async function setAiPromptPolish(v: string): Promise<void> {
     setAiPromptBreakdownTask,
     setAiPromptExtractTasks,
     setAiPromptPolish,
+    setAiPromptAgent,
     cycleTheme,
     zoomIn,
     zoomOut,
