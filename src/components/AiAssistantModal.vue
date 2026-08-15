@@ -527,8 +527,8 @@ watch(
 }
 
 .ai-assistant__body {
-  min-height: 200px;
-  max-height: 50vh;
+  min-height: 220px;
+  max-height: 60vh;
   overflow-y: auto;
 }
 

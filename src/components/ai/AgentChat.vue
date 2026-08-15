@@ -261,8 +261,8 @@ async function onSelectSession(session: AgentSessionSummary): Promise<void> {
 .agent-chat {
   display: flex;
   flex-direction: row;
-  min-height: 380px;
-  max-height: 62vh;
+  min-height: 440px;
+  max-height: 72vh;
 }
 .agent-chat__main {
   flex: 1;
