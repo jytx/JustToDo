@@ -19,6 +19,42 @@ pub struct StreamChunk {
     pub done: bool,
 }
 
+/// agent 会话事件（多轮工具循环的全过程，经 Channel 推给前端）。
+/// serde tag="type" 序列化为 { type: "delta", ... }，与前端 TS 联合类型一一对应。
+// variant 名故意小写，匹配序列化后的 type 值（与 ChatMessage 同惯例）
+#[derive(Serialize, Clone)]
+#[serde(tag = "type")]
+#[allow(non_camel_case_types)]
+pub enum AgentEvent {
+    /// AI 文本增量（流式逐段推送）
+    delta { text: String },
+    /// 工具开始执行（前端渲染步骤卡片的运行态）。callId camelCase 与前端对齐
+    tool_start {
+        #[serde(rename = "callId")]
+        call_id: String,
+        name: String,
+        args: Value,
+    },
+    /// 工具执行结束（summary 为给用户看的一句话结果）
+    tool_end {
+        #[serde(rename = "callId")]
+        call_id: String,
+        ok: bool,
+        summary: String,
+    },
+    /// 整个会话轮结束（含实际轮数与累计 token）。
+    /// 字段名 camelCase，与前端 TS 类型对齐（其余事件字段本身无下划线）
+    done {
+        rounds: u32,
+        #[serde(rename = "promptTokens")]
+        prompt_tokens: u32,
+        #[serde(rename = "completionTokens")]
+        completion_tokens: u32,
+    },
+    /// 会话出错终止
+    error { message: String },
+}
+
 /// 统一 chat 请求（上层调用方只构造这个）
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct ChatRequest {

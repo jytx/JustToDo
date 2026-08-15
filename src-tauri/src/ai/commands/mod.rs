@@ -11,6 +11,7 @@
 // 公共辅助（load_prompt / priority_label / parse_subtasks_from_content）在本文件。
 // 详见 discuss/2026-07-31-ai-config-design.md 与各分文件头注释。
 
+pub mod agent;
 pub mod breakdown;
 pub mod extract;
 pub mod parse_task;

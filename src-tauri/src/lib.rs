@@ -503,6 +503,8 @@ pub fn run() {
             list_schedule::list_schedule_run_now,
             list_schedule::list_schedule_run_one,
             list_schedule::list_schedule_preview,
+            ai::commands::agent::ai_agent_chat,
+            ai::commands::agent::ai_agent_reset,
             ai::commands::ai_test_connection,
             commands::task_get_completed_in_range,
             ai::commands::summary::ai_summary,

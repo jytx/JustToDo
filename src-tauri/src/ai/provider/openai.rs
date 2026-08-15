@@ -131,7 +131,9 @@ impl AiProvider for OpenAiProvider {
         }
 
         // 逐块读 SSE，按行解析 data: {...delta.content...}
+        // 文本增量与工具调用分片同时累积（agent 循环依赖流式 tool_calls）
         let mut full_content = String::new();
+        let mut tool_accs: Vec<ToolCallAcc> = Vec::new();
         let mut buf = String::new(); // 半行缓冲（SSE 块边界不一定在换行处）
         let mut stream = resp.bytes_stream();
         while let Some(chunk_res) = stream.next().await {
@@ -149,21 +151,48 @@ impl AiProvider for OpenAiProvider {
                         // 流结束
                         return Ok(ChatResponse {
                             content: full_content,
-                            tool_calls: vec![],
+                            tool_calls: finish_tool_accs(tool_accs),
                             usage: None,
                         });
                     }
-                    // 解析 JSON，取 choices[0].delta.content
+                    // 解析 JSON，取 choices[0].delta 的 content / tool_calls
                     if let Ok(val) = serde_json::from_str::<Value>(json_str) {
-                        if let Some(delta) = val
+                        let delta = val
                             .get("choices")
                             .and_then(|c| c.get(0))
-                            .and_then(|c| c.get("delta"))
+                            .and_then(|c| c.get("delta"));
+                        if let Some(text) = delta
                             .and_then(|d| d.get("content"))
                             .and_then(|v| v.as_str())
                         {
-                            full_content.push_str(delta);
-                            on_delta(delta);
+                            full_content.push_str(text);
+                            on_delta(text);
+                        }
+                        // 工具调用分片：按 index 拼装（id/name 首帧出现，arguments 逐片追加）
+                        if let Some(tcs) = delta
+                            .and_then(|d| d.get("tool_calls"))
+                            .and_then(|v| v.as_array())
+                        {
+                            for tc in tcs {
+                                let idx =
+                                    tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                                while tool_accs.len() <= idx {
+                                    tool_accs.push(ToolCallAcc::default());
+                                }
+                                if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
+                                    tool_accs[idx].id = id.to_string();
+                                }
+                                if let Some(func) = tc.get("function") {
+                                    if let Some(name) = func.get("name").and_then(|v| v.as_str()) {
+                                        tool_accs[idx].name = name.to_string();
+                                    }
+                                    if let Some(args) =
+                                        func.get("arguments").and_then(|v| v.as_str())
+                                    {
+                                        tool_accs[idx].args.push_str(args);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -173,10 +202,35 @@ impl AiProvider for OpenAiProvider {
         // 流自然结束（未收到 [DONE]，兼容部分兼容协议）
         Ok(ChatResponse {
             content: full_content,
-            tool_calls: vec![],
+            tool_calls: finish_tool_accs(tool_accs),
             usage: None,
         })
     }
+}
+
+/// 流式工具调用的累积器（OpenAI 按 index 分片下发）
+#[derive(Default)]
+struct ToolCallAcc {
+    id: String,
+    name: String,
+    /// arguments 分片拼接（完整后是 JSON 字符串）
+    args: String,
+}
+
+/// 把累积器转成统一 ToolCall（arguments parse 失败用空对象兜底；无名调用丢弃）
+fn finish_tool_accs(accs: Vec<ToolCallAcc>) -> Vec<ToolCall> {
+    accs.into_iter()
+        .filter(|a| !a.name.is_empty())
+        .map(|a| ToolCall {
+            id: if a.id.is_empty() {
+                format!("call_{}", a.name)
+            } else {
+                a.id
+            },
+            name: a.name,
+            arguments: serde_json::from_str(&a.args).unwrap_or(json!({})),
+        })
+        .collect()
 }
 
 fn msg_to_openai(m: &ChatMessage) -> Value {

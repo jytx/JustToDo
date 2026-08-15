@@ -163,6 +163,7 @@ impl AiProvider for AnthropicProvider {
         //   data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"..."}}
         // text 增量在 content_block_delta 的 delta.text 里；message_stop 表示结束。
         let mut full_content = String::new();
+        let mut tool_accs: Vec<ToolUseAcc> = Vec::new();
         let mut buf = String::new();
         let mut cur_event = String::new(); // 当前 event 类型
         let mut stream = resp.bytes_stream();
@@ -183,7 +184,7 @@ impl AiProvider for AnthropicProvider {
                 if let Some(ev) = line.strip_prefix("event: ") {
                     cur_event = ev.trim().to_string();
                 } else if let Some(json_str) = line.strip_prefix("data: ") {
-                    // 只在 content_block_delta 事件里取文本增量
+                    // 只在 content_block_delta 事件里取文本增量 / 工具参数分片
                     if cur_event == "content_block_delta" {
                         if let Ok(val) = serde_json::from_str::<Value>(json_str) {
                             if let Some(text) = val
@@ -194,13 +195,54 @@ impl AiProvider for AnthropicProvider {
                                 full_content.push_str(text);
                                 on_delta(text);
                             }
+                            // 工具调用参数分片：input_json_delta.partial_json 按 index 追加
+                            let delta_type = val
+                                .get("delta")
+                                .and_then(|d| d.get("type"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if delta_type == "input_json_delta" {
+                                let idx =
+                                    val.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                                let partial = val
+                                    .get("delta")
+                                    .and_then(|d| d.get("partial_json"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                if let Some(acc) = tool_accs.iter_mut().find(|a| a.index == idx) {
+                                    acc.args.push_str(partial);
+                                }
+                            }
+                        }
+                    }
+                    // content_block_start：tool_use 块开头，注册累积器（id/name 在此处出现）
+                    if cur_event == "content_block_start" {
+                        if let Ok(val) = serde_json::from_str::<Value>(json_str) {
+                            let block = val.get("content_block").cloned().unwrap_or(json!({}));
+                            if block.get("type").and_then(|v| v.as_str()) == Some("tool_use") {
+                                tool_accs.push(ToolUseAcc {
+                                    index: val.get("index").and_then(|v| v.as_u64()).unwrap_or(0)
+                                        as usize,
+                                    id: block
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    name: block
+                                        .get("name")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    args: String::new(),
+                                });
+                            }
                         }
                     }
                     // message_stop 事件 → 流结束
                     if cur_event == "message_stop" {
                         return Ok(ChatResponse {
                             content: full_content,
-                            tool_calls: vec![],
+                            tool_calls: finish_tool_use_accs(tool_accs),
                             usage: None,
                         });
                     }
@@ -211,10 +253,35 @@ impl AiProvider for AnthropicProvider {
         // 流自然结束
         Ok(ChatResponse {
             content: full_content,
-            tool_calls: vec![],
+            tool_calls: finish_tool_use_accs(tool_accs),
             usage: None,
         })
     }
+}
+
+/// 流式工具调用的累积器（Anthropic 按 content block index 组织）
+struct ToolUseAcc {
+    index: usize,
+    id: String,
+    name: String,
+    /// partial_json 分片拼接（完整后是 JSON 字符串）
+    args: String,
+}
+
+/// 把累积器转成统一 ToolCall（arguments parse 失败用空对象兜底；无名调用丢弃）
+fn finish_tool_use_accs(accs: Vec<ToolUseAcc>) -> Vec<ToolCall> {
+    accs.into_iter()
+        .filter(|a| !a.name.is_empty())
+        .map(|a| ToolCall {
+            id: if a.id.is_empty() {
+                format!("toolu_{}", a.name)
+            } else {
+                a.id
+            },
+            name: a.name,
+            arguments: serde_json::from_str(&a.args).unwrap_or(json!({})),
+        })
+        .collect()
 }
 
 fn msg_to_anthropic(m: &ChatMessage) -> Value {

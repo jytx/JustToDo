@@ -22,6 +22,7 @@ import { copyText } from "@/api/db";
 import { LIST_COLORS } from "@/utils/colors";
 import type { Priority } from "@/types";
 import AiBreakdownPreview from "@/components/AiBreakdownPreview.vue";
+import AgentChat from "@/components/ai/AgentChat.vue";
 import SelectPopover from "@/components/SelectPopover.vue";
 
 const props = defineProps<{ visible: boolean }>();
@@ -43,6 +44,7 @@ interface AiTool {
 }
 
 const TOOLS: AiTool[] = [
+  { value: "agent", label: "智能对话", desc: "像助手一样自由对话，可查询任务、统计分析、管理待办", needInput: false, multiline: false },
   { value: "daily", label: "每日小结", desc: "汇总今天完成的任务和待办", needInput: false, multiline: false },
   { value: "weekly", label: "周报", desc: "汇总本周任务完成情况", needInput: false, multiline: false },
   { value: "list", label: "总结当前清单", desc: "总结当前所在清单的所有任务", needInput: false, multiline: false },
@@ -52,7 +54,7 @@ const TOOLS: AiTool[] = [
 ];
 
 /** 当前选中的工具 */
-const selectedTool = ref<string>("daily");
+const selectedTool = ref<string>("agent");
 /** 工具下拉选项（SelectPopover 需要 { value, label } 结构） */
 const toolOptions = computed(() =>
   TOOLS.map((t) => ({ value: t.value, label: t.label })),
@@ -136,6 +138,8 @@ async function execute(): Promise<void> {
   content.value = "";
 
   const tool = currentTool.value;
+  // 智能对话由 AgentChat 组件自治（多轮循环 + 事件流），不走单轮执行流
+  if (tool.value === "agent") return;
   try {
     switch (tool.value) {
       case "daily":
@@ -339,7 +343,7 @@ watch(
   () => props.visible,
   (v) => {
     if (v) {
-      selectedTool.value = taskStore.aiSelectedTool || "daily";
+      selectedTool.value = taskStore.aiSelectedTool || "agent";
       content.value = "";
       errorMsg.value = "";
       userInput.value = "";
@@ -386,10 +390,13 @@ watch(
       <!-- 工具描述 -->
       <p class="ai-assistant__tool-desc">{{ currentTool.desc }}</p>
 
+      <!-- 智能对话（多轮工具循环，独立组件渲染） -->
+      <AgentChat v-if="currentTool.value === 'agent'" />
+
       <!-- 输入框（需要输入的工具才显示，单独一行） -->
       <!-- 多行（extract 粘贴长文本）用 textarea；单行（create 短指令）用 input -->
       <a-textarea
-        v-if="currentTool.needInput && currentTool.multiline"
+        v-if="currentTool.value !== 'agent' && currentTool.needInput && currentTool.multiline"
         v-model="userInput"
         :placeholder="currentTool.desc"
         :auto-size="{ minRows: 3, maxRows: 8 }"
@@ -397,7 +404,7 @@ watch(
         style="margin-bottom: 16px"
       />
       <a-input
-        v-else-if="currentTool.needInput"
+        v-else-if="currentTool.value !== 'agent' && currentTool.needInput"
         v-model="userInput"
         :placeholder="currentTool.desc"
         allow-clear
@@ -405,8 +412,8 @@ watch(
         @keydown.enter="execute"
       />
 
-      <!-- 结果区 -->
-      <div class="ai-assistant__body">
+      <!-- 结果区（智能对话模式由 AgentChat 全权渲染，隐藏单轮结果区） -->
+      <div v-if="currentTool.value !== 'agent'" class="ai-assistant__body">
         <!-- 提取任务预览（extract 工具，嵌入 AiBreakdownPreview 组件） -->
         <AiBreakdownPreview
           v-if="extractPreview"
