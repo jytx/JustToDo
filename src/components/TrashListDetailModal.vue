@@ -158,6 +158,7 @@ const rootTypeLabel = computed(() => {
 <template>
   <a-modal
     :visible="visible"
+    draggable
     :width="520"
     :footer="false"
     :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"

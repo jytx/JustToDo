@@ -79,6 +79,7 @@ function getDueInfo(dueStartAt: string | null, dueEndAt: string | null) {
 <template>
   <a-modal
     :visible="searchStore.open"
+    draggable
     @update:visible="(v) => !v && searchStore.hide()"
     :width="560"
     :mask-closable="true"

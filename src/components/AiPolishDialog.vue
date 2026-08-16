@@ -109,6 +109,7 @@ onBeforeUnmount(() => {
 <template>
   <a-modal
     :visible="visible"
+    draggable
     :width="1200"
     :footer="false"
     :mask-closable="!loading"

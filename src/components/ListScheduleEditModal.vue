@@ -131,6 +131,7 @@ function onKeydownEnter(e: KeyboardEvent) {
 <template>
   <a-modal
     :visible="visible"
+    draggable
     :width="440"
     :footer="false"
     :mask-closable="true"

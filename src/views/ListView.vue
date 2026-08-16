@@ -597,6 +597,7 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
     <!-- 新建分组对话框 -->
     <a-modal
       :visible="newGroupVisible"
+      draggable
       :width="360"
       :footer="false"
       :mask-closable="true"
@@ -620,6 +621,7 @@ async function onAdd(payload: { title: string; priority: import("@/types").Prior
     <!-- 重命名分组对话框 -->
     <a-modal
       :visible="renameGroupVisible"
+      draggable
       :width="360"
       :footer="false"
       :mask-closable="true"

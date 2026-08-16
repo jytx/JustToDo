@@ -363,6 +363,7 @@ watch(
 <template>
   <a-modal
     :visible="visible"
+    draggable
     :width="800"
     :footer="false"
     :mask-closable="true"

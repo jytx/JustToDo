@@ -1431,6 +1431,7 @@ onBeforeUnmount(() => {
       <!-- 链接编辑弹窗：修改标题文字与 URL -->
       <a-modal
         :visible="linkEditorVisible"
+        draggable
         title="编辑链接"
         :width="420"
         @cancel="linkEditorVisible = false"

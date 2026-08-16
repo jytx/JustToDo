@@ -104,6 +104,7 @@ function onKeyDown(e: KeyboardEvent): void {
 <template>
   <a-modal
     :visible="visible"
+    draggable
     :width="600"
     :mask-closable="true"
     :footer="false"

@@ -96,6 +96,7 @@ const isNote = computed(() => task.value?.kind === "note");
 <template>
   <a-modal
     :visible="visible"
+    draggable
     :width="560"
     :footer="false"
     :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"

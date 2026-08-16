@@ -834,6 +834,7 @@ useShortcuts({
     <!-- 新建分组对话框（顶栏排序按钮后的入口） -->
     <a-modal
       :visible="newGroupVisible"
+      draggable
       :width="360"
       :footer="false"
       :mask-closable="true"

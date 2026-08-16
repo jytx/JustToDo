@@ -165,6 +165,7 @@ async function onApply() {
 <template>
   <a-modal
     :visible="visible"
+    draggable
     :title="isEdit ? '编辑模板' : '新建模板'"
     :width="640"
     :footer="false"

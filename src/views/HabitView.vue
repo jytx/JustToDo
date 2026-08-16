@@ -609,6 +609,7 @@ function selectHabit(id: string) {
     <!-- 新建/编辑习惯弹窗（完整表单：图标 + 名称 + 5 个属性行） -->
     <a-modal
       v-model:visible="showCreateDialog"
+      draggable
       :width="480"
       :footer="false"
       :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"

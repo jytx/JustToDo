@@ -298,6 +298,7 @@ function onKeyDown(e: KeyboardEvent) {
 <template>
   <a-modal
     :visible="open"
+    draggable
     @update:visible="(v) => (open = v)"
     :width="440"
     :footer="false"

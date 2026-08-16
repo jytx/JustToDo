@@ -502,6 +502,7 @@ async function onImagePicked(e: Event) {
   <!-- 链接弹窗 -->
   <a-modal
     :visible="linkDialogVisible"
+    draggable
     :title="linkIsEditing ? '编辑链接' : '插入链接'"
     :ok-text="linkIsEditing ? '更新' : '插入'"
     :cancel-text="'取消'"

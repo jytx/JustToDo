@@ -1803,6 +1803,7 @@ onMounted(async () => {
   <!-- 新建清单弹窗（QuickAdd 风格：裸 input + 属性 trigger + 回车提交） -->
   <a-modal
     v-model:visible="showCreateDialog"
+    draggable
     :width="440"
     :footer="false"
     :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
@@ -1859,6 +1860,7 @@ onMounted(async () => {
   <!-- 编辑清单/目录弹窗（QuickAdd 风格：裸 input + 属性 trigger + 回车提交） -->
   <a-modal
     v-model:visible="showEditDialog"
+    draggable
     :width="440"
     :footer="false"
     :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
@@ -1901,6 +1903,7 @@ onMounted(async () => {
   <!-- 新建标签弹窗（QuickAdd 风格） -->
   <a-modal
     v-model:visible="showCreateTagDialog"
+    draggable
     :width="440"
     :footer="false"
     :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
@@ -1940,6 +1943,7 @@ onMounted(async () => {
   <!-- 编辑标签弹窗（QuickAdd 风格，与新建标签一致） -->
   <a-modal
     v-model:visible="showEditTagDialog"
+    draggable
     :width="440"
     :footer="false"
     :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"
@@ -1979,6 +1983,7 @@ onMounted(async () => {
   <!-- 新建子目录弹窗（QuickAdd 风格：仅名字输入 + 回车创建） -->
   <a-modal
     v-model:visible="showCreateSubFolderDialog"
+    draggable
     :width="440"
     :footer="false"
     :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"

@@ -64,6 +64,7 @@ async function confirm() {
 <template>
   <a-modal
     :visible="visible"
+    draggable
     title="重命名模板"
     :width="400"
     :footer="false"

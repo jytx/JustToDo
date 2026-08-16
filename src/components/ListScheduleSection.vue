@@ -241,6 +241,7 @@ async function onPreview() {
     <!-- 预览结果弹窗 -->
     <a-modal
       :visible="previewVisible"
+      draggable
       :width="520"
       :footer="false"
       :mask-style="{ backgroundColor: 'rgba(0,0,0,0.35)' }"

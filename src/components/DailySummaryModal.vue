@@ -265,6 +265,7 @@ watch(
 <template>
   <a-modal
     :visible="innerVisible"
+    draggable
     :width="560"
     :footer="false"
     :mask-closable="true"
