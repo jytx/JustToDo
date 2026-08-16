@@ -20,6 +20,7 @@ import { useTrashStore } from "@/stores/trash";
 import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
+import TrashTaskDetailModal from "@/components/TrashTaskDetailModal.vue";
 
 const trashStore = useTrashStore();
 const listStore = useListStore();
@@ -28,6 +29,18 @@ const taskStore = useTaskStore();
 onMounted(() => {
   void trashStore.load();
 });
+
+// ─── 只读详情（任务/笔记条目点击查看） ─────────────────────
+
+const detailVisible = ref(false);
+const detailTaskId = ref<string | null>(null);
+
+/** 任务/笔记条目可点开只读详情；清单/目录为容器聚合视图，暂不提供详情 */
+function openDetail(item: TrashItem): void {
+  if (item.kind !== "task" && item.kind !== "note") return;
+  detailTaskId.value = item.id;
+  detailVisible.value = true;
+}
 
 // ─── 展示映射（类型 → 图标/文字） ─────────────────────────
 
@@ -132,7 +145,12 @@ const isEmpty = computed(() => !trashStore.loading && trashStore.items.length ==
     <div v-if="trashStore.items.length > 0" class="trash-section__list">
       <div v-for="item in trashStore.items" :key="item.id" class="trash-section__item">
         <component :is="KIND_META[item.kind].icon" :size="16" class="trash-section__item-icon" />
-        <div class="trash-section__item-main">
+        <div
+          class="trash-section__item-main"
+          :class="{ 'trash-section__item-main--clickable': item.kind === 'task' || item.kind === 'note' }"
+          :title="item.kind === 'task' || item.kind === 'note' ? '点击查看详情' : undefined"
+          @click="openDetail(item)"
+        >
           <div class="trash-section__item-name" :title="item.name">{{ item.name }}</div>
           <div class="trash-section__item-meta">
             <span>{{ originText(item) }}</span>
@@ -190,6 +208,9 @@ const isEmpty = computed(() => !trashStore.loading && trashStore.items.length ==
         将<strong>永久删除回收站中的 {{ trashStore.items.length }} 项内容</strong>，<strong>此操作无法撤销</strong>。
       </template>
     </ConfirmDialog>
+
+    <!-- 任务/笔记只读详情弹窗 -->
+    <TrashTaskDetailModal v-model:visible="detailVisible" :task-id="detailTaskId" />
   </div>
 </template>
 
@@ -244,6 +265,16 @@ const isEmpty = computed(() => !trashStore.loading && trashStore.items.length ==
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* 任务/笔记条目可点开只读详情 */
+.trash-section__item-main--clickable {
+  cursor: pointer;
+}
+
+.trash-section__item-main--clickable:hover .trash-section__item-name {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .trash-section__item-name {

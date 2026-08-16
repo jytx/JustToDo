@@ -18,8 +18,8 @@ use serde_json::Value;
 use sqlx::{Row, SqlitePool};
 use tauri::{AppHandle, State};
 
-use crate::commands::{now, CmdResult};
-use crate::models::TrashItem;
+use crate::commands::{now, row_to_task, CmdResult};
+use crate::models::{TrashItem, TrashTaskDetail};
 
 // ─── 软删除（task_delete / list_delete 委托） ───────────────────
 
@@ -150,6 +150,69 @@ pub async fn trash_list_items(pool: State<'_, SqlitePool>) -> CmdResult<Vec<Tras
     // 本地字面量字典序 = 时间序，倒序 = 最近删除在前
     items.sort_by(|a, b| b.deleted_at.cmp(&a.deleted_at));
     Ok(items)
+}
+
+// ─── 只读详情 ────────────────────────────────────────────
+
+/// 获取回收站任务/笔记的只读详情：完整任务 + 整棵后代子树（平铺，含 parent_id）
+/// + 标签列表。与常规查询不同，后代**不过滤** deleted_at —— 回收站场景下
+/// 后代与根一起被标记删除，需完整展示（回收站列表只显示顶层项，
+/// 子内容通过本命令在详情弹窗查看）。
+#[tauri::command]
+pub async fn trash_get_task_detail(
+    pool: State<'_, SqlitePool>,
+    id: String,
+) -> CmdResult<TrashTaskDetail> {
+    let row = sqlx::query("SELECT * FROM tasks WHERE id = $1")
+        .bind(&id)
+        .fetch_optional(pool.inner())
+        .await
+        .map_err(|e| format!("查询任务失败: {}", e))?;
+    let task = match row {
+        Some(r) => row_to_task(&r),
+        None => return Err("任务不存在".to_string()),
+    };
+
+    // 整棵后代子树（UNION 去重防脏数据成环），按层级+排序展示
+    let children = sqlx::query(
+        "WITH RECURSIVE subtree(id) AS (
+             SELECT id FROM tasks WHERE parent_id = $1
+             UNION
+             SELECT t.id FROM tasks t JOIN subtree s ON t.parent_id = s.id
+         )
+         SELECT * FROM tasks WHERE id IN (SELECT id FROM subtree)
+         ORDER BY sort_order ASC, created_at ASC",
+    )
+    .bind(&id)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("查询子任务失败: {}", e))?;
+
+    // 标签（与 task_get_tags 同序：任务内局部顺序优先）
+    let tags = sqlx::query(
+        "SELECT t.id, t.name, t.created_at, t.position, t.color FROM tags t
+         JOIN task_tags tt ON t.id = tt.tag_id
+         WHERE tt.task_id = $1 ORDER BY tt.sort_order ASC, t.created_at ASC",
+    )
+    .bind(&id)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("查询标签失败: {}", e))?;
+
+    Ok(TrashTaskDetail {
+        task,
+        children: children.iter().map(row_to_task).collect(),
+        tags: tags
+            .iter()
+            .map(|r| crate::models::Tag {
+                id: r.get("id"),
+                name: r.get("name"),
+                created_at: r.get("created_at"),
+                position: r.get("position"),
+                color: r.get("color"),
+            })
+            .collect(),
+    })
 }
 
 // ─── 恢复 ────────────────────────────────────────────────

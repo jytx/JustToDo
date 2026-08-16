@@ -484,6 +484,17 @@ export async function emptyTrash(): Promise<void> {
   await invoke<void>("trash_empty");
 }
 
+/** 回收站任务/笔记只读详情（含整棵后代子树与标签；子树不过滤 deleted_at） */
+export async function getTrashTaskDetail(
+  id: string,
+): Promise<{ task: Task; children: Task[]; tags: Tag[] }> {
+  const r = await invoke<{ task: RustTask; children: RustTask[]; tags: Tag[] }>(
+    "trash_get_task_detail",
+    { id },
+  );
+  return { task: mapTask(r.task), children: r.children.map(mapTask), tags: r.tags };
+}
+
 /** 批量更新任务排序 */
 export async function reorderTasks(items: [string, number][]): Promise<void> {
   await invoke<void>("task_reorder", { items });

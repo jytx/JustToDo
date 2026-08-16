@@ -187,6 +187,16 @@ pub struct TrashItem {
     pub has_children: bool,
 }
 
+/// 回收站任务/笔记详情（trash_get_task_detail 返回）。
+/// 完整任务 + 整棵后代子任务树（平铺含 parent_id，前端组树）+ 标签列表。
+/// 子树不过滤 deleted_at —— 回收站场景下后代与根一起被标记，需完整展示。
+#[derive(Debug, Serialize)]
+pub struct TrashTaskDetail {
+    pub task: Task,
+    pub children: Vec<Task>,
+    pub tags: Vec<Tag>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Tag {
     pub id: String,
