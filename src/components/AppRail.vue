@@ -177,9 +177,10 @@ function openAgentChat(): void {
   color: var(--jt-primary);
 }
 
-/* 底部入口：推到 flex 列末端（贴导航条底边） */
+/* 底部入口：推到 flex 列末端，底部留出间隙不贴边 */
 .app-rail__btn--bottom {
   margin-top: auto;
+  margin-bottom: 14px;
 }
 
 .app-rail__badge {
