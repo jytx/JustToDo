@@ -464,6 +464,7 @@ pub fn run() {
             trash::trash_purge,
             trash::trash_empty,
             trash::trash_get_task_detail,
+            trash::trash_get_list_detail,
             commands::get_setting,
             commands::set_setting,
             commands::tag_get_all,

@@ -93,9 +93,9 @@ export type SmartViewId = "today" | "upcoming" | "all";
 
 // ─── 清单操作 ────────────────────────────────────────────
 
-export async function getLists(): Promise<List[]> {
-  const rows = await invoke<TaskList[]>("list_get_all");
-  return rows.map((r) => ({
+/** TaskList（Rust 响应）→ 前端 List 的统一映射（getLists/createList/回收站详情共用） */
+function mapList(r: TaskList): List {
+  return {
     id: r.id,
     name: r.name,
     color: r.color,
@@ -106,7 +106,12 @@ export async function getLists(): Promise<List[]> {
     archived: !!r.archived,
     kind: r.kind,
     deletedAt: r.deleted_at,
-  }));
+  };
+}
+
+export async function getLists(): Promise<List[]> {
+  const rows = await invoke<TaskList[]>("list_get_all");
+  return rows.map(mapList);
 }
 
 export async function createList(params: {
@@ -124,18 +129,7 @@ export async function createList(params: {
     isFolder: params.isFolder ?? false,
     kind: params.kind ?? "task",
   });
-  return {
-    id: r.id,
-    name: r.name,
-    color: r.color,
-    position: r.position,
-    createdAt: r.created_at,
-    parentId: r.parent_id,
-    isFolder: r.is_folder,
-    archived: !!r.archived,
-    kind: r.kind,
-    deletedAt: r.deleted_at,
-  };
+  return mapList(r);
 }
 
 export async function deleteList(id: string): Promise<void> {
@@ -497,6 +491,17 @@ export async function getTrashTaskDetail(
     { id },
   );
   return { task: mapTask(r.task), children: r.children.map(mapTask), tags: r.tags };
+}
+
+/** 回收站清单/目录/笔记本只读详情（后代清单平铺 + 子树内全部任务，均含删除态） */
+export async function getTrashListDetail(
+  id: string,
+): Promise<{ list: List; lists: List[]; tasks: Task[] }> {
+  const r = await invoke<{ list: TaskList; lists: TaskList[]; tasks: RustTask[] }>(
+    "trash_get_list_detail",
+    { id },
+  );
+  return { list: mapList(r.list), lists: r.lists.map(mapList), tasks: r.tasks.map(mapTask) };
 }
 
 /** 批量更新任务排序 */

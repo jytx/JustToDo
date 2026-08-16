@@ -97,6 +97,22 @@ pub(crate) fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
 
 // ─── 清单操作 ────────────────────────────────────────────
 
+/// 从行数据提取 TaskList（trash 模块的清单详情命令复用）
+pub(crate) fn row_to_list(row: &sqlx::sqlite::SqliteRow) -> TaskList {
+    TaskList {
+        id: row.get("id"),
+        name: row.get("name"),
+        color: row.get("color"),
+        position: row.get("position"),
+        created_at: row.get("created_at"),
+        parent_id: row.get("parent_id"),
+        is_folder: row.get::<i32, _>("is_folder") != 0,
+        archived: row.get::<i32, _>("archived") != 0,
+        kind: row.try_get("kind").unwrap_or_else(|_| "task".to_string()),
+        deleted_at: row.try_get("deleted_at").ok().flatten(),
+    }
+}
+
 #[tauri::command]
 pub async fn list_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<TaskList>> {
     // 含已删除（deleted_at 非空）的清单：与 archived 同模式，后端全量返回、前端筛分
@@ -107,21 +123,7 @@ pub async fn list_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<Ta
     .await
     .map_err(|e| format!("查询清单失败: {}", e))?;
 
-    Ok(rows
-        .iter()
-        .map(|r| TaskList {
-            id: r.get("id"),
-            name: r.get("name"),
-            color: r.get("color"),
-            position: r.get("position"),
-            created_at: r.get("created_at"),
-            parent_id: r.get("parent_id"),
-            is_folder: r.get::<i32, _>("is_folder") != 0,
-            archived: r.get::<i32, _>("archived") != 0,
-            kind: r.try_get("kind").unwrap_or_else(|_| "task".to_string()),
-            deleted_at: r.try_get("deleted_at").ok().flatten(),
-        })
-        .collect())
+    Ok(rows.iter().map(row_to_list).collect())
 }
 
 #[tauri::command]

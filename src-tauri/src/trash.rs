@@ -18,8 +18,8 @@ use serde_json::Value;
 use sqlx::{Row, SqlitePool};
 use tauri::{AppHandle, State};
 
-use crate::commands::{now, row_to_task, CmdResult};
-use crate::models::{TrashItem, TrashTaskDetail};
+use crate::commands::{now, row_to_list, row_to_task, CmdResult};
+use crate::models::{TrashItem, TrashListDetail, TrashTaskDetail};
 
 // ─── 软删除（task_delete / list_delete 委托） ───────────────────
 
@@ -215,9 +215,62 @@ pub async fn trash_get_task_detail(
     })
 }
 
-// ─── 恢复 ────────────────────────────────────────────────
+/// 获取回收站清单/目录/笔记本的只读详情：根条目 + 后代清单/目录平铺
+/// + 子树内全部任务（含任务子层级，任务与祖先同 list_id，直接按 list_id 收集）。
+/// 回收站列表只显示删除树的根，子内容通过本命令在详情弹窗树形查看。
+#[tauri::command]
+pub async fn trash_get_list_detail(
+    pool: State<'_, SqlitePool>,
+    id: String,
+) -> CmdResult<TrashListDetail> {
+    let row = sqlx::query("SELECT * FROM lists WHERE id = $1")
+        .bind(&id)
+        .fetch_optional(pool.inner())
+        .await
+        .map_err(|e| format!("查询清单失败: {}", e))?;
+    let list = match row {
+        Some(r) => row_to_list(&r),
+        None => return Err("清单不存在".to_string()),
+    };
 
-/// 恢复回收站条目（整棵子树）。
+    // 后代清单/目录（不含自身；回收站场景下与根一起被标记）
+    let lists = sqlx::query(
+        "WITH RECURSIVE ltree(id) AS (
+             SELECT id FROM lists WHERE parent_id = $1
+             UNION
+             SELECT l.id FROM lists l JOIN ltree s ON l.parent_id = s.id
+         )
+         SELECT * FROM lists WHERE id IN (SELECT id FROM ltree)
+         ORDER BY position ASC, created_at ASC",
+    )
+    .bind(&id)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("查询子清单失败: {}", e))?;
+
+    // 子树清单（自身 + 后代）下的全部任务，按清单+排序返回，前端按 parent_id 组树
+    let tasks = sqlx::query(
+        "WITH RECURSIVE ltree(id) AS (
+             SELECT id FROM lists WHERE id = $1
+             UNION ALL
+             SELECT l.id FROM lists l JOIN ltree s ON l.parent_id = s.id
+         )
+         SELECT * FROM tasks WHERE list_id IN (SELECT id FROM ltree)
+         ORDER BY list_id, sort_order ASC, created_at ASC",
+    )
+    .bind(&id)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| format!("查询任务失败: {}", e))?;
+
+    Ok(TrashListDetail {
+        list,
+        lists: lists.iter().map(row_to_list).collect(),
+        tasks: tasks.iter().map(row_to_task).collect(),
+    })
+}
+
+// ─── 恢复 ────────────────────────────────────────────────/// 恢复回收站条目（整棵子树）。
 /// kind 为大类：'task'（任务/笔记）或 'list'（清单/笔记本/目录）。
 /// 防御兜底（正常流程不会触发，顶层项定义已保证父级健在）：
 /// - 任务的 parent 在回收站 → 提升为根任务（parent_id 置 NULL）

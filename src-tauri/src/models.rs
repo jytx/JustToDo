@@ -197,6 +197,16 @@ pub struct TrashTaskDetail {
     pub tags: Vec<Tag>,
 }
 
+/// 回收站清单/目录详情（trash_get_list_detail 返回）。
+/// 根条目 + 后代清单/目录平铺（含 parent_id/is_folder，前端组树）+ 子树内全部任务。
+/// 回收站列表只显示删除树的根，子内容（子目录/子清单/任务）通过本命令查看。
+#[derive(Debug, Serialize)]
+pub struct TrashListDetail {
+    pub list: TaskList,
+    pub lists: Vec<TaskList>,
+    pub tasks: Vec<Task>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Tag {
     pub id: String,

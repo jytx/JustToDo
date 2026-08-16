@@ -28,6 +28,8 @@ const task = ref<Task | null>(null);
 const children = ref<Task[]>([]);
 const tags = ref<Tag[]>([]);
 
+// immediate：组件可能经 v-if 按需挂载（打开时初始即 visible=true），
+// 无变化可监听，需立即执行一次；挂载于关闭态时 open=false 直接跳过
 watch(
   () => [props.visible, props.taskId] as const,
   async ([open, id]) => {
@@ -46,6 +48,7 @@ watch(
       loading.value = false;
     }
   },
+  { immediate: true },
 );
 
 /** 缩进行的子任务树：平铺列表 → 按 parentId 组树 → DFS 展平带 depth */

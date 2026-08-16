@@ -21,6 +21,7 @@ import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import TrashTaskDetailModal from "@/components/TrashTaskDetailModal.vue";
+import TrashListDetailModal from "@/components/TrashListDetailModal.vue";
 
 const trashStore = useTrashStore();
 const listStore = useListStore();
@@ -30,15 +31,21 @@ onMounted(() => {
   void trashStore.load();
 });
 
-// ─── 只读详情（任务/笔记条目点击查看） ─────────────────────
+// ─── 只读详情（条目点击查看：任务/笔记 → 任务弹窗；清单/目录/笔记本 → 树形弹窗） ──
 
 const detailVisible = ref(false);
 const detailTaskId = ref<string | null>(null);
+const detailListId = ref<string | null>(null);
+/** 当前打开的详情类别（决定渲染哪个弹窗） */
+const detailKind = ref<"task" | "list">("task");
 
-/** 任务/笔记条目可点开只读详情；清单/目录为容器聚合视图，暂不提供详情 */
 function openDetail(item: TrashItem): void {
-  if (item.kind !== "task" && item.kind !== "note") return;
-  detailTaskId.value = item.id;
+  detailKind.value = item.kind === "task" || item.kind === "note" ? "task" : "list";
+  if (detailKind.value === "task") {
+    detailTaskId.value = item.id;
+  } else {
+    detailListId.value = item.id;
+  }
   detailVisible.value = true;
 }
 
@@ -146,9 +153,8 @@ const isEmpty = computed(() => !trashStore.loading && trashStore.items.length ==
       <div v-for="item in trashStore.items" :key="item.id" class="trash-section__item">
         <component :is="KIND_META[item.kind].icon" :size="16" class="trash-section__item-icon" />
         <div
-          class="trash-section__item-main"
-          :class="{ 'trash-section__item-main--clickable': item.kind === 'task' || item.kind === 'note' }"
-          :title="item.kind === 'task' || item.kind === 'note' ? '点击查看详情' : undefined"
+          class="trash-section__item-main trash-section__item-main--clickable"
+          :title="item.kind === 'task' || item.kind === 'note' ? '点击查看详情' : '点击查看子内容'"
           @click="openDetail(item)"
         >
           <div class="trash-section__item-name" :title="item.name">{{ item.name }}</div>
@@ -209,8 +215,13 @@ const isEmpty = computed(() => !trashStore.loading && trashStore.items.length ==
       </template>
     </ConfirmDialog>
 
-    <!-- 任务/笔记只读详情弹窗 -->
-    <TrashTaskDetailModal v-model:visible="detailVisible" :task-id="detailTaskId" />
+    <!-- 只读详情弹窗（任务/笔记 → 属性+子任务+富文本；清单/目录/笔记本 → 子内容树） -->
+    <TrashTaskDetailModal
+      v-if="detailKind === 'task'"
+      v-model:visible="detailVisible"
+      :task-id="detailTaskId"
+    />
+    <TrashListDetailModal v-else v-model:visible="detailVisible" :list-id="detailListId" />
   </div>
 </template>
 
