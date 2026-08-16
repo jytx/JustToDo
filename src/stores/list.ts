@@ -6,6 +6,7 @@ import { defineStore } from "pinia";
 import { ref, reactive, computed } from "vue";
 import type { List, TaskKind } from "@/types";
 import * as db from "@/api/db";
+import { useTrashStore } from "@/stores/trash";
 
 /** 带子节点的树形清单 */
 export interface ListTreeNode extends List {
@@ -152,10 +153,14 @@ export const useListStore = defineStore("list", () => {
     [...lists.value].sort((a, b) => a.position - b.position),
   );
 
-  /** 已归档清单/目录（首页隐藏，归档区可见） */
-  const archivedLists = computed(() => sortedLists.value.filter((l) => !!l.archived));
-  /** 未归档清单/目录（首页可见） */
-  const activeLists = computed(() => sortedLists.value.filter((l) => !l.archived));
+  /** 已归档清单/目录（首页隐藏，归档区可见；已移入回收站的除外） */
+  const archivedLists = computed(() =>
+    sortedLists.value.filter((l) => !!l.archived && !l.deletedAt),
+  );
+  /** 未归档清单/目录（首页可见；已移入回收站的除外） */
+  const activeLists = computed(() =>
+    sortedLists.value.filter((l) => !l.archived && !l.deletedAt),
+  );
 
   // === 按 kind 拆分：清单（task）与笔记本（note）两棵独立树 ===
   /** 未归档清单/目录（kind='task'） */
@@ -354,6 +359,15 @@ export const useListStore = defineStore("list", () => {
   async function unarchiveTree(id: string): Promise<void> {
     await db.unarchiveListTree(id);
     await loadLists();
+  }
+
+  /** 删除清单/目录（整棵子树软删除入回收站）。
+   *  收敛删除入口：统一由本 action 完成持久化 + 本地刷新 + 回收站角标同步，
+   *  组件不再直接调 db.deleteList。 */
+  async function deleteList(id: string): Promise<void> {
+    await db.deleteList(id);
+    await loadLists();
+    await useTrashStore().load();
   }
 
   // ─── 批量多选 action（交互详见 discuss/2026-08-14-list-batch-operation-design.md） ──
@@ -570,8 +584,7 @@ export const useListStore = defineStore("list", () => {
     pendingBatchDelete.value = null;
   }
 
-  /** 确认批量删除：逐个 deleteList（任务迁移到收件箱/默认笔记本由后端处理），
-   *  完成后重载树 + 退出多选。 */
+  /** 确认批量删除：逐个软删除入回收站（整棵子树），完成后重载树 + 退出多选 + 刷新回收站角标。 */
   async function confirmBatchDelete(): Promise<void> {
     const pending = pendingBatchDelete.value;
     if (!pending) return;
@@ -581,6 +594,7 @@ export const useListStore = defineStore("list", () => {
     pendingBatchDelete.value = null;
     await loadLists();
     exitBatchMode();
+    await useTrashStore().load();
   }
 
   return {
@@ -608,6 +622,7 @@ export const useListStore = defineStore("list", () => {
     moveNode,
     archiveTree,
     unarchiveTree,
+    deleteList,
     expandedNodes,
     toggleNodeExpanded,
     setNodeExpanded,

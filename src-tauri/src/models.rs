@@ -99,6 +99,10 @@ pub struct Task {
     /// 标题文本替换为网页标题，原 URL 存这里供点击跳转。
     #[serde(default)]
     pub title_url: Option<String>,
+    /// 回收站软删除时间（migration 035；null = 未删除）。
+    /// 非空 = 已移入回收站：常规查询一律过滤，仅回收站命令读取。
+    #[serde(default)]
+    pub deleted_at: Option<String>,
 }
 
 /// 任务模板 —— "任务参数预设"，独立于 tasks 表
@@ -157,6 +161,30 @@ pub struct TaskList {
     /// 清单与笔记本共用 lists 表，靠 kind 隔离成两棵独立树
     #[serde(default)]
     pub kind: String,
+    /// 回收站软删除时间（migration 035；null = 未删除）。
+    /// 非空 = 整棵子树已移入回收站；与 archived 正交（归档区不显示已删项）。
+    #[serde(default)]
+    pub deleted_at: Option<String>,
+}
+
+/// 回收站条目（trash_list_items 命令的返回行）。
+/// 只列「删除树的根」：父级未删除的顶层项，恢复 = 整棵子树恢复。
+/// 序列化用 camelCase（与前端 TrashItem 接口直接对应；同 Attachment 先例）
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TrashItem {
+    pub id: String,
+    /// 条目类型：'task' | 'note' | 'list' | 'notebook' | 'folder'
+    /// （task/note 区分自 tasks.kind；list/notebook/folder 区分自 lists.kind + is_folder）
+    pub kind: String,
+    /// 显示名称（任务标题或清单名）
+    pub name: String,
+    /// 删除时刻（本地字面量 "YYYY-MM-DDTHH:mm:ss"，按此排序展示）
+    pub deleted_at: String,
+    /// 原位置描述（任务的所属清单名 / 清单的父目录名；根级或未知为 None）
+    pub origin: Option<String>,
+    /// 是否包含子内容（子任务/子清单/清单内条目），用于彻底删除的确认文案
+    pub has_children: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

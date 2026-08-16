@@ -8,6 +8,7 @@ mod list_schedule;
 mod menu;
 mod models;
 mod note_io;
+mod trash;
 mod url_title;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -458,6 +459,10 @@ pub fn run() {
             commands::task_check_reminders,
             commands::task_daily_reminder_scan,
             commands::reminder_upcoming_list,
+            trash::trash_list_items,
+            trash::trash_restore,
+            trash::trash_purge,
+            trash::trash_empty,
             commands::get_setting,
             commands::set_setting,
             commands::tag_get_all,

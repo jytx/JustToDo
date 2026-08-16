@@ -90,6 +90,8 @@ pub(crate) fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
         group_id: row.try_get("group_id").ok().flatten(),
         // title_url 用 try_get 容错（migration 029 前可能无此列）
         title_url: row.try_get("title_url").ok().flatten(),
+        // deleted_at 用 try_get 容错（migration 035 前可能无此列）
+        deleted_at: row.try_get("deleted_at").ok().flatten(),
     }
 }
 
@@ -97,8 +99,9 @@ pub(crate) fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
 
 #[tauri::command]
 pub async fn list_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<TaskList>> {
+    // 含已删除（deleted_at 非空）的清单：与 archived 同模式，后端全量返回、前端筛分
     let rows = sqlx::query(
-        "SELECT id, name, color, position, created_at, parent_id, is_folder, archived, kind FROM lists ORDER BY position ASC, created_at ASC"
+        "SELECT id, name, color, position, created_at, parent_id, is_folder, archived, kind, deleted_at FROM lists ORDER BY position ASC, created_at ASC"
     )
     .fetch_all(pool.inner())
     .await
@@ -116,6 +119,7 @@ pub async fn list_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<Ta
             is_folder: r.get::<i32, _>("is_folder") != 0,
             archived: r.get::<i32, _>("archived") != 0,
             kind: r.try_get("kind").unwrap_or_else(|_| "task".to_string()),
+            deleted_at: r.try_get("deleted_at").ok().flatten(),
         })
         .collect())
 }
@@ -178,6 +182,7 @@ pub async fn list_create(
         is_folder: is_folder_val != 0,
         archived: false,
         kind: kind_val,
+        deleted_at: None,
     })
 }
 
@@ -189,53 +194,11 @@ pub async fn list_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdRe
     if id == "default-notebook" {
         return Err("默认笔记本不能删除".to_string());
     }
-
-    // 查询被删项的 parent_id / is_folder / kind（kind 决定条目迁移目标）
-    let row = sqlx::query("SELECT parent_id, is_folder, kind FROM lists WHERE id = $1")
-        .bind(&id)
-        .fetch_optional(pool.inner())
-        .await
-        .map_err(|e| format!("查询失败: {}", e))?;
-
-    if let Some(row) = row {
-        let parent_id: Option<String> = row.get("parent_id");
-        let is_folder: bool = row.get::<i32, _>("is_folder") != 0;
-        let kind: String = row.try_get("kind").unwrap_or_else(|_| "task".to_string());
-
-        // 无论删的是目录还是清单，都把它「直接挂载的任务」迁移到对应的默认容器。
-        // 历史 bug：删目录只迁移了子清单的 parent_id，没动 tasks 表，导致挂在该目录
-        // id 上的任务（list_id = 被删 id）变成孤儿——一旦其中有重复模板，每次后台 tick
-        // 都会因外键约束失败而报错（code 787）。这里统一兜底，避免再产生孤儿。
-        let fallback_list = if kind == "note" {
-            "default-notebook"
-        } else {
-            "inbox"
-        };
-        sqlx::query("UPDATE tasks SET list_id = $1, updated_at = $2 WHERE list_id = $3")
-            .bind(fallback_list)
-            .bind(now())
-            .bind(&id)
-            .execute(pool.inner())
-            .await
-            .map_err(|e| format!("迁移条目失败: {}", e))?;
-
-        if is_folder {
-            // 删除目录：把子清单/子目录的 parent_id 提升到被删目录的 parent_id
-            sqlx::query("UPDATE lists SET parent_id = $1 WHERE parent_id = $2")
-                .bind(&parent_id)
-                .bind(&id)
-                .execute(pool.inner())
-                .await
-                .map_err(|e| format!("迁移子项失败: {}", e))?;
-        }
-    }
-
-    sqlx::query("DELETE FROM lists WHERE id = $1")
-        .bind(&id)
-        .execute(pool.inner())
-        .await
-        .map_err(|e| format!("删除清单失败: {}", e))?;
-    Ok(())
+    // 回收站语义（migration 035 起）：删除 = 软删除整棵子树——
+    // 目录 + 所有后代清单/子目录 + 这些清单下的全部任务/笔记一起标记 deleted_at。
+    // 恢复时整棵树回来（trash_restore）；彻底删除走 trash_purge/trash_empty。
+    // 旧实现（任务迁默认容器 + 子清单上提 + 硬删本体）已被整体替换。
+    crate::trash::list_trash(pool.inner(), &id).await
 }
 
 #[tauri::command]
@@ -424,7 +387,8 @@ pub async fn list_reorder(
 // ─── 任务操作 ────────────────────────────────────────────
 
 /// 统计各清单的未完成根任务数量（供侧边栏显示）
-/// 归属已归档清单的任务不计入角标（归档清单虽仍含任务，但不再进主页统计）
+/// 归属已归档清单的任务不计入角标（归档清单虽仍含任务，但不再进主页统计）；
+/// 已移入回收站的任务（deleted_at 非空）一律不计入。
 #[tauri::command]
 pub async fn task_count_by_list(
     pool: State<'_, sqlx::SqlitePool>,
@@ -434,6 +398,7 @@ pub async fn task_count_by_list(
          FROM tasks t
          WHERE t.parent_id IS NULL
            AND t.done = 0
+           AND t.deleted_at IS NULL
            AND t.list_id NOT IN (SELECT id FROM lists WHERE archived = 1)
          GROUP BY t.list_id",
     )
@@ -456,7 +421,7 @@ pub async fn task_count_by_tag(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<V
         "SELECT tt.tag_id, COUNT(*) as cnt
          FROM task_tags tt
          JOIN tasks t ON t.id = tt.task_id
-         WHERE t.parent_id IS NULL AND t.done = 0 AND t.kind = 'task'
+         WHERE t.parent_id IS NULL AND t.done = 0 AND t.kind = 'task' AND t.deleted_at IS NULL
          GROUP BY tt.tag_id",
     )
     .fetch_all(pool.inner())
@@ -491,14 +456,14 @@ pub async fn task_count_smart_view(
 
     let count: i64 = if view == "today" {
         sqlx::query_scalar(
-            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0 AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($1, 'localtime')"
+            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0 AND deleted_at IS NULL AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($1, 'localtime')"
         )
         .bind(&end_of_today)
         .fetch_one(pool.inner())
         .await
     } else if view == "upcoming" {
         sqlx::query_scalar(
-            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0 AND datetime(replace(due_end_at, 'T', ' '), 'localtime') >= datetime($1, 'localtime') AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($2, 'localtime')"
+            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0 AND deleted_at IS NULL AND datetime(replace(due_end_at, 'T', ' '), 'localtime') >= datetime($1, 'localtime') AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($2, 'localtime')"
         )
         .bind(&end_of_today)
         .bind(&end_of_week)
@@ -507,7 +472,7 @@ pub async fn task_count_smart_view(
     } else {
         // all 视图：统计全部未完成根待办（笔记无日期，不属于"全部待办"，按 kind 过滤）
         sqlx::query_scalar(
-            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0 AND kind = 'task'"
+            "SELECT COUNT(*) FROM tasks WHERE parent_id IS NULL AND done = 0 AND kind = 'task' AND deleted_at IS NULL"
         )
         .fetch_one(pool.inner())
         .await
@@ -531,6 +496,7 @@ pub async fn note_count_by_list(
          FROM tasks t
          WHERE t.parent_id IS NULL
            AND t.kind = 'note'
+           AND t.deleted_at IS NULL
            AND t.list_id NOT IN (SELECT id FROM lists WHERE archived = 1)
          GROUP BY t.list_id",
     )
@@ -562,7 +528,7 @@ pub async fn task_get_by_list(
     .await?;
 
     let sql = format!(
-        "SELECT * FROM tasks WHERE list_id = $1 AND parent_id IS NULL ORDER BY done ASC, {}",
+        "SELECT * FROM tasks WHERE list_id = $1 AND parent_id IS NULL AND deleted_at IS NULL ORDER BY done ASC, {}",
         order_by_clause(&sf, &sd)
     );
 
@@ -645,6 +611,7 @@ pub async fn task_get_by_due_range(
          WHERE COALESCE(due_start_at, due_end_at) IS NOT NULL
            AND COALESCE(due_start_at, due_end_at) <= $2
            AND COALESCE(due_end_at, due_start_at) >= $1
+           AND deleted_at IS NULL
            {}
          ORDER BY done ASC, due_start_at ASC, sort_order ASC",
         done_clause
@@ -681,9 +648,9 @@ pub async fn task_get_smart_view(
     // SQLite datetime() 默认按 UTC 解释无时区字符串；显式加 'localtime' 与
     // 我们存的本地字面量语义匹配
     let sql = if view == "today" {
-        "SELECT * FROM tasks WHERE parent_id IS NULL AND done = 0 AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($1, 'localtime') ORDER BY due_end_at ASC, priority DESC, sort_order ASC".to_string()
+        "SELECT * FROM tasks WHERE parent_id IS NULL AND done = 0 AND deleted_at IS NULL AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($1, 'localtime') ORDER BY due_end_at ASC, priority DESC, sort_order ASC".to_string()
     } else if view == "upcoming" {
-        "SELECT * FROM tasks WHERE parent_id IS NULL AND done = 0 AND datetime(replace(due_end_at, 'T', ' '), 'localtime') >= datetime($1, 'localtime') AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($2, 'localtime') ORDER BY due_end_at ASC, priority DESC, sort_order ASC".to_string()
+        "SELECT * FROM tasks WHERE parent_id IS NULL AND done = 0 AND deleted_at IS NULL AND datetime(replace(due_end_at, 'T', ' '), 'localtime') >= datetime($1, 'localtime') AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($2, 'localtime') ORDER BY due_end_at ASC, priority DESC, sort_order ASC".to_string()
     } else {
         // all 视图支持 sort
         let (sf, sd) = match (sort_field.as_deref(), sort_dir.as_deref()) {
@@ -691,7 +658,7 @@ pub async fn task_get_smart_view(
             _ => ("manual".to_string(), "asc".to_string()),
         };
         format!(
-            "SELECT * FROM tasks WHERE parent_id IS NULL AND kind = 'task' ORDER BY done ASC, {}",
+            "SELECT * FROM tasks WHERE parent_id IS NULL AND kind = 'task' AND deleted_at IS NULL ORDER BY done ASC, {}",
             order_by_clause(&sf, &sd)
         )
     };
@@ -801,6 +768,8 @@ pub async fn task_create(
         group_id: Some(group_id),
         // 新建任务默认无标题链接（DB NULL 也保证）
         title_url: None,
+        // 新建任务未删除（DB NULL 也保证）
+        deleted_at: None,
     })
 }
 
@@ -1053,22 +1022,11 @@ pub async fn task_reorder(
 
 #[tauri::command]
 pub async fn task_delete(pool: State<'_, sqlx::SqlitePool>, id: String) -> CmdResult<()> {
-    sqlx::query("DELETE FROM tasks WHERE id = $1")
-        .bind(&id)
-        .execute(pool.inner())
-        .await
-        .map_err(|e| format!("删除任务失败: {}", e))?;
-
-    // 若删除的是重复任务模板（recurrence_freq IS NOT NULL），级联清理生成历史表，
-    // 避免残留记录。普通实例删除不清历史（保留记录防止重生）。
-    // 查询命中 0 条也无副作用（普通任务的 id 不会作为 template_id 出现）。
-    sqlx::query("DELETE FROM recurrence_generated WHERE template_id = $1")
-        .bind(&id)
-        .execute(pool.inner())
-        .await
-        .map_err(|e| format!("清理生成历史失败: {}", e))?;
-
-    Ok(())
+    // 回收站语义（migration 035 起）：删除 = 软删除该任务及其全部子任务
+    // （WITH RECURSIVE 标记 deleted_at），恢复走 trash_restore。
+    // 注意：不再清理 recurrence_generated —— 保留生成历史，
+    // 恢复后不会重复生成历史日期的实例；彻底删除（trash_purge）时才清理。
+    crate::trash::task_trash(pool.inner(), &id).await
 }
 
 /// 按 ID 获取单个任务（用于详情面板解析父任务链）
@@ -1092,7 +1050,7 @@ pub async fn task_get_subtasks(
     parent_id: String,
 ) -> CmdResult<Vec<Task>> {
     let rows = sqlx::query(
-        "SELECT * FROM tasks WHERE parent_id = $1 ORDER BY sort_order ASC, created_at ASC",
+        "SELECT * FROM tasks WHERE parent_id = $1 AND deleted_at IS NULL ORDER BY sort_order ASC, created_at ASC",
     )
     .bind(parent_id)
     .fetch_all(pool.inner())
@@ -1114,6 +1072,7 @@ pub async fn task_get_root_candidates(
     let rows = sqlx::query(
         "SELECT * FROM tasks
          WHERE parent_id IS NULL AND done = 0 AND kind = $2
+           AND deleted_at IS NULL
            AND id != $1
            AND list_id NOT IN (SELECT id FROM lists WHERE archived = 1)
          ORDER BY list_id, sort_order ASC",
@@ -1347,6 +1306,7 @@ pub async fn task_get_by_tag(
     let sql = format!(
         "SELECT * FROM tasks
          WHERE parent_id IS NULL
+           AND deleted_at IS NULL
            AND id IN (SELECT task_id FROM task_tags WHERE tag_id = $1)
          ORDER BY done ASC, {}",
         order_by_clause(&sf, &sd)
@@ -1480,7 +1440,7 @@ pub async fn search_tasks(
 ) -> CmdResult<Vec<Task>> {
     let pattern = format!("%{}%", query);
     let rows = sqlx::query(
-        "SELECT * FROM tasks WHERE parent_id IS NULL AND (title LIKE $1 OR note LIKE $1) ORDER BY done ASC, updated_at DESC LIMIT 20",
+        "SELECT * FROM tasks WHERE parent_id IS NULL AND deleted_at IS NULL AND (title LIKE $1 OR note LIKE $1) ORDER BY done ASC, updated_at DESC LIMIT 20",
     )
     .bind(&pattern)
     .fetch_all(pool.inner())
@@ -2287,17 +2247,20 @@ pub async fn task_generate_recurring_inner(
         .unwrap();
     let today_end_str = format_local_naive(tomorrow_start);
 
-    // 查询模板任务。全量后台扫描过滤 done=0 + paused=0；
-    // 单条手动运行（only_id）跳过这两个过滤——用户明确要触发这一次。
+    // 查询模板任务。全量后台扫描过滤 done=0 + paused=0 + 未删除（回收站模板不再生成）；
+    // 单条手动运行（only_id）跳过前两个过滤——用户明确要触发这一次，
+    // 但已删除过滤仍然保留（回收站中的模板不允许手动运行）。
     let templates = if let Some(id) = only_id {
-        sqlx::query("SELECT * FROM tasks WHERE id = $1 AND recurrence_freq IS NOT NULL")
-            .bind(id)
-            .fetch_all(pool)
-            .await
-            .map_err(|e| format!("查询重复模板失败: {}", e))?
+        sqlx::query(
+            "SELECT * FROM tasks WHERE id = $1 AND recurrence_freq IS NOT NULL AND deleted_at IS NULL",
+        )
+        .bind(id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("查询重复模板失败: {}", e))?
     } else {
         sqlx::query(
-            "SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL AND done = 0 AND recurrence_paused = 0",
+            "SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL AND done = 0 AND recurrence_paused = 0 AND deleted_at IS NULL",
         )
         .fetch_all(pool)
         .await
@@ -2439,10 +2402,11 @@ pub async fn recurrence_run_one(pool: State<'_, sqlx::SqlitePool>, id: String) -
 
 /// 列出所有重复任务模板（含已暂停、已完成），供「后台任务」面板展示。
 /// 模板识别：recurrence_freq IS NOT NULL（实例的 freq 字段为 NULL）。
+/// 已移入回收站的模板不展示（deleted_at IS NULL 过滤）。
 #[tauri::command]
 pub async fn recurrence_list_templates(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<Task>> {
     let rows = sqlx::query(
-        "SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL ORDER BY created_at DESC",
+        "SELECT * FROM tasks WHERE recurrence_freq IS NOT NULL AND deleted_at IS NULL ORDER BY created_at DESC",
     )
     .fetch_all(pool.inner())
     .await
@@ -2560,6 +2524,7 @@ pub async fn task_check_reminders_inner(
     let rows = sqlx::query(
         "SELECT id, title, due_end_at, remind_offset_minutes, remind_at FROM tasks
          WHERE done = 0
+           AND deleted_at IS NULL
            AND notified_at IS NULL
            AND (
              (remind_offset_minutes IS NOT NULL AND due_end_at IS NOT NULL
@@ -2629,6 +2594,7 @@ pub async fn reminder_upcoming_list(
          FROM tasks t
          LEFT JOIN lists l ON t.list_id = l.id
          WHERE t.done = 0
+           AND t.deleted_at IS NULL
            AND (t.remind_at IS NOT NULL OR t.remind_offset_minutes IS NOT NULL)",
     )
     .fetch_all(pool.inner())
@@ -3235,6 +3201,7 @@ pub async fn task_get_completed_in_range(
     let rows = sqlx::query(
         "SELECT * FROM tasks
          WHERE done = 1 AND parent_id IS NULL AND kind = 'task'
+           AND deleted_at IS NULL
            AND completed_at IS NOT NULL
            AND datetime(replace(completed_at, 'T', ' '), 'localtime') >= datetime($1, 'localtime')
            AND datetime(replace(completed_at, 'T', ' '), 'localtime') <  datetime($2, 'localtime')

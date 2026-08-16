@@ -813,6 +813,9 @@ useShortcuts({
       @confirm="taskStore.confirmDelete()"
     >
       <template #title>删除任务「<strong>{{ deleteConfirmTitle }}</strong>」？</template>
+      <template #default>
+        任务将<strong>移入回收站</strong>，可随时在回收站中恢复。
+      </template>
     </ConfirmDialog>
 
     <!-- 批量删除确认对话框（多选批量菜单触发，显示数量） -->
@@ -823,6 +826,9 @@ useShortcuts({
       @confirm="taskStore.confirmBatchDelete()"
     >
       <template #title>删除选中的 <strong>{{ batchDeleteCount }}</strong> 个任务？</template>
+      <template #default>
+        任务将<strong>移入回收站</strong>，可随时在回收站中恢复。
+      </template>
     </ConfirmDialog>
 
     <!-- 新建分组对话框（顶栏排序按钮后的入口） -->

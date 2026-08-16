@@ -3,7 +3,7 @@
 // 这样绕过了 plugin-sql 前端 API 的 IPC 问题，走标准 invoke 通道
 
 import { invoke } from "@tauri-apps/api/core";
-import type { List, Task, Priority, RecurrenceFreq, ChecklistItem, Template, Attachment, AttachmentType, TaskKind, Group, RecurrenceHistoryEntry, UpcomingReminder } from "@/types";
+import type { List, Task, Priority, RecurrenceFreq, ChecklistItem, Template, Attachment, AttachmentType, TaskKind, Group, RecurrenceHistoryEntry, UpcomingReminder, TrashItem } from "@/types";
 
 // ─── 类型（与 Rust models.rs 对应）──────────────────────
 
@@ -203,6 +203,8 @@ interface RustTask {
   kind: TaskKind;
   group_id: string | null;
   title_url: string | null;
+  /** 回收站软删除时间（null = 未删除） */
+  deleted_at: string | null;
 }
 
 function mapTask(r: RustTask): Task {
@@ -234,6 +236,7 @@ function mapTask(r: RustTask): Task {
     kind: r.kind,
     groupId: r.group_id,
     titleUrl: r.title_url,
+    deletedAt: r.deleted_at,
   };
 }
 
@@ -455,6 +458,30 @@ export async function toggleTask(id: string, done: boolean): Promise<void> {
 
 export async function deleteTask(id: string): Promise<void> {
   await invoke<void>("task_delete", { id });
+}
+
+// ─── 回收站 ──────────────────────────────────────────────
+// 删除（deleteTask/deleteList）= 软删除整棵子树入回收站；
+// 恢复/彻底删除/清空在此处。kind 为大类：'task'（任务/笔记）| 'list'（清单/笔记本/目录）。
+
+/** 列出回收站顶层项（删除树的根），按删除时间倒序 */
+export async function getTrashItems(): Promise<TrashItem[]> {
+  return await invoke<TrashItem[]>("trash_list_items");
+}
+
+/** 恢复回收站条目（整棵子树恢复原位；容器异常时兜底到根级/默认容器） */
+export async function restoreTrashItem(id: string, kind: "task" | "list"): Promise<void> {
+  await invoke<void>("trash_restore", { id, kind });
+}
+
+/** 彻底删除单条（整棵子树物理删除，含关联标签/生成历史/分组/附件文件） */
+export async function purgeTrashItem(id: string, kind: "task" | "list"): Promise<void> {
+  await invoke<void>("trash_purge", { id, kind });
+}
+
+/** 清空回收站（全部已删除条目物理删除） */
+export async function emptyTrash(): Promise<void> {
+  await invoke<void>("trash_empty");
 }
 
 /** 批量更新任务排序 */

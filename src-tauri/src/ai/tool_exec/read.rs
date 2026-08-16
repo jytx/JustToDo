@@ -29,6 +29,7 @@ async fn query_tasks(pool: &SqlitePool, args: &Value) -> Value {
     let kind = if kind == "note" { "note" } else { "task" };
     let mut w = WhereBuilder::new();
     w.add_raw("t.parent_id IS NULL");
+    w.add_raw("t.deleted_at IS NULL");
     w.add_raw(&format!("t.kind = '{}'", kind));
 
     // 完成状态
@@ -153,7 +154,7 @@ async fn search_items(pool: &SqlitePool, args: &Value) -> Value {
     let rows = sqlx::query(
         "SELECT t.*, (SELECT l.name FROM lists l WHERE l.id = t.list_id) AS list_name
          FROM tasks t
-         WHERE t.title LIKE $1 AND t.kind = $2 AND t.parent_id IS NULL
+         WHERE t.title LIKE $1 AND t.kind = $2 AND t.parent_id IS NULL AND t.deleted_at IS NULL
          ORDER BY t.done ASC, t.updated_at DESC
          LIMIT $3",
     )
@@ -248,13 +249,13 @@ async fn get_task(pool: &SqlitePool, args: &Value) -> Value {
 
 async fn list_folders(pool: &SqlitePool, args: &Value) -> Value {
     let kind_filter = match args.get("kind").and_then(|v| v.as_str()) {
-        Some("task") => " WHERE l.kind = 'task'".to_string(),
-        Some("note") => " WHERE l.kind = 'note'".to_string(),
-        _ => String::new(),
+        Some("task") => " WHERE l.kind = 'task' AND l.deleted_at IS NULL".to_string(),
+        Some("note") => " WHERE l.kind = 'note' AND l.deleted_at IS NULL".to_string(),
+        _ => " WHERE l.deleted_at IS NULL".to_string(),
     };
     let rows = sqlx::query(&format!(
         "SELECT l.id, l.name, l.kind, l.is_folder, l.parent_id,
-                (SELECT COUNT(*) FROM tasks t WHERE t.list_id = l.id AND t.parent_id IS NULL AND t.done = 0) AS open_count
+                (SELECT COUNT(*) FROM tasks t WHERE t.list_id = l.id AND t.parent_id IS NULL AND t.done = 0 AND t.deleted_at IS NULL) AS open_count
          FROM lists l{} ORDER BY l.position ASC",
         kind_filter
     ))
@@ -298,10 +299,11 @@ async fn get_stats(pool: &SqlitePool, args: &Value) -> Value {
         _ => (today0, "今天"),
     };
 
-    // 完成数（按 completed_at 落在范围内）
+    // 完成数（按 completed_at 落在范围内；回收站条目不计）
     let completed: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM tasks
          WHERE done = 1 AND parent_id IS NULL AND kind = 'task' AND completed_at IS NOT NULL
+           AND deleted_at IS NULL
            AND datetime(replace(completed_at, 'T', ' '), 'localtime') >= datetime($1, 'localtime')",
     )
     .bind(fmt(start))
@@ -311,7 +313,7 @@ async fn get_stats(pool: &SqlitePool, args: &Value) -> Value {
 
     // 未完成总数 + 逾期数（逾期不受 range 限制，反映当前状态）
     let open_total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM tasks WHERE done = 0 AND parent_id IS NULL AND kind = 'task'",
+        "SELECT COUNT(*) FROM tasks WHERE done = 0 AND parent_id IS NULL AND kind = 'task' AND deleted_at IS NULL",
     )
     .fetch_one(pool)
     .await
@@ -319,6 +321,7 @@ async fn get_stats(pool: &SqlitePool, args: &Value) -> Value {
     let overdue: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM tasks
          WHERE done = 0 AND parent_id IS NULL AND kind = 'task' AND due_end_at IS NOT NULL
+           AND deleted_at IS NULL
            AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($1, 'localtime')",
     )
     .bind(fmt(now))

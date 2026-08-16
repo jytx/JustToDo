@@ -1653,6 +1653,9 @@ onBeforeUnmount(() => {
       @confirm="doDelete"
     >
       <template #title>删除{{ isNote ? "笔记" : "任务" }}「<strong>{{ task?.title }}</strong>」？</template>
+      <template #default>
+        {{ isNote ? "笔记" : "任务" }}将<strong>移入回收站</strong>，可随时在回收站中恢复。
+      </template>
     </ConfirmDialog>
 
     <!-- AI 文本润色预览弹窗 -->

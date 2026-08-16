@@ -216,7 +216,25 @@ pub async fn init_pool(
     // 034: agent_messages 加 meta —— 本轮统计（轮数/token）挂在最终回复消息上
     run_migration_034(&pool).await?;
 
+    // 035: tasks/lists 加 deleted_at —— 回收站软删除时间戳
+    run_migration_035(&pool).await?;
+
     Ok(pool)
+}
+
+/// 迁移 035：回收站软删除 —— tasks/lists 各加 deleted_at
+///
+/// NULL = 未删除（正常状态）；非 NULL = 已移入回收站，值为删除时刻
+/// （本地字面量 "YYYY-MM-DDTHH:mm:ss"，与 due/created_at 体系一致）。
+/// 设计与归档位（lists.archived，020）对称，但用时间戳而非布尔：
+/// 回收站界面需要展示删除时间，且为将来「N 天自动清理」留好数据基础。
+/// - 删除任务/清单 = 标记整棵子树的 deleted_at（软删除，可恢复）
+/// - 彻底删除/清空回收站 = 物理 DELETE（不可恢复，前端强确认）
+/// - 所有常规查询（列表/计数/搜索/提醒/重复生成）必须过滤 deleted_at IS NULL
+async fn run_migration_035(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "tasks", "deleted_at", "TEXT").await?;
+    add_column_if_missing(pool, "lists", "deleted_at", "TEXT").await?;
+    Ok(())
 }
 
 /// 迁移 029：任务标题关联 URL

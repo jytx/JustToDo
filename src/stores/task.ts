@@ -8,6 +8,7 @@ import { categorizeAttachmentType } from "@/types";
 import * as db from "@/api/db";
 import type { SmartViewId, Tag } from "@/api/db";
 import { useSettingsStore } from "@/stores/settings";
+import { useTrashStore } from "@/stores/trash";
 import { todayRange, clampDateRange } from "@/utils/date";
 import { notifyTaskChanged } from "@/composables/useCalendarView";
 import { playSceneSound } from "@/composables/useSound";
@@ -835,6 +836,8 @@ export const useTaskStore = defineStore("task", () => {
     }
     refreshCounts();
     notifyTaskChanged();
+    // 删除 = 软删除入回收站，刷新侧边栏回收站角标
+    useTrashStore().load();
   }
 
   /** 请求删除任务（弹出确认对话框） */
@@ -1028,6 +1031,8 @@ export const useTaskStore = defineStore("task", () => {
     await refreshCounts();
     notifyTaskChanged();
     exitBatchMode();
+    // 删除 = 软删除入回收站，刷新侧边栏回收站角标
+    await useTrashStore().load();
   }
 
   /** 批量删除（直接执行，无确认）。
@@ -1040,6 +1045,7 @@ export const useTaskStore = defineStore("task", () => {
     await refreshCounts();
     notifyTaskChanged();
     exitBatchMode();
+    await useTrashStore().load();
   }
 
   /** 点击任务：切换选中（已选中则关闭面板） */

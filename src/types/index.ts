@@ -67,6 +67,24 @@ export interface List {
    *  清单与笔记本共用 lists 表，靠 kind 隔离成两棵独立树。
    *  旧数据缺省视为 'task'（清单），Rust 端 #[serde(default)] 提供兼容。 */
   kind?: TaskKind;
+  /** 回收站软删除时间（null = 未删除）。
+   *  非空 = 整棵子树已移入回收站；与 archived 正交（归档区不显示已删项）。 */
+  deletedAt?: string | null;
+}
+
+/** 回收站条目（trash_list_items 返回；只列"删除树"的根，恢复 = 整棵子树恢复） */
+export interface TrashItem {
+  id: string;
+  /** 条目类型：'task' 任务 | 'note' 笔记 | 'list' 清单 | 'notebook' 笔记本 | 'folder' 目录 */
+  kind: "task" | "note" | "list" | "notebook" | "folder";
+  /** 显示名称（任务标题或清单名） */
+  name: string;
+  /** 删除时刻（本地字面量 "YYYY-MM-DDTHH:mm:ss"，按此倒序展示） */
+  deletedAt: string;
+  /** 原位置描述（任务的所属清单名 / 清单的父目录名；根级为 null） */
+  origin: string | null;
+  /** 是否包含子内容（子任务/子清单/清单内条目），用于彻底删除的确认文案 */
+  hasChildren: boolean;
 }
 
 /** 任务 —— 支持子任务嵌套（parentId 自引用） */
@@ -116,8 +134,11 @@ export interface Task {
   groupId: string | null;
   /** 标题关联的 URL（null = 无链接）。
    *  详情面板「解析网页标题」功能写入：输入 URL 解析出标题后，
-   *  标题文本替换为网页标题，原 URL 存这里，点击标题旁链接 chip 跳转。 */
+   *  标题文本替换为网页标题，原 URL 存这里供点击标题旁链接 chip 跳转。 */
   titleUrl: string | null;
+  /** 回收站软删除时间（null = 未删除）。
+   *  非空 = 已移入回收站：常规查询一律过滤，仅回收站页面可见。 */
+  deletedAt: string | null;
 }
 
 /** 检查项（独立存储；后端 JSON 数组） */
@@ -342,6 +363,8 @@ export interface TaskRow {
   group_id: string | null;
   /** 标题关联 URL（migration 029；null = 无链接） */
   title_url: string | null;
+  /** 回收站软删除时间（migration 035；null = 未删除） */
+  deleted_at: string | null;
 }
 
 /** 清单数据库原始行 */
@@ -387,6 +410,7 @@ export function mapTaskRow(row: TaskRow): Task {
     kind: row.kind,
     groupId: row.group_id,
     titleUrl: row.title_url,
+    deletedAt: row.deleted_at,
   };
 }
 

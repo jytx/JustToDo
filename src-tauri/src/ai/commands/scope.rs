@@ -56,7 +56,7 @@ async fn query_scope_data(
                 .map_err(|e| format!("查询清单类型失败: {}", e))?
                 .unwrap_or_else(|| "task".into());
             let rows = sqlx::query(
-                "SELECT * FROM tasks WHERE list_id = $1 AND parent_id IS NULL ORDER BY done ASC, sort_order ASC",
+                "SELECT * FROM tasks WHERE list_id = $1 AND parent_id IS NULL AND deleted_at IS NULL ORDER BY done ASC, sort_order ASC",
             ).bind(id).fetch_all(pool).await
                 .map_err(|e| format!("查询清单任务失败: {}", e))?;
             Ok(ScopeData {
@@ -80,6 +80,7 @@ async fn query_scope_data(
                  )
                  SELECT t.* FROM tasks t
                  WHERE t.parent_id IS NULL
+                   AND t.deleted_at IS NULL
                    AND t.list_id IN (SELECT id FROM subtree WHERE is_folder = 0)
                  ORDER BY t.done ASC, t.sort_order ASC",
             )
