@@ -1034,6 +1034,9 @@ const ctxMenu = reactive<{
  *  受保护节点（收件箱 inbox / 默认笔记本 default-notebook）不可新建 / 归档 / 编辑 / 删除 ——
  *  菜单项全部屏蔽会变成"空弹窗"，这里直接不弹出，避免把菜单容器渲染给用户看一个白窗。 */
 function openCtxMenu(e: MouseEvent, target: CtxTarget): void {
+  // 影子目录（归档区分组展示的激活态祖先）：无任何右键操作，直接不弹
+  //（需在多选批量菜单分支之前拦截——多选态下右键影子节点同样不该弹批量菜单）
+  if (target.kind !== "tag" && target.node.isGhost) return;
   // 多选态且选中非空：清单/目录行的右键一律走批量菜单（标签不参与清单多选）
   if (
     target.kind !== "tag" &&
@@ -1597,8 +1600,9 @@ onMounted(async () => {
 
       <!-- 归档树渲染（按 kind 分两组，各组独立展开/收起；某组无归档项则不显示该组） -->
       <div v-show="!sectionCollapsed.archive" class="sidebar__list-tree">
-        <!-- 归档清单二级分组（仅当有清单归档时才出现） -->
-        <template v-if="listStore.archiveListTree.length > 0">
+        <!-- 归档清单二级分组（仅当有清单归档时才出现；计数用真实归档数，
+             树根级可能含影子目录分组节点，不能用 archiveListTree.length） -->
+        <template v-if="listStore.archivedTaskLists.length > 0">
           <div
             class="sidebar__archive-group"
             @click="toggleSection('archiveTask')"
@@ -1606,7 +1610,7 @@ onMounted(async () => {
             <icon-down v-if="!sectionCollapsed.archiveTask" :size="12" class="sidebar__toggle-icon" />
             <icon-right v-else :size="12" class="sidebar__toggle-icon" />
             <span>清单</span>
-            <span class="sidebar__archive-group-count">{{ listStore.archiveListTree.length }}</span>
+            <span class="sidebar__archive-group-count">{{ listStore.archivedTaskLists.length }}</span>
           </div>
           <SidebarListNode
             v-show="!sectionCollapsed.archiveTask"
@@ -1623,8 +1627,8 @@ onMounted(async () => {
             @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
           />
         </template>
-        <!-- 归档笔记本二级分组（仅当有笔记本归档时才出现） -->
-        <template v-if="listStore.archiveNoteListTree.length > 0">
+        <!-- 归档笔记本二级分组（仅当有笔记本归档时才出现；计数同上用真实归档数） -->
+        <template v-if="listStore.archivedNoteLists.length > 0">
           <div
             class="sidebar__archive-group"
             @click="toggleSection('archiveNote')"
@@ -1632,7 +1636,7 @@ onMounted(async () => {
             <icon-down v-if="!sectionCollapsed.archiveNote" :size="12" class="sidebar__toggle-icon" />
             <icon-right v-else :size="12" class="sidebar__toggle-icon" />
             <span>笔记本</span>
-            <span class="sidebar__archive-group-count">{{ listStore.archiveNoteListTree.length }}</span>
+            <span class="sidebar__archive-group-count">{{ listStore.archivedNoteLists.length }}</span>
           </div>
           <SidebarListNode
             v-show="!sectionCollapsed.archiveNote"

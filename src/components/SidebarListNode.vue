@@ -65,6 +65,9 @@ const route = useRoute();
 
 /** 是否为笔记本节点（kind='note'）：影响路由、计数、菜单文案 */
 const isNote = computed(() => props.kind === "note");
+/** 是否为影子目录（归档区分组展示补出的激活态祖先目录）：
+ *  仅作分组——淡化样式、无右键菜单、不参与多选与拖拽，展开箭头仍可用 */
+const isGhost = computed(() => !!props.node.isGhost);
 /** 对应的路由名与路径前缀 */
 const routeName = computed(() => (isNote.value ? "notebook" : "list"));
 // routePrefix 保留供后续扩展使用（暂未在模板内直接使用 —— 兼容路由前缀）
@@ -147,10 +150,18 @@ function goToList() {
 }
 
 /** 行点击统一入口：多选处理器注入且消费（Shift/Cmd/多选态点击）→ 不跳转；
- *  未消费且为清单（非目录）→ 路由跳转。目录行普通点击无行为（仅箭头展开）。 */
+ *  未消费且为清单（非目录）→ 路由跳转。目录行普通点击无行为（仅箭头展开）。
+ *  影子目录直接短路：不参与多选（选中它做批量操作无意义），也不跳转。 */
 function onRowClick(e: MouseEvent): void {
+  if (isGhost.value) return;
   if (props.onNodeClick && props.onNodeClick(props.node.id, e)) return;
   goToList();
+}
+
+/** 目录行右键：影子目录不弹菜单（归档区分组节点无任何操作） */
+function onFolderContextMenu(e: MouseEvent): void {
+  if (isGhost.value) return;
+  emit("contextmenu", e, props.node);
 }
 
 // ─── 拖拽逻辑 ──────────────────────────────────────────
@@ -160,9 +171,12 @@ function onRowClick(e: MouseEvent): void {
 const dragOver = ref<"before" | "after" | "inside" | "target" | null>(null);
 const isDragging = ref(false);
 
-/** 是否可拖动（inbox / default-notebook 位置固定，不可拖） */
+/** 是否可拖动（inbox / default-notebook 位置固定，不可拖；影子目录仅作归档区分组，不可拖） */
 const canDrag = computed(
-  () => props.node.id !== "inbox" && props.node.id !== "default-notebook",
+  () =>
+    props.node.id !== "inbox" &&
+    props.node.id !== "default-notebook" &&
+    !props.node.isGhost,
 );
 
 /** 多选拖拽的「多行收在一起」拖拽视觉元素（当前挂载中的引用，dragend 时移除） */
@@ -434,6 +448,7 @@ function onDrop(e: DragEvent) {
         'list-node--drag-over': dragOver === 'before' || dragOver === 'after',
         'list-node--drag-inside': dragOver === 'inside',
         'list-node--batch-selected': isBatchMode && isBatchSelected,
+        'list-node--ghost': isGhost,
       }"
       :style="{ paddingLeft: getNodePaddingLeft(depth) }"
       :draggable="canDrag ? 'true' : 'false'"
@@ -444,17 +459,17 @@ function onDrop(e: DragEvent) {
       @dragover="onDragOver"
       @dragleave="onDragLeave"
       @drop="onDrop"
-      @contextmenu.prevent="emit('contextmenu', $event, node)"
+      @contextmenu.prevent="onFolderContextMenu($event)"
     >
       <span class="list-node__expand" @click="listStore.toggleNodeExpanded(node.id)">
         <icon-down v-if="expanded" :size="12" />
         <icon-right v-else :size="12" />
       </span>
       <!-- 多选态：文件夹图标位置替换为 checkbox（多选时关注选中状态多于图标识别）。
-           受保护节点（inbox/默认笔记本）不参与多选，不显示 checkbox。
+           受保护节点（inbox/默认笔记本）与影子目录不参与多选，不显示 checkbox。
            点击 checkbox 也走行点击逻辑（@click.stop 防双重触发 + onRowClick 内 toggle）。 -->
       <a-checkbox
-        v-if="isBatchMode && !isProtected"
+        v-if="isBatchMode && !isProtected && !isGhost"
         class="list-node__checkbox"
         :model-value="isBatchSelected"
         @click.stop="onRowClick"
@@ -640,6 +655,18 @@ function onDrop(e: DragEvent) {
 
 .list-node__folder:hover {
   background-color: var(--jt-surface-hover);
+}
+
+/* 影子目录（归档区分组展示的激活态祖先目录）：整体淡化 + 默认光标，
+ * 仅作分组容器（展开箭头仍可交互），区别于可操作的真实归档目录 */
+.list-node--ghost {
+  cursor: default;
+}
+
+.list-node--ghost .list-node__expand,
+.list-node--ghost .list-node__folder-icon,
+.list-node--ghost .list-node__name {
+  opacity: 0.55;
 }
 
 /* 选中状态（路由激活） */

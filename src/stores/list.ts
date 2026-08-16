@@ -10,6 +10,10 @@ import * as db from "@/api/db";
 /** 带子节点的树形清单 */
 export interface ListTreeNode extends List {
   children: ListTreeNode[];
+  /** 影子目录：归档区分组展示时补出的「激活态」祖先目录。
+   *  纯 UI 展示标记（数据层 parent_id / archived 均不变），
+   *  渲染为只读分组节点——淡化样式、无右键菜单、不参与多选与拖拽。 */
+  isGhost?: boolean;
 }
 
 /** 递归遍历扁平数组，返回指定 id 的全部后代 id（含自身），按深度顺序排列
@@ -29,11 +33,9 @@ function collectSubtreeIds(lists: List[], rootId: string): string[] {
 
 /** 子树构建（纯函数）。归档区与主页区用同一份算法，但选用不同的"可见父级"集合：
  *
- *  1. archiveListTree / archiveNoteListTree：父级集合 = archived 项自己（active 父级不算）
- *     ——归档区只关心 archived 项之间的嵌套关系；active 父级会把 archived 子项"切开"独立显示。
- *     例如：active 父级"工作"→ archived 子目录"啊"→ archived 子清单 222/333/444。
- *     归档区里"啊"作为顶层根目录展示（不再挂在"工作"名下），222/333/444 仍挂在"啊"下。
- *     这样"啊"永远能在归档区可见，与 active 父级"工作"是否被归档独立。
+ *  1. archiveListTree / archiveNoteListTree（经 buildArchiveSection 调用）：
+ *     父级集合 = archived 项 + 影子祖先目录（active 父级以 isGhost 节点补入，见 collectGhostDirs）
+ *     ——归档区按原目录结构分组展示，active 父级不再把 archived 子项"切开"平铺到根级。
  *
  *  2. listTree / noteListTree：父级集合 = active 项
  *     ——主页：active 子项挂在 active 父级下；若父级 archived 而子项 active（中间态），
@@ -51,6 +53,43 @@ function buildArchiveTree(flat: List[], visibleIds: Set<string>): ListTreeNode[]
     return children.map((l) => ({ ...l, children: build(l.id) }));
   };
   return build(null);
+}
+
+/** 影子目录收集（纯函数）：为归档区「按原目录结构分组」展示服务。
+ *  已归档项若挂在激活态父目录下（如逐日归档 2026-08 目录下的日期清单），
+ *  父目录不在归档集合中，子项会被提升到根级平铺。
+ *  这里沿 parent 链向上补出所有缺失的激活祖先（标记 isGhost=true，children 交给建树阶段）：
+ *  - 遇已归档祖先即停（它自身在归档集合中，正常渲染）；
+ *  - 遇已收集的影子即停（其祖先链此前已爬完，兼防脏数据成环死循环）；
+ *  - 遇不存在的父 id 即停（按根级展示，与 buildArchiveTree 的兜底一致）。 */
+function collectGhostDirs(archivedItems: List[], allLists: List[]): ListTreeNode[] {
+  const byId: Map<string, List> = new Map(allLists.map((l) => [l.id, l]));
+  const archivedIds: Set<string> = new Set(archivedItems.map((l) => l.id));
+  const ghosts: Map<string, ListTreeNode> = new Map();
+  for (const item of archivedItems) {
+    let parentId: string | null = item.parentId;
+    while (parentId !== null) {
+      if (archivedIds.has(parentId)) break;
+      if (ghosts.has(parentId)) break;
+      const parent: List | undefined = byId.get(parentId);
+      if (!parent) break;
+      ghosts.set(parent.id, { ...parent, children: [], isGhost: true });
+      parentId = parent.parentId;
+    }
+  }
+  return [...ghosts.values()];
+}
+
+/** 构建归档区展示树（纯函数）：已归档项 + 影子祖先目录合并建树。
+ *  可见父级集合 = 两者 id 并集，使已归档子项能挂到影子目录下按原结构分组；
+ *  同级排序沿用 position（影子目录与其真实子项共享同一 position 空间）。 */
+function buildArchiveSection(archivedItems: List[], allLists: List[]): ListTreeNode[] {
+  const ghosts: ListTreeNode[] = collectGhostDirs(archivedItems, allLists);
+  const display: List[] = [...archivedItems, ...ghosts].sort(
+    (a, b) => a.position - b.position,
+  );
+  const visibleIds: Set<string> = new Set(display.map((l) => l.id));
+  return buildArchiveTree(display, visibleIds);
 }
 
 export const useListStore = defineStore("list", () => {
@@ -140,10 +179,6 @@ export const useListStore = defineStore("list", () => {
 
   /** 未归档 id 集合，用于 listTree 的父级存在性判定（避免 active 子项因 archived 父级"消失"） */
   const activeListIds = computed(() => new Set(activeLists.value.map((l) => l.id)));
-  /** 已归档 id 集合：归档区在自身 archived 项之间保持嵌套；
-   *  active 祖先不再纳入"父级可见集合"——确保 archived 子项总能脱离 active 父级独立展示 */
-  const archivedListIds = computed(() => new Set(archivedLists.value.map((l) => l.id)));
-
   /** 已归档清单（kind='task'） */
   const archivedTaskLists = computed(() =>
     archivedLists.value.filter((l) => l.kind !== "note"),
@@ -153,14 +188,14 @@ export const useListStore = defineStore("list", () => {
     archivedLists.value.filter((l) => l.kind === "note"),
   );
 
-  /** 清单归档子树 */
+  /** 清单归档子树（含影子祖先目录分组；archivedListIds 供移动/拖拽等场景判定归档态复用） */
   const archiveListTree = computed<ListTreeNode[]>(() =>
-    buildArchiveTree(archivedTaskLists.value, archivedListIds.value),
+    buildArchiveSection(archivedTaskLists.value, lists.value),
   );
 
-  /** 笔记本归档子树 */
+  /** 笔记本归档子树（含影子祖先目录分组） */
   const archiveNoteListTree = computed<ListTreeNode[]>(() =>
-    buildArchiveTree(archivedNoteLists.value, archivedListIds.value),
+    buildArchiveSection(archivedNoteLists.value, lists.value),
   );
 
   /** 获取某目录下的直接子项 */
