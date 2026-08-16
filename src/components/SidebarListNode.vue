@@ -560,8 +560,10 @@ function onDrop(e: DragEvent) {
       />
       <span class="list-node__title">{{ node.name }}</span>
       <span v-if="(isNote ? taskStore.noteCounts : taskStore.listCounts)[node.id]" class="list-node__count">{{ (isNote ? taskStore.noteCounts : taskStore.listCounts)[node.id] }}</span>
+      <!-- 更多菜单：所有清单/笔记本都有（含收件箱/默认笔记本）——
+           受保护节点仅「新建条目 / AI 总结」两项，其余节点全量菜单 -->
       <MenuPopover
-        v-if="!readonly && node.id !== 'inbox' && node.id !== 'default-notebook'"
+        v-if="!readonly"
         v-model:visible="listMenuOpen"
       >
         <template #trigger>
@@ -569,32 +571,46 @@ function onDrop(e: DragEvent) {
             <icon-more :size="16" />
           </button>
         </template>
-        <MenuPopoverItem @click="onMenuClick('addTask')">
-          <icon-plus :size="15" />
-          <span>{{ isNote ? "新建笔记" : "新建任务" }}</span>
-        </MenuPopoverItem>
-        <!-- 导入笔记：仅笔记本（清单不显示），与右键菜单项一致 -->
-        <MenuPopoverItem v-if="isNote" @click="onMenuClick('importNotes')">
-          <icon-import :size="15" />
-          <span>导入笔记…</span>
-        </MenuPopoverItem>
-        <MenuPopoverItem @click="onMenuClick('edit')">
-          <icon-edit :size="15" />
-          <span>{{ isNote ? "编辑笔记本" : "编辑清单" }}</span>
-        </MenuPopoverItem>
-        <MenuPopoverItem danger @click="onMenuClick('delete')">
-          <icon-delete :size="15" />
-          <span>{{ isNote ? "删除笔记本" : "删除清单" }}</span>
-        </MenuPopoverItem>
-        <MenuPopoverItem v-if="settingsStore.aiEnabled && !node.archived" @click="onMenuClick('aiSummary')">
-          <icon-robot :size="15" />
-          <span>AI 总结</span>
-        </MenuPopoverItem>
-        <!-- 归档：仅主页（未归档）显示 -->
-        <MenuPopoverItem v-if="!node.archived" @click="onMenuClick('archive')">
-          <icon-archive :size="15" />
-          <span>{{ isNote ? "归档笔记本" : "归档清单" }}</span>
-        </MenuPopoverItem>
+        <!-- 受保护节点（收件箱 inbox / 默认笔记本）：仅新建条目 + AI 总结，
+             编辑/删除/归档等不适用（与右键菜单的精简分支保持一致） -->
+        <template v-if="isProtected">
+          <MenuPopoverItem @click="onMenuClick('addTask')">
+            <icon-plus :size="15" />
+            <span>{{ isNote ? "新建笔记" : "新建任务" }}</span>
+          </MenuPopoverItem>
+          <MenuPopoverItem v-if="settingsStore.aiEnabled" @click="onMenuClick('aiSummary')">
+            <icon-robot :size="15" />
+            <span>AI 总结</span>
+          </MenuPopoverItem>
+        </template>
+        <template v-else>
+          <MenuPopoverItem @click="onMenuClick('addTask')">
+            <icon-plus :size="15" />
+            <span>{{ isNote ? "新建笔记" : "新建任务" }}</span>
+          </MenuPopoverItem>
+          <!-- 导入笔记：仅笔记本（清单不显示），与右键菜单项一致 -->
+          <MenuPopoverItem v-if="isNote" @click="onMenuClick('importNotes')">
+            <icon-import :size="15" />
+            <span>导入笔记…</span>
+          </MenuPopoverItem>
+          <MenuPopoverItem @click="onMenuClick('edit')">
+            <icon-edit :size="15" />
+            <span>{{ isNote ? "编辑笔记本" : "编辑清单" }}</span>
+          </MenuPopoverItem>
+          <MenuPopoverItem danger @click="onMenuClick('delete')">
+            <icon-delete :size="15" />
+            <span>{{ isNote ? "删除笔记本" : "删除清单" }}</span>
+          </MenuPopoverItem>
+          <MenuPopoverItem v-if="settingsStore.aiEnabled && !node.archived" @click="onMenuClick('aiSummary')">
+            <icon-robot :size="15" />
+            <span>AI 总结</span>
+          </MenuPopoverItem>
+          <!-- 归档：仅主页（未归档）显示 -->
+          <MenuPopoverItem v-if="!node.archived" @click="onMenuClick('archive')">
+            <icon-archive :size="15" />
+            <span>{{ isNote ? "归档笔记本" : "归档清单" }}</span>
+          </MenuPopoverItem>
+        </template>
       </MenuPopover>
     </div>
 

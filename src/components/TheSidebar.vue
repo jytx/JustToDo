@@ -1028,11 +1028,20 @@ const ctxMenu = reactive<{
   target: null,
 });
 
+/** 右键目标是否为受保护清单节点（收件箱 inbox / 默认笔记本 default-notebook）：
+ *  是 → 菜单仅渲染「新建条目 / AI 总结」两项；
+ *  多选/编辑/删除/归档/移动等对这些节点不适用，不渲染。 */
+const ctxTargetIsProtected = computed<boolean>(() => {
+  const t = ctxMenu.target;
+  return t?.kind === "list" && (t.node.id === "inbox" || t.node.id === "default-notebook");
+});
+
 /** 打开右键菜单：记录坐标与目标类型。由各行的 @contextmenu.prevent 调用。
  *  多选态下清单/目录行右键 → 弹批量菜单（操作对象 = 整个选中集合；
  *  含 inbox 等保护节点时由菜单内部置灰，这里不再拦截）。
- *  受保护节点（收件箱 inbox / 默认笔记本 default-notebook）不可新建 / 归档 / 编辑 / 删除 ——
- *  菜单项全部屏蔽会变成"空弹窗"，这里直接不弹出，避免把菜单容器渲染给用户看一个白窗。 */
+ *  受保护节点（收件箱 inbox / 默认笔记本 default-notebook）也弹出菜单 ——
+ *  但模板里按 ctxTargetIsProtected 只渲染「新建条目 / AI 总结」两项，
+ *  编辑/删除/归档/移动等不适用操作不显示。 */
 function openCtxMenu(e: MouseEvent, target: CtxTarget): void {
   // 影子目录（归档区分组展示的激活态祖先）：无任何右键操作，直接不弹
   //（需在多选批量菜单分支之前拦截——多选态下右键影子节点同样不该弹批量菜单）
@@ -1044,12 +1053,6 @@ function openCtxMenu(e: MouseEvent, target: CtxTarget): void {
     listStore.batchSelectedIdsArr.length > 0
   ) {
     listBatch.onBatchContextMenu(e);
-    return;
-  }
-  if (
-    target.kind === "list" &&
-    (target.node.id === "inbox" || target.node.id === "default-notebook")
-  ) {
     return;
   }
   ctxMenu.x = e.clientX;
@@ -2231,57 +2234,71 @@ onMounted(async () => {
     </template>
     <!-- 清单/笔记本：未归档 显示 多选 / 新建条目 / 编辑 / 删除 / 归档 ；已归档 仅显示 多选 / 取消归档。
          文案按 node.kind 区分（清单→任务/清单，笔记本→笔记/笔记本）。
-         inbox / default-notebook 受保护，右键不弹菜单（在 openCtxMenu 拦截），故此处无需再判 id。 -->
+         受保护节点（收件箱 inbox / 默认笔记本 default-notebook）单独分支：
+         仅「新建条目 / AI 总结」两项，其余操作不适用。 -->
     <template v-else-if="ctxMenu.target?.kind === 'list'">
-      <!-- 多选入口：点击后进入多选态并将该行加入选中（后续右键弹批量菜单） -->
-      <MenuPopoverItem @click="onCtxEnterBatch(ctxMenu.target.node)">
-        <icon-check-square :size="15" />
-        <span>多选</span>
-      </MenuPopoverItem>
-      <template v-if="!ctxMenu.target.node.archived">
+      <!-- 受保护节点：收件箱 → 新建任务 / AI 总结；默认笔记本 → 新建笔记 / AI 总结 -->
+      <template v-if="ctxTargetIsProtected">
         <MenuPopoverItem @click="onCtxAddTask(ctxMenu.target.node)">
           <icon-plus :size="15" />
           <span>{{ ctxMenu.target.node.kind === "note" ? "新建笔记" : "新建任务" }}</span>
-        </MenuPopoverItem>
-        <!-- 导入笔记：仅笔记本（清单不显示）；点击后打开系统文件选择器（md/txt 多选） -->
-        <MenuPopoverItem
-          v-if="ctxMenu.target.node.kind === 'note'"
-          @click="onCtxImportNotes(ctxMenu.target.node)"
-        >
-          <icon-import :size="15" />
-          <span>导入笔记…</span>
-        </MenuPopoverItem>
-        <MenuPopoverItem @click="onCtxEdit(ctxMenu.target.node)">
-          <icon-edit :size="15" />
-          <span>{{ ctxMenu.target.node.kind === "note" ? "编辑笔记本" : "编辑清单" }}</span>
-        </MenuPopoverItem>
-        <!-- 移动至：hover 弹出级联子菜单（根目录 + 目录树，仅未归档目录可选） -->
-        <MenuPopoverItem
-          @mouseenter="(e: MouseEvent) => showMoveCascade(e.currentTarget as HTMLElement)"
-          @mouseleave="scheduleCloseMoveCascade"
-        >
-          <icon-swap :size="15" />
-          <span>移动至</span>
-          <icon-right :size="12" style="margin-left: auto" />
-        </MenuPopoverItem>
-        <MenuPopoverItem danger @click="onCtxDeleteList(ctxMenu.target.node)">
-          <icon-delete :size="15" />
-          <span>{{ ctxMenu.target.node.kind === "note" ? "删除笔记本" : "删除清单" }}</span>
         </MenuPopoverItem>
         <MenuPopoverItem v-if="settingsStore.aiEnabled" @click="onCtxAiSummary(ctxMenu.target.node)">
           <icon-robot :size="15" />
           <span>AI 总结</span>
         </MenuPopoverItem>
-        <MenuPopoverItem @click="onCtxArchive(ctxMenu.target.node)">
-          <icon-archive :size="15" />
-          <span>{{ ctxMenu.target.node.kind === "note" ? "归档笔记本" : "归档清单" }}</span>
-        </MenuPopoverItem>
       </template>
       <template v-else>
-        <MenuPopoverItem @click="onCtxUnarchive(ctxMenu.target.node)">
-          <icon-archive :size="15" />
-          <span>取消归档</span>
+        <!-- 多选入口：点击后进入多选态并将该行加入选中（后续右键弹批量菜单） -->
+        <MenuPopoverItem @click="onCtxEnterBatch(ctxMenu.target.node)">
+          <icon-check-square :size="15" />
+          <span>多选</span>
         </MenuPopoverItem>
+        <template v-if="!ctxMenu.target.node.archived">
+          <MenuPopoverItem @click="onCtxAddTask(ctxMenu.target.node)">
+            <icon-plus :size="15" />
+            <span>{{ ctxMenu.target.node.kind === "note" ? "新建笔记" : "新建任务" }}</span>
+          </MenuPopoverItem>
+          <!-- 导入笔记：仅笔记本（清单不显示）；点击后打开系统文件选择器（md/txt 多选） -->
+          <MenuPopoverItem
+            v-if="ctxMenu.target.node.kind === 'note'"
+            @click="onCtxImportNotes(ctxMenu.target.node)"
+          >
+            <icon-import :size="15" />
+            <span>导入笔记…</span>
+          </MenuPopoverItem>
+          <MenuPopoverItem @click="onCtxEdit(ctxMenu.target.node)">
+            <icon-edit :size="15" />
+            <span>{{ ctxMenu.target.node.kind === "note" ? "编辑笔记本" : "编辑清单" }}</span>
+          </MenuPopoverItem>
+          <!-- 移动至：hover 弹出级联子菜单（根目录 + 目录树，仅未归档目录可选） -->
+          <MenuPopoverItem
+            @mouseenter="(e: MouseEvent) => showMoveCascade(e.currentTarget as HTMLElement)"
+            @mouseleave="scheduleCloseMoveCascade"
+          >
+            <icon-swap :size="15" />
+            <span>移动至</span>
+            <icon-right :size="12" style="margin-left: auto" />
+          </MenuPopoverItem>
+          <MenuPopoverItem danger @click="onCtxDeleteList(ctxMenu.target.node)">
+            <icon-delete :size="15" />
+            <span>{{ ctxMenu.target.node.kind === "note" ? "删除笔记本" : "删除清单" }}</span>
+          </MenuPopoverItem>
+          <MenuPopoverItem v-if="settingsStore.aiEnabled" @click="onCtxAiSummary(ctxMenu.target.node)">
+            <icon-robot :size="15" />
+            <span>AI 总结</span>
+          </MenuPopoverItem>
+          <MenuPopoverItem @click="onCtxArchive(ctxMenu.target.node)">
+            <icon-archive :size="15" />
+            <span>{{ ctxMenu.target.node.kind === "note" ? "归档笔记本" : "归档清单" }}</span>
+          </MenuPopoverItem>
+        </template>
+        <template v-else>
+          <MenuPopoverItem @click="onCtxUnarchive(ctxMenu.target.node)">
+            <icon-archive :size="15" />
+            <span>取消归档</span>
+          </MenuPopoverItem>
+        </template>
       </template>
     </template>
     <!-- 标签：编辑标签 / 删除标签 -->
