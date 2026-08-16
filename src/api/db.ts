@@ -38,6 +38,8 @@ interface TaskList {
   archived: number;
   /** 容器类型：'task' 清单/目录 | 'note' 笔记本/笔记本目录 */
   kind: TaskKind;
+  /** 回收站软删除时间（null = 未删除） */
+  deleted_at: string | null;
 }
 
 interface CreateTaskInput {
@@ -103,6 +105,7 @@ export async function getLists(): Promise<List[]> {
     isFolder: r.is_folder,
     archived: !!r.archived,
     kind: r.kind,
+    deletedAt: r.deleted_at,
   }));
 }
 
@@ -131,6 +134,7 @@ export async function createList(params: {
     isFolder: r.is_folder,
     archived: !!r.archived,
     kind: r.kind,
+    deletedAt: r.deleted_at,
   };
 }
 
