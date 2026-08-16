@@ -22,7 +22,11 @@ const props = defineProps<{
   listId: string | null;
 }>();
 
-const emit = defineEmits<{ "update:visible": [value: boolean] }>();
+const emit = defineEmits<{
+  "update:visible": [value: boolean];
+  /** 点击树中任务行，请求打开该任务的只读详情弹窗（由 TrashSection 切换弹窗） */
+  "open-task": [taskId: string];
+}>();
 
 const loading = ref(false);
 const root = ref<List | null>(null);
@@ -54,10 +58,12 @@ watch(
 
 /** 树形行（DFS 展平，depth 驱动缩进） */
 interface TreeRow {
+  /** 行 id（清单或任务的 id；任务行点击转发详情查看） */
+  id: string;
   icon: typeof IconList;
   name: string;
   depth: number;
-  /** 任务行才有：完成态（清单/目录恒 undefined） */
+  /** 任务行才有：完成态（清单/目录恒 undefined，也作为任务行判定依据） */
   done?: boolean;
 }
 
@@ -82,6 +88,7 @@ const rows = computed<TreeRow[]>(() => {
   const walkTaskChildren = (parentId: string, depth: number): void => {
     for (const t of tasksByParent.get(parentId) ?? []) {
       out.push({
+        id: t.id,
         icon: t.kind === "note" ? IconFile : IconCheckCircle,
         name: t.title,
         depth,
@@ -95,6 +102,7 @@ const rows = computed<TreeRow[]>(() => {
     for (const t of tasksByParent.get(null) ?? []) {
       if (t.listId !== listId) continue;
       out.push({
+        id: t.id,
         icon: t.kind === "note" ? IconFile : IconCheckCircle,
         name: t.title,
         depth,
@@ -106,6 +114,7 @@ const rows = computed<TreeRow[]>(() => {
   const walkLists = (parentId: string | null, depth: number): void => {
     for (const l of byParent.get(parentId) ?? []) {
       out.push({
+        id: l.id,
         icon: l.isFolder ? IconFolder : l.kind === "note" ? IconBook : IconList,
         name: l.name,
         depth,
@@ -168,13 +177,16 @@ const rootTypeLabel = computed(() => {
           {{ rootTypeLabel }} · 已删除 · {{ summary }}
         </div>
 
-        <!-- 子内容树（DFS 展平缩进） -->
+        <!-- 子内容树（DFS 展平缩进；任务行可点击打开只读详情弹窗） -->
         <div v-if="rows.length > 0" class="trash-list-detail__tree">
           <div
             v-for="(row, i) in rows"
             :key="i"
             class="trash-list-detail__row"
+            :class="{ 'trash-list-detail__row--task': row.done !== undefined }"
             :style="{ paddingLeft: `${row.depth * 18}px` }"
+            :title="row.done !== undefined ? '点击查看详情' : undefined"
+            @click="row.done !== undefined && emit('open-task', row.id)"
           >
             <span class="trash-list-detail__done" :class="{ 'trash-list-detail__done--checked': row.done }">
               ✓
@@ -241,8 +253,19 @@ const rootTypeLabel = computed(() => {
   gap: 7px;
   font-size: 13px;
   color: var(--jt-text-primary);
-  padding: 3px 0;
+  padding: 3px 6px;
+  margin: 0 -6px;
+  border-radius: 6px;
   word-break: break-word;
+}
+
+/* 任务行可点击查看详情 */
+.trash-list-detail__row--task {
+  cursor: pointer;
+}
+
+.trash-list-detail__row--task:hover {
+  background-color: var(--jt-surface-hover);
 }
 
 .trash-list-detail__row-icon {

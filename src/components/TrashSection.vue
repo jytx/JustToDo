@@ -49,6 +49,13 @@ function openDetail(item: TrashItem): void {
   detailVisible.value = true;
 }
 
+/** 目录树弹窗内点击任务行 → 切换到任务只读详情弹窗
+ *  （v-if 分支切换使任务弹窗重新挂载，watch immediate 会立即加载） */
+function openTaskFromTree(taskId: string): void {
+  detailTaskId.value = taskId;
+  detailKind.value = "task";
+}
+
 // ─── 展示映射（类型 → 图标/文字） ─────────────────────────
 
 const KIND_META: Record<TrashItem["kind"], { icon: typeof IconList; label: string }> = {
@@ -221,7 +228,12 @@ const isEmpty = computed(() => !trashStore.loading && trashStore.items.length ==
       v-model:visible="detailVisible"
       :task-id="detailTaskId"
     />
-    <TrashListDetailModal v-else v-model:visible="detailVisible" :list-id="detailListId" />
+    <TrashListDetailModal
+      v-else
+      v-model:visible="detailVisible"
+      :list-id="detailListId"
+      @open-task="openTaskFromTree"
+    />
   </div>
 </template>
 

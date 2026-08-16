@@ -85,11 +85,16 @@ const props = withDefaults(
     borderless?: boolean;
     /** 是否启用块拖拽手柄（默认 true；模板编辑弹窗等小场景下传 false 关闭） */
     dragHandle?: boolean;
+    /** 只读模式（回收站任务详情等纯查看场景）：
+     *  编辑器 editable=false，斜杠命令/源码切换/拖拽手柄/浮动菜单/表格工具条全部隐藏，
+     *  仅保留与详情面板完全一致的富文本渲染（标题折叠/代码块/任务列表/表格/图片）。 */
+    readonly?: boolean;
   }>(),
   {
     placeholder: "",
     borderless: false,
     dragHandle: true,
+    readonly: false,
   },
 );
 
@@ -537,6 +542,8 @@ function looksLikeMarkdown(text: string): boolean {
 
 // editor 实例由 useEditor() 创建，再以 ref 暴露给外部（defineExpose 用）
 const editor = useEditor({
+  // 只读模式（回收站详情等查看场景）：编辑器不可编辑，渲染扩展完整保留
+  editable: !props.readonly,
   content: props.modelValue || "",
   extensions: [
     StarterKit.configure({
@@ -612,13 +619,16 @@ const editor = useEditor({
     internalUpdate = true;
     emit("update:modelValue", editor.getHTML());
   },
-  editorProps: {
-    attributes: {
-      class: "rich-text__content",
-      // 文档完全空时显示的提示。
-      // 由 CSS `.rich-text__content:empty::before` 通过 data-placeholder 读取。
-      "data-placeholder": props.placeholder ?? "按 / 唤起命令，输入备注…",
-    },
+    editorProps: {
+      attributes: {
+        class: "rich-text__content",
+        // 文档完全空时显示的提示。
+        // 由 CSS `.rich-text__content:empty::before` 通过 data-placeholder 读取。
+        // 只读模式不显示任何输入提示。
+        "data-placeholder": props.readonly
+          ? ""
+          : (props.placeholder ?? "按 / 唤起命令，输入备注…"),
+      },
     handlePaste: (_view, event) => {
       const cd = event.clipboardData;
       if (!cd) return false;
@@ -736,16 +746,19 @@ const editor = useEditor({
 // Slash Command plugin 注册：
 // useEditor 创建的 editor 是 ref；注册要等 editor 实例 ready。
 // 在 watch 中监测 editor.value 变化，第一次非 undefined 时 installSlashPlugin。
+// 只读模式跳过（斜杠命令无意义，也避免输入类插件干扰纯查看）。
 watch(
   editor,
   (ed, _old, onCleanup) => {
     if (!ed) return;
-    installSlashPlugin(ed);
-    installUndoGroupFix(ed);
-    onCleanup(() => {
-      uninstallSlashPlugin(ed);
-      uninstallUndoGroupFix(ed);
-    });
+    if (!props.readonly) {
+      installSlashPlugin(ed);
+      installUndoGroupFix(ed);
+      onCleanup(() => {
+        uninstallSlashPlugin(ed);
+        uninstallUndoGroupFix(ed);
+      });
+    }
   },
   { immediate: true },
 );
@@ -838,6 +851,8 @@ function onTablePickerOutside(e: MouseEvent): void {
 function onEditorContextMenu(e: MouseEvent): void {
   const ed = editor.value;
   if (!ed) return;
+  // 只读模式：不弹表格编辑菜单（右键交给系统默认，图片等原生交互不受影响）
+  if (props.readonly) return;
   const target = e.target as HTMLElement | null;
   if (!target) return;
   // 判断点击是否在表格相关元素上
@@ -1239,8 +1254,9 @@ function fileToBase64(file: File): Promise<string> {
         placeholder="输入 Markdown 源码..."
         spellcheck="false"
       ></textarea>
-      <!-- 源码/预览切换按钮（右上角浮动，</> 图标） -->
+      <!-- 源码/预览切换按钮（右上角浮动，</> 图标；只读模式隐藏） -->
       <button
+        v-if="!readonly"
         class="rich-text__source-toggle"
         :class="{ 'rich-text__source-toggle--on': sourceMode }"
         :title="sourceMode ? '切换到富文本预览' : '切换到 Markdown 源码'"
@@ -1250,14 +1266,14 @@ function fileToBase64(file: File): Promise<string> {
       </button>
       <!-- 块拖拽手柄 + 落点横线（放在 wrapper 内、absolute 定位，hover 链不断）
            可通过 dragHandle prop 关闭（模板编辑弹窗等小场景不需要） -->
-      <BlockDragHandle v-if="dragHandle && !sourceMode" :editor="editor" :on-pick-table="openTablePicker" />
+      <BlockDragHandle v-if="dragHandle && !readonly && !sourceMode" :editor="editor" :on-pick-table="openTablePicker" />
     </div>
 
-    <!-- 空段落浮 + 按钮（Notion-like 入口之一） -->
-    <RichTextFloatingMenu :editor="editor" />
+    <!-- 空段落浮 + 按钮（Notion-like 入口之一；只读模式隐藏） -->
+    <RichTextFloatingMenu v-if="!readonly" :editor="editor" />
 
-    <!-- 表格浮动工具条（光标在表格内时显示） -->
-    <TableToolbar :editor="editor" />
+    <!-- 表格浮动工具条（光标在表格内时显示；只读模式隐藏） -->
+    <TableToolbar v-if="!readonly" :editor="editor" />
 
     <!-- 表格行列选择器（斜杠/块手柄菜单选「表格」时弹出，选 N×N 后插入） -->
     <teleport to="body">

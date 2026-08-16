@@ -11,6 +11,7 @@ import type { Tag } from "@/api/db";
 import * as db from "@/api/db";
 import { useListStore } from "@/stores/list";
 import PriorityDot from "@/components/PriorityDot.vue";
+import RichTextEditor from "@/components/RichTextEditor.vue";
 
 const props = defineProps<{
   /** 是否显示（v-model:visible） */
@@ -153,11 +154,18 @@ const isNote = computed(() => task.value?.kind === "note");
           </div>
         </div>
 
-        <!-- 备注（富文本只读渲染；图片 src 已是 asset 协议可直接显示） -->
+        <!-- 备注（复用详情面板的 RichTextEditor 只读渲染：标题折叠/代码块/任务列表/表格/图片
+             与面板完全一致；编辑类 UI（斜杠命令/源码切换/拖拽手柄/工具条）已由 readonly 隐藏） -->
         <div v-if="task.note && task.note.trim() !== ''" class="trash-detail__block">
           <div class="trash-detail__block-label">{{ isNote ? "内容" : "备注" }}</div>
-          <!-- eslint-disable-next-line vue/no-v-html -->
-          <div class="trash-detail__note" v-html="task.note" />
+          <div class="trash-detail__editor">
+            <RichTextEditor
+              :model-value="task.note"
+              :readonly="true"
+              :drag-handle="false"
+              borderless
+            />
+          </div>
         </div>
 
         <!-- 附件（只读列出） -->
@@ -278,69 +286,12 @@ const isNote = computed(() => task.value?.kind === "note");
   word-break: break-word;
 }
 
-.trash-detail__note {
-  font-size: 13px;
-  color: var(--jt-text-primary);
-  line-height: 1.7;
-  word-break: break-word;
-}
-
-/* 富文本只读排版（v-html 内容需 :deep 穿透 scoped） */
-.trash-detail__note :deep(p) {
-  margin: 0 0 8px;
-}
-
-.trash-detail__note :deep(h1),
-.trash-detail__note :deep(h2),
-.trash-detail__note :deep(h3) {
-  margin: 12px 0 6px;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.trash-detail__note :deep(ul),
-.trash-detail__note :deep(ol) {
-  margin: 0 0 8px;
-  padding-left: 20px;
-}
-
-.trash-detail__note :deep(img) {
-  max-width: 100%;
-  border-radius: 6px;
-}
-
-.trash-detail__note :deep(code) {
-  font-family: var(--font-mono, monospace);
-  font-size: 12px;
-  background-color: var(--jt-surface-sunken);
-  padding: 1px 5px;
-  border-radius: 4px;
-}
-
-.trash-detail__note :deep(pre) {
-  background-color: var(--jt-surface-sunken);
-  padding: 10px 12px;
+.trash-detail__editor {
+  max-height: 320px;
+  overflow-y: auto;
   border-radius: 8px;
-  overflow-x: auto;
-}
-
-.trash-detail__note :deep(blockquote) {
-  margin: 0 0 8px;
-  padding-left: 10px;
-  border-left: 3px solid var(--jt-border);
-  color: var(--jt-text-secondary);
-}
-
-.trash-detail__note :deep(table) {
-  border-collapse: collapse;
-  margin-bottom: 8px;
-}
-
-.trash-detail__note :deep(th),
-.trash-detail__note :deep(td) {
   border: 1px solid var(--jt-border);
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: 6px 10px;
 }
 
 .trash-detail__att {
