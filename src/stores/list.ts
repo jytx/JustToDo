@@ -6,7 +6,6 @@ import { defineStore } from "pinia";
 import { ref, reactive, computed } from "vue";
 import type { List, TaskKind } from "@/types";
 import * as db from "@/api/db";
-import { useTrashStore } from "@/stores/trash";
 
 /** 带子节点的树形清单 */
 export interface ListTreeNode extends List {
@@ -362,12 +361,11 @@ export const useListStore = defineStore("list", () => {
   }
 
   /** 删除清单/目录（整棵子树软删除入回收站）。
-   *  收敛删除入口：统一由本 action 完成持久化 + 本地刷新 + 回收站角标同步，
-   *  组件不再直接调 db.deleteList。 */
+   *  收敛删除入口：统一由本 action 完成持久化 + 本地刷新，
+   *  组件不再直接调 db.deleteList。回收站数据在设置页区块挂载时自行加载。 */
   async function deleteList(id: string): Promise<void> {
     await db.deleteList(id);
     await loadLists();
-    await useTrashStore().load();
   }
 
   // ─── 批量多选 action（交互详见 discuss/2026-08-14-list-batch-operation-design.md） ──
@@ -584,7 +582,7 @@ export const useListStore = defineStore("list", () => {
     pendingBatchDelete.value = null;
   }
 
-  /** 确认批量删除：逐个软删除入回收站（整棵子树），完成后重载树 + 退出多选 + 刷新回收站角标。 */
+  /** 确认批量删除：逐个软删除入回收站（整棵子树），完成后重载树 + 退出多选。 */
   async function confirmBatchDelete(): Promise<void> {
     const pending = pendingBatchDelete.value;
     if (!pending) return;
@@ -594,7 +592,6 @@ export const useListStore = defineStore("list", () => {
     pendingBatchDelete.value = null;
     await loadLists();
     exitBatchMode();
-    await useTrashStore().load();
   }
 
   return {

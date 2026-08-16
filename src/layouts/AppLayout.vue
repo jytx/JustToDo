@@ -814,7 +814,7 @@ useShortcuts({
     >
       <template #title>删除任务「<strong>{{ deleteConfirmTitle }}</strong>」？</template>
       <template #default>
-        任务将<strong>移入回收站</strong>，可随时在回收站中恢复。
+        任务将<strong>移入回收站</strong>，可随时在「设置 → 回收站」中恢复。
       </template>
     </ConfirmDialog>
 
@@ -827,7 +827,7 @@ useShortcuts({
     >
       <template #title>删除选中的 <strong>{{ batchDeleteCount }}</strong> 个任务？</template>
       <template #default>
-        任务将<strong>移入回收站</strong>，可随时在回收站中恢复。
+        任务将<strong>移入回收站</strong>，可随时在「设置 → 回收站」中恢复。
       </template>
     </ConfirmDialog>
 

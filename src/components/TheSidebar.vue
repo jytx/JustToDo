@@ -28,7 +28,6 @@ import { useListStore } from "@/stores/list";
 import { useTagStore } from "@/stores/tag";
 import { useTaskStore } from "@/stores/task";
 import { useSettingsStore } from "@/stores/settings";
-import { useTrashStore } from "@/stores/trash";
 import { useQuickAdd } from "@/composables/useQuickAdd";
 import { useListBatchSelect, flattenActiveTree } from "@/composables/useListBatchSelect";
 import { useNoteImport } from "@/composables/useNoteImport";
@@ -155,7 +154,6 @@ const listStore = useListStore();
 const tagStore = useTagStore();
 const taskStore = useTaskStore();
 const settingsStore = useSettingsStore();
-const trashStore = useTrashStore();
 const quickAdd = useQuickAdd();
 
 /** 清单/笔记本批量多选：行点击转发 + 批量右键菜单状态。
@@ -996,8 +994,6 @@ onMounted(() => {
   document.addEventListener("keydown", onEscForCascade);
   // 选中清单/笔记本时 Backspace/Delete 弹删除确认框（窗口级，与 AppLayout 任务删除互补）
   window.addEventListener("keydown", onSidebarListKeydown);
-  // 启动时加载回收站计数（侧边栏角标；删除操作后各 store action 会再刷新）
-  trashStore.load();
 });
 onUnmounted(() => {
   document.removeEventListener("mousedown", onDocMouseDownForCascade);
@@ -1427,21 +1423,6 @@ onMounted(async () => {
           <icon-archive :size="18" />
         </button>
 
-        <!-- 回收站入口 —— 常驻；角标显示回收站条目数 -->
-        <button
-          type="button"
-          class="sidebar__rail-item"
-          :class="{ 'sidebar__rail-item--active': activeRouteName === 'trash' }"
-          :title="`回收站（${trashStore.count}）`"
-          @click="router.push('/trash')"
-          @mouseenter="showRailTip($event, `回收站（${trashStore.count}）`)"
-          @mousemove="cancelHideRailTip"
-          @mouseleave="hideRailTip"
-        >
-          <icon-delete :size="18" />
-          <span v-if="trashStore.count > 0" class="sidebar__rail-badge">{{ trashStore.count }}</span>
-        </button>
-
         <!-- 分隔线（仅当有标签时才显示） -->
         <div v-if="tagStore.tags.length > 0" class="sidebar__rail-divider" />
 
@@ -1680,17 +1661,6 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- 回收站 —— 独立页面入口，常驻显示（空回收站也可进入查看） -->
-      <router-link
-        to="/trash"
-        class="sidebar__item"
-        :class="{ 'sidebar__item--active': activeRouteName === 'trash' }"
-      >
-        <icon-delete :size="16" class="sidebar__item-icon" />
-        <span class="sidebar__item-title">回收站</span>
-        <span v-if="trashStore.count > 0" class="sidebar__count">{{ trashStore.count }}</span>
-      </router-link>
-
       <!-- 标签 -->
       <div class="sidebar__subheader sidebar__subheader--toggle">
         <div class="sidebar__subheader-left" @click="toggleSection('tags')">
@@ -1803,10 +1773,10 @@ onMounted(async () => {
       「<strong>{{ confirmDelete?.name }}</strong>」？
     </template>
     <template v-if="confirmDelete?.type === 'list' && confirmDelete.taskCount > 0">
-      {{ confirmDeleteListKind === "note" ? "笔记本" : "清单" }}及其 {{ confirmDelete.taskCount }} 个{{ confirmDeleteListKind === "note" ? "笔记" : "任务" }}将<strong>整体移入回收站</strong>，可在回收站中恢复。
+      {{ confirmDeleteListKind === "note" ? "笔记本" : "清单" }}及其 {{ confirmDelete.taskCount }} 个{{ confirmDeleteListKind === "note" ? "笔记" : "任务" }}将<strong>整体移入回收站</strong>，可在「设置 → 回收站」中恢复。
     </template>
     <template v-else-if="confirmDelete?.type === 'list'">
-      {{ confirmDeleteListKind === "note" ? "笔记本" : "清单" }}将<strong>整体移入回收站</strong>，可在回收站中恢复。
+      {{ confirmDeleteListKind === "note" ? "笔记本" : "清单" }}将<strong>整体移入回收站</strong>，可在「设置 → 回收站」中恢复。
     </template>
     <template v-else-if="confirmDelete?.type === 'tag'">
       标签将被删除，任务不受影响。
@@ -1823,10 +1793,10 @@ onMounted(async () => {
       删除选中的 {{ listStore.pendingBatchDelete?.ids.length ?? 0 }} 个{{ batchMenuKind === "note" ? "笔记本" : "清单" }}？
     </template>
     <template v-if="(listStore.pendingBatchDelete?.taskCount ?? 0) > 0">
-      选中的{{ batchMenuKind === "note" ? "笔记本" : "清单" }}及其 {{ listStore.pendingBatchDelete?.taskCount }} 个{{ batchMenuKind === "note" ? "笔记" : "任务" }}将<strong>整体移入回收站</strong>，可在回收站中恢复。
+      选中的{{ batchMenuKind === "note" ? "笔记本" : "清单" }}及其 {{ listStore.pendingBatchDelete?.taskCount }} 个{{ batchMenuKind === "note" ? "笔记" : "任务" }}将<strong>整体移入回收站</strong>，可在「设置 → 回收站」中恢复。
     </template>
     <template v-else>
-      选中的{{ batchMenuKind === "note" ? "笔记本" : "清单" }}将<strong>整体移入回收站</strong>，可在回收站中恢复。
+      选中的{{ batchMenuKind === "note" ? "笔记本" : "清单" }}将<strong>整体移入回收站</strong>，可在「设置 → 回收站」中恢复。
     </template>
   </ConfirmDialog>
 

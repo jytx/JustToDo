@@ -1,10 +1,9 @@
 // 回收站 store —— 管理回收站条目列表、恢复、彻底删除、清空
 //
 // 数据流：删除操作走 task/list store 的 deleteTask/deleteList（软删除入站），
-// 本 store 负责回收站页面数据与角标计数。
-// 依赖方向保持单向：task store → 本 store（删除后刷新计数）；
-// 恢复/清空后的主页数据联动由 TrashView 调用 task/list store 完成，
-// 避免循环依赖。
+// 本 store 为设置页「回收站」区块（TrashSection）提供数据，区块挂载时 load。
+// 恢复/清空后的主页数据联动由 TrashSection 调用 task/list store 完成，
+// 保持依赖单向（组件居中协调），store 之间互不引用。
 
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
@@ -21,7 +20,7 @@ export const useTrashStore = defineStore("trash", () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
 
-  /** 回收站条目数（顶层项计数，侧边栏角标用） */
+  /** 回收站条目数（顶层项计数） */
   const count = computed(() => items.value.length);
 
   /** 加载回收站列表（进入回收站页面 / 删除操作后刷新角标共用） */

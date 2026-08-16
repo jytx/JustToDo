@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 回收站视图 —— 已删除条目的统一管理页面
+// 回收站区块 —— 设置页「回收站」section 的内容组件
 //
 // 数据：只展示「删除树」的根（顶层项，避免删一个目录后出现几十条）；
 // 恢复 = 整棵子树回原位；彻底删除 = 物理删除整棵子树；清空 = 全部物理删除。
@@ -110,45 +110,43 @@ const isEmpty = computed(() => !trashStore.loading && trashStore.items.length ==
 </script>
 
 <template>
-  <div class="trash-view">
-    <!-- 顶栏：标题 + 计数 + 清空按钮 -->
-    <div class="trash-view__header">
-      <div class="trash-view__title-wrap">
-        <h1 class="trash-view__title">回收站</h1>
-        <span v-if="trashStore.items.length > 0" class="trash-view__count">
-          {{ trashStore.items.length }} 项
-        </span>
-      </div>
+  <div class="trash-section">
+    <!-- 头部：计数说明 + 清空按钮 -->
+    <div class="trash-section__header">
+      <span class="trash-section__count">
+        {{ trashStore.items.length > 0 ? `共 ${trashStore.items.length} 项` : "暂无内容" }}
+      </span>
       <a-button
         v-if="trashStore.items.length > 0"
+        size="small"
         status="danger"
         :loading="emptying"
         @click="emptyConfirmVisible = true"
       >
-        <template #icon><icon-delete :size="15" /></template>
+        <template #icon><icon-delete :size="14" /></template>
         清空回收站
       </a-button>
     </div>
 
     <!-- 条目列表 -->
-    <div v-if="trashStore.items.length > 0" class="trash-view__list">
-      <div v-for="item in trashStore.items" :key="item.id" class="trash-view__item">
-        <component :is="KIND_META[item.kind].icon" :size="16" class="trash-view__item-icon" />
-        <div class="trash-view__item-main">
-          <div class="trash-view__item-name" :title="item.name">{{ item.name }}</div>
-          <div class="trash-view__item-meta">
+    <div v-if="trashStore.items.length > 0" class="trash-section__list">
+      <div v-for="item in trashStore.items" :key="item.id" class="trash-section__item">
+        <component :is="KIND_META[item.kind].icon" :size="16" class="trash-section__item-icon" />
+        <div class="trash-section__item-main">
+          <div class="trash-section__item-name" :title="item.name">{{ item.name }}</div>
+          <div class="trash-section__item-meta">
             <span>{{ originText(item) }}</span>
-            <span class="trash-view__item-dot">·</span>
+            <span class="trash-section__item-dot">·</span>
             <span>删除于 {{ formatDeletedAt(item.deletedAt) }}</span>
           </div>
         </div>
-        <div class="trash-view__item-actions">
-          <a-button size="small" :loading="restoring" @click="onRestore(item)">
-            <template #icon><icon-undo :size="14" /></template>
+        <div class="trash-section__item-actions">
+          <a-button size="mini" :loading="restoring" @click="onRestore(item)">
+            <template #icon><icon-undo :size="13" /></template>
             恢复
           </a-button>
-          <a-button size="small" status="danger" @click="purgeTarget = item">
-            <template #icon><icon-delete :size="14" /></template>
+          <a-button size="mini" status="danger" @click="purgeTarget = item">
+            <template #icon><icon-delete :size="13" /></template>
             彻底删除
           </a-button>
         </div>
@@ -156,10 +154,10 @@ const isEmpty = computed(() => !trashStore.loading && trashStore.items.length ==
     </div>
 
     <!-- 空态 -->
-    <div v-else-if="isEmpty" class="trash-view__empty">
-      <icon-delete :size="36" class="trash-view__empty-icon" />
-      <p class="trash-view__empty-text">回收站是空的</p>
-      <p class="trash-view__empty-hint">删除的任务、清单、目录和笔记会在这里保留，可随时恢复</p>
+    <div v-else-if="isEmpty" class="trash-section__empty">
+      <icon-delete :size="28" class="trash-section__empty-icon" />
+      <p class="trash-section__empty-text">回收站是空的</p>
+      <p class="trash-section__empty-hint">删除的任务、清单、目录和笔记会在这里保留，可随时恢复</p>
     </div>
 
     <!-- 彻底删除确认（不可逆，强警示文案） -->
@@ -196,67 +194,51 @@ const isEmpty = computed(() => !trashStore.loading && trashStore.items.length ==
 </template>
 
 <style scoped>
-/* 页面容器：与任务视图同宽度的滚动列（顶部留白对齐其他页面） */
-.trash-view {
-  flex: 1;
-  min-width: 0;
-  overflow-y: auto;
+.trash-section {
   display: flex;
   flex-direction: column;
-  padding: 28px 32px;
+  gap: 8px;
 }
 
-.trash-view__header {
+.trash-section__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  min-height: 28px;
 }
 
-.trash-view__title-wrap {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.trash-view__title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--jt-text-primary);
-  font-family: var(--font-display, inherit);
-}
-
-.trash-view__count {
+.trash-section__count {
   font-size: 12px;
   color: var(--jt-text-tertiary);
 }
 
-.trash-view__list {
+.trash-section__list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
-.trash-view__item {
+/* 条目行：凹陷底色区分常规设置项（不可进入，仅管理） */
+.trash-section__item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: 8px;
+  background-color: var(--jt-surface-sunken);
   transition: background-color 0.15s ease;
 }
 
-.trash-view__item:hover {
+.trash-section__item:hover {
   background-color: var(--jt-surface-hover);
 }
 
-.trash-view__item-icon {
+.trash-section__item-icon {
   flex-shrink: 0;
   color: var(--jt-text-tertiary);
 }
 
-.trash-view__item-main {
+.trash-section__item-main {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -264,15 +246,15 @@ const isEmpty = computed(() => !trashStore.loading && trashStore.items.length ==
   gap: 2px;
 }
 
-.trash-view__item-name {
-  font-size: 14px;
+.trash-section__item-name {
+  font-size: 13px;
   color: var(--jt-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.trash-view__item-meta {
+.trash-section__item-meta {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -280,44 +262,42 @@ const isEmpty = computed(() => !trashStore.loading && trashStore.items.length ==
   color: var(--jt-text-tertiary);
 }
 
-.trash-view__item-dot {
+.trash-section__item-dot {
   color: var(--jt-text-tertiary);
 }
 
-/* 操作按钮：默认淡显，hover 行时加深（管理页惯例，降低视觉噪音） */
-.trash-view__item-actions {
+/* 操作按钮：默认淡显，hover 行时加深（降低视觉噪音） */
+.trash-section__item-actions {
   display: flex;
-  gap: 8px;
-  opacity: 0.55;
+  gap: 6px;
+  opacity: 0.6;
   transition: opacity 0.15s ease;
 }
 
-.trash-view__item:hover .trash-view__item-actions {
+.trash-section__item:hover .trash-section__item-actions {
   opacity: 1;
 }
 
-.trash-view__empty {
-  flex: 1;
+.trash-section__empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 60px 0;
+  gap: 6px;
+  padding: 36px 0;
 }
 
-.trash-view__empty-icon {
+.trash-section__empty-icon {
   color: var(--jt-empty-art, var(--jt-text-tertiary));
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
-.trash-view__empty-text {
+.trash-section__empty-text {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--jt-text-secondary);
 }
 
-.trash-view__empty-hint {
+.trash-section__empty-hint {
   margin: 0;
   font-size: 12px;
   color: var(--jt-text-tertiary);

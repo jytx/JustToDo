@@ -31,6 +31,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import TemplateSection from "@/components/TemplateSection.vue";
 import ListScheduleSection from "@/components/ListScheduleSection.vue";
 import BackgroundTaskSection from "@/components/BackgroundTaskSection.vue";
+import TrashSection from "@/components/TrashSection.vue";
 import { isValidHHmm } from "@/utils/date";
 import { SOUND_OPTIONS, findSoundOption } from "@/utils/sounds";
 import { playSound } from "@/composables/useSound";
@@ -73,6 +74,7 @@ const sections = [
   { id: "templates", icon: IconCopy, label: "模板" },
   { id: "schedule", icon: IconCalendar, label: "清单生成计划" },
   { id: "backgroundTasks", icon: IconSync, label: "后台任务" },
+  { id: "trash", icon: IconDelete, label: "回收站" },
   { id: "data", icon: IconStorage, label: "数据" },
   { id: "ai", icon: IconRobot, label: "AI" },
   { id: "about", icon: IconInfoCircle, label: "关于" },
@@ -722,6 +724,15 @@ async function changeAttachmentPath() {
         </div>
 
         <!-- 数据 -->
+        <!-- 回收站 -->
+        <div v-if="activeSection === 'trash'" class="settings-section">
+          <h2 class="settings-section__title">回收站</h2>
+          <p class="settings-section__desc">
+            删除的任务、清单、目录和笔记会在这里保留，可恢复原位或彻底删除。
+          </p>
+          <TrashSection />
+        </div>
+
         <div v-if="activeSection === 'data'" class="settings-section">
           <h2 class="settings-section__title">数据</h2>
           <p class="settings-section__desc">数据存储在本地 SQLite 数据库中。</p>
