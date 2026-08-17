@@ -1270,20 +1270,31 @@ pub async fn tag_create(
     let id = uuid();
     let ts = now();
 
-    sqlx::query("INSERT INTO tags (id, name, created_at, color) VALUES ($1, $2, $3, $4)")
-        .bind(&id)
-        .bind(&name)
-        .bind(&ts)
-        .bind(&color)
-        .execute(pool.inner())
+    // 新标签追加到末尾：position = 当前最大 position + 1000（与前端 reorderTags 步长一致）。
+    // 不能用默认值 0 —— 拖拽排序过的标签 position 均为正整数，0 会让新标签排到列表最前。
+    let max_position: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(position), 0) FROM tags")
+        .fetch_one(pool.inner())
         .await
-        .map_err(|e| format!("创建标签失败: {}", e))?;
+        .map_err(|e| format!("查询标签位置失败: {}", e))?;
+    let position = max_position + 1000;
+
+    sqlx::query(
+        "INSERT INTO tags (id, name, created_at, position, color) VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(&id)
+    .bind(&name)
+    .bind(&ts)
+    .bind(position)
+    .bind(&color)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| format!("创建标签失败: {}", e))?;
 
     Ok(Tag {
         id,
         name,
         created_at: ts,
-        position: 0,
+        position,
         color,
     })
 }
