@@ -71,6 +71,15 @@ export function preloadSounds(): void {
       getPooledAudio(opt.dataUrl);
     }
   }
+  // 首次用户手势（点击/按键）时恢复 AudioContext：
+  // 此后 Web Audio 零延迟路径可用；若环境拒绝恢复，则永远走 HTMLAudio（同样即时）
+  const resumeOnce = () => {
+    if (audioCtx && audioCtx.state === "suspended") {
+      void audioCtx.resume();
+    }
+  };
+  window.addEventListener("pointerdown", resumeOnce, { once: true, capture: true });
+  window.addEventListener("keydown", resumeOnce, { once: true, capture: true });
 }
 
 // ── HTMLAudio 预加载池（提醒等无手势场景 / 未解码时的兜底） ──
@@ -115,10 +124,12 @@ export function playSound(dataUrl: string, allowWebAudio: boolean): void {
     currentFallback.currentTime = 0;
     currentFallback = null;
   }
-  // Web Audio 零延迟路径：仅手势链内且已解码
+  // Web Audio 零延迟路径：仅手势链内、已解码、且 context 处于 running。
+  // context 为 suspended 时绝不依赖 resume 出声（真实环境 resume 可能耗时几百 ms
+  // 甚至被拒），一律走下方 HTMLAudio 立即播放。
   const cached = bufferCache.get(dataUrl);
   const ctx = audioCtx;
-  if (allowWebAudio && cached && ctx) {
+  if (allowWebAudio && cached && ctx && ctx.state === "running") {
     const source = ctx.createBufferSource();
     source.buffer = cached;
     source.connect(ctx.destination);
@@ -126,16 +137,15 @@ export function playSound(dataUrl: string, allowWebAudio: boolean): void {
     source.onended = () => {
       if (currentSource === source) currentSource = null;
     };
-    // 先调度 start：context 若 suspended，resume 完成时立即出声（Web Audio 规范保证
-    // 已调度的 source 在 context running 后播放），避免 resume().then(start) 串行延迟
     source.start();
-    if (ctx.state === "suspended") {
-      // 手势链内调用 resume（勾选/试听都在用户点击中），尽快恢复上下文
-      void ctx.resume();
-    }
     return;
   }
-  // 兜底：HTMLAudio 元素播放（data: URL 无网络 I/O），同时后台解码供下次手势内零延迟
+  // context 处于 suspended 时顺带尝试恢复（fire-and-forget）：
+  // 手势链内调用有效，成功后后续点击自动升级为 Web Audio 零延迟路径
+  if (ctx && ctx.state === "suspended") {
+    void ctx.resume();
+  }
+  // 兜底：HTMLAudio 元素播放（data: URL 无网络 I/O，解码即播），同时后台解码供下次复用
   const el = getPooledAudio(dataUrl);
   el.currentTime = 0;
   currentFallback = el;
