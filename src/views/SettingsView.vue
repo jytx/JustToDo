@@ -330,15 +330,15 @@ const soundSelectOptions = computed(() =>
   SOUND_OPTIONS.map((o) => ({
     value: o.value,
     label: o.label,
-    previewable: o.url !== null,
+    previewable: o.dataUrl !== null,
   })),
 );
 
-/** 试听指定音效：按 value 查 url 并播放（「无」不响） */
+/** 试听指定音效：按 value 查 dataUrl 并播放（「无」不响；点击在手势链内，走零延迟路径） */
 function previewSound(value: string): void {
   const option = findSoundOption(value);
-  if (option?.url) {
-    playSound(option.url);
+  if (option?.dataUrl) {
+    playSound(option.dataUrl, true);
   }
 }
 
