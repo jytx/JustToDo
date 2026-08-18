@@ -32,6 +32,23 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir().expect("无法获取 app data 目录");
             std::fs::create_dir_all(&app_data_dir).expect("无法创建 app data 目录");
 
+            // macOS：声明 userInitiated 活动阻止 App Nap。
+            // 应用闲置（约半小时）后 macOS 会小憩 WebView 进程，音频会话被系统挂起，
+            // 导致提示音无声（实测 dev 因活动频繁不复现，打包版闲置后必现）。
+            // activity 故意泄漏不释放：生命周期与进程一致，永不 endActivity。
+            #[cfg(target_os = "macos")]
+            {
+                use objc2_foundation::{NSActivityOptions, NSProcessInfo};
+                let activity = unsafe {
+                    NSProcessInfo::processInfo().beginActivityWithOptions_reason(
+                        NSActivityOptions::UserInitiated,
+                        &objc2_foundation::NSString::from_str("keep-audio-alive"),
+                    )
+                };
+                std::mem::forget(activity);
+                println!("[JustToDo] 已声明 userInitiated 活动（阻止 App Nap 挂起音频）");
+            }
+
             let db_path = app_data_dir.join("justtodo.db");
             let db_url = format!("sqlite://{}", db_path.display());
             println!("[JustToDo] 数据库路径: {}", db_path.display());

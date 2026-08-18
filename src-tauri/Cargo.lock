@@ -2324,6 +2324,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "futures-util",
+ "objc2-foundation",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

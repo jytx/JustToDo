@@ -1,11 +1,12 @@
 /**
  * 提示音播放 composable —— 三类场景（任务完成 / 到期提醒 / 每日提醒）的播放入口。
  *
- * 音效以 base64 内嵌（见 utils/sounds.ts 的 dataUrl），播放不依赖网络协议：
- * - 任务完成 / 试听（用户手势链内）：优先 Web Audio 预解码缓存，零延迟；
- *   AudioContext 若 suspended 则先调度 start 再 resume（手势链内 resume 有效）。
- * - 到期 / 每日提醒（Rust 后台事件触发，无手势）：AudioContext 无法恢复，
- *   必须走 HTMLAudio 元素播放（data: URL 无网络 I/O，解码即播）。
+ * 播放策略（刻意极简，无共享可坏状态）：
+ * - 每次播放创建全新 Audio 元素播 data: URL（base64 内嵌，无网络 I/O）；
+ * - 不用 Web Audio / AudioContext：打包版 WKWebView 中 context 会因系统闲置
+ *   被 App Nap 挂起（suspended/closed、resume 被拒），行为不可控，是历次
+ *   「延迟大 / 无声」问题的温床；全新元素由 WKWebView 重新激活媒体管道，最稳。
+ * - 播放失败（元素状态损坏等）时静默放弃，不影响主流程。
  * 打断：新播放打断上一次（快速连点不叠加）。
  *
  * 提醒声音由 Rust 后台发系统通知时同步 emit 事件到前端（见 lib.rs），
@@ -13,163 +14,29 @@
  */
 import { listen } from "@tauri-apps/api/event";
 import { useSettingsStore } from "@/stores/settings";
-import { SOUND_OPTIONS, findSoundOption } from "@/utils/sounds";
+import { findSoundOption } from "@/utils/sounds";
 
-// ── Web Audio 预解码缓存 ──────────────────────────────
+/** 当前正在播放的元素（用于打断上一次） */
+let currentAudio: HTMLAudioElement | null = null;
 
-let audioCtx: AudioContext | null = null;
-/** 已解码的 AudioBuffer 缓存：dataUrl → buffer */
-const bufferCache = new Map<string, AudioBuffer>();
-/** 解码中的 promise（防并发重复解码）：dataUrl → Promise<buffer|null> */
-const decoding = new Map<string, Promise<AudioBuffer | null>>();
-
-/** 懒创建 AudioContext；环境不支持时返回 null（整体降级到 HTMLAudio 路径）。
- *  context 已失效（closed，如系统资源回收 / 长时间运行异常）时重建，
- *  解码缓存一并清空，下次播放按需重新解码。 */
-function getAudioCtx(): AudioContext | null {
-  try {
-    if (audioCtx && audioCtx.state === "closed") {
-      audioCtx = null;
-      bufferCache.clear();
-      decoding.clear();
-    }
-    if (!audioCtx) {
-      audioCtx = new AudioContext();
-    }
-    return audioCtx;
-  } catch {
-    return null;
+/** 播放指定音效（data: URL）；失败静默（资源异常等），不影响主流程 */
+export function playSound(dataUrl: string): void {
+  // 打断上一次
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
   }
-}
-
-/** data: URL → ArrayBuffer（base64 解码） */
-function dataUrlToBytes(dataUrl: string): ArrayBuffer {
-  const b64 = dataUrl.split(",")[1] ?? "";
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) {
-    bytes[i] = bin.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
-/** 解码单个音效并缓存；失败（环境不支持等）静默返回 null */
-function decodeSound(dataUrl: string): Promise<AudioBuffer | null> {
-  const existing = decoding.get(dataUrl);
-  if (existing) return existing;
-  const ctx = getAudioCtx();
-  if (!ctx) return Promise.resolve(null);
-  const task = Promise.resolve(dataUrlToBytes(dataUrl))
-    .then((raw) => ctx.decodeAudioData(raw))
-    .then((buffer) => {
-      bufferCache.set(dataUrl, buffer);
-      return buffer;
-    })
-    .catch(() => null);
-  decoding.set(dataUrl, task);
-  return task;
-}
-
-/** 启动时后台预解码全部音效并预创建兜底元素（不阻塞 UI） */
-export function preloadSounds(): void {
-  for (const opt of SOUND_OPTIONS) {
-    if (opt.dataUrl) {
-      void decodeSound(opt.dataUrl);
-      getPooledAudio(opt.dataUrl);
-    }
-  }
-  // 首次用户手势（点击/按键）时恢复 AudioContext：
-  // 此后 Web Audio 零延迟路径可用；若环境拒绝恢复，则永远走 HTMLAudio（同样即时）
-  const resumeOnce = () => {
-    if (audioCtx && audioCtx.state === "suspended") {
-      void audioCtx.resume();
-    }
+  const el = new Audio(dataUrl);
+  currentAudio = el;
+  el.onended = () => {
+    if (currentAudio === el) currentAudio = null;
   };
-  window.addEventListener("pointerdown", resumeOnce, { once: true, capture: true });
-  window.addEventListener("keydown", resumeOnce, { once: true, capture: true });
+  void el.play().catch(() => {});
 }
 
-// ── HTMLAudio 预加载池（提醒等无手势场景 / 未解码时的兜底） ──
-
-const audioPool = new Map<string, HTMLAudioElement>();
-
-/** 取预加载池中的元素（懒创建；data: URL 无需网络加载，解码即播）。
- *  元素处于媒体错误状态（系统睡眠/长时间运行后损坏）时重建。 */
-function getPooledAudio(dataUrl: string): HTMLAudioElement {
-  let el = audioPool.get(dataUrl);
-  if (!el || el.error) {
-    el = new Audio(dataUrl);
-    el.preload = "auto";
-    audioPool.set(dataUrl, el);
-  }
-  return el;
-}
-
-// ── 播放 ──────────────────────────────────────────────
-
-/** 当前正在播放的 BufferSource（用于打断上一次） */
-let currentSource: AudioBufferSourceNode | null = null;
-/** 当前正在播放的兜底元素（用于打断上一次） */
-let currentFallback: HTMLAudioElement | null = null;
-
-/**
- * 播放指定音效（data: URL）。
- * @param allowWebAudio 是否允许走 Web Audio 零延迟路径：
- *   仅限用户手势链内（勾选完成 / 设置页试听）；提醒等后台触发必须传 false。
- */
-export function playSound(dataUrl: string, allowWebAudio: boolean): void {
-  // 打断上一次（BufferSource 与兜底元素双路径都停）。
-  // 节点必须无条件 disconnect：AudioBufferSourceNode 一旦 connect 到 destination 就
-  // 被音频图持有，若不主动断开会无限累积（长会话后延迟渐增、最终无声）。
-  if (currentSource) {
-    try {
-      currentSource.stop();
-    } catch {
-      // 未 start 时 stop 会抛 InvalidStateError，忽略（disconnect 幂等，兜住两种情况）
-    }
-    currentSource.disconnect();
-    currentSource = null;
-  }
-  if (currentFallback) {
-    currentFallback.pause();
-    currentFallback.currentTime = 0;
-    currentFallback = null;
-  }
-  // Web Audio 零延迟路径：仅手势链内、已解码、且 context 处于 running。
-  // context 为 suspended 时绝不依赖 resume 出声（真实环境 resume 可能耗时几百 ms
-  // 甚至被拒），一律走下方 HTMLAudio 立即播放。
-  const cached = bufferCache.get(dataUrl);
-  const ctx = audioCtx;
-  if (allowWebAudio && cached && ctx && ctx.state === "running") {
-    const source = ctx.createBufferSource();
-    source.buffer = cached;
-    source.connect(ctx.destination);
-    currentSource = source;
-    // 自然播放结束时同样断开节点，防止音频图累积（disconnect 幂等）
-    source.onended = () => {
-      if (currentSource === source) currentSource = null;
-      source.disconnect();
-    };
-    source.start();
-    return;
-  }
-  // context 处于 suspended 时顺带尝试恢复（fire-and-forget）：
-  // 手势链内调用有效，成功后后续点击自动升级为 Web Audio 零延迟路径
-  if (ctx && ctx.state === "suspended") {
-    void ctx.resume();
-  }
-  // 兜底：HTMLAudio 元素播放（data: URL 无网络 I/O，解码即播），同时后台解码供下次复用
-  const el = getPooledAudio(dataUrl);
-  el.currentTime = 0;
-  currentFallback = el;
-  void el.play().catch(() => {
-    // 播放失败（如系统睡眠后元素状态损坏）：重建元素并重试一次
-    const fresh = new Audio(dataUrl);
-    fresh.preload = "auto";
-    audioPool.set(dataUrl, fresh);
-    void fresh.play().catch(() => {});
-  });
-  void decodeSound(dataUrl);
+/** 启动预热（保留接口兼容；实际无需预热——data: URL 每次即建即播） */
+export function preloadSounds(): void {
+  /* no-op */
 }
 
 // ── 场景播放 ──────────────────────────────────────────
@@ -187,10 +54,9 @@ export function playSceneSound(scene: SoundScene): void {
     daily: settings.dailyReminderSound,
   };
   const option = findSoundOption(valueByScene[scene]);
-  if (!option?.dataUrl) return;
-  // 任务完成在用户手势链内，允许 Web Audio 零延迟路径；
-  // 提醒由后台事件触发（无手势，AudioContext 无法恢复），必须走 HTMLAudio
-  playSound(option.dataUrl, scene === "completion");
+  if (option?.dataUrl) {
+    playSound(option.dataUrl);
+  }
 }
 
 /**
