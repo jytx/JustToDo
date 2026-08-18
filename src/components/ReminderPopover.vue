@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 提醒弹层 —— 两种互斥提醒方式：
-//   1. 相对截止时间偏移（准点 / 提前 N 分钟），用 remindOffsetMinutes
-//   2. 指定绝对时刻（如 15:00），用 remindAt
+//   1. 相对截止时间偏移（准点 / 提前 N 分钟），用 remindOffsetMinutes —— 预设列表直接选
+//   2. 指定绝对时刻（如 8月20日 15:00），用 remindAt —— hover「指定时刻…」
+//      在弹层左外侧级联展开 DatePopover（单时刻模式，与截止日期同款月历 + 时分面板）
 // 同一时刻只有一种生效，选中一种确认时会清空另一种（由调用方落库时保证）。
 import { ref, computed, watch } from "vue";
 import {
@@ -10,6 +11,7 @@ import {
   type ReminderConfirmPayload,
 } from "@/types";
 import { parseLocalIso } from "@/utils/date";
+import DatePopover from "./DatePopover.vue";
 
 const props = defineProps<{
   /** 当前相对提醒偏移（分钟），null = 不提醒 */
@@ -23,97 +25,38 @@ const emit = defineEmits<{
   clear: [];
 }>();
 
-// 选中项索引：0..REMIND_PRESETS.length-1 为预设/自定义偏移；
-// REMIND_PRESETS.length 为追加的「指定时刻」项
-const AT_INDEX = REMIND_PRESETS.length;
+// ─── 一级：预设列表（相对偏移） ──────────────────────
+// 当前选中预设索引；NO_PRESET(-1) = 任务为指定时刻提醒（无预设高亮）
+const NO_PRESET = -1;
 const currentPresetIndex = ref(0);
 const customMinutes = ref(0);
-// 指定时刻的日期（YYYY-MM-DD）与时分，内部维护，确认时拼成本地字面量
-const atDate = ref("");
-const atHour = ref(9);
-const atMinute = ref(0);
-
-// 小时 0-23、分钟 5 步进（与 DatePopover 时分 picker 保持一致）
-const hourOptions: number[] = Array.from({ length: 24 }, (_, i) => i);
-const minuteOptions: number[] = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
 const isCustomOffset = computed(
   () => REMIND_PRESETS[currentPresetIndex.value]?.preset === false,
 );
-const isAt = computed(() => currentPresetIndex.value === AT_INDEX);
-
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
-/** 把内部的日期 + 时分拼成本地字面量 "YYYY-MM-DDTHH:mm:ss" */
-function buildAtIso(): string {
-  return `${atDate.value}T${pad2(atHour.value)}:${pad2(atMinute.value)}:00`;
-}
 
 watch(
   () => [props.value, props.remindAt] as const,
   ([v, at]) => {
-    if (at) {
-      // 当前是指定时刻提醒：选中「指定时刻」并回填日期/时分
-      currentPresetIndex.value = AT_INDEX;
-      const d = parseLocalIso(at);
-      if (d) {
-        atDate.value = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(
-          d.getDate(),
-        )}`;
-        atHour.value = d.getHours();
-        // 分钟对齐到 5 步进（picker 只能选 5 的倍数）
-        atMinute.value = Math.round(d.getMinutes() / 5) * 5;
-        if (atMinute.value === 60) {
-          atMinute.value = 55;
-        }
-      } else {
-        initAtToNextHour();
-      }
-    } else {
-      const idx = matchRemindPreset(v);
-      currentPresetIndex.value = idx;
-      if (idx === REMIND_PRESETS.length - 1) {
-        // 自定义偏移
-        customMinutes.value = typeof v === "number" ? v : 0;
-      }
+    if (at != null) {
+      currentPresetIndex.value = NO_PRESET;
+      return;
+    }
+    const idx = matchRemindPreset(v);
+    currentPresetIndex.value = idx;
+    if (idx === REMIND_PRESETS.length - 1) {
+      customMinutes.value = typeof v === "number" ? v : 0;
     }
   },
   { immediate: true },
 );
 
-/** 把「指定时刻」初始化为今天下一个整点（方便用户微调） */
-function initAtToNextHour(): void {
-  const now = new Date();
-  atDate.value = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(
-    now.getDate(),
-  )}`;
-  atHour.value = (now.getHours() + 1) % 24;
-  atMinute.value = 0;
-}
-
 function selectPreset(i: number): void {
   currentPresetIndex.value = i;
-  // 首次切到「指定时刻」时若未初始化，补一个默认值
-  if (i === AT_INDEX && !atDate.value) {
-    initAtToNextHour();
-  }
 }
 
-function setHour(h: number): void {
-  atHour.value = h;
-}
-function setMinute(m: number): void {
-  atMinute.value = m;
-}
-
+/** 一级底部「确定」：按当前选中的预设确认偏移提醒 */
 function onConfirm(): void {
-  if (isAt.value) {
-    if (!atDate.value) initAtToNextHour();
-    emit("confirm", { type: "at", remindAt: buildAtIso() });
-    return;
-  }
   const p = REMIND_PRESETS[currentPresetIndex.value];
   if (!p) return;
   if (p.value === null) {
@@ -124,10 +67,77 @@ function onConfirm(): void {
     emit("confirm", { type: "offset", value: customMinutes.value });
   }
 }
+
+// ─── 指定时刻：级联面板（hover 展开，复用 DatePopover） ──
+// 显隐控制：mouseenter 打开，mouseleave 后延迟 200ms 关闭
+// （留出鼠标从入口项横移进面板的时间窗口；进入面板即取消关闭）
+const atPanelVisible = ref(false);
+let atPanelCloseTimer: number | null = null;
+
+/** 任务当前是否为指定时刻提醒（「指定时刻…」项高亮） */
+const isAtActive = computed(() => props.remindAt != null);
+
+/** 「指定时刻…」项展示的当前生效时刻（如 "8月20日 15:00"） */
+const atLabel = computed<string | null>(() => {
+  const d = props.remindAt ? parseLocalIso(props.remindAt) : null;
+  if (!d) return null;
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+});
+
+/** 级联面板回填值：已设提醒用原值，否则默认今天下一个整点（方便微调） */
+const atPreviewIso = computed<string>(() => props.remindAt ?? nextHourIso());
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** 今天下一个整点的本地字面量（指定时刻的默认值） */
+function nextHourIso(): string {
+  const next = new Date();
+  next.setHours(next.getHours() + 1, 0, 0, 0);
+  return `${next.getFullYear()}-${pad2(next.getMonth() + 1)}-${pad2(next.getDate())}T${pad2(next.getHours())}:00:00`;
+}
+
+function openAtPanel(): void {
+  cancelCloseAtPanel();
+  atPanelVisible.value = true;
+}
+
+function scheduleCloseAtPanel(): void {
+  if (atPanelCloseTimer !== null) window.clearTimeout(atPanelCloseTimer);
+  atPanelCloseTimer = window.setTimeout(() => {
+    atPanelVisible.value = false;
+    atPanelCloseTimer = null;
+  }, 200);
+}
+
+function cancelCloseAtPanel(): void {
+  if (atPanelCloseTimer !== null) {
+    window.clearTimeout(atPanelCloseTimer);
+    atPanelCloseTimer = null;
+  }
+}
+
+/** hover 到其他预设项时立即收起面板 */
+function hideAtPanel(): void {
+  cancelCloseAtPanel();
+  atPanelVisible.value = false;
+}
+
+/** 级联面板确定：DatePopover 单时刻 confirm(start, null) → 指定时刻提醒 */
+function onAtConfirm(start: string | null): void {
+  if (!start) {
+    // 未选任何日期就确定（理论上不可达，快捷「无日期」走 clear 路径）：按不提醒兜底
+    emit("clear");
+    return;
+  }
+  emit("confirm", { type: "at", remindAt: start });
+}
 </script>
 
 <template>
   <div class="reminder-popover">
+    <!-- 一级：预设列表（hover「指定时刻…」时左外侧级联展开时刻面板） -->
     <div class="reminder-popover__list">
       <button
         v-for="(p, i) in REMIND_PRESETS"
@@ -135,6 +145,7 @@ function onConfirm(): void {
         type="button"
         class="reminder-popover__item"
         :class="{ 'reminder-popover__item--active': currentPresetIndex === i }"
+        @mouseenter="hideAtPanel"
         @click="selectPreset(i)"
       >
         <icon-notification v-if="p.value !== null" :size="14" />
@@ -146,16 +157,17 @@ function onConfirm(): void {
           class="reminder-popover__check"
         />
       </button>
-      <!-- 指定时刻（绝对时间提醒，与上面的偏移互斥） -->
+      <!-- 指定时刻：绝对时间提醒，hover 展开左侧级联面板选日期 + 时分 -->
       <button
         type="button"
         class="reminder-popover__item"
-        :class="{ 'reminder-popover__item--active': isAt }"
-        @click="selectPreset(AT_INDEX)"
+        :class="{ 'reminder-popover__item--active': isAtActive }"
+        @mouseenter="openAtPanel"
+        @mouseleave="scheduleCloseAtPanel"
       >
         <icon-clock-circle :size="14" />
-        <span>指定时刻…</span>
-        <icon-check v-if="isAt" :size="12" class="reminder-popover__check" />
+        <span>指定时刻<template v-if="atLabel"> · {{ atLabel }}</template></span>
+        <icon-right :size="12" class="reminder-popover__check" />
       </button>
     </div>
 
@@ -173,48 +185,20 @@ function onConfirm(): void {
       <span>分钟</span>
     </div>
 
-    <!-- 指定时刻选择器：日期 + 时分网格 -->
-    <div v-if="isAt" class="reminder-popover__at">
-      <div class="reminder-popover__at-date">
-        <label>日期</label>
-        <input
-          v-model="atDate"
-          type="date"
-          class="reminder-popover__date-input"
-        />
-      </div>
-      <div class="reminder-popover__time-cols">
-        <div class="reminder-popover__time-col">
-          <div class="reminder-popover__time-head">时</div>
-          <div class="reminder-popover__time-grid reminder-popover__time-grid--hour">
-            <button
-              v-for="h in hourOptions"
-              :key="h"
-              type="button"
-              class="reminder-popover__time-cell"
-              :class="{ 'reminder-popover__time-cell--selected': h === atHour }"
-              @click="setHour(h)"
-            >
-              {{ pad2(h) }}
-            </button>
-          </div>
-        </div>
-        <div class="reminder-popover__time-col">
-          <div class="reminder-popover__time-head">分</div>
-          <div class="reminder-popover__time-grid reminder-popover__time-grid--minute">
-            <button
-              v-for="m in minuteOptions"
-              :key="m"
-              type="button"
-              class="reminder-popover__time-cell"
-              :class="{ 'reminder-popover__time-cell--selected': m === atMinute }"
-              @click="setMinute(m)"
-            >
-              {{ pad2(m) }}
-            </button>
-          </div>
-        </div>
-      </div>
+    <!-- 级联面板：复用 DatePopover（单时刻模式：快捷 + 月历 + 时分 + 清除/确定） -->
+    <div
+      v-if="atPanelVisible"
+      class="reminder-popover__at"
+      @mouseenter="cancelCloseAtPanel"
+      @mouseleave="scheduleCloseAtPanel"
+    >
+      <DatePopover
+        :enable-range="false"
+        :start-iso="atPreviewIso"
+        :end-iso="null"
+        @confirm="onAtConfirm"
+        @clear="emit('clear')"
+      />
     </div>
 
     <div class="reminder-popover__footer">
@@ -238,6 +222,8 @@ function onConfirm(): void {
 
 <style scoped>
 .reminder-popover {
+  /* 级联面板（.reminder-popover__at）的定位锚 */
+  position: relative;
   width: 260px;
   background: var(--jt-surface);
   border-radius: 12px;
@@ -290,84 +276,14 @@ function onConfirm(): void {
   color: var(--jt-text-secondary);
 }
 
-/* 指定时刻选择器 */
+/* 级联面板：悬停「指定时刻…」时在弹层左外侧展开。
+ * 详情面板固定在窗口右侧，弹层左侧空间充足；紧贴弹层边缘方便鼠标横移。
+ * 无需自绘背景：内嵌的 DatePopover 自带卡片样式。 */
 .reminder-popover__at {
-  padding: 8px 12px;
-  margin-top: 4px;
-  border-top: 1px solid var(--jt-border);
-}
-
-.reminder-popover__at-date {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--jt-text-secondary);
-  margin-bottom: 8px;
-}
-
-.reminder-popover__date-input {
-  flex: 1;
-  height: 28px;
-  border: 1px solid var(--jt-border);
-  border-radius: 6px;
-  padding: 0 8px;
-  font-size: 12px;
-  font-family: var(--font-body);
-  background: var(--jt-surface);
-  color: var(--jt-text-primary);
-}
-
-.reminder-popover__time-cols {
-  display: flex;
-  gap: 8px;
-}
-
-.reminder-popover__time-col {
-  flex: 1;
-  min-width: 0;
-}
-
-.reminder-popover__time-head {
-  font-size: 11px;
-  color: var(--jt-text-tertiary);
-  text-align: center;
-  margin-bottom: 4px;
-}
-
-.reminder-popover__time-grid {
-  display: grid;
-  gap: 2px;
-  max-height: 144px;
-  overflow-y: auto;
-}
-
-.reminder-popover__time-grid--hour {
-  grid-template-columns: repeat(4, 1fr);
-}
-
-.reminder-popover__time-grid--minute {
-  grid-template-columns: repeat(4, 1fr);
-}
-
-.reminder-popover__time-cell {
-  border: none;
-  background: transparent;
-  padding: 4px 0;
-  border-radius: 4px;
-  font-size: 12px;
-  font-family: var(--font-mono, var(--font-body));
-  color: var(--jt-text-primary);
-  cursor: pointer;
-}
-
-.reminder-popover__time-cell:hover {
-  background: var(--jt-surface-sunken);
-}
-
-.reminder-popover__time-cell--selected {
-  background: var(--jt-primary);
-  color: #fff;
+  position: absolute;
+  top: 0;
+  /* 紧贴弹层左缘（-2px 让边距视觉上无缝） */
+  right: calc(100% - 2px);
 }
 
 .reminder-popover__footer {

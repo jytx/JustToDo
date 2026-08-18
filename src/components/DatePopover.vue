@@ -5,12 +5,16 @@
 // 底部：清除 / 确定
 import { ref, computed, watch } from "vue";
 import { toLocalIso, parseLocalIso, clampDateRange } from "@/utils/date";
+import MonthDayGrid from "./picker/MonthDayGrid.vue";
+import TimeGrid from "./picker/TimeGrid.vue";
 
 const props = defineProps<{
   /** 起始日期（YYYY-MM-DDTHH:mm:ss 本地字面量） */
   startIso: string | null;
   /** 结束日期（YYYY-MM-DDTHH:mm:ss 本地字面量） */
   endIso: string | null;
+  /** 是否提供「时间段」tab。提醒等单时刻场景传 false：隐藏 tab 条、固定单日模式 */
+  enableRange: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -23,8 +27,10 @@ const emit = defineEmits<{
 }>();
 
 type TabKey = "date" | "range";
-/** 默认 tab：根据 props 推断：start 和 end 同一天（或只有一个）→ date，否则 range */
+/** 默认 tab：单时刻场景固定 date；否则根据 props 推断：
+ *  start 和 end 同一天（或只有一个）→ date，否则 range */
 const initialTab = (): TabKey => {
+  if (!props.enableRange) return "date";
   const s = parseLocalIso(props.startIso);
   const e = parseLocalIso(props.endIso);
   if (!s || !e) return "date";
@@ -43,53 +49,24 @@ watch(
     editDate.value = e ?? s ?? null;
     editStart.value = s ?? null;
     editEnd.value = e ?? null;
-    // 同步 tab 推断
-    const sd = parseLocalIso(s as string | null);
-    const ed = parseLocalIso(e as string | null);
-    if (sd && ed && !isSameDay(sd, ed)) {
-      activeTab.value = "range";
-    } else if (!sd && !ed) {
-      // 双 null 不强制切
-    } else if (activeTab.value === "range" && (!sd || !ed || isSameDay(sd, ed))) {
-      // 从 range 退回单点 → 切回 date tab
-      activeTab.value = "date";
+    // 同步 tab 推断（单时刻场景固定 date，不参与推断）
+    if (props.enableRange) {
+      const sd = parseLocalIso(s as string | null);
+      const ed = parseLocalIso(e as string | null);
+      if (sd && ed && !isSameDay(sd, ed)) {
+        activeTab.value = "range";
+      } else if (!sd && !ed) {
+        // 双 null 不强制切
+      } else if (activeTab.value === "range" && (!sd || !ed || isSameDay(sd, ed))) {
+        // 从 range 退回单点 → 切回 date tab
+        activeTab.value = "date";
+      }
     }
   },
   { immediate: true },
 );
 
 const monthCursor = ref(new Date());
-
-// ─── 月历 ─────────────────────────────────────────
-const calendarGrid = computed(() => {
-  const year = monthCursor.value.getFullYear();
-  const month = monthCursor.value.getMonth();
-  const first = new Date(year, month, 1);
-  const firstWeekday = first.getDay(); // 0=Sun
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const daysInPrevMonth = new Date(year, month, 0).getDate();
-
-  const cells: { date: Date; inMonth: boolean }[] = [];
-  // 前导（上月尾部）
-  for (let i = firstWeekday - 1; i >= 0; i--) {
-    cells.push({
-      date: new Date(year, month - 1, daysInPrevMonth - i),
-      inMonth: false,
-    });
-  }
-  // 本月
-  for (let d = 1; d <= daysInMonth; d++) {
-    cells.push({ date: new Date(year, month, d), inMonth: true });
-  }
-  // 尾部（下月头）补足 6 行 42 格
-  const need = 42 - cells.length;
-  for (let d = 1; d <= need; d++) {
-    cells.push({ date: new Date(year, month + 1, d), inMonth: false });
-  }
-  return cells;
-});
-
-const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
 
 function isSameDay(a: Date, b: Date) {
   return (
@@ -99,13 +76,9 @@ function isSameDay(a: Date, b: Date) {
   );
 }
 
-function isToday(d: Date) {
-  return isSameDay(d, new Date());
-}
-
+/** 单选高亮日：仅 date tab 有单选（range tab 由 getRangeClass 高亮） */
 const selectedDay = computed<Date | null>(() => {
   if (activeTab.value === "date") return parseLocalIso(editDate.value);
-  if (activeTab.value === "range" && editStart.value) return parseLocalIso(editStart.value);
   return null;
 });
 
@@ -202,22 +175,6 @@ function selectDay(d: Date) {
     `${finalEnd.getFullYear()}-${String(finalEnd.getMonth() + 1).padStart(2, "0")}-${String(finalEnd.getDate()).padStart(2, "0")} ${String(finalEnd.getHours()).padStart(2, "0")}:${String(finalEnd.getMinutes()).padStart(2, "0")}:00`,
   );
 }
-
-function prevMonth() {
-  const c = new Date(monthCursor.value);
-  c.setMonth(c.getMonth() - 1);
-  monthCursor.value = c;
-}
-
-function nextMonth() {
-  const c = new Date(monthCursor.value);
-  c.setMonth(c.getMonth() + 1);
-  monthCursor.value = c;
-}
-
-const monthLabel = computed(
-  () => `${monthCursor.value.getFullYear()} 年 ${monthCursor.value.getMonth() + 1} 月`,
-);
 
 // ─── 快捷按钮 ─────────────────────────────────────
 function quickDay(daysFromNow: number) {
@@ -377,16 +334,12 @@ function onClear() {
   editEnd.value = null;
   emit("clear");
 }
-
-// 时分快捷
-const hourOptions = Array.from({ length: 24 }, (_, i) => i);
-const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...,55
 </script>
 
 <template>
   <div class="date-popover">
-    <!-- Tab -->
-    <div class="date-popover__tabs">
+    <!-- Tab（单时刻场景隐藏，固定单日模式） -->
+    <div v-if="enableRange" class="date-popover__tabs">
       <button
         type="button"
         class="date-popover__tab"
@@ -421,42 +374,13 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
       </button>
     </div>
 
-    <!-- 月历头部 -->
-    <div class="date-popover__cal-head">
-      <button type="button" class="date-popover__nav" @click="prevMonth">
-        <icon-left :size="14" />
-      </button>
-      <span class="date-popover__cal-title">{{ monthLabel }}</span>
-      <button type="button" class="date-popover__nav" @click="nextMonth">
-        <icon-right :size="14" />
-      </button>
-    </div>
-
-    <!-- 月历星期 -->
-    <div class="date-popover__weekdays">
-      <span v-for="w in weekdays" :key="w" class="date-popover__weekday">{{ w }}</span>
-    </div>
-
-    <!-- 月历格子 -->
-    <div class="date-popover__grid">
-      <button
-        v-for="(c, i) in calendarGrid"
-        :key="i"
-        type="button"
-        class="date-popover__day"
-        :class="{
-          'date-popover__day--out': !c.inMonth,
-          'date-popover__day--today': isToday(c.date),
-          'date-popover__day--selected': activeTab === 'date' && selectedDay && isSameDay(c.date, selectedDay),
-          'date-popover__day--range-start': getRangeClass(c.date) === 'start',
-          'date-popover__day--range-end': getRangeClass(c.date) === 'end',
-          'date-popover__day--range-in': getRangeClass(c.date) === 'in',
-        }"
-        @click="selectDay(c.date)"
-      >
-        {{ c.date.getDate() }}
-      </button>
-    </div>
+    <!-- 月历（共用组件：单选高亮 + 时间段范围高亮） -->
+    <MonthDayGrid
+      v-model:month="monthCursor"
+      :selected="selectedDay"
+      :range-class="getRangeClass"
+      @select="selectDay"
+    />
 
     <!-- 时间子入口 -->
     <button
@@ -481,61 +405,23 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
       <span class="date-popover__row-arrow"><icon-right :size="12" /></span>
     </button>
 
-    <!-- 时间选择（弹出） -->
-    <div v-if="showTimePicker" class="date-popover__time">
-      <div class="date-popover__time-col date-popover__time-col--hour">
-        <button
-          v-for="h in hourOptions"
-          :key="h"
-          type="button"
-          class="date-popover__time-cell"
-          :class="{ 'date-popover__time-cell--selected': h === getCurrentHours() }"
-          @click="setHour(h)"
-        >
-          {{ String(h).padStart(2, "0") }}
-        </button>
-      </div>
-      <div class="date-popover__time-col date-popover__time-col--minute">
-        <button
-          v-for="m in minuteOptions"
-          :key="m"
-          type="button"
-          class="date-popover__time-cell"
-          :class="{ 'date-popover__time-cell--selected': m === getCurrentMinutes() }"
-          @click="setMinute(m)"
-        >
-          {{ String(m).padStart(2, "0") }}
-        </button>
-      </div>
-    </div>
+    <!-- 时间选择（共用组件） -->
+    <TimeGrid
+      v-if="showTimePicker"
+      :hour="getCurrentHours()"
+      :minute="getCurrentMinutes()"
+      @select-hour="setHour"
+      @select-minute="setMinute"
+    />
 
-    <!-- 结束时间选择（弹出） -->
-    <div v-if="showEndTimePicker" class="date-popover__time">
-      <div class="date-popover__time-col date-popover__time-col--hour">
-        <button
-          v-for="h in hourOptions"
-          :key="h"
-          type="button"
-          class="date-popover__time-cell"
-          :class="{ 'date-popover__time-cell--selected': h === (parseLocalIso(editEnd)?.getHours() ?? 0) }"
-          @click="setEndHour(h)"
-        >
-          {{ String(h).padStart(2, "0") }}
-        </button>
-      </div>
-      <div class="date-popover__time-col date-popover__time-col--minute">
-        <button
-          v-for="m in minuteOptions"
-          :key="m"
-          type="button"
-          class="date-popover__time-cell"
-          :class="{ 'date-popover__time-cell--selected': m === (parseLocalIso(editEnd)?.getMinutes() ?? 0) }"
-          @click="setEndMinute(m)"
-        >
-          {{ String(m).padStart(2, "0") }}
-        </button>
-      </div>
-    </div>
+    <!-- 结束时间选择（共用组件） -->
+    <TimeGrid
+      v-if="showEndTimePicker"
+      :hour="parseLocalIso(editEnd)?.getHours() ?? 0"
+      :minute="parseLocalIso(editEnd)?.getMinutes() ?? 0"
+      @select-hour="setEndHour"
+      @select-minute="setEndMinute"
+    />
 
     <!-- 底部按钮 -->
     <div class="date-popover__footer">
@@ -618,120 +504,6 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
   color: var(--jt-text-primary);
 }
 
-.date-popover__cal-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 2px;
-}
-
-.date-popover__nav {
-  border: none;
-  background: transparent;
-  color: var(--jt-text-secondary);
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.date-popover__nav:hover {
-  background: var(--jt-surface-sunken);
-}
-
-.date-popover__cal-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--jt-text-primary);
-}
-
-.date-popover__weekdays {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 0;
-  text-align: center;
-}
-
-.date-popover__weekday {
-  font-size: 10px;
-  color: var(--jt-text-tertiary);
-  padding: 2px 0;
-}
-
-.date-popover__grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 1px;
-}
-
-.date-popover__day {
-  border: none;
-  background: transparent;
-  aspect-ratio: 1 / 0.78;
-  border-radius: 5px;
-  font-size: 11px;
-  color: var(--jt-text-primary);
-  cursor: pointer;
-  transition: all 0.1s;
-  font-family: var(--font-body);
-}
-
-.date-popover__day:hover {
-  background: var(--jt-surface-sunken);
-}
-
-.date-popover__day--out {
-  color: var(--jt-text-tertiary);
-}
-
-.date-popover__day--today {
-  font-weight: 600;
-  color: var(--jt-primary);
-}
-
-.date-popover__day--selected {
-  background: var(--jt-primary) !important;
-  color: #fff !important;
-  font-weight: 500;
-}
-
-.date-popover__day--selected.date-popover__day--today {
-  color: #fff;
-}
-
-/* 时间段范围高亮 —— 端点用主色 + 圆角，闭合形
-   端点（start/end）的特异度必须高于 in：通过拼接"格子基础类 + 端点类"提升到 2+1=3 级，
-   而 in 是 1+1=2 级，这样即使源码顺序在 in 之后，端点也总能赢。
-   加上 background 仍走 !important 兜底，双保险。 */
-.date-popover__day.date-popover__day--range-start,
-.date-popover__day.date-popover__day--range-end {
-  background: var(--jt-primary) !important;
-  color: #fff !important;
-  font-weight: 500;
-}
-
-/* 开始端：左侧圆角闭合，右侧抹平贴合 in 区 */
-.date-popover__day.date-popover__day--range-start {
-  border-top-right-radius: 0 !important;
-  border-bottom-right-radius: 0 !important;
-}
-
-/* 结束端：右侧圆角闭合，左侧抹平贴合 in 区 */
-.date-popover__day.date-popover__day--range-end {
-  border-top-left-radius: 0 !important;
-  border-bottom-left-radius: 0 !important;
-}
-
-/* 范围内格子：浅紫底 + 抹平两侧（让 start/end 圆角"夹"住它） */
-.date-popover__day--range-in {
-  background: var(--jt-accent-soft);
-  color: var(--jt-text-primary);
-  border-radius: 0;
-}
-
 .date-popover__row {
   display: flex;
   align-items: center;
@@ -754,81 +526,6 @@ const minuteOptions = Array.from({ length: 12 }, (_, i) => i * 5); // 0,5,10,...
 .date-popover__row-arrow {
   margin-left: auto;
   color: var(--jt-text-tertiary);
-}
-
-.date-popover__time {
-  display: flex;
-  gap: 4px;
-  max-height: 156px;
-  overflow: hidden;
-  border: 1px solid var(--jt-border);
-  border-radius: 6px;
-  padding: 4px 2px;
-}
-
-.date-popover__time-col {
-  flex: 1;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0 2px;
-  overflow: hidden;
-}
-
-/* 小时列：24 项 / 4 列 = 6 行，row 20px、gap 2px → 总 6*20 + 5*2 = 130px，
-   picker max-height 156px 内不滚动。button 18px 紧贴 row。 */
-.date-popover__time-col--hour {
-  grid-template-rows: repeat(6, 15px);
-}
-
-/* 分钟列：12 项 / 4 列 = 3 行，row 26px、gap 2px → 总 3*26 + 2*2 = 82px，
-   button 18px + flex 居中 + 上下各 4px 留白，色块"漂"在行中央。 */
-.date-popover__time-col--minute {
-  grid-template-rows: repeat(3, 30px);
-}
-
-.date-popover__time-cell {
-  border: none;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 3px;
-  font-size: 10px;
-  color: var(--jt-text-primary);
-  cursor: pointer;
-  font-family: var(--font-mono);
-  background: transparent;
-  transition: background-color 0.1s, color 0.1s;
-}
-
-/* 小时列 cell：紧贴 row 20px（无上下留白，6 行紧凑一屏） */
-.date-popover__time-col--hour .date-popover__time-cell {
-  height: 12px;
-  align-self: stretch;
-  justify-self: stretch;
-}
-
-/* 分钟列 cell：button 18px 强制固定高度（不被 row 撑开），
-   align-self: center 让 button 在 row 26px 内垂直居中，
-   上下各 4px 留白让"色块"浮在 row 中央 */
-.date-popover__time-col--minute .date-popover__time-cell {
-  height: 18px;
-  align-self: center;
-  justify-self: stretch;
-}
-
-.date-popover__time-cell:hover {
-  background: var(--jt-surface-sunken);
-}
-
-.date-popover__time-cell--selected {
-  background: var(--jt-primary);
-  color: #fff;
-  font-weight: 500;
-}
-.date-popover__time-cell--selected:hover {
-  background: var(--jt-primary);
-  color: #fff;
 }
 
 .date-popover__footer {

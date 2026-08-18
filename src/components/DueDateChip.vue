@@ -88,6 +88,7 @@ function onClear() {
     <DatePopover
       :start-iso="startIso"
       :end-iso="endIso"
+      :enable-range="true"
       @confirm="onConfirm"
       @clear="onClear"
     />

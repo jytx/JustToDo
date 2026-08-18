@@ -377,6 +377,7 @@ function applyAiSummary(): void {
           <DatePopover
             :start-iso="null"
             :end-iso="null"
+            :enable-range="true"
             @confirm="applyDate"
             @clear="clearDate"
           />
