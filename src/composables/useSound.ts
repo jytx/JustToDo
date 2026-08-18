@@ -106,14 +106,27 @@ export function preloadSounds(): void {
     }
   }
   // 常驻手势 resume（非 once）：WebKit 会在音频闲置一段时间后自动 suspend
-  // AudioContext（引擎内部策略，与系统 App Nap 无关），首次 resume 挡不住后续挂起。
-  // 挂起后下一次点击若不恢复，将永远落回 HTMLAudio 慢路径（~100-300ms 延迟）。
-  // 捕获阶段 pointerdown 早于 click 处理器执行，resume 多数情况能在播放前完成。
+  // AudioContext（引擎内部策略），系统休眠/锁屏也会挂起（保活防不住进程冻结）。
+  // 深度闲置的 context resume 需 ~1s（音频管线重新上电），必须把 resume 提前到
+  // 点击之前完成，点击时已是 running 才能走 Web Audio 低延迟路径：
+  // - focus / visibilitychange：从别的应用/窗口切回时（必然早于点击）
+  // - pointermove（1s 节流）：鼠标在窗口上移动时（点击前几乎必经）
+  // - pointerdown / keydown：最后兜底，点击瞬间立即触发
   const resumeOnGesture = () => {
     if (audioCtx && audioCtx.state === "suspended") {
       void audioCtx.resume();
     }
   };
+  let lastMoveResume = 0;
+  const resumeOnMove = () => {
+    const now = performance.now();
+    if (now - lastMoveResume < 1000) return; // 节流：每秒最多一次
+    lastMoveResume = now;
+    resumeOnGesture();
+  };
+  window.addEventListener("focus", resumeOnGesture, { capture: true });
+  document.addEventListener("visibilitychange", resumeOnGesture, { capture: true });
+  window.addEventListener("pointermove", resumeOnMove, { capture: true, passive: true });
   window.addEventListener("pointerdown", resumeOnGesture, { capture: true });
   window.addEventListener("keydown", resumeOnGesture, { capture: true });
 
@@ -157,25 +170,14 @@ export function playSound(dataUrl: string, allowWebAudio: boolean): void {
     currentFallback.currentTime = 0;
     currentFallback = null;
   }
-  // 主路径：手势链内 + 已解码。running 直接播；suspended 先 resume 再播
-  // （resume 几十 ms，仍远优于媒体管线 100-300ms；resume 被拒则落兜底保证有声）
+  // 主路径：仅手势链内、已解码、且 context running。suspended 时绝不等待 resume
+  // 出声（深度闲置的 resume 需 ~1s，等它反而更慢）——直接落兜底（100-300ms），
+  // 同时 focus/pointermove 等更早的事件已在恢复 context，下一次点击即回快路径
   const cached = bufferCache.get(dataUrl);
   const ctx = audioCtx;
-  if (allowWebAudio && cached && ctx) {
-    if (ctx.state === "running") {
-      playWithBuffer(ctx, cached);
-      return;
-    }
-    if (ctx.state === "suspended") {
-      void ctx.resume().then(() => {
-        // 期间可能已被新的播放打断/替换，避免叠音
-        if (ctx.state === "running" && !currentSource && !currentFallback) {
-          playWithBuffer(ctx, cached);
-        }
-      });
-      return;
-    }
-    // closed 等异常状态：落兜底（下次播放时 getAudioCtx 会重建）
+  if (allowWebAudio && cached && ctx && ctx.state === "running") {
+    playWithBuffer(ctx, cached);
+    return;
   }
   // 兜底：池元素播放；play 被拒时新建元素重试一次（成功则入池替换）
   const el = getPooledAudio(dataUrl);
