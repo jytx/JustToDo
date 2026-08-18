@@ -23,9 +23,16 @@ const bufferCache = new Map<string, AudioBuffer>();
 /** 解码中的 promise（防并发重复解码）：dataUrl → Promise<buffer|null> */
 const decoding = new Map<string, Promise<AudioBuffer | null>>();
 
-/** 懒创建 AudioContext；环境不支持时返回 null（整体降级到 HTMLAudio 路径） */
+/** 懒创建 AudioContext；环境不支持时返回 null（整体降级到 HTMLAudio 路径）。
+ *  context 已失效（closed，如系统资源回收 / 长时间运行异常）时重建，
+ *  解码缓存一并清空，下次播放按需重新解码。 */
 function getAudioCtx(): AudioContext | null {
   try {
+    if (audioCtx && audioCtx.state === "closed") {
+      audioCtx = null;
+      bufferCache.clear();
+      decoding.clear();
+    }
     if (!audioCtx) {
       audioCtx = new AudioContext();
     }
@@ -86,10 +93,11 @@ export function preloadSounds(): void {
 
 const audioPool = new Map<string, HTMLAudioElement>();
 
-/** 取预加载池中的元素（懒创建；data: URL 无需网络加载，解码即播） */
+/** 取预加载池中的元素（懒创建；data: URL 无需网络加载，解码即播）。
+ *  元素处于媒体错误状态（系统睡眠/长时间运行后损坏）时重建。 */
 function getPooledAudio(dataUrl: string): HTMLAudioElement {
   let el = audioPool.get(dataUrl);
-  if (!el) {
+  if (!el || el.error) {
     el = new Audio(dataUrl);
     el.preload = "auto";
     audioPool.set(dataUrl, el);
@@ -110,13 +118,16 @@ let currentFallback: HTMLAudioElement | null = null;
  *   仅限用户手势链内（勾选完成 / 设置页试听）；提醒等后台触发必须传 false。
  */
 export function playSound(dataUrl: string, allowWebAudio: boolean): void {
-  // 打断上一次（BufferSource 与兜底元素双路径都停）
+  // 打断上一次（BufferSource 与兜底元素双路径都停）。
+  // 节点必须无条件 disconnect：AudioBufferSourceNode 一旦 connect 到 destination 就
+  // 被音频图持有，若不主动断开会无限累积（长会话后延迟渐增、最终无声）。
   if (currentSource) {
     try {
       currentSource.stop();
     } catch {
-      // 未 start 时 stop 会抛 InvalidStateError，忽略（该节点随后被替换丢弃）
+      // 未 start 时 stop 会抛 InvalidStateError，忽略（disconnect 幂等，兜住两种情况）
     }
+    currentSource.disconnect();
     currentSource = null;
   }
   if (currentFallback) {
@@ -134,8 +145,10 @@ export function playSound(dataUrl: string, allowWebAudio: boolean): void {
     source.buffer = cached;
     source.connect(ctx.destination);
     currentSource = source;
+    // 自然播放结束时同样断开节点，防止音频图累积（disconnect 幂等）
     source.onended = () => {
       if (currentSource === source) currentSource = null;
+      source.disconnect();
     };
     source.start();
     return;
@@ -149,7 +162,13 @@ export function playSound(dataUrl: string, allowWebAudio: boolean): void {
   const el = getPooledAudio(dataUrl);
   el.currentTime = 0;
   currentFallback = el;
-  void el.play().catch(() => {});
+  void el.play().catch(() => {
+    // 播放失败（如系统睡眠后元素状态损坏）：重建元素并重试一次
+    const fresh = new Audio(dataUrl);
+    fresh.preload = "auto";
+    audioPool.set(dataUrl, fresh);
+    void fresh.play().catch(() => {});
+  });
   void decodeSound(dataUrl);
 }
 
