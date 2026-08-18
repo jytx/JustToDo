@@ -97,7 +97,7 @@ let currentSource: AudioBufferSourceNode | null = null;
 /** 当前正在播放的兜底元素（用于打断） */
 let currentFallback: HTMLAudioElement | null = null;
 
-/** 启动预热：预解码全部音效 + 预建兜底元素 + 首次手势恢复 context */
+/** 启动预热：预解码全部音效 + 预建兜底元素 + 常驻手势恢复 + 静音保活 */
 export function preloadSounds(): void {
   for (const opt of SOUND_OPTIONS) {
     if (opt.dataUrl) {
@@ -105,15 +105,34 @@ export function preloadSounds(): void {
       getPooledAudio(opt.dataUrl);
     }
   }
-  // 首次用户手势时 resume AudioContext（WKWebView 要求手势内调用）；
-  // 成功后勾选即走 Web Audio 低延迟路径；若被拒则持续走 HTMLAudio 兜底
-  const resumeOnce = () => {
+  // 常驻手势 resume（非 once）：WebKit 会在音频闲置一段时间后自动 suspend
+  // AudioContext（引擎内部策略，与系统 App Nap 无关），首次 resume 挡不住后续挂起。
+  // 挂起后下一次点击若不恢复，将永远落回 HTMLAudio 慢路径（~100-300ms 延迟）。
+  // 捕获阶段 pointerdown 早于 click 处理器执行，resume 多数情况能在播放前完成。
+  const resumeOnGesture = () => {
     if (audioCtx && audioCtx.state === "suspended") {
       void audioCtx.resume();
     }
   };
-  window.addEventListener("pointerdown", resumeOnce, { once: true, capture: true });
-  window.addEventListener("keydown", resumeOnce, { once: true, capture: true });
+  window.addEventListener("pointerdown", resumeOnGesture, { capture: true });
+  window.addEventListener("keydown", resumeOnGesture, { capture: true });
+
+  // 静音保活：running 期间每 25s 播一个静音样本，保持音频图有活动，
+  // 阻止 WebKit 因闲置挂起 context（挂起时本回调不动作，等手势 resume 恢复）
+  setInterval(() => {
+    const ctx = audioCtx;
+    if (!ctx || ctx.state !== "running") return;
+    try {
+      const buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      source.onended = () => source.disconnect();
+      source.start();
+    } catch {
+      // 保活失败不影响任何功能，忽略
+    }
+  }, 25_000);
 }
 
 /**
@@ -138,21 +157,25 @@ export function playSound(dataUrl: string, allowWebAudio: boolean): void {
     currentFallback.currentTime = 0;
     currentFallback = null;
   }
-  // 主路径：仅手势链内、已解码、且 context running（suspended 时绝不依赖
-  // resume 出声——被拒时声音丢失；直接走兜底保证有声）
+  // 主路径：手势链内 + 已解码。running 直接播；suspended 先 resume 再播
+  // （resume 几十 ms，仍远优于媒体管线 100-300ms；resume 被拒则落兜底保证有声）
   const cached = bufferCache.get(dataUrl);
   const ctx = audioCtx;
-  if (allowWebAudio && cached && ctx && ctx.state === "running") {
-    const source = ctx.createBufferSource();
-    source.buffer = cached;
-    source.connect(ctx.destination);
-    currentSource = source;
-    source.onended = () => {
-      if (currentSource === source) currentSource = null;
-      source.disconnect();
-    };
-    source.start();
-    return;
+  if (allowWebAudio && cached && ctx) {
+    if (ctx.state === "running") {
+      playWithBuffer(ctx, cached);
+      return;
+    }
+    if (ctx.state === "suspended") {
+      void ctx.resume().then(() => {
+        // 期间可能已被新的播放打断/替换，避免叠音
+        if (ctx.state === "running" && !currentSource && !currentFallback) {
+          playWithBuffer(ctx, cached);
+        }
+      });
+      return;
+    }
+    // closed 等异常状态：落兜底（下次播放时 getAudioCtx 会重建）
   }
   // 兜底：池元素播放；play 被拒时新建元素重试一次（成功则入池替换）
   const el = getPooledAudio(dataUrl);
@@ -164,6 +187,19 @@ export function playSound(dataUrl: string, allowWebAudio: boolean): void {
     audioPool.set(dataUrl, fresh);
     void fresh.play().catch(() => {});
   });
+}
+
+/** 用已解码 buffer 经 Web Audio 播放（节点纪律：ended/打断时 disconnect） */
+function playWithBuffer(ctx: AudioContext, buffer: AudioBuffer): void {
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  currentSource = source;
+  source.onended = () => {
+    if (currentSource === source) currentSource = null;
+    source.disconnect();
+  };
+  source.start();
 }
 
 // ── 场景播放 ──────────────────────────────────────────
