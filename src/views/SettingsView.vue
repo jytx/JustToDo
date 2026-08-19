@@ -33,7 +33,7 @@ import ListScheduleSection from "@/components/ListScheduleSection.vue";
 import BackgroundTaskSection from "@/components/BackgroundTaskSection.vue";
 import TrashSection from "@/components/TrashSection.vue";
 import { isValidHHmm } from "@/utils/date";
-import { SOUND_OPTIONS, findSoundOption } from "@/utils/sounds";
+import { SOUND_OPTIONS, isPreviewable } from "@/utils/sounds";
 import { playSound } from "@/composables/useSound";
 
 const settingsStore = useSettingsStore();
@@ -330,16 +330,13 @@ const soundSelectOptions = computed(() =>
   SOUND_OPTIONS.map((o) => ({
     value: o.value,
     label: o.label,
-    previewable: o.dataUrl !== null,
+    previewable: isPreviewable(o.value),
   })),
 );
 
-/** 试听指定音效：按 value 查 dataUrl 并播放（「无」不响；点击在手势链内，走 Web Audio 低延迟路径） */
+/** 试听指定音效：Rust 端 NSSound 播放（「无」不响） */
 function previewSound(value: string): void {
-  const option = findSoundOption(value);
-  if (option?.dataUrl) {
-    playSound(option.dataUrl, true);
-  }
+  playSound(value);
 }
 
 // ─── 输入框宽度随内容自适应（同下拉的 fit-content 语言）───

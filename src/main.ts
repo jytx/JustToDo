@@ -35,21 +35,12 @@ app.config.errorHandler = (err, _instance, info) => {
 };
 
 // 在挂载前同步等待设置初始化 —— 避免主题闪烁并让全局可立即读取设置
+// （提示音由 Rust 端 NSSound 播放，前端无需任何启动准备）
 import { useSettingsStore } from "@/stores/settings";
 const settingsStore = useSettingsStore(pinia);
-settingsStore
-  .initialize()
-  .then(() => {
-    // 设置就绪后注册提醒声音监听（Rust 后台发到期/每日提醒时前端播对应音效），
-    // 并后台预解码全部音效，让勾选任务时声音零延迟
-    import("@/composables/useSound").then(({ setupReminderSounds, preloadSounds }) => {
-      setupReminderSounds();
-      preloadSounds();
-    });
-  })
-  .catch((e) => {
-    console.error("[SettingsStore] 启动初始化失败:", e);
-  });
+settingsStore.initialize().catch((e) => {
+  console.error("[SettingsStore] 启动初始化失败:", e);
+});
 
 app.mount("#app");
 

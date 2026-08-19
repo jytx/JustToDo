@@ -53,7 +53,10 @@ async-trait = "0.1"
 
 # macOS 专属：NSProcessInfo —— 声明 userInitiated 活动阻止 App Nap
 # （应用闲置后 macOS 会小憩 WebView 进程，音频会话被挂起导致提示音无声）
-# 复用依赖树中 rfd 已带入的 objc2-foundation 0.3，避免双版本
+# NSSound —— 提示音原生播放（绕开 WKWebView 音频管线，屏保/锁屏后依然可靠）
+# 均复用依赖树中已有的 objc2 系列 0.3，避免双版本
 [target."cfg(target_os = \"macos\")".dependencies]
-objc2-foundation = { version = "0.3", features = ["NSProcessInfo"] }
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSProcessInfo", "NSString"] }
+objc2-app-kit = { version = "0.3", features = ["NSSound"] }
 

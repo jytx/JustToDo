@@ -8,12 +8,13 @@ mod list_schedule;
 mod menu;
 mod models;
 mod note_io;
+mod sound;
 mod trash;
 mod url_title;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 /// IPC 连通性测试命令
 #[tauri::command]
@@ -39,12 +40,10 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 use objc2_foundation::{NSActivityOptions, NSProcessInfo};
-                let activity = unsafe {
-                    NSProcessInfo::processInfo().beginActivityWithOptions_reason(
-                        NSActivityOptions::UserInitiated,
-                        &objc2_foundation::NSString::from_str("keep-audio-alive"),
-                    )
-                };
+                let activity = NSProcessInfo::processInfo().beginActivityWithOptions_reason(
+                    NSActivityOptions::UserInitiated,
+                    &objc2_foundation::NSString::from_str("keep-audio-alive"),
+                );
                 std::mem::forget(activity);
                 println!("[JustToDo] 已声明 userInitiated 活动（阻止 App Nap 挂起音频）");
             }
@@ -85,10 +84,18 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     // 启动时立刻跑一次提醒扫描（补发过去 24h 内的过期提醒）
                     use tauri_plugin_notification::NotificationExt;
-                    // 补发标记：true 表示当前为启动补发轮，前端据此不播放提示音
+                    // 补发标记：true 表示当前为启动补发轮，不播放提示音
                     // （避免错过提醒后打开 app 突然响一串）
                     let catch_up = Arc::new(AtomicBool::new(true));
                     let catch_up_cb = catch_up.clone();
+                    // 到期提醒音效（用户设置；默认 default）。扫描前读好传入闭包——
+                    // Rust 原生 NSSound 播放，不经前端，可靠性最高
+                    let sound_val =
+                        commands::get_setting_inner(&pool_clone, "due_reminder_sound".to_string())
+                            .await
+                            .ok()
+                            .flatten()
+                            .unwrap_or_else(|| "default".to_string());
                     match commands::task_check_reminders_inner(&pool_clone, |reminder| {
                         let res = app_handle
                             .notification()
@@ -99,9 +106,10 @@ pub fn run() {
                         if let Err(e) = res {
                             eprintln!("[JustToDo] 启动补发通知失败：{}", e);
                         }
-                        // 同步发事件给前端播放提示音（补发轮不响）
-                        let _ =
-                            app_handle.emit("reminder:due", catch_up_cb.load(Ordering::Relaxed));
+                        // 原生播放提示音（补发轮不响）
+                        if !catch_up_cb.load(Ordering::Relaxed) {
+                            sound::play_by_value(&app_handle, &sound_val);
+                        }
                     })
                     .await
                     {
@@ -121,6 +129,15 @@ pub fn run() {
                             }
                             Err(e) => println!("[JustToDo] 生成重复任务失败: {}", e),
                         }
+                        // 每轮重读音效设置（用户在设置页修改后即时生效）
+                        let sound_val = commands::get_setting_inner(
+                            &pool_clone,
+                            "due_reminder_sound".to_string(),
+                        )
+                        .await
+                        .ok()
+                        .flatten()
+                        .unwrap_or_else(|| "default".to_string());
                         // 同一轮内复用 app_handle 做提醒扫描
                         match commands::task_check_reminders_inner(&pool_clone, |reminder| {
                             let res = app_handle
@@ -132,9 +149,10 @@ pub fn run() {
                             if let Err(e) = res {
                                 eprintln!("[JustToDo] 通知失败：{}", e);
                             }
-                            // 同步发事件给前端播放提示音
-                            let _ =
-                                app_handle.emit("reminder:due", catch_up.load(Ordering::Relaxed));
+                            // 原生播放提示音
+                            if !catch_up.load(Ordering::Relaxed) {
+                                sound::play_by_value(&app_handle, &sound_val);
+                            }
                         })
                         .await
                         {
@@ -166,9 +184,18 @@ pub fn run() {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     use tauri_plugin_notification::NotificationExt;
-                    // 补发标记：true 表示当前为启动补发轮，前端据此不播放提示音
+                    // 补发标记：true 表示当前为启动补发轮，不播放提示音
                     let catch_up = Arc::new(AtomicBool::new(true));
                     let catch_up_cb = catch_up.clone();
+                    // 每日提醒音效（用户设置；默认 harp）
+                    let sound_val = commands::get_setting_inner(
+                        &pool_clone,
+                        "daily_reminder_sound".to_string(),
+                    )
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| "harp".to_string());
 
                     // 启动立刻跑一次补发（不 await 完成检测，启动期间 UI 不阻塞）
                     match commands::get_setting_inner(
@@ -195,11 +222,10 @@ pub fn run() {
                                         if let Err(e) = res {
                                             eprintln!("[JustToDo] 每日提醒通知失败：{}", e);
                                         }
-                                        // 同步发事件给前端播放提示音（补发轮不响）
-                                        let _ = app_handle.emit(
-                                            "reminder:daily",
-                                            catch_up_cb.load(Ordering::Relaxed),
-                                        );
+                                        // 原生播放提示音（补发轮不响）
+                                        if !catch_up_cb.load(Ordering::Relaxed) {
+                                            sound::play_by_value(&app_handle, &sound_val);
+                                        }
                                     },
                                 )
                                 .await;
@@ -223,6 +249,15 @@ pub fn run() {
                                 if times.is_empty() {
                                     continue;
                                 }
+                                // 每轮重读音效设置（用户在设置页修改后即时生效）
+                                let sound_val = commands::get_setting_inner(
+                                    &pool_clone,
+                                    "daily_reminder_sound".to_string(),
+                                )
+                                .await
+                                .ok()
+                                .flatten()
+                                .unwrap_or_else(|| "harp".to_string());
                                 let now = chrono::Local::now().naive_local();
                                 match commands::task_daily_reminder_scan_inner(
                                     &pool_clone,
@@ -238,11 +273,10 @@ pub fn run() {
                                         if let Err(e) = res {
                                             eprintln!("[JustToDo] 每日提醒通知失败：{}", e);
                                         }
-                                        // 同步发事件给前端播放提示音
-                                        let _ = app_handle.emit(
-                                            "reminder:daily",
-                                            catch_up.load(Ordering::Relaxed),
-                                        );
+                                        // 原生播放提示音
+                                        if !catch_up.load(Ordering::Relaxed) {
+                                            sound::play_by_value(&app_handle, &sound_val);
+                                        }
                                     },
                                 )
                                 .await
@@ -440,6 +474,7 @@ pub fn run() {
             menu::zoom_in,
             menu::zoom_out,
             menu::zoom_reset,
+            sound::play_sound,
             commands::list_get_all,
             commands::list_create,
             commands::list_delete,
