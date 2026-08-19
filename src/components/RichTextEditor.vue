@@ -34,6 +34,7 @@ import ContextMenu from "./ContextMenu.vue";
 import { CodeBlockFold } from "@/extensions/CodeBlockFold";
 import { HeadingFold } from "@/extensions/HeadingFold";
 import { tableExtension } from "@/extensions/TableFold";
+import { TabToList } from "@/extensions/TabToList";
 
 /**
  * 自定义扩展：覆盖 Tiptap 内置的 Mod-a / selectAll 行为。
@@ -232,7 +233,9 @@ function buildSlashCommandPlugin(editorInstance: TiptapEditor) {
   return (Suggestion as any)({
     editor: editorInstance,
     char: "/",
-    startOfLine: false,
+    // 仅在行首触发菜单（段首 / 硬换行后的行首）；
+    // 行中输入 "/"（如 /link 这类路径文字）不激活菜单、不拦截后续按键
+    startOfLine: true,
     allowSpaces: false,
     allowedPrefixes: null,
     // 关键修复：Suggestion 被 dismiss（点击外部/Escape/定位失败）后，
@@ -583,6 +586,8 @@ const editor = useEditor({
     // 改为依赖下方 CSS `.rich-text__content:empty::before { ... }`，仅在
     // doc 完全为空时显示一次"按 / 唤起命令…"，符合 Notion-like 行为。
     SelectAllFix,
+    // 选中多行文字按 Tab → 转无序列表（列表/代码块内保留 Tab 原语义）
+    TabToList,
     Image.configure({
       inline: false,
       allowBase64: false,
