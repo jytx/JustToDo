@@ -77,10 +77,11 @@ pub async fn ai_summary(
     let end_of_today =
         fmt_local(now_dt.date().and_hms_opt(0, 0, 0).unwrap() + chrono::Duration::days(1));
 
-    // 3. 查数据：已完成任务（按 completed_at）
+    // 3. 查数据：已完成任务（按 completed_at；deleted_at IS NULL 排除回收站任务）
     let completed_rows = match sqlx::query(
         "SELECT * FROM tasks
          WHERE done = 1 AND parent_id IS NULL AND kind = 'task'
+           AND deleted_at IS NULL
            AND completed_at IS NOT NULL
            AND datetime(replace(completed_at, 'T', ' '), 'localtime') >= datetime($1, 'localtime')
            AND datetime(replace(completed_at, 'T', ' '), 'localtime') <  datetime($2, 'localtime')
@@ -101,10 +102,12 @@ pub async fn ai_summary(
     };
     let completed: Vec<Task> = completed_rows.iter().map(row_to_task).collect();
 
-    // 4. 查数据：今天截止 / 逾期的未完成任务（每日和周报都包含，作为"待办提醒"）
+    // 4. 查数据：今天截止 / 逾期的未完成任务（每日和周报都包含，作为"待办提醒"；
+    //    deleted_at IS NULL 排除回收站任务）
     let todo_rows = match sqlx::query(
         "SELECT * FROM tasks
          WHERE parent_id IS NULL AND done = 0 AND kind = 'task'
+           AND deleted_at IS NULL
            AND due_end_at IS NOT NULL
            AND datetime(replace(due_end_at, 'T', ' '), 'localtime') < datetime($1, 'localtime')
          ORDER BY due_end_at ASC, priority DESC",

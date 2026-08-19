@@ -2868,9 +2868,11 @@ pub async fn task_daily_reminder_scan_inner(
         //    过期：due_end_at < today 00:00
         //    今天：today 00:00 <= due_end_at < 明天 00:00
         //    未来 7 天：明天 00:00 <= due_end_at < 8 天后 00:00
+        //    deleted_at IS NULL 排除回收站任务（与侧边栏计数 / 智能视图口径一致）
         let count_overdue: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM tasks
              WHERE parent_id IS NULL AND done = 0
+               AND deleted_at IS NULL
                AND due_end_at IS NOT NULL
                AND datetime(replace(due_end_at, 'T', ' '), 'localtime')
                    < datetime($1, 'localtime')",
@@ -2883,6 +2885,7 @@ pub async fn task_daily_reminder_scan_inner(
         let count_today: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM tasks
              WHERE parent_id IS NULL AND done = 0
+               AND deleted_at IS NULL
                AND due_end_at IS NOT NULL
                AND datetime(replace(due_end_at, 'T', ' '), 'localtime')
                    >= datetime($1, 'localtime')
@@ -2898,6 +2901,7 @@ pub async fn task_daily_reminder_scan_inner(
         let count_week: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM tasks
              WHERE parent_id IS NULL AND done = 0
+               AND deleted_at IS NULL
                AND due_end_at IS NOT NULL
                AND datetime(replace(due_end_at, 'T', ' '), 'localtime')
                    >= datetime($1, 'localtime')
