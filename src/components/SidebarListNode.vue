@@ -3,7 +3,7 @@
 // 支持拖拽排序和拖拽到其他目录
 import { ref, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import type { ListTreeNode } from "@/stores/list";
+import type { ExpandedSource, ListTreeNode } from "@/stores/list";
 import { useListStore } from "@/stores/list";
 import { useTaskStore } from "@/stores/task";
 import { useSettingsStore } from "@/stores/settings";
@@ -46,6 +46,9 @@ const props = defineProps<{
   /** 受保护节点（inbox/默认笔记本）：不参与多选，多选态下不显示 checkbox（保持色点/文件夹图标）。
    *  TheSidebar 注入；递归子节点透传。 */
   isProtected?: boolean;
+  /** 展开状态来源：'home'（默认）= 工作区，'archive' = 归档区。
+   *  归档区与工作区共用同一个目录 id，但展开状态独立记忆（按用户偏好互不影响）。 */
+  expandedSource?: ExpandedSource;
 }>();
 
 /** 是否处于多选态（默认 false） */
@@ -56,6 +59,8 @@ const isBatchSelected = computed(() =>
 );
 /** 是否受保护节点（不参与多选，多选态下不显示 checkbox） */
 const isProtected = computed(() => props.isProtected ?? false);
+/** 展开状态来源（默认 home，递归透传给子节点） */
+const expandedSource = computed<ExpandedSource>(() => props.expandedSource ?? "home");
 
 const listStore = useListStore();
 const taskStore = useTaskStore();
@@ -91,9 +96,10 @@ const isActive = computed(
     route.params.id === props.node.id,
 );
 
-/** 目录展开状态：提升到 list store（键盘切换清单时需跨组件展开目录链），
+/** 目录展开状态：提升到 list store（键盘切换清单时需跨组件展开目录链）。
+ *  工作区与归档区共用同一个目录 id，但按 expandedSource 读写各自的状态，
  *  缺省视为展开（undefined 按 true 处理，与旧版本地 ref(true) 行为一致） */
-const expanded = computed(() => listStore.expandedNodes[props.node.id] ?? true);
+const expanded = computed(() => listStore.isNodeExpanded(props.node.id, expandedSource.value));
 
 const emit = defineEmits<{
   edit: [node: ListTreeNode];
@@ -461,7 +467,7 @@ function onDrop(e: DragEvent) {
       @drop="onDrop"
       @contextmenu.prevent="onFolderContextMenu($event)"
     >
-      <span class="list-node__expand" @click="listStore.toggleNodeExpanded(node.id)">
+      <span class="list-node__expand" @click="listStore.toggleNodeExpanded(node.id, expandedSource)">
         <icon-down v-if="expanded" :size="12" />
         <icon-right v-else :size="12" />
       </span>
@@ -627,6 +633,7 @@ function onDrop(e: DragEvent) {
         :on-node-click="onNodeClick"
         :is-batch-selected-fn="isBatchSelectedFn"
         :is-protected="isProtected"
+        :expanded-source="expandedSource"
         @edit="(n: ListTreeNode) => $emit('edit', n)"
         @delete="(n: ListTreeNode) => $emit('delete', n)"
         @addFolder="(n: ListTreeNode) => $emit('addFolder', n)"

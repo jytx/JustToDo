@@ -1626,6 +1626,7 @@ onMounted(async () => {
             :on-node-click="listBatch.onListNodeClick"
             :is-batch-selected-fn="listStore.isBatchSelected"
             :is-protected="node.id === 'inbox' || node.id === 'default-notebook'"
+            expanded-source="archive"
             @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
           />
         </template>
@@ -1652,6 +1653,7 @@ onMounted(async () => {
             :on-node-click="listBatch.onListNodeClick"
             :is-batch-selected-fn="listStore.isBatchSelected"
             :is-protected="node.id === 'inbox' || node.id === 'default-notebook'"
+            expanded-source="archive"
             @contextmenu="(e: MouseEvent, n: ListTreeNode) => openCtxMenu(e, { kind: n.isFolder ? 'folder' : 'list', node: n })"
           />
         </template>

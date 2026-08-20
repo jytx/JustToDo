@@ -7,6 +7,9 @@ import { ref, reactive, computed } from "vue";
 import type { List, TaskKind } from "@/types";
 import * as db from "@/api/db";
 
+/** 侧边栏目录展开状态来源：'home' 工作区 | 'archive' 归档区 */
+export type ExpandedSource = "home" | "archive";
+
 /** 带子节点的树形清单 */
 export interface ListTreeNode extends List {
   children: ListTreeNode[];
@@ -98,18 +101,31 @@ export const useListStore = defineStore("list", () => {
   const error = ref<string | null>(null);
 
   // === 侧边栏目录展开状态（UI 状态提升到 store：键盘切换清单时需跨组件展开目录链） ===
-  /** 目录展开状态：key = 节点 id，value = 是否展开。缺省视为展开（undefined 时按 true 处理）。
-   *  仅目录（isFolder）有意义；叶节点不读此状态。 */
+  /** 展开状态来源：决定侧边栏节点读写哪一份展开状态
+   *  - 'home'：工作区（清单 / 笔记本两棵树）
+   *  - 'archive'：归档区（影子目录与真实归档目录共存，与工作区独立记忆，
+   *    避免「在归档区展开 2026-08 后，工作区也跟着展开」的反直觉联动） */
   const expandedNodes = reactive<Record<string, boolean>>({});
+  /** 归档区目录展开状态：与工作区完全独立。影子目录（归档区补出的激活祖先）
+   *  与工作区共享同一个目录 id，但用户希望两边互不影响，故独立存储。 */
+  const archiveExpandedNodes = reactive<Record<string, boolean>>({});
 
   /** 切换目录展开/收起（点击侧边栏箭头） */
-  function toggleNodeExpanded(id: string): void {
-    expandedNodes[id] = !(expandedNodes[id] ?? true);
+  function toggleNodeExpanded(id: string, source: ExpandedSource = "home"): void {
+    const target: Record<string, boolean> = source === "archive" ? archiveExpandedNodes : expandedNodes;
+    target[id] = !(target[id] ?? true);
   }
 
   /** 显式设置目录展开状态（拖放落入目录后展开等场景） */
-  function setNodeExpanded(id: string, value: boolean): void {
-    expandedNodes[id] = value;
+  function setNodeExpanded(id: string, value: boolean, source: ExpandedSource = "home"): void {
+    const target: Record<string, boolean> = source === "archive" ? archiveExpandedNodes : expandedNodes;
+    target[id] = value;
+  }
+
+  /** 读取某来源下的展开状态（SidebarListNode 用） */
+  function isNodeExpanded(id: string, source: ExpandedSource = "home"): boolean {
+    const target: Record<string, boolean> = source === "archive" ? archiveExpandedNodes : expandedNodes;
+    return target[id] ?? true;
   }
 
   // ─── 批量多选状态（清单/笔记本；与 task.ts 的 batchSelectedIds 同构） ─────
@@ -621,8 +637,10 @@ export const useListStore = defineStore("list", () => {
     unarchiveTree,
     deleteList,
     expandedNodes,
+    archiveExpandedNodes,
     toggleNodeExpanded,
     setNodeExpanded,
+    isNodeExpanded,
     expandPath,
     // 批量多选状态与 actions
     batchSelectedIds,
