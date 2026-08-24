@@ -14,7 +14,7 @@ mod url_title;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 /// IPC 连通性测试命令
 #[tauri::command]
@@ -125,6 +125,9 @@ pub fn run() {
                             Ok(n) => {
                                 if n > 0 {
                                     println!("[JustToDo] 生成了 {} 个重复任务实例", n);
+                                    // 通知前端刷新（任务列表/侧边栏计数）。
+                                    // 后台直写 SQLite 前端不感知，不 emit 则页面停留旧数据
+                                    let _ = app_handle.emit("bg:data-changed", ());
                                 }
                             }
                             Err(e) => println!("[JustToDo] 生成重复任务失败: {}", e),
@@ -162,7 +165,11 @@ pub fn run() {
                         }
                         // 清单生成计划：按规则自动建清单/目录
                         match list_schedule::list_schedule_tick(&pool_clone).await {
-                            Ok(n) if n > 0 => println!("[JustToDo] 生成了 {} 个计划清单", n),
+                            Ok(n) if n > 0 => {
+                                println!("[JustToDo] 生成了 {} 个计划清单", n);
+                                // 通知前端刷新侧边栏清单树（新生成的清单/目录立即出现）
+                                let _ = app_handle.emit("bg:data-changed", ());
+                            }
                             Ok(_) => {}
                             Err(e) => println!("[JustToDo] 清单生成计划 tick 失败: {}", e),
                         }

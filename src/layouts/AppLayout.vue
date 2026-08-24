@@ -4,6 +4,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { setupAgentDataSync } from "@/composables/useAgentDataSync";
+import { setupBackgroundDataSync } from "@/composables/useBackgroundDataSync";
 import { useSettingsStore } from "@/stores/settings";
 import { useTaskStore } from "@/stores/task";
 import { useHabitStore } from "@/stores/habit";
@@ -549,11 +550,16 @@ function navigateSiblingList(direction: "up" | "down"): void {
 }
 
 let unlistenAgentSync: (() => void) | null = null;
+let unlistenBgSync: (() => void) | null = null;
 onMounted(() => {
   window.addEventListener("keydown", onNavigationKeydown);
   // AI Agent 写库后的跨端数据同步（写工具触发 ai:data-changed）
   setupAgentDataSync().then((fn) => {
     unlistenAgentSync = fn;
+  });
+  // 后台任务（重复任务/清单生成计划）写库后的数据同步（lib.rs tick 触发 bg:data-changed）
+  setupBackgroundDataSync().then((fn) => {
+    unlistenBgSync = fn;
   });
   // 加载缓存的详情面板宽度（拖拽调整后持久化，下次打开保持）
   db.getSetting(SETTINGS_KEYS.detailPanelWidth)
@@ -593,6 +599,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener("keydown", onNavigationKeydown);
   unlistenAgentSync?.();
+  unlistenBgSync?.();
 });
 
 // 全局快捷键
