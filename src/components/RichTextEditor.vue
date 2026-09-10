@@ -36,6 +36,7 @@ import { HeadingFold } from "@/extensions/HeadingFold";
 import { tableExtension } from "@/extensions/TableFold";
 import { TabToList } from "@/extensions/TabToList";
 import { readClipboardText } from "@/api/db";
+import { bindEditorUndoFallback } from "@/utils/editorUndoFallback";
 
 /**
  * 自定义扩展：覆盖 Tiptap 内置的 Mod-a / selectAll 行为。
@@ -812,9 +813,13 @@ watch(
     if (!props.readonly) {
       installSlashPlugin(ed);
       installUndoGroupFix(ed);
+      // 失焦后的 Cmd+Z 兜底：焦点被工具栏/块菜单等带走时仍可撤销
+      // （Tiptap 的 undo keymap 只在编辑器聚焦时生效）
+      const unbindUndoFallback = bindEditorUndoFallback(ed);
       onCleanup(() => {
         uninstallSlashPlugin(ed);
         uninstallUndoGroupFix(ed);
+        unbindUndoFallback();
       });
     }
   },
