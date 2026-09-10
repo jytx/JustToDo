@@ -836,6 +836,13 @@ const editor = useEditor({
           const tr = state.tr.insertText(ie.data, from, state.selection.to);
           view.dispatch(tr);
           compStartPos = null;
+          // preventDefault 阻断了 WebKit 的 composition 收尾流程，
+          // compositionend 可能不再派发 → view.composing 永久残留 true →
+          // CodeBlockFold NodeView 的 update 回调把后续所有视图同步
+          // （含 Cmd+Z 撤销后的内容刷新）全部跳过，DOM 停留在旧内容，
+          // 表现为「代码块里撤不掉」。手动派发合成 compositionend 结束
+          // composition 状态（此刻事务已应用、DOM 已同步，flush 无副作用）。
+          view.dom.dispatchEvent(new CompositionEvent("compositionend"));
           return true;
         }
         return false;
