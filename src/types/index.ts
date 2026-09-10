@@ -522,4 +522,8 @@ export interface UpcomingReminder {
   triggerAt: string | null;
   /** 通知触发时间戳（null = 还没通知过，到点后后台扫描补发） */
   notifiedAt: string | null;
+  /** 贪睡时刻（null = 未顺延）。非空 = 用户点过「N 分钟后提醒」，
+   *  后台扫描到点会再次触发；设置页据此显示「已顺延 HH:mm」徽标 */
+  snoozeUntil: string | null;
 }
+

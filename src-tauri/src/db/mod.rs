@@ -219,6 +219,9 @@ pub async fn init_pool(
     // 035: tasks/lists 加 deleted_at —— 回收站软删除时间戳
     run_migration_035(&pool).await?;
 
+    // 036: tasks 加 snooze_until —— 提醒横幅「N 分钟后提醒」贪睡时刻
+    run_migration_036(&pool).await?;
+
     Ok(pool)
 }
 
@@ -284,6 +287,19 @@ async fn run_migration_031(pool: &SqlitePool) -> Result<(), String> {
 /// 存量任务天然为 null（未启用），无需回填。
 async fn run_migration_032(pool: &SqlitePool) -> Result<(), String> {
     add_column_if_missing(pool, "tasks", "remind_at", "TEXT").await?;
+    Ok(())
+}
+
+/// 迁移 036：tasks 加 snooze_until —— 提醒贪睡（「N 分钟后提醒」）
+///
+/// 提醒触发后用户在应用内横幅点「5/10 分钟后提醒」时写入：
+/// 值为「下次提醒时刻」（本地字面量 "YYYY-MM-DDTHH:mm:ss"，与 remind_at 体系一致）。
+/// 设计要点：**不改动** remind_at / remind_offset_minutes / notified_at 原值——
+/// 贪睡只是「本次提醒的顺延」，用户原本设置的提醒规则保持不变；
+/// 到点由后台扫描的贪睡分支再次触发，触发后清空 snooze_until（可无限次续睡）。
+/// 「我知道了」不需要任何写入：notified_at 已在首次触发时标记，扫描天然不再命中。
+async fn run_migration_036(pool: &SqlitePool) -> Result<(), String> {
+    add_column_if_missing(pool, "tasks", "snooze_until", "TEXT").await?;
     Ok(())
 }
 

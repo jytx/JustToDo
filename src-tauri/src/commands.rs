@@ -836,7 +836,7 @@ pub async fn task_update(
     if let Some(due_end_at) = &input.due_end_at {
         // 截止时间改变时重置 notified_at，让新一轮 reminder 重新检查
         sqlx::query(
-            "UPDATE tasks SET due_end_at = $1, notified_at = NULL, updated_at = $2 WHERE id = $3",
+            "UPDATE tasks SET due_end_at = $1, notified_at = NULL, snooze_until = NULL, updated_at = $2 WHERE id = $3",
         )
         .bind(due_end_at)
         .bind(&ts)
@@ -910,7 +910,7 @@ pub async fn task_update(
     if let Some(remind) = &input.remind_offset_minutes {
         // 任何对提醒规则的修改都重置 notified_at，避免改完规则却不再通知；
         // 同时清空 remind_at（与「指定时刻提醒」互斥，二者只能存其一）
-        sqlx::query("UPDATE tasks SET remind_offset_minutes = $1, remind_at = NULL, notified_at = NULL, updated_at = $2 WHERE id = $3")
+        sqlx::query("UPDATE tasks SET remind_offset_minutes = $1, remind_at = NULL, notified_at = NULL, snooze_until = NULL, updated_at = $2 WHERE id = $3")
             .bind(remind).bind(&ts).bind(&id)
             .execute(pool.inner()).await
             .map_err(|e| format!("更新提醒失败: {}", e))?;
@@ -918,7 +918,7 @@ pub async fn task_update(
     // 指定时刻提醒（Option<Option<String>> 允许显式清空；与 remind_offset_minutes 互斥）
     if let Some(remind_at) = &input.remind_at {
         let r: Option<&str> = remind_at.as_deref();
-        sqlx::query("UPDATE tasks SET remind_at = $1, remind_offset_minutes = NULL, notified_at = NULL, updated_at = $2 WHERE id = $3")
+        sqlx::query("UPDATE tasks SET remind_at = $1, remind_offset_minutes = NULL, notified_at = NULL, snooze_until = NULL, updated_at = $2 WHERE id = $3")
             .bind(r).bind(&ts).bind(&id)
             .execute(pool.inner()).await
             .map_err(|e| format!("更新提醒失败: {}", e))?;
@@ -961,6 +961,7 @@ pub async fn task_update(
                      recurrence_freq = NULL, recurrence_interval = 1,
                      recurrence_end_at = NULL, recurrence_count = NULL,
                      remind_offset_minutes = NULL, remind_at = NULL, notified_at = NULL,
+                     snooze_until = NULL,
                      list_id = 'default-notebook',
                      group_id = 'default-notebook-default',
                      updated_at = $1
@@ -1004,7 +1005,11 @@ pub async fn task_toggle(
     let ts = now();
     let completed_at = if done { Some(ts.clone()) } else { None };
 
-    sqlx::query("UPDATE tasks SET done = $1, completed_at = $2, updated_at = $3 WHERE id = $4")
+    // 完成时顺带清掉贪睡标记（扫描本就跳过 done=1，此处清理防数据残留）；
+    // 取消完成不动 snooze_until（正常路径此时为 NULL，无副作用）
+    sqlx::query(
+        "UPDATE tasks SET done = $1, completed_at = $2, snooze_until = CASE WHEN $1 THEN NULL ELSE snooze_until END, updated_at = $3 WHERE id = $4",
+    )
         .bind(done)
         .bind(&completed_at)
         .bind(&ts)
@@ -2488,9 +2493,11 @@ pub async fn recurrence_history(
 
 // ─── 提醒（通知） ────────────────────────────────────────────
 
-/// 单条待通知任务（结构化返回，方便 lib.rs 用 title/body 调 notification）
+/// 单条待通知任务（结构化返回，方便 lib.rs 用 title/body 调 notification）。
+/// task_id 供前端横幅「N 分钟后提醒」等操作回写数据库。
 #[derive(Debug, Clone)]
 pub struct PendingReminder {
+    pub task_id: String,
     pub title: String,
     pub body: String,
 }
@@ -2524,12 +2531,15 @@ fn format_local_naive(naive: chrono::NaiveDateTime) -> String {
     naive.format("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
-/// 扫库找"该通知但还没通知过"的任务。两种提醒源（互斥，不会同时命中同一任务）：
-/// - 相对提醒：remind_offset_minutes + due_end_at
+/// 扫库找"该通知但还没通知过"的任务。三种触发源：
+/// - 相对提醒：remind_offset_minutes + due_end_at（互斥源之一）
 ///     标准扫描 trigger_at = due_end_at - offset；trigger_at <= now
 ///     启动补发 due_end_at 在过去 24h 内 且 notified_at IS NULL
 /// - 指定时刻提醒：remind_at（绝对本地时刻）
 ///     remind_at 落在 [now-24h, now] 区间即触发（到点且不超过 24h 补发窗口）
+/// - 贪睡（snooze_until）：用户在横幅点过「N 分钟后提醒」，到点再次触发。
+///     与前两源独立（notified_at 已非空也照常命中），触发后清空 snooze_until，
+///     不动 remind_at / offset / notified_at 原值（原提醒规则保持不变，可无限续睡）
 pub async fn task_check_reminders_inner(
     pool: &sqlx::SqlitePool,
     on_emit: impl Fn(&PendingReminder),
@@ -2538,28 +2548,43 @@ pub async fn task_check_reminders_inner(
     let now_str = format_local_naive(now);
     let cutoff_str = format_local_naive(now - chrono::Duration::hours(24));
 
-    // 一次性把"待通知"任务拉出来。公共过滤：done=0 且 notified_at IS NULL。
-    // 两个提醒源用 OR 连接（二者字段互斥，同一任务只会命中一支）：
+    // 陈旧贪睡静默清理：snooze_until 超过 24h 补发窗口的（应用多日未开等场景），
+    // 直接作废不再提醒（与 remind_at 的补发窗口对齐）。含已完成/已删除任务，防残留。
+    sqlx::query("UPDATE tasks SET snooze_until = NULL WHERE snooze_until IS NOT NULL AND datetime(replace(snooze_until, 'T', ' '), 'localtime') < datetime($1, 'localtime')")
+        .bind(&cutoff_str)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("清理陈旧贪睡失败: {}", e))?;
+
+    // 一次性把"待通知"任务拉出来。公共过滤：done=0 且未软删除。
+    // 前两源（互斥，同一任务只会命中一支）要求 notified_at IS NULL：
     //   A 相对提醒：remind_offset_minutes 与 due_end_at 都非空，
     //     要么 (due_end_at - offset) <= now（准点/提前已到），
     //     要么 due_end_at 在 [cutoff, now] 内（应用启动补发窗口）。
     //   B 指定时刻：remind_at 非空且落在 [cutoff, now] 内（到点 + 24h 补发上限）。
+    //   C 贪睡：snooze_until 非空且落在 [cutoff, now] 内（不看 notified_at）。
     // SQLite 的 datetime() 无 'localtime' 时按 UTC 解释。我们的本地字面量（如
     // "2026-07-14T17:25:00"）实际表达的是墙上时刻，必须显式声明 'localtime'。
     let rows = sqlx::query(
-        "SELECT id, title, due_end_at, remind_offset_minutes, remind_at FROM tasks
+        "SELECT id, title, due_end_at, remind_offset_minutes, remind_at, snooze_until FROM tasks
          WHERE done = 0
            AND deleted_at IS NULL
-           AND notified_at IS NULL
            AND (
-             (remind_offset_minutes IS NOT NULL AND due_end_at IS NOT NULL
-              AND (datetime(replace(due_end_at, 'T', ' '), '-' || remind_offset_minutes || ' minutes', 'localtime') <= datetime($1, 'localtime')
-                   OR (datetime(replace(due_end_at, 'T', ' '), 'localtime') >= datetime($2, 'localtime')
-                       AND datetime(replace(due_end_at, 'T', ' '), 'localtime') <= datetime($1, 'localtime'))))
+             (notified_at IS NULL
+              AND (
+                (remind_offset_minutes IS NOT NULL AND due_end_at IS NOT NULL
+                 AND (datetime(replace(due_end_at, 'T', ' '), '-' || remind_offset_minutes || ' minutes', 'localtime') <= datetime($1, 'localtime')
+                      OR (datetime(replace(due_end_at, 'T', ' '), 'localtime') >= datetime($2, 'localtime')
+                          AND datetime(replace(due_end_at, 'T', ' '), 'localtime') <= datetime($1, 'localtime'))))
+                OR
+                (remind_at IS NOT NULL
+                 AND datetime(replace(remind_at, 'T', ' '), 'localtime') <= datetime($1, 'localtime')
+                 AND datetime(replace(remind_at, 'T', ' '), 'localtime') >= datetime($2, 'localtime'))
+              ))
              OR
-             (remind_at IS NOT NULL
-              AND datetime(replace(remind_at, 'T', ' '), 'localtime') <= datetime($1, 'localtime')
-              AND datetime(replace(remind_at, 'T', ' '), 'localtime') >= datetime($2, 'localtime'))
+             (snooze_until IS NOT NULL
+              AND datetime(replace(snooze_until, 'T', ' '), 'localtime') <= datetime($1, 'localtime')
+              AND datetime(replace(snooze_until, 'T', ' '), 'localtime') >= datetime($2, 'localtime'))
            )",
     )
     .bind(&now_str)
@@ -2577,6 +2602,10 @@ pub async fn task_check_reminders_inner(
         let due_end_at: Option<String> = row.get("due_end_at");
         let offset: Option<i32> = row.get("remind_offset_minutes");
         let remind_at: Option<String> = row.get("remind_at");
+        let snooze_until: Option<String> = row.get("snooze_until");
+        // 是否贪睡轮（第三源命中）：snooze_until 非空即贪睡，
+        // 与前两源天然互斥——前两源要求 notified_at IS NULL，贪睡只在通知过后才可能设置
+        let is_snooze = snooze_until.is_some();
 
         // 生成通知文案：优先指定时刻，其次相对提醒，兜底"到点了"
         let body = if let Some(ra) = &remind_at {
@@ -2587,17 +2616,29 @@ pub async fn task_check_reminders_inner(
             "到点了".to_string()
         };
         on_emit(&PendingReminder {
+            task_id: task_id.clone(),
             title: title.clone(),
             body,
         });
 
-        // 标记为已通知（即使通知发送失败，也不再重复）
-        sqlx::query("UPDATE tasks SET notified_at = $1, updated_at = $1 WHERE id = $2")
-            .bind(&now_str)
-            .bind(&task_id)
-            .execute(pool)
-            .await
-            .map_err(|e| format!("标记 notified_at 失败: {}", e))?;
+        // 标记已处理（即使通知发送失败，也不再重复）：
+        // 正常轮写 notified_at（此后前两源不再命中）；
+        // 贪睡轮只清 snooze_until（原提醒规则不动，用户可再点「N 分钟后」续睡）
+        if is_snooze {
+            sqlx::query("UPDATE tasks SET snooze_until = NULL, updated_at = $1 WHERE id = $2")
+                .bind(&now_str)
+                .bind(&task_id)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("清除 snooze_until 失败: {}", e))?;
+        } else {
+            sqlx::query("UPDATE tasks SET notified_at = $1, updated_at = $1 WHERE id = $2")
+                .bind(&now_str)
+                .bind(&task_id)
+                .execute(pool)
+                .await
+                .map_err(|e| format!("标记 notified_at 失败: {}", e))?;
+        }
         count += 1;
     }
     Ok(count)
@@ -2615,7 +2656,7 @@ pub async fn reminder_upcoming_list(
 ) -> CmdResult<Vec<UpcomingReminder>> {
     let rows = sqlx::query(
         "SELECT t.id, t.title, t.list_id, t.remind_at, t.remind_offset_minutes,
-                t.due_end_at, t.notified_at, l.name AS list_name, l.color AS list_color
+                t.due_end_at, t.notified_at, t.snooze_until, l.name AS list_name, l.color AS list_color
          FROM tasks t
          LEFT JOIN lists l ON t.list_id = l.id
          WHERE t.done = 0
@@ -2656,6 +2697,7 @@ pub async fn reminder_upcoming_list(
             due_end_at,
             trigger_at: Some(trigger_at),
             notified_at: row.get("notified_at"),
+            snooze_until: row.get("snooze_until"),
         });
     }
     // 按触发时刻升序（本地字面量字典序 = 时间序）
@@ -2728,6 +2770,33 @@ pub async fn task_check_reminders(
     })
     .await?;
     Ok(count)
+}
+
+/// 提醒贪睡：原生通知「N 分钟后提醒」按钮回调（notify.rs delegate）调用。
+/// 写 snooze_until = now + N 分钟（不动 remind_at / offset / notified_at，
+/// 原提醒规则保持不变），后台扫描的贪睡分支到点会再次触发提醒。
+pub async fn task_snooze_inner(
+    pool: &sqlx::SqlitePool,
+    task_id: &str,
+    minutes: i64,
+) -> Result<(), String> {
+    // 合法性：贪睡时长必须为正（防手滑传 0/负数导致立即再响或永不响）
+    if minutes <= 0 {
+        return Err("贪睡时长必须大于 0 分钟".to_string());
+    }
+    let now = chrono::Local::now().naive_local();
+    let next_str = format_local_naive(now + chrono::Duration::minutes(minutes));
+    let result = sqlx::query("UPDATE tasks SET snooze_until = $1, updated_at = $1 WHERE id = $2")
+        .bind(&next_str)
+        .bind(&task_id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("写入贪睡时刻失败: {}", e))?;
+    // 目标不存在（任务被删等）视为幂等成功——通知已关闭，无需报错打扰
+    if result.rows_affected() == 0 {
+        println!("[JustToDo] 贪睡目标任务不存在: {}", task_id);
+    }
+    Ok(())
 }
 
 // ─── 每日固定时点提醒（汇总通知） ────────────────────────

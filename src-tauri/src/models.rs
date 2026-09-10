@@ -259,6 +259,9 @@ pub struct UpcomingReminder {
     pub trigger_at: Option<String>,
     /// 通知触发时间戳（null = 还没通知过，将在到点后由后台扫描补发）
     pub notified_at: Option<String>,
+    /// 贪睡时刻（null = 未顺延）。非空 = 用户点过「N 分钟后提醒」，
+    /// 后台扫描到点会再次触发；前端据此显示「已顺延 HH:mm」徽标
+    pub snooze_until: Option<String>,
 }
 
 /// 任务-标签关联条目（批量查询接口用）。

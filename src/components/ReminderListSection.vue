@@ -32,9 +32,21 @@ function isNotified(r: UpcomingReminder): boolean {
   return r.notifiedAt != null;
 }
 
-/** 该条是否已过触发时刻但还没通知（待补发徽标） */
+/** 该条是否顺延中（横幅点过「N 分钟后提醒」，等待 snoozeUntil 再次触发） */
+function isSnoozed(r: UpcomingReminder): boolean {
+  return r.snoozeUntil != null;
+}
+
+/** 该条是否已过触发时刻但还没通知（待补发徽标；顺延中的在等顺延时刻，不算） */
 function isPendingFire(r: UpcomingReminder): boolean {
-  return !isNotified(r) && r.triggerAt != null && r.triggerAt <= nowIso;
+  return (
+    !isNotified(r) && !isSnoozed(r) && r.triggerAt != null && r.triggerAt <= nowIso
+  );
+}
+
+/** 顺延徽标文本：截取 snoozeUntil 的 HH:mm（"…THH:mm:ss" → "HH:mm"） */
+function snoozeText(r: UpcomingReminder): string {
+  return r.snoozeUntil?.slice(11, 16) ?? "";
 }
 
 /** 触发时刻展示文本（复用 formatSingleDate 的今天/明天/周X/M月D日 + HH:mm） */
@@ -59,7 +71,7 @@ function onOpen(r: UpcomingReminder): void {
         v-for="r in reminders"
         :key="r.taskId"
         class="bt-card rl-card"
-        :class="{ 'rl-card--notified': isNotified(r) }"
+        :class="{ 'rl-card--notified': isNotified(r) && !isSnoozed(r) }"
         title="点击查看任务详情"
         @click="onOpen(r)"
       >
@@ -74,7 +86,8 @@ function onOpen(r: UpcomingReminder): void {
             {{ r.listName }}
           </span>
           <span class="bt-card__spacer" />
-          <span v-if="isNotified(r)" class="bt-card__badge bt-card__badge--done">已提醒</span>
+          <span v-if="isSnoozed(r)" class="rl-card__snooze">已顺延 {{ snoozeText(r) }}</span>
+          <span v-else-if="isNotified(r)" class="bt-card__badge bt-card__badge--done">已提醒</span>
           <span v-else-if="isPendingFire(r)" class="bt-card__badge">待补发</span>
         </div>
         <!-- 提醒方式 + 截止时间 -->
@@ -193,6 +206,17 @@ function onOpen(r: UpcomingReminder): void {
 .rl-card__time--overdue {
   color: var(--jt-warning);
   background: color-mix(in srgb, var(--jt-warning) 12%, transparent);
+}
+/* 顺延徽标：靛蓝淡底（活跃状态，区别于灰化的「已提醒」） */
+.rl-card__snooze {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--jt-primary);
+  background: color-mix(in srgb, var(--jt-primary) 10%, transparent);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 /* 清单名 chip（含颜色点） */
 .rl-card__list {

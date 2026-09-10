@@ -58,6 +58,18 @@ tauri-plugin-clipboard-manager = "2.3.2"
 # 均复用依赖树中已有的 objc2 系列 0.3，避免双版本
 [target."cfg(target_os = \"macos\")".dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSProcessInfo", "NSString"] }
+objc2-foundation = { version = "0.3", features = ["NSProcessInfo", "NSString", "NSError"] }
 objc2-app-kit = { version = "0.3", features = ["NSSound"] }
+objc2-user-notifications = { version = "0.3", features = [
+    "UNUserNotificationCenter",
+    "UNNotificationRequest",
+    "UNNotificationContent",
+    "UNNotificationAction",
+    "UNNotificationCategory",
+    "UNNotificationResponse",
+    "UNNotificationSound",
+    "UNNotificationSettings",
+    "UNNotificationTrigger",
+] }
+block2 = "0.6"
 

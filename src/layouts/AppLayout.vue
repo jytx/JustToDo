@@ -2,6 +2,7 @@
 // 三栏布局骨架：侧边栏 + 任务列表区 + 任务详情面板
 // 集成全局搜索、快速添加、快捷键、键盘导航
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useTheme } from "@/composables/useTheme";
 import { setupAgentDataSync } from "@/composables/useAgentDataSync";
 import { setupBackgroundDataSync } from "@/composables/useBackgroundDataSync";
@@ -551,6 +552,8 @@ function navigateSiblingList(direction: "up" | "down"): void {
 
 let unlistenAgentSync: (() => void) | null = null;
 let unlistenBgSync: (() => void) | null = null;
+// 原生通知「点击通知本体」→ 打开任务详情（Rust delegate emit）
+let unlistenOpenTask: UnlistenFn | null = null;
 onMounted(() => {
   window.addEventListener("keydown", onNavigationKeydown);
   // AI Agent 写库后的跨端数据同步（写工具触发 ai:data-changed）
@@ -560,6 +563,12 @@ onMounted(() => {
   // 后台任务（重复任务/清单生成计划）写库后的数据同步（lib.rs tick 触发 bg:data-changed）
   setupBackgroundDataSync().then((fn) => {
     unlistenBgSync = fn;
+  });
+  // 原生通知交互：点击通知本体 → 打开对应任务详情面板（Rust notify.rs emit）
+  listen<string>("reminder:open-task", (e) => {
+    void taskStore.selectTask(e.payload);
+  }).then((fn) => {
+    unlistenOpenTask = fn;
   });
   // 加载缓存的详情面板宽度（拖拽调整后持久化，下次打开保持）
   db.getSetting(SETTINGS_KEYS.detailPanelWidth)
@@ -600,6 +609,7 @@ onUnmounted(() => {
   window.removeEventListener("keydown", onNavigationKeydown);
   unlistenAgentSync?.();
   unlistenBgSync?.();
+  unlistenOpenTask?.();
 });
 
 // 全局快捷键

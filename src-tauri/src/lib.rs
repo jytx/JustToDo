@@ -8,6 +8,7 @@ mod list_schedule;
 mod menu;
 mod models;
 mod note_io;
+mod notify;
 mod sound;
 mod trash;
 mod url_title;
@@ -84,7 +85,6 @@ pub fn run() {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     // 启动时立刻跑一次提醒扫描（补发过去 24h 内的过期提醒）
-                    use tauri_plugin_notification::NotificationExt;
                     // 补发标记：true 表示当前为启动补发轮，不播放提示音
                     // （避免错过提醒后打开 app 突然响一串）
                     let catch_up = Arc::new(AtomicBool::new(true));
@@ -98,16 +98,13 @@ pub fn run() {
                             .flatten()
                             .unwrap_or_else(|| "default".to_string());
                     match commands::task_check_reminders_inner(&pool_clone, |reminder| {
-                        let res = app_handle
-                            .notification()
-                            .builder()
-                            .title(&reminder.title)
-                            .body(&reminder.body)
-                            .show();
-                        if let Err(e) = res {
-                            eprintln!("[JustToDo] 启动补发通知失败：{}", e);
-                        }
-                        // 原生播放提示音（补发轮不响）
+                        // 补发轮发原生通知但不响提示音
+                        // （避免错过提醒后打开 app 突然响一串）
+                        notify::send_task_reminder(
+                            &reminder.task_id,
+                            &reminder.title,
+                            &reminder.body,
+                        );
                         if !catch_up_cb.load(Ordering::Relaxed) {
                             sound::play_by_value(&app_handle, &sound_val);
                         }
@@ -144,15 +141,13 @@ pub fn run() {
                         .unwrap_or_else(|| "default".to_string());
                         // 同一轮内复用 app_handle 做提醒扫描
                         match commands::task_check_reminders_inner(&pool_clone, |reminder| {
-                            let res = app_handle
-                                .notification()
-                                .builder()
-                                .title(&reminder.title)
-                                .body(&reminder.body)
-                                .show();
-                            if let Err(e) = res {
-                                eprintln!("[JustToDo] 通知失败：{}", e);
-                            }
+                            // 原生通知（带「5/10 分钟后提醒」按钮；前台后台统一
+                            // 走这里，delegate 的 willPresent 保证前台也弹横幅）
+                            notify::send_task_reminder(
+                                &reminder.task_id,
+                                &reminder.title,
+                                &reminder.body,
+                            );
                             // 原生播放提示音
                             if !catch_up.load(Ordering::Relaxed) {
                                 sound::play_by_value(&app_handle, &sound_val);
@@ -323,6 +318,10 @@ pub fn run() {
                     }
                 });
             }
+
+            // 原生通知初始化：注册「5/10 分钟后提醒」category + delegate
+            // （任务到期提醒改走 UNUserNotificationCenter 原生通知，支持按钮回调）
+            notify::setup(app.handle().clone(), pool.clone());
 
             app.manage(pool.clone());
 
