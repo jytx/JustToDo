@@ -27,6 +27,10 @@ pub const HELP_OPEN_DATA_DIR_ID: &str = "help_open_data_dir";
 pub const HELP_OPEN_LOG_DIR_ID: &str = "help_open_log_dir";
 /// 在系统文件管理器中打开附件目录
 pub const HELP_OPEN_ATTACHMENT_DIR_ID: &str = "help_open_attachment_dir";
+/// 编辑菜单自定义「撤销」项（Cmd+Z）
+pub const EDIT_UNDO_ID: &str = "edit_undo";
+/// 编辑菜单自定义「重做」项（Cmd+Shift+Z）
+pub const EDIT_REDO_ID: &str = "edit_redo";
 
 /// 缩放步长与上下限（与浏览器一致）
 pub const ZOOM_STEP: f64 = 1.2;
@@ -44,6 +48,11 @@ pub fn is_zoom_event(event: &MenuEvent) -> bool {
 /// 判断某个菜单事件是否是自定义窗口操作项（如居中）
 pub fn is_window_op_event(event: &MenuEvent) -> bool {
     matches!(event.id().as_ref(), WINDOW_CENTER_ID)
+}
+
+/// 判断某个菜单事件是否是编辑类自定义项（撤销/重做）
+pub fn is_edit_event(event: &MenuEvent) -> bool {
+    matches!(event.id().as_ref(), EDIT_UNDO_ID | EDIT_REDO_ID)
 }
 
 /// 判断某个菜单事件是否是帮助类自定义项（切换控制台 / 重载 / 重启 / 打开各类目录）
@@ -137,11 +146,29 @@ fn build_app_submenu(app: &AppHandle<Wry>) -> tauri::Result<Submenu<Wry>> {
     Ok(sub)
 }
 
-/// 构造「编辑」子菜单（保留 Undo/复制粘贴等原生能力）
+/// 构造「编辑」子菜单。
+///
+/// 撤销/重做用自定义 MenuItem 而非 PredefinedMenuItem：预定义项走 WKWebView
+/// 的原生 undo 栈（依赖 WebKit 记录的编辑命令），而富文本编辑器（ProseMirror）
+/// 的粘贴/命令走事务路径不进 WebKit 栈 —— 两套栈不同步，表现为「粘贴进代码块
+/// 的内容 Cmd+Z 撤不掉」（WebKit 栈撤空后不再派发 beforeinput，PM 里的记录
+/// 等不到按键）。改为 emit 事件给前端，由前端按焦点位置统一分发。
 fn build_edit_submenu(app: &AppHandle<Wry>) -> tauri::Result<Submenu<Wry>> {
     let sub = Submenu::new(app, "编辑", true)?;
-    sub.append(&PredefinedMenuItem::undo(app, Some("撤销"))?)?;
-    sub.append(&PredefinedMenuItem::redo(app, Some("重做"))?)?;
+    sub.append(&MenuItem::with_id(
+        app,
+        EDIT_UNDO_ID,
+        "撤销",
+        true,
+        Some("CmdOrCtrl+Z"),
+    )?)?;
+    sub.append(&MenuItem::with_id(
+        app,
+        EDIT_REDO_ID,
+        "重做",
+        true,
+        Some("CmdOrCtrl+Shift+Z"),
+    )?)?;
     sub.append(&PredefinedMenuItem::separator(app)?)?;
     sub.append(&PredefinedMenuItem::cut(app, Some("剪切"))?)?;
     sub.append(&PredefinedMenuItem::copy(app, Some("复制"))?)?;

@@ -383,6 +383,16 @@ pub fn run() {
             Ok(())
         })
         .on_menu_event(|app, event| {
+            // 编辑 → 撤销/重做（自定义项，转发前端按焦点分发，见 menu.rs 注释）
+            if menu::is_edit_event(&event) {
+                let name = match event.id().as_ref() {
+                    menu::EDIT_UNDO_ID => "menu-undo",
+                    _ => "menu-redo",
+                };
+                let _ = app.emit(name, ());
+                return;
+            }
+
             // 自定义窗口居中
             if menu::is_window_op_event(&event) {
                 if let Some(window) = app.get_webview_window("main") {
