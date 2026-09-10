@@ -543,6 +543,30 @@ function looksLikeMarkdown(text: string): boolean {
   return blockMatches >= 1;
 }
 
+/**
+ * 纯文本粘贴标志（Cmd/Ctrl+Shift+V）。
+ * ClipboardEvent 不携带修饰键信息，handlePaste 里无法直接判断 Shift；
+ * 因此在 handleKeyDown 中先记录（keydown 必先于 paste 触发），
+ * handlePaste 开头立即消费，避免标志泄漏到下一次普通粘贴。
+ */
+let pendingPastePlainText = false;
+
+/**
+ * 纯文本 → 可安全插入的 HTML（Cmd/Ctrl+Shift+V 粘贴纯文本用）。
+ * 1. 转义 HTML 实体 —— 防止文本中的 < > & 被 insertContent 当标签解析
+ * 2. 按换行拆成多个 <p>，空行保留为 <p><br></p>，维持段落结构
+ */
+function plainTextToHtml(text: string): string {
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return escaped
+    .split(/\r?\n/)
+    .map((line) => `<p>${line === "" ? "<br>" : line}</p>`)
+    .join("");
+}
+
 // editor 实例由 useEditor() 创建，再以 ref 暴露给外部（defineExpose 用）
 const editor = useEditor({
   // 只读模式（回收站详情等查看场景）：编辑器不可编辑，渲染扩展完整保留
@@ -638,6 +662,20 @@ const editor = useEditor({
       const cd = event.clipboardData;
       if (!cd) return false;
 
+      // 0. Cmd/Ctrl+Shift+V → 粘贴纯文本：丢弃剪贴板中的富文本 HTML，
+      //    只取 text/plain 转义后按段落插入，也不走下方 Markdown 智能解析。
+      //    若剪贴板无文本（如截图），标志已消费、自然落到下方图片分支。
+      const asPlainText = pendingPastePlainText;
+      pendingPastePlainText = false;
+      if (asPlainText) {
+        const text = cd.getData("text/plain");
+        if (text && editor.value) {
+          editor.value.commands.insertContent(plainTextToHtml(text));
+          event.preventDefault();
+          return true;
+        }
+      }
+
       // 1. 检查 items 中的图片
       for (const item of Array.from(cd.items)) {
         if (item.type.startsWith("image/")) {
@@ -696,6 +734,17 @@ const editor = useEditor({
     // 然后才执行 handleKeyDown。因此这里设标记，能精确让紧接着的 splitBlock
     // （由后续的 captureKeyDown/keymap 触发）消费标记，而不是文字输入消费。
     handleKeyDown: (_view, event) => {
+      // Cmd/Ctrl+Shift+V → 下一次粘贴按纯文本处理。
+      // paste 事件本身不带修饰键，只能借 keydown 预设标志；
+      // 返回 false 不拦截，让浏览器继续派发原生 paste 事件。
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        !event.altKey &&
+        (event.key === "v" || event.key === "V")
+      ) {
+        pendingPastePlainText = true;
+      }
       if (
         event.key === "Enter" &&
         !event.shiftKey &&
