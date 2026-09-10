@@ -123,6 +123,9 @@ export interface Task {
   remindAt: string | null;
   /** 通知触发时间戳（null = 还没通知过） */
   notifiedAt: string | null;
+  /** 贪睡时刻（null = 未顺延）。原生通知点过「N 分钟后提醒」后非空，
+   *  到点后台扫描再次触发；详情面板据此显示「已顺延 HH:mm」 */
+  snoozeUntil: string | null;
   /** 检查项列表（独立于 note 富文本；滴答清单风格） */
   checklist: ChecklistItem[];
   /** 附件列表（独立于 note 富文本；文件实体存附件目录） */
@@ -353,6 +356,8 @@ export interface TaskRow {
   remind_offset_minutes: number | null;
   remind_at: string | null;
   notified_at: string | null;
+  /** 贪睡时刻（migration 036；null = 未顺延） */
+  snooze_until: string | null;
   /** JSON 字符串（后端 Vec<ChecklistItem> 序列化） */
   checklist: string;
   /** JSON 字符串（后端 Vec<Attachment> 序列化） */
@@ -405,6 +410,7 @@ export function mapTaskRow(row: TaskRow): Task {
     remindOffsetMinutes: row.remind_offset_minutes,
     remindAt: row.remind_at,
     notifiedAt: row.notified_at,
+    snoozeUntil: row.snooze_until,
     checklist: parseChecklist(row.checklist),
     attachments: parseAttachments(row.attachments),
     kind: row.kind,

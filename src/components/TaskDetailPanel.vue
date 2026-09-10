@@ -449,10 +449,16 @@ async function onDateClear() {
 // ─── 提醒 ─────────────────────────────────────────
 // 两种互斥提醒：相对偏移（remindOffsetMinutes）与指定时刻（remindAt）
 // 文案格式化抽到 utils/date.ts 的 formatReminder，与 TaskListItem 共用
+// 顺延状态（原生通知点过「N 分钟后提醒」）：chip 从纯图标变为文字展示
+const snoozeLabel = computed(() => {
+  const s = task.value?.snoozeUntil;
+  return s ? `顺延至 ${s.slice(11, 16)}` : null;
+});
 const remindLabel = computed(() => {
   const t = task.value;
   if (!t) return "提醒";
-  return formatReminder(t.remindOffsetMinutes, t.remindAt);
+  const base = formatReminder(t.remindOffsetMinutes, t.remindAt);
+  return snoozeLabel.value ? `${base} · ${snoozeLabel.value}` : base;
 });
 
 async function onReminderConfirm(payload: ReminderConfirmPayload) {
@@ -463,12 +469,14 @@ async function onReminderConfirm(payload: ReminderConfirmPayload) {
     await taskStore.updateTask(task.value.id, {
       remindAt: payload.remindAt,
       remindOffsetMinutes: null,
+      snoozeUntil: null,
     });
   } else {
     // 相对偏移：设 remindOffsetMinutes，同时清空 remindAt（互斥）
     await taskStore.updateTask(task.value.id, {
       remindOffsetMinutes: payload.value,
       remindAt: null,
+      snoozeUntil: null,
     });
   }
   reminderVisible.value = false;
@@ -479,6 +487,7 @@ async function onReminderClear() {
   await taskStore.updateTask(task.value.id, {
     remindOffsetMinutes: null,
     remindAt: null,
+    snoozeUntil: null,
   });
   reminderVisible.value = false;
 }
@@ -1135,18 +1144,20 @@ onBeforeUnmount(() => {
         @clear="onDateClear"
       />
 
-      <!-- 提醒（默认只图标 + a-tooltip 黑气泡；笔记无提醒，隐藏） -->
+      <!-- 提醒（默认只图标 + a-tooltip 黑气泡；笔记无提醒，隐藏）
+           顺延中（点过「N 分钟后提醒」）chip 显示「顺延至 HH:mm」文字 -->
       <a-tooltip v-if="!isNote" :content="remindLabel" position="bottom">
         <ChipPopover v-model:visible="reminderVisible">
           <PropertyChip
             :active="task.remindOffsetMinutes != null || !!task.remindAt"
-            icon-only
+            :icon-only="!snoozeLabel"
             :title="remindLabel"
             @click="reminderVisible = !reminderVisible"
           >
             <template #icon>
               <icon-notification :size="14" />
             </template>
+            <span v-if="snoozeLabel">{{ snoozeLabel }}</span>
           </PropertyChip>
           <template #content>
             <ReminderPopover

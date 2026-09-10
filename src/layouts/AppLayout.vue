@@ -554,6 +554,8 @@ let unlistenAgentSync: (() => void) | null = null;
 let unlistenBgSync: (() => void) | null = null;
 // 原生通知「点击通知本体」→ 打开任务详情（Rust delegate emit）
 let unlistenOpenTask: UnlistenFn | null = null;
+// 原生通知「N 分钟后提醒」写库成功 → 刷新选中任务的顺延状态
+let unlistenSnoozed: UnlistenFn | null = null;
 onMounted(() => {
   window.addEventListener("keydown", onNavigationKeydown);
   // AI Agent 写库后的跨端数据同步（写工具触发 ai:data-changed）
@@ -569,6 +571,14 @@ onMounted(() => {
     void taskStore.selectTask(e.payload);
   }).then((fn) => {
     unlistenOpenTask = fn;
+  });
+  // 原生通知「N 分钟后提醒」写库成功 → 若正开着该任务详情面板则立即刷新顺延状态
+  listen<string>("reminder:snoozed", (e) => {
+    if (taskStore.selectedTask?.id === e.payload) {
+      void taskStore.refreshSelected();
+    }
+  }).then((fn) => {
+    unlistenSnoozed = fn;
   });
   // 加载缓存的详情面板宽度（拖拽调整后持久化，下次打开保持）
   db.getSetting(SETTINGS_KEYS.detailPanelWidth)
@@ -610,6 +620,7 @@ onUnmounted(() => {
   unlistenAgentSync?.();
   unlistenBgSync?.();
   unlistenOpenTask?.();
+  unlistenSnoozed?.();
 });
 
 // 全局快捷键

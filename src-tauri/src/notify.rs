@@ -151,7 +151,8 @@ mod platform {
         }
     }
 
-    /// 贪睡写库（delegate 回调线程不能阻塞等待 sqlx，丢到异步运行时）
+    /// 贪睡写库（delegate 回调线程不能阻塞等待 sqlx，丢到异步运行时）。
+    /// 成功后 emit 事件让前端刷新选中任务（详情面板立即显示「顺延至 HH:mm」）。
     fn spawn_snooze(pool: sqlx::SqlitePool, task_id: String, minutes: i64) {
         tauri::async_runtime::spawn(async move {
             if let Err(e) = commands::task_snooze_inner(&pool, &task_id, minutes).await {
@@ -161,6 +162,10 @@ mod platform {
                 );
             } else {
                 println!("[JustToDo] 任务 {} 已顺延 {} 分钟", task_id, minutes);
+                // 通知前端：正开着该任务详情面板时立即刷新顺延状态
+                if let Some(ctx) = CONTEXT.get() {
+                    let _ = ctx.app.emit("reminder:snoozed", task_id.clone());
+                }
             }
         });
     }

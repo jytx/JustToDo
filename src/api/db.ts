@@ -78,6 +78,9 @@ interface UpdateTaskInput {
   remindOffsetMinutes?: number | null;
   /** 指定时刻提醒（与 remindOffsetMinutes 互斥；null 清空） */
   remindAt?: string | null;
+  /** 贪睡时刻（前端仅在改提醒规则时显式传 null 清空本地状态；
+   *  写入值由 Rust task_snooze 原生通知回调负责，前端无直接写入场景） */
+  snoozeUntil?: string | null;
   /** 检查项列表（整组覆盖） */
   checklist?: ChecklistItem[];
   /** 附件列表（整组覆盖） */
@@ -195,6 +198,8 @@ interface RustTask {
   remind_offset_minutes: number | null;
   remind_at: string | null;
   notified_at: string | null;
+  /** 贪睡时刻（null = 未顺延，详见 Task.snoozeUntil） */
+  snooze_until: string | null;
   checklist: ChecklistItem[];
   attachments: Attachment[];
   /** 实体类型：'task' 待办 | 'note' 笔记 */
@@ -229,6 +234,7 @@ function mapTask(r: RustTask): Task {
     remindOffsetMinutes: r.remind_offset_minutes,
     remindAt: r.remind_at,
     notifiedAt: r.notified_at,
+    snoozeUntil: r.snooze_until,
     checklist: r.checklist,
     attachments: r.attachments,
     kind: r.kind,
@@ -442,6 +448,7 @@ export async function updateTask(
     recurrence_count: fields.recurrenceCount,
     remind_offset_minutes: fields.remindOffsetMinutes,
     remind_at: fields.remindAt,
+    snooze_until: fields.snoozeUntil,
     checklist: fields.checklist,
     attachments: fields.attachments,
     kind: fields.kind,

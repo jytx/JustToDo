@@ -69,6 +69,7 @@ pub(crate) fn row_to_task(row: &sqlx::sqlite::SqliteRow) -> Task {
         remind_offset_minutes: row.try_get("remind_offset_minutes").ok().flatten(),
         remind_at: row.try_get("remind_at").ok().flatten(),
         notified_at: row.try_get("notified_at").ok().flatten(),
+        snooze_until: row.try_get("snooze_until").ok().flatten(),
         // checklist 存的是 JSON 字符串，反序列化为 Vec
         // 字段 NOT NULL DEFAULT '[]'，所以一定存在；解析失败则为空列表
         checklist: row
@@ -776,6 +777,7 @@ pub async fn task_create(
         remind_offset_minutes,
         remind_at,
         notified_at: None,
+        snooze_until: None,
         checklist: Vec::new(),
         attachments: Vec::new(),
         kind,
@@ -922,6 +924,18 @@ pub async fn task_update(
             .bind(r).bind(&ts).bind(&id)
             .execute(pool.inner()).await
             .map_err(|e| format!("更新提醒失败: {}", e))?;
+    }
+    // 贪睡时刻（前端改提醒规则时显式传 null 清本地状态；上面两分支已兜底清空，
+    // 此分支兜住「只传 snooze_until 不传提醒规则」的边缘情况）
+    if let Some(snooze) = &input.snooze_until {
+        let s: Option<&str> = snooze.as_deref();
+        sqlx::query("UPDATE tasks SET snooze_until = $1, updated_at = $2 WHERE id = $3")
+            .bind(s)
+            .bind(&ts)
+            .bind(&id)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| format!("更新贪睡失败: {}", e))?;
     }
     // 检查项列表（整组覆盖为 JSON 数组）
     if let Some(checklist) = &input.checklist {
@@ -2607,8 +2621,11 @@ pub async fn task_check_reminders_inner(
         // 与前两源天然互斥——前两源要求 notified_at IS NULL，贪睡只在通知过后才可能设置
         let is_snooze = snooze_until.is_some();
 
-        // 生成通知文案：优先指定时刻，其次相对提醒，兜底"到点了"
-        let body = if let Some(ra) = &remind_at {
+        // 生成通知文案：贪睡轮标明顺延时刻（用户能看出这是点过「N 分钟后」再触发的）；
+        // 正常轮优先指定时刻，其次相对提醒，兜底"到点了"
+        let body = if let Some(su) = &snooze_until {
+            build_reminder_body_snooze(su)
+        } else if let Some(ra) = &remind_at {
             build_reminder_body_at(ra)
         } else if let (Some(de), Some(off)) = (&due_end_at, offset) {
             build_reminder_body(de, off)
@@ -2748,6 +2765,19 @@ fn build_reminder_body_at(remind_at: &str) -> String {
             format!("提醒时间到了（{} {}）", date_str, time_str)
         }
         None => "提醒时间到了".to_string(),
+    }
+}
+
+/// 根据「贪睡时刻」生成中文通知正文。
+/// 贪睡轮（用户点过「N 分钟后提醒」）到点再触发时使用，
+/// 标明顺延时刻让用户知道这是顺延后的提醒、不是原提醒重复弹。
+fn build_reminder_body_snooze(snooze_until: &str) -> String {
+    match parse_local_naive(snooze_until) {
+        Some(d) => {
+            let time_str = d.format("%H:%M").to_string();
+            format!("已顺延的提醒时间到了（{}）", time_str)
+        }
+        None => "已顺延的提醒时间到了".to_string(),
     }
 }
 

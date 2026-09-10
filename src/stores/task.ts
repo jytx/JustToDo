@@ -1064,6 +1064,22 @@ export const useTaskStore = defineStore("task", () => {
     await loadSubtasks(id);
   }
 
+  /** 刷新当前选中任务的数据（不动面板开关状态）。
+   *  贪睡（原生通知「N 分钟后提醒」按钮）由 Rust 直写库后 emit 事件触发——
+   *  用户正开着详情面板时，顺延状态（snoozeUntil）需要立即反映到界面。 */
+  async function refreshSelected(): Promise<void> {
+    const id = selectedTaskId.value;
+    if (!id) return;
+    const fresh = await db.getTaskById(id);
+    // await 期间用户可能已切走选中，确认仍是同一任务再覆盖
+    if (!fresh || selectedTaskId.value !== id) return;
+    selectedTaskObj.value = fresh;
+    // 列表数据同步顺延字段（详情面板 chip 显示「顺延至 HH:mm」依赖它）
+    currentTasks.value = updateTaskInArray(currentTasks.value, id, (t) => {
+      t.snoozeUntil = fresh.snoozeUntil;
+    });
+  }
+
   /** 键盘导航：移动焦点到上/下一个未完成根任务 */
   function moveFocus(direction: "up" | "down") {
     const tasks = openTasks.value;
@@ -1327,6 +1343,7 @@ export const useTaskStore = defineStore("task", () => {
     reorderTasks,
     persistTaskOrder,
     selectTask,
+    refreshSelected,
     loadSubtasks,
     loadSubtasksToCache,
     getCachedSubtasks,

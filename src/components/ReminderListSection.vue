@@ -5,7 +5,7 @@
 //   - 状态徽标：已通知过 → 灰化「已提醒」；已过触发时刻未通知 → 「待补发」（下次扫描补发）
 //   - 点击卡片 → taskStore.selectTask 打开任务详情面板（可查看/修改提醒）
 // 数据来自 Rust 命令 reminder_upcoming_list，组件挂载时加载一次（进入设置页即刷新）。
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { listUpcomingReminders } from "@/api/db";
 import { useTaskStore } from "@/stores/task";
 import { formatReminder, formatSingleDate, nowLocalIso } from "@/utils/date";
@@ -14,18 +14,29 @@ import type { UpcomingReminder } from "@/types";
 const taskStore = useTaskStore();
 const reminders = ref<UpcomingReminder[]>([]);
 
-// 挂载时取一次当前本地时间字面量（与 triggerAt 同格式，可直接字典序比较）
-const nowIso = nowLocalIso();
+// 当前本地时间字面量（与 triggerAt 同格式，可直接字典序比较）；
+// 响应式并在每次刷新时更新，配合 30s 轮询让「待补发」判定不过期
+const nowIso = ref(nowLocalIso());
 
 async function load(): Promise<void> {
   try {
     reminders.value = await listUpcomingReminders();
+    nowIso.value = nowLocalIso();
   } catch (e) {
     console.error("加载定时提醒列表失败", e);
   }
 }
 
 onMounted(load);
+// 30 秒轮询刷新：贪睡（原生通知按钮）由 Rust 直写库，页面停留时也能看到
+// 「已顺延」状态和触发时刻的变化（切走再切回会重挂载自然刷新，此处兜停留场景）
+let reloadTimer: ReturnType<typeof setInterval> | null = null;
+onMounted(() => {
+  reloadTimer = setInterval(load, 30_000);
+});
+onUnmounted(() => {
+  if (reloadTimer) clearInterval(reloadTimer);
+});
 
 /** 该条是否已通知过（灰化展示） */
 function isNotified(r: UpcomingReminder): boolean {
@@ -40,19 +51,17 @@ function isSnoozed(r: UpcomingReminder): boolean {
 /** 该条是否已过触发时刻但还没通知（待补发徽标；顺延中的在等顺延时刻，不算） */
 function isPendingFire(r: UpcomingReminder): boolean {
   return (
-    !isNotified(r) && !isSnoozed(r) && r.triggerAt != null && r.triggerAt <= nowIso
+    !isNotified(r) && !isSnoozed(r) && r.triggerAt != null && r.triggerAt <= nowIso.value
   );
 }
 
-/** 顺延徽标文本：截取 snoozeUntil 的 HH:mm（"…THH:mm:ss" → "HH:mm"） */
-function snoozeText(r: UpcomingReminder): string {
-  return r.snoozeUntil?.slice(11, 16) ?? "";
-}
-
-/** 触发时刻展示文本（复用 formatSingleDate 的今天/明天/周X/M月D日 + HH:mm） */
+/** 触发时刻展示文本（复用 formatSingleDate 的今天/明天/周X/M月D日 + HH:mm）。
+ *  顺延中的条目直接显示顺延时刻——用户在通知上点「N 分钟后提醒」后，
+ *  看到的就是下一次会响铃的时间，而不是早已过去的原触发时刻。 */
 function triggerText(r: UpcomingReminder): string {
-  if (!r.triggerAt) return "—";
-  return formatSingleDate(r.triggerAt)?.text ?? r.triggerAt;
+  const at = isSnoozed(r) ? r.snoozeUntil : r.triggerAt;
+  if (!at) return "—";
+  return formatSingleDate(at)?.text ?? at;
 }
 
 /** 点击卡片：打开该任务详情面板 */
@@ -86,7 +95,7 @@ function onOpen(r: UpcomingReminder): void {
             {{ r.listName }}
           </span>
           <span class="bt-card__spacer" />
-          <span v-if="isSnoozed(r)" class="rl-card__snooze">已顺延 {{ snoozeText(r) }}</span>
+          <span v-if="isSnoozed(r)" class="rl-card__snooze">已顺延</span>
           <span v-else-if="isNotified(r)" class="bt-card__badge bt-card__badge--done">已提醒</span>
           <span v-else-if="isPendingFire(r)" class="bt-card__badge">待补发</span>
         </div>

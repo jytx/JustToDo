@@ -83,6 +83,10 @@ pub struct Task {
     pub remind_at: Option<String>,
     /// 通知触发时间戳（null = 还没通知过）
     pub notified_at: Option<String>,
+    /// 贪睡时刻（null = 未顺延）。原生通知点过「N 分钟后提醒」后非空，
+    /// 到点后台扫描贪睡分支再次触发；前端详情面板据此显示「已顺延 HH:mm」
+    #[serde(default)]
+    pub snooze_until: Option<String>,
     /// 检查项列表（与 note 富文本分离；migration 009 默认 "[]"）
     pub checklist: Vec<ChecklistItem>,
     /// 附件列表（与 note 富文本分离；migration 018 默认 "[]"）
@@ -325,6 +329,10 @@ pub struct UpdateTaskInput {
     /// 指定时刻提醒（与 remind_offset_minutes 互斥；传 null 清空）
     #[serde(default, deserialize_with = "double_option")]
     pub remind_at: Option<Option<String>>,
+    /// 贪睡时刻（前端改提醒规则时显式传 null 清空本地状态；
+    /// 有效值只由原生通知按钮回调写入，task_update 不负责设置）
+    #[serde(default, deserialize_with = "double_option")]
+    pub snooze_until: Option<Option<String>>,
     /// 检查项列表（整组覆盖；前端负责构造完整数组）
     pub checklist: Option<Vec<ChecklistItem>>,
     /// 附件列表（整组覆盖；前端负责构造完整数组）
