@@ -28,6 +28,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             // 获取 app data 目录，在其中创建数据库
             let app_data_dir = app.path().app_data_dir().expect("无法获取 app data 目录");
@@ -482,6 +483,7 @@ pub fn run() {
             menu::zoom_out,
             menu::zoom_reset,
             sound::play_sound,
+            commands::read_clipboard_text,
             commands::list_get_all,
             commands::list_create,
             commands::list_delete,

@@ -50,6 +50,7 @@ futures-util = "0.3"
 
 # trait 内 async 方法所需（AiProvider trait 用了 async fn）
 async-trait = "0.1"
+tauri-plugin-clipboard-manager = "2.3.2"
 
 # macOS 专属：NSProcessInfo —— 声明 userInitiated 活动阻止 App Nap
 # （应用闲置后 macOS 会小憩 WebView 进程，音频会话被挂起导致提示音无声）

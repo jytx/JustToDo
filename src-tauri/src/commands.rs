@@ -113,6 +113,18 @@ pub(crate) fn row_to_list(row: &sqlx::sqlite::SqliteRow) -> TaskList {
     }
 }
 
+/// 读取系统剪贴板纯文本（富文本编辑器 Cmd/Ctrl+Shift+V 粘贴纯文本用）。
+/// WKWebView 把 Cmd+Shift+V 映射为"粘贴并匹配样式"，不派发 DOM paste 事件，
+/// 前端只能在 keydown 里拦截按键后经此命令主动读剪贴板。
+/// 剪贴板无文本（如截图）时返回 Err，由前端静默处理。
+#[tauri::command]
+pub async fn read_clipboard_text(app: tauri::AppHandle) -> CmdResult<String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    app.clipboard()
+        .read_text()
+        .map_err(|e| format!("读取剪贴板失败: {}", e))
+}
+
 #[tauri::command]
 pub async fn list_get_all(pool: State<'_, sqlx::SqlitePool>) -> CmdResult<Vec<TaskList>> {
     // 含已删除（deleted_at 非空）的清单：与 archived 同模式，后端全量返回、前端筛分

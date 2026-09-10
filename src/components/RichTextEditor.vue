@@ -35,6 +35,7 @@ import { CodeBlockFold } from "@/extensions/CodeBlockFold";
 import { HeadingFold } from "@/extensions/HeadingFold";
 import { tableExtension } from "@/extensions/TableFold";
 import { TabToList } from "@/extensions/TabToList";
+import { readClipboardText } from "@/api/db";
 
 /**
  * 自定义扩展：覆盖 Tiptap 内置的 Mod-a / selectAll 行为。
@@ -544,12 +545,27 @@ function looksLikeMarkdown(text: string): boolean {
 }
 
 /**
- * 纯文本粘贴标志（Cmd/Ctrl+Shift+V）。
- * ClipboardEvent 不携带修饰键信息，handlePaste 里无法直接判断 Shift；
- * 因此在 handleKeyDown 中先记录（keydown 必先于 paste 触发），
- * handlePaste 开头立即消费，避免标志泄漏到下一次普通粘贴。
+ * Cmd/Ctrl+Shift+V → 粘贴纯文本。
+ *
+ * 为什么不走 paste 事件：WKWebView（Tauri 的 webview）把 Cmd+Shift+V 映射为
+ * 系统的"粘贴并匹配样式"，这条路径**不派发** DOM paste 事件 —— 预设标志等
+ * paste 的方案会静默失效（标志残留到下一次 Cmd+V 才被消费，表现为"按了没
+ * 反应、再按 Cmd+V 才贴出纯文本"）。因此改为在 handleKeyDown 里直接拦截
+ * 按键，经 Rust 命令读系统剪贴板纯文本后主动插入。
  */
-let pendingPastePlainText = false;
+async function pastePlainText(): Promise<void> {
+  const ed = editor.value;
+  if (!ed || !ed.isEditable) return;
+  let text = "";
+  try {
+    text = await readClipboardText();
+  } catch {
+    return; // 剪贴板读取失败（如无文本类型）静默放弃
+  }
+  if (text) {
+    ed.commands.insertContent(plainTextToHtml(text));
+  }
+}
 
 /**
  * 纯文本 → 可安全插入的 HTML（Cmd/Ctrl+Shift+V 粘贴纯文本用）。
@@ -662,20 +678,6 @@ const editor = useEditor({
       const cd = event.clipboardData;
       if (!cd) return false;
 
-      // 0. Cmd/Ctrl+Shift+V → 粘贴纯文本：丢弃剪贴板中的富文本 HTML，
-      //    只取 text/plain 转义后按段落插入，也不走下方 Markdown 智能解析。
-      //    若剪贴板无文本（如截图），标志已消费、自然落到下方图片分支。
-      const asPlainText = pendingPastePlainText;
-      pendingPastePlainText = false;
-      if (asPlainText) {
-        const text = cd.getData("text/plain");
-        if (text && editor.value) {
-          editor.value.commands.insertContent(plainTextToHtml(text));
-          event.preventDefault();
-          return true;
-        }
-      }
-
       // 1. 检查 items 中的图片
       for (const item of Array.from(cd.items)) {
         if (item.type.startsWith("image/")) {
@@ -734,16 +736,18 @@ const editor = useEditor({
     // 然后才执行 handleKeyDown。因此这里设标记，能精确让紧接着的 splitBlock
     // （由后续的 captureKeyDown/keymap 触发）消费标记，而不是文字输入消费。
     handleKeyDown: (_view, event) => {
-      // Cmd/Ctrl+Shift+V → 下一次粘贴按纯文本处理。
-      // paste 事件本身不带修饰键，只能借 keydown 预设标志；
-      // 返回 false 不拦截，让浏览器继续派发原生 paste 事件。
+      // Cmd/Ctrl+Shift+V → 粘贴纯文本。直接拦截并主动读剪贴板
+      // （preventDefault + return true 阻止 WebKit 的"粘贴并匹配样式"
+      // 走系统路径，否则不会产生任何可见效果）。
       if (
         (event.metaKey || event.ctrlKey) &&
         event.shiftKey &&
         !event.altKey &&
         (event.key === "v" || event.key === "V")
       ) {
-        pendingPastePlainText = true;
+        event.preventDefault();
+        void pastePlainText();
+        return true;
       }
       if (
         event.key === "Enter" &&

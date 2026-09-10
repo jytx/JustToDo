@@ -967,3 +967,13 @@ export async function getRecurrenceHistory(templateId: string): Promise<Recurren
 export async function listUpcomingReminders(): Promise<UpcomingReminder[]> {
   return await invoke<UpcomingReminder[]>('reminder_upcoming_list');
 }
+
+// ─── 剪贴板（纯文本粘贴快捷键用） ─────────────────────────────
+
+/** 读取系统剪贴板纯文本（Rust 端 NSPasteboard/剪贴板管理器直读）。
+ *  WKWebView 中 Cmd+Shift+V 不派发 paste 事件（WebKit 映射为
+ *  "粘贴并匹配样式"且不产生可拦截事件），只能由 keydown 主动读剪贴板。
+ *  剪贴板无文本（如截图）时返回空串。 */
+export async function readClipboardText(): Promise<string> {
+  return await invoke<string>('read_clipboard_text');
+}
