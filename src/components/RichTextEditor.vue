@@ -37,6 +37,7 @@ import { tableExtension } from "@/extensions/TableFold";
 import { TabToList } from "@/extensions/TabToList";
 import { readClipboardText } from "@/api/db";
 import { bindEditorUndoFallback } from "@/utils/editorUndoFallback";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 
 /**
  * 自定义扩展：覆盖 Tiptap 内置的 Mod-a / selectAll 行为。
@@ -115,6 +116,33 @@ const uploading = ref(false);
  * 详见 editorProps.handleDOMEvents 注释。
  */
 let compStartPos: number | null = null;
+
+/**
+ * 判断两个文档位置是否同处一个文本块（IM E composition 拦截用）。
+ * ResolvedPos.sameParent 判断两位置是否共享同一父节点 —— 即是否在
+ * 同一个段落 / codeBlock 内。用于防御陈旧的 compStartPos：跨块的
+ * insertText(from, to) 会把区间压平成纯文本，产生结构畸形的 step。
+ */
+function inSameTextBlock(doc: ProseMirrorNode, a: number, b: number): boolean {
+  return doc.resolve(a).sameParent(doc.resolve(b));
+}
+
+/**
+ * 关闭当前 undo 分组（粘贴等结构性插入前后调用）。
+ * dispatch 一个仅含 closeHistory meta 的空事务（prosemirror-history 对
+ * steps 为 0 的事务会提前 return，但 closeHistory 在此之前已把分组时钟
+ * prevTime 归零）—— 使下一个事务必然开启新的 undo 组。
+ *
+ * 作用：①「粘贴」与前后输入不合并成组（一次 Cmd+Z 撤一次粘贴，分组
+ * 语义清晰）；② 缩短后续 undo 重映射需要跨越的组边界，降低
+ * prosemirror-history 在嵌套结构上 inversion 映射失效（表现为撤不掉）
+ * 的概率。
+ */
+function closeHistoryGroup(ed: TiptapEditor): void {
+  const tr = ed.state.tr;
+  closeHistory(tr);
+  ed.view.dispatch(tr);
+}
 
 /**
  * 标志位：本次 props.modelValue 变化是否来自编辑器内部（onUpdate 回调）。
@@ -564,7 +592,10 @@ async function pastePlainText(): Promise<void> {
     return; // 剪贴板读取失败（如无文本类型）静默放弃
   }
   if (text) {
+    // 前后关闭 undo 分组：粘贴独立成组，且与前后输入互不合并
+    closeHistoryGroup(ed);
     ed.commands.insertContent(plainTextToHtml(text));
+    closeHistoryGroup(ed);
   }
 }
 
@@ -712,7 +743,10 @@ const editor = useEditor({
       if (text && (!html || isPseudoHtml) && looksLikeMarkdown(text)) {
         const rendered = marked.parse(text, { async: false }) as string;
         if (editor.value) {
+          // 前后关闭 undo 分组：粘贴独立成组，且与前后输入互不合并
+          closeHistoryGroup(editor.value);
           editor.value.commands.insertContent(rendered);
+          closeHistoryGroup(editor.value);
           event.preventDefault();
           return true;
         }
@@ -788,7 +822,17 @@ const editor = useEditor({
         if (ie.inputType === "insertFromComposition" && ie.data) {
           ie.preventDefault();
           const { state } = view;
-          const from = compStartPos ?? state.selection.from;
+          const selFrom = state.selection.from;
+          // 陈旧 compStartPos 防御：composition 被点击/粘贴等操作打断后，
+          // compStartPos 可能还停留在上一个会话的位置。仅当它与当前
+          // selection 同处一个文本块时才可信，否则退回当前 selection ——
+          // 跨块的 insertText(from, to) 会把区间内容压平成纯文本，产生
+          // 结构畸形的 step，污染 undo 映射链（表现为后续 Cmd+Z 撤不掉）
+          const from =
+            compStartPos !== null &&
+            inSameTextBlock(state.doc, compStartPos, selFrom)
+              ? compStartPos
+              : selFrom;
           const tr = state.tr.insertText(ie.data, from, state.selection.to);
           view.dispatch(tr);
           compStartPos = null;
