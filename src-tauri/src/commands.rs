@@ -2783,20 +2783,12 @@ fn build_reminder_body_snooze(snooze_until: &str) -> String {
 
 #[tauri::command]
 pub async fn task_check_reminders(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
 ) -> CmdResult<usize> {
-    use tauri_plugin_notification::NotificationExt;
+    // 统一走 notify 原生通道（旧 plugin 路径会覆盖 delegate，见 notify.rs 注释）
     let count = task_check_reminders_inner(pool.inner(), |reminder| {
-        let res = app
-            .notification()
-            .builder()
-            .title(&reminder.title)
-            .body(&reminder.body)
-            .show();
-        if let Err(e) = res {
-            eprintln!("[JustToDo] 通知失败：{}", e);
-        }
+        crate::notify::send_task_reminder(&reminder.task_id, &reminder.title, &reminder.body);
     })
     .await?;
     Ok(count)
@@ -3077,23 +3069,15 @@ pub async fn task_daily_reminder_scan_inner(
 
 #[tauri::command]
 pub async fn task_daily_reminder_scan(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     pool: State<'_, sqlx::SqlitePool>,
 ) -> CmdResult<usize> {
-    use tauri_plugin_notification::NotificationExt;
     let raw = get_setting_inner(pool.inner(), "daily_reminder_times".to_string()).await?;
     let times = parse_daily_times(raw);
     let now = chrono::Local::now().naive_local();
     let count = task_daily_reminder_scan_inner(pool.inner(), &times, now, |summary| {
-        let res = app
-            .notification()
-            .builder()
-            .title(&summary.title)
-            .body(&summary.body)
-            .show();
-        if let Err(e) = res {
-            eprintln!("[JustToDo] 每日提醒通知失败：{}", e);
-        }
+        // 统一走 notify 原生通道（旧 plugin 路径会覆盖 delegate，见 notify.rs 注释）
+        crate::notify::send_plain("daily-summary", &summary.title, &summary.body);
     })
     .await?;
     Ok(count)

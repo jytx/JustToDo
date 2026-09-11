@@ -186,7 +186,6 @@ pub fn run() {
                 let pool_clone = pool.clone();
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    use tauri_plugin_notification::NotificationExt;
                     // 补发标记：true 表示当前为启动补发轮，不播放提示音
                     let catch_up = Arc::new(AtomicBool::new(true));
                     let catch_up_cb = catch_up.clone();
@@ -216,15 +215,14 @@ pub fn run() {
                                     &times,
                                     now,
                                     |summary| {
-                                        let res = app_handle
-                                            .notification()
-                                            .builder()
-                                            .title(&summary.title)
-                                            .body(&summary.body)
-                                            .show();
-                                        if let Err(e) = res {
-                                            eprintln!("[JustToDo] 每日提醒通知失败：{}", e);
-                                        }
+                                        // 统一走原生通知通道：旧 plugin 路径的
+                                        // mac-notification-sys 会 setupDelegate 覆盖
+                                        // 我们的 delegate（前台横幅不放行 + 按钮回调丢失）
+                                        notify::send_plain(
+                                            "daily-summary",
+                                            &summary.title,
+                                            &summary.body,
+                                        );
                                         // 原生播放提示音（补发轮不响）
                                         if !catch_up_cb.load(Ordering::Relaxed) {
                                             sound::play_by_value(&app_handle, &sound_val);
@@ -267,15 +265,11 @@ pub fn run() {
                                     &times,
                                     now,
                                     |summary| {
-                                        let res = app_handle
-                                            .notification()
-                                            .builder()
-                                            .title(&summary.title)
-                                            .body(&summary.body)
-                                            .show();
-                                        if let Err(e) = res {
-                                            eprintln!("[JustToDo] 每日提醒通知失败：{}", e);
-                                        }
+                                        notify::send_plain(
+                                            "daily-summary",
+                                            &summary.title,
+                                            &summary.body,
+                                        );
                                         // 原生播放提示音
                                         if !catch_up.load(Ordering::Relaxed) {
                                             sound::play_by_value(&app_handle, &sound_val);
@@ -300,20 +294,17 @@ pub fn run() {
             // 启动时获取法定节假日缓存（当年 + 明年），失败发通知降级
             {
                 let pool_clone = pool.clone();
-                let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    use tauri_plugin_notification::NotificationExt;
                     match list_schedule::holiday::ensure_holiday_cache(&pool_clone).await {
                         Ok(_) => println!("[JustToDo] 节假日缓存已就绪"),
                         Err(errs) => {
                             let msg = errs.join("; ");
                             eprintln!("[JustToDo] 节假日数据获取失败: {}", msg);
-                            let _ = app_handle
-                                .notification()
-                                .builder()
-                                .title("节假日数据未更新")
-                                .body(format!("已按普通工作日处理。原因：{}", msg))
-                                .show();
+                            notify::send_plain(
+                                "holiday-cache-error",
+                                "节假日数据未更新",
+                                &format!("已按普通工作日处理。原因：{}", msg),
+                            );
                         }
                     }
                 });

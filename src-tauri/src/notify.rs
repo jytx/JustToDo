@@ -264,10 +264,25 @@ mod platform {
         notify_log("原生通知已初始化（category+delegate 注册完成）");
     }
 
-    /// 发送任务到期提醒。identifier = task id（同任务重复触发自动替换旧通知）；
-    /// 原生不可用时（dev 散装二进制）回退 tauri-plugin-notification 普通通知。
+    /// 发送任务到期提醒（带贪睡按钮 category）。
+    /// identifier = task id（同任务重复触发自动替换旧通知）。
     pub fn send_task_reminder(task_id: &str, title: &str, body: &str) {
         notify_log(&format!("发送提醒通知 task={} title={}", task_id, title));
+        send_native(task_id, title, body, true);
+    }
+
+    /// 发送普通通知（无按钮；每日汇总提醒 / 系统提示用）。
+    /// identifier 固定值：同类通知再次发送时替换旧的，不堆积。
+    pub fn send_plain(identifier: &str, title: &str, body: &str) {
+        notify_log(&format!("发送普通通知 id={} title={}", identifier, title));
+        send_native(identifier, title, body, false);
+    }
+
+    /// 统一发送底层：原生不可用时（dev 散装二进制 / 授权被拒）
+    /// 回退 tauri-plugin-notification（此时 delegate 未注册或无意义，无覆盖风险）。
+    /// 注意：正常打包版**绝不**走 plugin——mac-notification-sys 每次发送都会
+    /// setupDelegate() 覆盖我们的 delegate，导致前台横幅不放行、按钮回调丢失。
+    fn send_native(identifier: &str, title: &str, body: &str, with_buttons: bool) {
         if !NATIVE_AVAILABLE.load(Ordering::Relaxed) {
             use tauri_plugin_notification::NotificationExt;
             if let Some(ctx) = CONTEXT.get() {
@@ -288,10 +303,12 @@ mod platform {
         content.setTitle(&NSString::from_str(title));
         content.setBody(&NSString::from_str(body));
         content.setSound(Some(&UNNotificationSound::defaultSound()));
-        content.setCategoryIdentifier(&NSString::from_str(CATEGORY_TASK_REMINDER));
+        if with_buttons {
+            content.setCategoryIdentifier(&NSString::from_str(CATEGORY_TASK_REMINDER));
+        }
 
         let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
-            &NSString::from_str(task_id),
+            &NSString::from_str(identifier),
             &content,
             None,
         );
@@ -311,7 +328,7 @@ mod platform {
 }
 
 #[cfg(target_os = "macos")]
-pub use platform::{send_task_reminder, setup};
+pub use platform::{send_plain, send_task_reminder, setup};
 
 /// 非 macOS 平台空实现（保编译；该项目当前仅 macOS 使用原生通知增强）
 #[cfg(not(target_os = "macos"))]
@@ -319,3 +336,6 @@ pub fn setup(_app: tauri::AppHandle, _pool: sqlx::SqlitePool) {}
 
 #[cfg(not(target_os = "macos"))]
 pub fn send_task_reminder(_task_id: &str, _title: &str, _body: &str) {}
+
+#[cfg(not(target_os = "macos"))]
+pub fn send_plain(_identifier: &str, _title: &str, _body: &str) {}
