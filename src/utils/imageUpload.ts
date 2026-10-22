@@ -1,7 +1,8 @@
 // 图片上传工具 —— 把 File 保存到本地附件目录并返回可用的 src。
 // RichTextEditor 的粘贴/拖拽上传、RichTextToolbar 的"插入图片"按钮共用本模块（DRY）。
 //
-// 流程：File → base64 → Rust save_image 落盘 → get_attachment_fullpath 拿绝对路径
+// 流程：File → base64 → Rust save_image 落盘（按 YYYYMMDD/images/ 日期分目录，
+//       返回相对路径）→ get_attachment_fullpath 拼绝对路径
 //       → convertFileSrc 转 asset:// 协议（Tauri 2 webview 禁止 file://）。
 
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";

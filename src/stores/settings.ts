@@ -44,7 +44,7 @@ export const SETTINGS_KEYS = {
   aiProvider: "ai_provider",
   /** API 地址（base_url） */
   aiBaseUrl: "ai_base_url",
-  /** API Key（明文存本地 SQLite） */
+  /** AI 服务的鉴权密钥，仅保存在本机 SQLite（不出设备），值由用户在设置页填写 */
   aiApiKey: "ai_api_key",
   /** 模型名 */
   aiModel: "ai_model",

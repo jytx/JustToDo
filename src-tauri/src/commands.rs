@@ -1482,11 +1482,12 @@ pub async fn search_tasks(
     pool: State<'_, sqlx::SqlitePool>,
     query: String,
 ) -> CmdResult<Vec<Task>> {
-    let pattern = format!("%{}%", query);
+    // LIKE 的 % 通配符在 SQL 端用 || 拼接，query 原文走 $1 参数化绑定，
+    // Rust 侧不参与任何 SQL 片段拼接，杜绝注入面（行为与原 %"{}"% 拼法等价）
     let rows = sqlx::query(
-        "SELECT * FROM tasks WHERE parent_id IS NULL AND deleted_at IS NULL AND (title LIKE $1 OR note LIKE $1) ORDER BY done ASC, updated_at DESC LIMIT 20",
+        "SELECT * FROM tasks WHERE parent_id IS NULL AND deleted_at IS NULL AND (title LIKE '%' || $1 || '%' OR note LIKE '%' || $1 || '%') ORDER BY done ASC, updated_at DESC LIMIT 20",
     )
-    .bind(&pattern)
+    .bind(&query)
     .fetch_all(pool.inner())
     .await
     .map_err(|e| format!("搜索任务失败: {}", e))?;
@@ -1858,22 +1859,51 @@ pub(crate) fn get_attachment_path_sync(app_data_dir: &std::path::Path) -> CmdRes
     Ok(default.to_string_lossy().to_string())
 }
 
-/// 保存图片（base64 数据）到附件目录，返回文件名
-#[tauri::command]
-pub async fn save_image(app: AppHandle, data: String, ext: String) -> CmdResult<String> {
-    let dir = get_attachment_path(app.clone()).await?;
+/// 落盘附件核心（纯函数）：写入 <dir>/YYYYMMDD/<category>/<uuid>.<ext>，返回相对路径。
+///
+/// save_image（富文本图片，固定 images 类目）与 save_attachment（任务附件，前端传类目）
+/// 共用本函数，保证两条保存链路的磁盘布局一致（DRY）。
+fn write_attachment_dated(
+    dir: &str,
+    category: &str,
+    safe_ext: &str,
+    bytes: &[u8],
+) -> CmdResult<String> {
+    // 拼相对子路径：YYYYMMDD/<category>/<uuid>.<ext>
+    let today = chrono::Local::now().format("%Y%m%d").to_string();
     let id = uuid();
-    let filename = format!("{}.{}", id, ext);
-    let filepath = PathBuf::from(&dir).join(&filename);
+    let rel_path = format!("{}/{}/{}.{}", today, category, id, safe_ext);
+    let filepath = PathBuf::from(dir).join(&rel_path);
 
-    // 解码 base64
+    // 确保子目录存在（create_dir_all 幂等，已有不报错）
+    if let Some(parent) = filepath.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建附件目录失败: {}", e))?;
+    }
+
     use std::io::Write;
-    let bytes = base64_decode(&data)?;
     let mut file = std::fs::File::create(&filepath).map_err(|e| format!("创建文件失败: {}", e))?;
-    file.write_all(&bytes)
+    file.write_all(bytes)
         .map_err(|e| format!("写入文件失败: {}", e))?;
 
-    Ok(filename)
+    Ok(rel_path)
+}
+
+/// 保存图片（base64 数据）到附件目录，返回相对路径（YYYYMMDD/images/<uuid>.<ext>）
+///
+/// 与 save_attachment 一致按"日期/类型"分层存储，图片固定归 images 类目，
+/// 便于在 Finder 中按天查看。返回相对路径后，前端通过 get_attachment_fullpath
+/// 拼绝对路径（Path::join 天然支持多级相对路径），故前端调用方无需改动。
+#[tauri::command]
+pub async fn save_image(app: AppHandle, data: String, ext: String) -> CmdResult<String> {
+    let dir = get_attachment_path(app).await?;
+    // ext 为空时用 png 兜底，避免拼出 "uuid." 这样的文件名
+    let safe_ext = if ext.is_empty() {
+        "png".to_string()
+    } else {
+        ext
+    };
+    let bytes = base64_decode(&data)?;
+    write_attachment_dated(&dir, "images", &safe_ext, &bytes)
 }
 
 /// 获取附件的完整路径
@@ -1916,8 +1946,7 @@ pub async fn save_attachment(
         ));
     }
 
-    let dir = get_attachment_path(app.clone()).await?;
-    let id = uuid();
+    let dir = get_attachment_path(app).await?;
     // ext 已由前端小写化处理；为空时用 bin 兜底，避免拼出 "uuid." 这样的文件名
     let safe_ext = if ext.is_empty() {
         "bin".to_string()
@@ -1925,23 +1954,8 @@ pub async fn save_attachment(
         ext
     };
 
-    // 拼相对子路径：YYYYMMDD/<category>/<uuid>.<ext>
-    let today = chrono::Local::now().format("%Y%m%d").to_string();
-    let rel_path = format!("{}/{}/{}.{}", today, category, id, safe_ext);
-    let filepath = PathBuf::from(&dir).join(&rel_path);
-
-    // 确保子目录存在（create_dir_all 幂等，已有不报错）
-    if let Some(parent) = filepath.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("创建附件目录失败: {}", e))?;
-    }
-
-    use std::io::Write;
     let bytes = base64_decode(&data)?;
-    let mut file = std::fs::File::create(&filepath).map_err(|e| format!("创建文件失败: {}", e))?;
-    file.write_all(&bytes)
-        .map_err(|e| format!("写入文件失败: {}", e))?;
-
-    Ok(rel_path)
+    write_attachment_dated(&dir, &category, &safe_ext, &bytes)
 }
 
 /// 删除附件目录中的物理文件（删除任务附件时调用，避免孤儿文件）
