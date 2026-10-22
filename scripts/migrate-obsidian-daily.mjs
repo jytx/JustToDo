@@ -136,12 +136,12 @@ for (const r of db.prepare("SELECT id, name, parent_id FROM lists WHERE deleted_
 const workRow = [...listByKey.values()].find((r) => r.name === WORK_LIST_NAME && r.parent_id === null);
 if (!workRow) { console.error(`未找到工作清单「${WORK_LIST_NAME}」`); process.exit(1); }
 
-/** 月清单获取：不存在则计划新建（position 取当月最后一天毫秒时间戳，保证月份递增排序） */
+/** 月清单获取：不存在则计划新建（月份是目录 is_folder=1；position 取当月末毫秒时间戳保证排序） */
 const monthList = (ym, plan) => {
   const key = `${workRow.id}|${ym}`;
   const exist = listByKey.get(key);
   if (exist) return { id: exist.id, isNew: false };
-  const row = { id: randomUUID(), name: ym, color: MONTH_COLOR, archived: 1,
+  const row = { id: randomUUID(), name: ym, color: MONTH_COLOR, archived: 1, isFolder: 1,
     position: msOf(`${ym}-28`, "23:59"), created: iso(`${ym}-01`, "09:00") };
   plan.push(row); listByKey.set(key, row);
   return { id: row.id, isNew: true };
@@ -180,7 +180,7 @@ for (const { date, items, orphan, orphanImgs } of parsed) {
   const dayNew = !day;
   if (dayNew) {
     day = { id: randomUUID(), color: DAY_COLORS[Number(date.slice(8, 10)) % DAY_COLORS.length] };
-    newLists.push({ id: day.id, name: date, color: day.color, archived: 1,
+    newLists.push({ id: day.id, name: date, color: day.color, archived: 1, isFolder: 0,
       position: msOf(date, "00:00"), created: iso(date, "09:00"), parent: month.id });
     listByKey.set(dayKey, day);
   }
@@ -252,19 +252,24 @@ console.log(`已复制附件 ${copies.length} 个 → ${ATTACH_DIR}`);
 
 const wdb = db; // apply 模式下 db 连接本身可写，直接复用
 const insList = wdb.prepare(`INSERT INTO lists (id,name,color,position,created_at,parent_id,is_folder,archived,kind)
-  VALUES (?,?,?,?,?,?,0,?,'task')`);
+  VALUES (?,?,?,?,?,?,?,?, 'task')`);
+// 应用建清单时会同步建默认分组（<id>-default），任务 group_id 指向它；迁移须保持一致
+const insGroup = wdb.prepare(`INSERT OR IGNORE INTO groups (id,list_id,name,sort_order,created_at)
+  VALUES (?, ?, '默认分组', 0, ?)`);
 const insTask = wdb.prepare(`INSERT INTO tasks (id, title, note, list_id, parent_id, priority, due_at,
   due_start_at, due_end_at, done, sort_order, created_at, updated_at, completed_at, checklist,
-  attachments, kind, title_url)
-  VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, '[]', '[]', 'task', ?)`);
+  attachments, kind, title_url, group_id)
+  VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, '[]', '[]', 'task', ?, ?)`);
 try {
   wdb.exec("BEGIN");
-  for (const l of newLists)
-    insList.run(l.id, l.name, l.color, l.position, l.created, l.parent ?? workRow.id, l.archived);
+  for (const l of newLists) {
+    insList.run(l.id, l.name, l.color, l.position, l.created, l.parent ?? workRow.id, l.isFolder, l.archived);
+    if (!l.isFolder) insGroup.run(`${l.id}-default`, l.id, l.created); // 目录无任务，不需要分组
+  }
   for (const t of newTasks) {
     insTask.run(t.id, t.title, t.note, t.list, t.parent, t.prio,
       `${t.created.slice(0, 10)}T00:00:00`, `${t.created.slice(0, 10)}T23:55:00`,
-      t.done, t.sort, t.created, t.created, t.completed, t.url);
+      t.done, t.sort, t.created, t.created, t.completed, t.url, `${t.list}-default`);
   }
   wdb.exec("COMMIT");
 } catch (e) { wdb.exec("ROLLBACK"); console.error(`写库失败已回滚：${e.message}`); process.exit(1); }
