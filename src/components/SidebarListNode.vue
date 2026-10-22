@@ -73,6 +73,10 @@ const isNote = computed(() => props.kind === "note");
 /** 是否为影子目录（归档区分组展示补出的激活态祖先目录）：
  *  仅作分组——淡化样式、无右键菜单、不参与多选与拖拽，展开箭头仍可用 */
 const isGhost = computed(() => !!props.node.isGhost);
+/** 是否呈归档浅色（归档区整体淡化，2026-10-22 用户反馈）：
+ *  readonly 是归档区渲染标志——真实归档目录/清单与影子目录统一浅色观感，
+ *  区别仅在于真实归档项仍可点击查看、可取消归档（不锁光标） */
+const isMuted = computed(() => isGhost.value || props.readonly === true);
 /** 对应的路由名与路径前缀 */
 const routeName = computed(() => (isNote.value ? "notebook" : "list"));
 // routePrefix 保留供后续扩展使用（暂未在模板内直接使用 —— 兼容路由前缀）
@@ -455,6 +459,7 @@ function onDrop(e: DragEvent) {
         'list-node--drag-inside': dragOver === 'inside',
         'list-node--batch-selected': isBatchMode && isBatchSelected,
         'list-node--ghost': isGhost,
+        'list-node--muted': isMuted,
       }"
       :style="{ paddingLeft: getNodePaddingLeft(depth) }"
       :draggable="canDrag ? 'true' : 'false'"
@@ -535,6 +540,7 @@ function onDrop(e: DragEvent) {
         'list-node--active': isActive,
         'list-node--drag-over': dragOver === 'before' || dragOver === 'after' || dragOver === 'target',
         'list-node--batch-selected': isBatchMode && isBatchSelected,
+        'list-node--muted': isMuted,
       }"
       :style="{ paddingLeft: getNodePaddingLeft(depth) }"
       :draggable="canDrag ? 'true' : 'false'"
@@ -681,14 +687,23 @@ function onDrop(e: DragEvent) {
 }
 
 /* 影子目录（归档区分组展示的激活态祖先目录）：整体淡化 + 默认光标，
- * 仅作分组容器（展开箭头仍可交互），区别于可操作的真实归档目录 */
+ * 仅作分组容器（展开箭头仍可交互） */
 .list-node--ghost {
   cursor: default;
 }
 
+/* 归档区整体淡化（2026-10-22 用户反馈）：真实归档目录/清单与影子目录
+ * 统一浅色观感；真实归档项仍可点击查看/取消归档，故不锁光标。
+ * 目录行子元素（箭头/图标/名称）与清单行子元素（色点/标题/计数）分别覆盖 */
 .list-node--ghost .list-node__expand,
 .list-node--ghost .list-node__folder-icon,
-.list-node--ghost .list-node__name {
+.list-node--ghost .list-node__name,
+.list-node--muted .list-node__expand,
+.list-node--muted .list-node__folder-icon,
+.list-node--muted .list-node__name,
+.list-node--muted .list-node__dot,
+.list-node--muted .list-node__title,
+.list-node--muted .list-node__count {
   opacity: 0.55;
 }
 
